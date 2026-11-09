@@ -27,7 +27,13 @@ export class World<State> {
     return this.#version;
   }
 
+  /**
+   * Applies one action against the current state. It runs synchronously, so no other action
+   * can change the state between the precondition check and the effect.
+   */
   apply<Args>(action: Action<State, Args>, args: Args): ActionResult {
+    const check = action.precondition(this.#state, args);
+    if (!check.holds) return { applied: false, reason: check.reason };
     this.#state = action.effect(this.#state, args);
     this.#version += 1;
     return { applied: true };
