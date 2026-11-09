@@ -27,8 +27,9 @@ export class World<State> {
     return this.#version;
   }
 
-  // Stub: the arbiter is not built yet, so nothing is applied.
-  apply<Args>(_action: Action<State, Args>, _args: Args): ActionResult {
-    return { applied: false, reason: "not_built" };
+  apply<Args>(action: Action<State, Args>, args: Args): ActionResult {
+    this.#state = action.effect(this.#state, args);
+    this.#version += 1;
+    return { applied: true };
   }
 }
