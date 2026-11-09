@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(**/.env)",
+      "Read(**/.env.*)",
+      "Read(~/.pi/agent/auth.json)",
+      "Read(~/.pi/**/auth*.json)",
+      "Edit(~/.pi/**)",
+      "Bash(cat .env*)",
+      "Bash(cat ~/.pi/*)",
+      "Bash(env)",
+      "Bash(printenv*)",
+      "Bash(pi auth*)",
+      "Bash(sed -i *)",
+      "Bash(sed -i'' *)",
+      "Bash(sed -E -i *)",
+      "Bash(perl -i *)",
+      "Bash(perl -pi *)"
+    ]
+  }
+}
