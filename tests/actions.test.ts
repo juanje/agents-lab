@@ -37,4 +37,15 @@ describe("act", () => {
     expect(world.state).toEqual([null, null, null]);
     expect(world.version).toBe(0);
   });
+
+  it("gives the action's declared failure reason as the outcome when its precondition does not hold", () => {
+    const world = new World(emptySlots(3));
+    act(world, declaredActions, "b", "take 2");
+
+    const outcome = act(world, declaredActions, "a", "take 2");
+
+    expect(outcome).toBe("slot_taken");
+    expect(world.state).toEqual([null, "b", null]);
+    expect(world.version).toBe(1);
+  });
 });
