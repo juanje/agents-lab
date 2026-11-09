@@ -38,7 +38,8 @@ When finishing without stopping conflicts with a doubt about the contract, stopp
 Read a file when its trigger matches, not before.
 
 - `SPEC.md`: purpose, scope, milestones with the build order, invariants, FRs and NFRs. Read the FR you are given and the invariants it touches.
-- `features/FR-*.feature`: the approved scenarios, one file per FR. Read the FR's file before you write its steps.
+- `features/FR-*.feature`: the approved scenarios of the FRs built or in progress, one file per FR. Read the FR's file before you write its steps.
+- `contracts/pending/`: approved contracts of FRs not started. Do not read or build them; the person moves a contract into `features/` when its FR starts.
 - `DOMAIN.md`: terms, how the pieces fit, and how the Pi SDK and Node behave on the pinned versions. Read it before code that opens a Pi session or runs agent loops, and when two terms seem to mean the same thing.
 - `DECISIONS.md`: the decisions in force and what each rules out. Read it before you change an approach. If your change contradicts one, stop and ask.
 
