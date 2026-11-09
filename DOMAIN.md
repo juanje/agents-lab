@@ -11,10 +11,10 @@ What the words mean here, how the pieces fit together, and how the tools behave 
 | World | The state of a scenario (entities, positions, quantities) plus its arbiter. | The scenario, which also declares perception, actions and metrics. |
 | Arbiter | The part of the world that applies one action at a time against the current state. | A scheduler. The arbiter never decides who acts next. |
 | Version | A counter of applied actions in a world. | A run id or a code version. |
-| Scenario | A TypeScript module (world, perception, actions, metrics, system prompt) plus its base configuration, defined in the experiments' repository. | An experiment, which runs a scenario under several conditions. |
-| Test scenario | A small scenario under `tests/fixtures/`, written only to test the engine. | A lab experiment's scenario, which never enters this repository. |
-| Condition | A named change over a scenario's base configuration. | A run or a replica. |
-| Experiment | A TOML file listing conditions, models, replicas and seeds. | A hypothesis. An experiment tests one, but lives in the lab's documents. |
+| Scenario | A TypeScript module in `src/scenarios/` (world, perception, actions, metrics, system prompt) plus its base configuration, reusable by several experiments. | An experiment, which runs a scenario under several conditions. |
+| Test scenario | A small scenario under `tests/fixtures/`, written only to test the engine. | A library scenario in `src/scenarios/`, which experiments use. |
+| Condition | A named change over a scenario's base configuration, written directly or produced by combining factor levels. | A run or a replica. |
+| Experiment | A file in the experiment language (TOML) in the experiments repository: scenario, factors and conditions, models, replicas, seeds, prediction and materials. | A hypothesis, which the experiment states and tests. |
 | Replica | One run of a condition with one model and one seed. | A fork, which continues a saved state. |
 | Run | One execution of one replica; produces one log file. | An experiment, which is many runs. |
 | Rhythm | The distribution an agent draws its waiting interval from between decisions. | A turn. Rhythms are independent per agent. |
@@ -61,6 +61,6 @@ What the words mean here, how the pieces fit together, and how the tools behave 
 ## Testing agents-lab itself
 
 - **Unit and acceptance tests use Pi's faux provider** (FR-ADAPTER-01), with delays that make overlapping decisions happen deterministically.
-- **Tests run test scenarios from `tests/fixtures/`,** such as a small grid where two agents reach for the same cell. They never import a lab experiment's scenario.
+- **Engine tests run test scenarios from `tests/fixtures/`,** such as a small grid where two agents reach for the same cell. A library scenario's tests live with it.
 - **A real model runs only in the smoke test, outside the gate.**
 - **The E13 prototype** in `~/git/mesa-sandbox/schelling_async.py` shows the agent loops, the window and the collision outcomes working. It is a reference for behaviour, not code to copy.

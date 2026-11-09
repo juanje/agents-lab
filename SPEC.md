@@ -4,11 +4,16 @@
 
 ## Purpose
 
-agents-lab is the engine that runs reproducible experiments with AI agents as agents in complex systems. An experiment is defined outside this repository as a scenario and a set of conditions; the engine places its agents in the scenario's world, lets them act without turns on what they perceive locally, and records everything needed to measure the outcome from the world's state. The engine grows one milestone at a time; each milestone adds the features the next experiment needs.
+agents-lab is the code that runs reproducible experiments with AI agents as agents in complex systems. It has three parts:
+- **the engine**, which places agents in a scenario's world, lets them act without turns on what they perceive locally, and records everything needed to measure the outcome from the world's state;
+- **a library of reusable scenarios**;
+- **the analysis of the logs.**
+
+Experiments are written outside this repository, in the experiment language (FR-EXPERIMENT-01 to 04). The code grows one milestone at a time; each milestone adds what the next experiment needs.
 
 ## Scope
 
-**In (v0.1):** the engine features the E13 experiment (Schelling with LLM agents) needs:
+**In (v0.1):** what the E13 experiment (Schelling with LLM agents) needs:
 - a world with an arbiter and a version counter;
 - a scenario interface and its loading;
 - a grid space;
@@ -18,10 +23,12 @@ agents-lab is the engine that runs reproducible experiments with AI agents as ag
 - seeded randomness;
 - the Pi adapter, with a scripted model for tests;
 - the recorder, the environment inventory, and the generic and scenario metrics;
-- the runner.
+- the experiment language and the runner;
+- the Schelling scenario, in the scenario library;
+- summaries across replicas and CSV export.
 
 **Out:**
-- **Experiments and their scenarios:** E13's Schelling world, its actions and its metrics, and any other experiment, live in the experiments' own repository. The engine's tests use small test scenarios of their own.
+- **Experiments:** experiment files, materials, designs and results live in the experiments repository (D-07). The engine's tests use small test scenarios of their own.
 - **Later milestones:** everything listed under them until its FRs are written.
 - **Other uses:**
   - a user interface or live visualization;
@@ -55,9 +62,17 @@ agents-lab is the engine that runs reproducible experiments with AI agents as ag
 14. FR-RECORD-02
 15. FR-INVENTORY-01
 16. FR-ADAPTER-02
-17. FR-RUN-01
-18. FR-RUN-02
-19. FR-RUN-03
+17. FR-EXPERIMENT-01
+18. FR-EXPERIMENT-02
+19. FR-EXPERIMENT-03
+20. FR-EXPERIMENT-04
+21. FR-RUN-01
+22. FR-RUN-02
+23. FR-RUN-03
+24. FR-SCHELLING-01
+25. FR-SCHELLING-02
+26. FR-SCHELLING-03
+27. FR-ANALYSIS-01
 
 ## Invariants
 
@@ -182,6 +197,41 @@ The session's answer is the decision's answer. The prompt never names the model 
 
 *Why:* agents are compared across models through one harness the core controls, and a hung call must not block a run.
 
+#### FR-EXPERIMENT-01: An experiment file names its scenario, conditions, models and replicas
+An experiment file (TOML) gives:
+- its id;
+- the scenario it runs;
+- the models;
+- the number of replicas and the base seed;
+- the run limits (time, decisions per agent, parallelism, timeout);
+- its conditions, each a named change over the scenario's base configuration.
+
+The engine validates the file against the experiment schema before anything runs. An invalid file fails with an error that names the field and what was expected.
+*Why:* people write these files to design experiments, and an error found after model calls wastes the run.
+
+#### FR-EXPERIMENT-02: Factors expand into conditions
+An experiment file can declare factors, each a name with levels. Each level is a named change. The engine runs every combination of levels as one condition, named after its levels (for example `composition=mixed,votes=hidden`). A condition named `baseline`, with no change, is added unless the file turns it off.
+*Why:* the lab's designs are factorial, and every experiment needs a condition without changes, repeated, as its noise baseline.
+
+#### FR-EXPERIMENT-03: An experiment states its prediction before it runs
+An experiment file gives:
+- the hypothesis it tests;
+- its prediction;
+- what would refute it.
+
+`lab run` refuses to start when any of the three is missing, with an error that names it. The three go into every run's log.
+*Why:* the lab's protocol requires the prediction and its refutation to be written before running. The commit of the file, together with the logs, shows that they came first.
+
+#### FR-EXPERIMENT-04: Materials are files, referenced and fingerprinted
+An experiment or a condition can reference materials by path, relative to the experiment file:
+- texts for the system prompt or the observations;
+- variation sets;
+- seeded memory;
+- held-out keys.
+
+The engine reads them at run time, writes each path with a content hash to the run's log, and lists them in the inventory, except files marked as held out, which are listed by name only. A referenced file that does not exist fails the run before it starts.
+*Why:* texts are reviewed and changed as files, and a result must say exactly which version of each text produced it.
+
 #### FR-RUN-01: An experiment runs every condition, model and replica
 `lab run <experiment.toml>` runs each condition with each model, for the configured number of replicas, one after another, each replica with its own seed. It fails before any model call when the file names an unknown scenario, condition or model, with an error that names it.
 *Why:* an experiment is the full grid of conditions and models, and a typo found after an hour of model calls wastes the run.
@@ -193,6 +243,40 @@ The session's answer is the decision's answer. The prompt never names the model 
 #### FR-RUN-03: One experiment at a time
 `lab run` refuses to start, with an error that says another run is active, while another `lab run` on the same machine holds the lock.
 *Why:* two processes making model calls with the same Pi login at the same time stalled every call, and two experiments on one machine would share its parallelism limit without recording it.
+
+### Scenario library
+
+#### FR-SCHELLING-01: A Schelling world from a seed
+The Schelling scenario creates a grid of the configured width and height and places the configured number of residents of two kinds on distinct random cells, from the replica's seed.
+*Why:* E13 compares the system-level pattern that grows from the same starting worlds under different conditions.
+
+#### FR-SCHELLING-02: Residents stay, move near or move far
+A resident can do three things:
+- **STAY** applies nothing and succeeds.
+- **MOVE dx dy** moves it to the cell at that offset when the cell is inside the grid, inside its view, and empty when the action is applied. It fails with `taken_while_deciding` when the cell was empty when the resident observed but is occupied now, and with `invalid_target` otherwise.
+- **FAR** moves it to a random cell that is empty when the action is applied. It fails with `no_empty_cell` when there is none.
+
+Its observation is its window of the configured radius, with its own kind, the other kind, empty and outside the grid marked distinctly.
+*Why:* separating a collision from a misread target is what lets E13 tell the effect of other agents' timing from the agent's own errors.
+
+#### FR-SCHELLING-03: Segregation and dissatisfaction
+The Schelling scenario's metrics are:
+- **segregation:** the mean, over residents with at least one neighbour, of the share of their eight neighbours that are of their kind;
+- **dissatisfied:** the number of residents whose share is below the condition's threshold;
+- **tried_to_move_while_satisfied:** the number of decisions to move taken while the resident's share was at or above the threshold;
+- **stayed_while_dissatisfied:** the number of decisions to stay taken while it was below.
+
+*Why:* E13 compares the system-level pattern with what each agent declared; the last two metrics measure how far behaviour departs from the stated rule.
+
+### Analysis
+
+#### FR-ANALYSIS-01: Logs export as CSV
+`lab export <runs-dir>` writes two CSV files:
+- **decisions:** one row per decision, with the run's condition, model, replica and seed;
+- **metric samples:** one row per metric sample.
+
+The export reads only the logs.
+*Why:* an analysis that needs heavier statistics than the built-in summaries can use an outside tool without a second language in the repository (D-02).
 
 ### Non-functional
 
@@ -219,6 +303,10 @@ A condition is a named change over the scenario's base configuration, and its na
 #### NFR-06: Tests never call a model
 The test suite and the gate use Pi's faux provider only. A real model runs only in a smoke test, outside the gate.
 *Why:* tests must be deterministic, free and runnable offline.
+
+#### NFR-07: The engine never depends on a scenario
+Code in `src/engine/` never imports from `src/scenarios/` or `src/analysis/`. Scenarios use only the engine's public interface.
+*Why:* an engine shaped by one scenario stops being the same engine for the next experiment, and results across experiments stop being comparable.
 
 ## Draft notes
 

@@ -28,20 +28,21 @@ Only the decisions in force. A changed decision is rewritten in place; none supe
 - How Pi behaves on the pinned version lives in DOMAIN.md.
 - Tests use Pi's faux provider (D-04).
 
-## D-02: TypeScript on Node
+## D-02: TypeScript on Node, analysis included
 
-**Decision.** The core, the scenarios and the tests are TypeScript on Node, as an ES module project. Analysis of the logs is Python, in `analysis/`, reading the JSONL files.
+**Decision.** The engine, the scenarios, the tests and the analysis are TypeScript on Node, as an ES module project. For an analysis that needs heavier statistics, `lab export` writes the data as CSV for an outside tool; no other language enters the repository.
 
 **Why.**
 - The Pi SDK is TypeScript. Embedding it natively removes subprocesses, a protocol and a second language for tools.
 - oid's TypeScript toolchain already works with this method.
-- The analysis libraries are better in Python, and the analysis needs only the logs.
+- The lab's analyses (means and ranges across replicas, counts by outcome, bootstrap intervals, comparisons between conditions) do not need Python's libraries.
+- One language keeps the repository readable by one agent and one toolchain.
 
 **Rules out:**
-- a Python core;
-- Python inside the core's run path.
+- Python or another language in the repository;
+- an analysis that reads anything but the logs.
 
-**Follows.** The log format is the contract between the core and the analysis.
+**Follows.** The log format is the contract between the engine and the analysis.
 
 ## D-03: Real-time loops on Node's event loop first
 
@@ -91,9 +92,9 @@ Only the decisions in force. A changed decision is rewritten in place; none supe
 
 **Follows.** A dependency beyond Pi and the toolchain needs the person's agreement and an entry here when it is expensive to remove.
 
-## D-06: Experiments and scenario configurations in TOML, parsed with smol-toml
+## D-06: The experiment language is a TOML schema, parsed with smol-toml
 
-**Decision.** Experiment files, scenarios' base configurations and conditions are TOML, parsed with `smol-toml`.
+**Decision.** The experiment language (FR-EXPERIMENT-01 to 04) and scenarios' base configurations are TOML, parsed with `smol-toml` and validated by the engine against its schema.
 
 **Why.** People read and write these files to design experiments, and TOML is easier to read and edit by hand than JSON. `smol-toml` is small, has no dependencies and implements TOML 1.0.
 
@@ -103,16 +104,26 @@ Only the decisions in force. A changed decision is rewritten in place; none supe
 
 **Follows.** The run log records the resolved configuration as JSON, since the analysis reads the logs, not the TOML.
 
-## D-07: The engine and the experiments live apart
+## D-07: Code here, experiments elsewhere
 
-**Decision.** This repository holds only the engine. Each experiment's scenarios, condition files and analysis live in the experiments' own repository, which depends on the engine.
+**Decision.** This repository holds all the code, in three parts:
+- **the engine** (`src/engine/`);
+- **a library of reusable scenarios** (`src/scenarios/`), such as Schelling or a committee;
+- **the analysis** (`src/analysis/`).
 
-**Why.** An engine that contains experiments starts serving one of them and drifts from the others. Experiments change often, and the engine must stay the same across them for their results to be comparable.
+The experiments repository (`~/git/agents-lab-experiments`) holds only what defines and documents each experiment:
+- its experiment file in the experiment language;
+- its materials;
+- its design;
+- its results.
+
+**Why.** Scenarios and analysis are code shared by several experiments, so they belong with the engine. Experiments change often and must not change the code they run on, or results stop being comparable. Inside this repository, the engine must not lean towards any scenario (NFR-07).
 
 **Rules out:**
-- scenario code or experiment files for the lab's experiments in this repository;
-- engine features named after one experiment.
+- code in the experiments repository;
+- experiment files, materials or results in this repository;
+- engine features named after one scenario or experiment.
 
 **Follows.**
-- The engine's tests use their own test scenarios.
-- A feature an experiment needs is written as a generic engine FR.
+- A feature a new experiment needs is written as a generic engine FR, or as a new scenario.
+- The engine's own tests use test scenarios, not the library's.
