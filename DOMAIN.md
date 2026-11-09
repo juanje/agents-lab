@@ -23,7 +23,7 @@ What the words mean here, how the pieces fit together, and how the tools behave 
 | Variation | A text or setting drawn at random for each decision from a declared set, and recorded. | A condition. |
 | Decision | One observe–decide–act cycle of an agent, with its prompt, answer, action and outcome. | An action. A decision can apply no action. |
 | Action | A declared operation on the world, with a precondition, an effect and failure reasons. | An answer, which is the model's raw text. |
-| Outcome | The single recorded result of a decision: `success`, an engine failure (`unparsed`, `timeout`, `cut_off`, `script_exhausted`, `cell_full`) or a failure reason the scenario declares (for example `taken_while_deciding`). | A metric. |
+| Outcome | The single recorded result of a decision: `success`, an engine failure (`unparsed`, `invalid_arguments`, `timeout`, `cut_off`, `script_exhausted`, `cell_full`) or a failure reason the scenario declares (for example `taken_while_deciding`). | A metric. |
 | Changes while deciding | The number of actions other agents applied between a decision's observation and its action. | Latency. |
 | Stale decision | A decision whose changes while deciding is above zero. | A failed decision. A stale decision can still succeed. |
 | Latency | Time from a model call's start to its answer. | Wait for a slot, which comes before the call. |

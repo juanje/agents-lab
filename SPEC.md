@@ -92,8 +92,8 @@ The world applies one action at a time. When an action's precondition holds at t
 *Why:* experiments measure what happens when agents act on a state that changed while they decided; an action checked against an older state would hide those collisions.
 
 #### FR-ACTION-01: Actions are declared, and unknown answers apply nothing
-A scenario declares each action with its name, the description the agent sees, its arguments and its failure reasons. An agent's answer that matches no declared action applies nothing and is recorded with the outcome `unparsed`.
-*Why:* a guessed action would put the platform's reading in place of the agent's behaviour; unparsed answers must be counted, not repaired.
+A scenario declares each action with its name, the description the agent sees, its arguments and its failure reasons. An agent's answer that matches no declared action applies nothing and is recorded with the outcome `unparsed`. An answer that names a declared action with arguments that action does not take applies nothing and is recorded with the outcome `invalid_arguments`.
+*Why:* a guessed action would put the platform's reading in place of the agent's behaviour; malformed answers must be counted, not repaired, and an answer that picks a real action badly is a different behaviour from one that picks none.
 
 #### FR-ADAPTER-01: A scripted model answers in tests
 In tests, each agent's model is Pi's faux provider. It returns, in order, the answers listed in the agent's script, each after the delay the script gives. When the script runs out, the agent's decision is recorded with the outcome `script_exhausted` and nothing is applied.
