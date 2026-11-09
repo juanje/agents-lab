@@ -90,3 +90,15 @@ Only the decisions in force. A changed decision is rewritten in place; none supe
 - porting the prototype's code.
 
 **Follows.** A dependency beyond Pi and the toolchain needs the person's agreement and an entry here when it is expensive to remove.
+
+## D-06: Experiments and scenario configurations in TOML, parsed with smol-toml
+
+**Decision.** Experiment files, scenarios' base configurations and conditions are TOML, parsed with `smol-toml`.
+
+**Why.** People read and write these files to design experiments, and TOML is easier to read and edit by hand than JSON. `smol-toml` is small, has no dependencies and implements TOML 1.0.
+
+**Rules out:**
+- JSON or YAML for files people write;
+- configuration in TypeScript code.
+
+**Follows.** The run log records the resolved configuration as JSON, since the analysis reads the logs, not the TOML.
