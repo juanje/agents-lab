@@ -12,4 +12,15 @@ describe("World.apply", () => {
     expect(world.state).toEqual(["a", null, null]);
     expect(world.version).toBe(1);
   });
+
+  it("applies nothing when the precondition does not hold, and fails with the action's reason", () => {
+    const world = new World(emptySlots(3));
+    world.apply(take, { agent: "b", slot: 2 });
+
+    const result = world.apply(take, { agent: "a", slot: 2 });
+
+    expect(result).toEqual({ applied: false, reason: "slot_taken" });
+    expect(world.state).toEqual([null, "b", null]);
+    expect(world.version).toBe(1);
+  });
 });
