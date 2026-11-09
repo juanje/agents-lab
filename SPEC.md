@@ -13,7 +13,7 @@ agents-lab runs reproducible experiments with AI agents as agents in complex sys
 - agent loops with their own rhythm;
 - local perception with information switches;
 - declared actions;
-- the Pi and Scripted adapters;
+- the Pi adapter, with a scripted model for tests;
 - the recorder, the environment inventory and the generic metrics;
 - the runner;
 - the Schelling scenario.
@@ -74,9 +74,9 @@ The world applies one action at a time. When an action's precondition holds at t
 A scenario declares each action with its name, the description the agent sees, its arguments and its failure reasons. An agent's answer that matches no declared action applies nothing and is recorded with the outcome `unparsed`.
 *Why:* a guessed action would put the platform's reading in place of the agent's behaviour; unparsed answers must be counted, not repaired.
 
-#### FR-ADAPTER-01: The Scripted adapter answers from a script
-The Scripted adapter returns, for each agent, the answers listed in its script, in order, each after the delay the script gives. When the script runs out, the agent's decision is recorded with the outcome `script_exhausted` and nothing is applied.
-*Why:* the core must be testable without calling a model, deterministically.
+#### FR-ADAPTER-01: A scripted model answers in tests
+In tests, each agent's model is Pi's faux provider. It returns, in order, the answers listed in the agent's script, each after the delay the script gives. When the script runs out, the agent's decision is recorded with the outcome `script_exhausted` and nothing is applied.
+*Why:* the core must be testable deterministically and offline, through the same harness path real runs use.
 
 #### FR-CLOCK-01: Each agent runs its own loop
 Each agent repeats its own cycle: wait an interval drawn from its rhythm, observe, decide, then act. No agent waits for another agent's decision. While one agent decides, the others go on observing and acting.
@@ -100,6 +100,7 @@ Each run writes one new JSONL file, named with the run id. Each decision of each
 - the prompt and the raw answer;
 - the parsed action and the outcome;
 - the time spent waiting for a model slot, and the model latency;
+- the model that answered, and the tokens and cost Pi reports;
 - the number of changes other agents applied between its observation and its action.
 
 *Why:* every analysis of an experiment is done from this log, and a field not recorded cannot be recovered later.
@@ -151,12 +152,17 @@ For a scenario and a condition, the core writes `inventory.md`, listing:
 `lab inventory <experiment.toml>` prints it without running.
 *Why:* the lab reviews what each environment pushes agents to do before running, and a hand-written list drifts from the code.
 
-#### FR-ADAPTER-02: The Pi adapter calls one model per decision
-The Pi adapter makes one `pi -p` call per decision, with the scenario's system prompt and the observation, using the model from the configuration. The prompt never names the model unless the condition says so.
-- **Parallelism limit:** a decision waits for a free slot when the configured number of calls is already running.
-- **Timeout:** a call longer than the timeout is stopped and recorded with the outcome `timeout`, and nothing is applied.
+#### FR-ADAPTER-02: Each decision is one stateless Pi session
+For each decision, the core opens a Pi session in memory, using the model from the configuration. The session has:
+- the scenario's system prompt in place of Pi's own;
+- no built-in tools;
+- the observation as the prompt.
 
-*Why:* agents are compared across models through one interface, and a hung call must not block a run.
+The session's answer is the decision's answer. The prompt never names the model unless the condition says so.
+- **Parallelism limit:** a decision waits for a free slot when the configured number of calls is already running.
+- **Timeout:** a session that runs longer than the timeout is aborted and recorded with the outcome `timeout`, and nothing is applied.
+
+*Why:* agents are compared across models through one harness the core controls, and a hung call must not block a run.
 
 #### FR-RUN-01: An experiment runs every condition, model and replica
 `lab run <experiment.toml>` runs each condition with each model, for the configured number of replicas, one after another, each replica with its own seed. It fails before any model call when the file names an unknown scenario, condition or model, with an error that names it.
@@ -168,7 +174,7 @@ The Pi adapter makes one `pi -p` call per decision, with the scenario's system p
 
 #### FR-RUN-03: One experiment at a time
 `lab run` refuses to start, with an error that says another run is active, while another `lab run` on the same machine holds the lock.
-*Why:* concurrent runs sharing one Pi login stall every model call.
+*Why:* two processes making model calls with the same Pi login at the same time stalled every call, and two experiments on one machine would share its parallelism limit without recording it.
 
 ### Non-functional
 
@@ -193,7 +199,7 @@ A condition is a named change over the scenario's base configuration, and its na
 *Why:* a difference between conditions can be attributed only when each changes one thing.
 
 #### NFR-06: Tests never call a model
-The test suite and the gate run with the Scripted adapter only. A real model runs only in a smoke test, outside the gate.
+The test suite and the gate use Pi's faux provider only. A real model runs only in a smoke test, outside the gate.
 *Why:* tests must be deterministic, free and runnable offline.
 
 ## Draft notes
@@ -202,5 +208,5 @@ The test suite and the gate run with the Scripted adapter only. A real model run
   - channels with topology and delay;
   - event masks with pending observations;
   - votes with a deadline.
-- v0.3 will need the Pi adapter in RPC mode, with a workspace per agent and a Pi extension that exposes lab actions as tools. The transport between the extension and the core is open.
+- v0.3 will need persistent Pi sessions per agent, a workspace for its memory files, and lab actions as custom tools. `@earendil-works/pi-durable` (experimental in Pi 1.5.0) may help with long runs.
 - Open: whether real time is enough for E16's vote deadlines to be repeatable, or simulated time is needed.

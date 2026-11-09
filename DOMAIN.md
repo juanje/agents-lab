@@ -7,11 +7,11 @@ What the words mean here, how the pieces fit together, and how the tools behave 
 | Term | Means | Not to be confused with |
 |:--|:--|:--|
 | Agent | One participant in a world: a model, the harness that runs it and the memory it keeps. | The model alone. Two agents can use the same model. |
-| Adapter | The code that turns an observation into a decision for an agent: Scripted, Pi. | The agent. The adapter is how the core talks to it. |
+| Adapter | The code that turns an observation into a decision for an agent, through a Pi session. | The agent. The adapter is how the core talks to it. |
 | World | The state of a scenario (cells, residents, quantities) plus its arbiter. | The scenario, which also declares perception, actions and metrics. |
 | Arbiter | The part of the world that applies one action at a time against the current state. | A scheduler. The arbiter never decides who acts next. |
 | Version | A counter of applied actions in a world. | A run id or a code version. |
-| Scenario | A Python module (world, perception, actions, metrics) plus its base configuration. | An experiment. |
+| Scenario | A TypeScript module (world, perception, actions, metrics) plus its base configuration. | An experiment. |
 | Condition | A named change over a scenario's base configuration. | A run or a replica. |
 | Experiment | A TOML file listing conditions, models, replicas and seeds. | A hypothesis. An experiment tests one, but lives in the lab's documents. |
 | Replica | One run of a condition with one model and one seed. | A fork, which continues a saved state. |
@@ -33,7 +33,7 @@ What the words mean here, how the pieces fit together, and how the tools behave 
 
 ## How the pieces fit
 
-- **Each agent is an asyncio task** looping through rhythm wait, observe, decide (through its adapter) and act (through the arbiter).
+- **Each agent is an async loop** on Node's event loop: rhythm wait, observe, decide (through its Pi session) and act (through the arbiter).
 - **The arbiter is the only writer** of the world's state; agents read through perception.
 - **The recorder writes a line per event.** The inventory and the run's setup go first.
 - **Metrics read the state** at the start, on an interval and at the end.
@@ -41,18 +41,25 @@ What the words mean here, how the pieces fit together, and how the tools behave 
 
 ## How the tools behave
 
-### Pi CLI (1.4.0)
-- One stateless call: `pi -p --no-tools --no-session --model <provider/id> --thinking off --system-prompt "<text>" "<prompt>"`. The answer is on stdout; the last line holds the final answer.
-- On this machine `ANTHROPIC_API_KEY` is set to an invalid key. Remove it from the subprocess environment so Pi uses its own login.
-- Two processes making Pi calls at the same time with the same login stalled every call until timeout. Run one experiment process at a time (FR-RUN-03).
-- Haiku 5.5 answers a short prompt in about 2 s.
-- `--mode rpc`, `--session-dir` and `--fork` exist for long-lived agents with sessions (v0.3).
+### Pi SDK (1.5.0: `@earendil-works/pi-coding-agent`, `@earendil-works/pi-ai`)
+- **Opening a session:** `createAgentSession` opens one.
+  - `SessionManager.inMemory()` keeps it out of the disk.
+  - A `ResourceLoader` with `systemPromptOverride` replaces Pi's system prompt.
+  - `tools: []` disables the built-in tools; `customTools` adds ours.
+  - oid's `src/pi-executor.ts` uses this pattern.
+- **Events:** `session.subscribe` streams messages, thinking, tool calls with their results, and the agent's lifecycle. Assistant messages carry `responseModel` (the model that actually answered) and usage, with `cost.totalFromProvider` telling billed totals from catalog estimates.
+- **Tool arguments are coerced** by `@earendil-works/pi-schema` before a tool sees them (numeric strings become numbers, a single value becomes an array). Record the raw tool call from the events, not only the coerced arguments, or malformed answers disappear from the data.
+- **Tests:** `fauxProvider()` from `@earendil-works/pi-ai` gives scripted answers (`fauxText`, `fauxToolCall`), with an optional tokens-per-second rate. oid's `features/support/scripted-model.ts` is an example.
+- **Authentication:** the Pi login in `~/.pi/agent/auth.json` serves every session in the process. On this machine `ANTHROPIC_API_KEY` is set to an invalid key; remove it from the environment so Pi uses its login.
+- **Concurrency:** two processes making model calls with the same login stalled every call (observed with the CLI on 1.4.0; 1.5.0 changed the auth lock). Run one experiment process at a time (FR-RUN-03).
+- **Latency:** Haiku 5.5 answers a short prompt in about 2 s.
+- **Not used yet:** `@earendil-works/pi-agent-core`, a lower-level stateful agent, if the coding agent's session adds behaviour we do not want; and `@earendil-works/pi-durable`, experimental persistence and resumption.
 
-### asyncio subprocesses
-- A model call that exceeds its timeout must be killed (`proc.kill()`), not only abandoned. Otherwise the process keeps its slot and its Pi login.
+### Node
+- An aborted session must also free its parallelism slot; otherwise later decisions wait for a call that will never end.
 
 ## Testing agents-lab itself
 
-- **Unit and acceptance tests use the Scripted adapter** (FR-ADAPTER-01), with delays that make overlapping decisions happen deterministically.
+- **Unit and acceptance tests use Pi's faux provider** (FR-ADAPTER-01), with delays that make overlapping decisions happen deterministically.
 - **A real model runs only in the smoke test, outside the gate.**
 - **The E13 prototype** is in `~/git/mesa-sandbox/schelling_async.py`. It is a reference for behaviour, not code to copy.
