@@ -3,6 +3,7 @@ import type { Action, World } from "./world.ts";
 /** One argument of a declared action: its name, and how its value is read from the answer's text. */
 export interface Argument {
   name: string;
+  /** The argument's value, or undefined when the text is not a value this argument takes. */
   read(text: string): unknown;
 }
 
@@ -31,10 +32,14 @@ export function act<State>(
   const [name, ...texts] = answer.split(" ");
   const action = actions.find((declared) => declared.name === name);
   if (action === undefined) return "unparsed";
+  // A malformed answer is counted, never repaired: extra or missing arguments are not dropped or filled in.
+  if (texts.length !== action.arguments.length) return "invalid_arguments";
   const args: ActionArgs = { agent };
-  action.arguments.forEach((argument, index) => {
-    Object.assign(args, { [argument.name]: argument.read(texts[index]) });
-  });
+  for (const [index, argument] of action.arguments.entries()) {
+    const value = argument.read(texts[index]);
+    if (value === undefined) return "invalid_arguments";
+    Object.assign(args, { [argument.name]: value });
+  }
   const result = world.apply(action, args);
   return result.applied ? "success" : result.reason;
 }
