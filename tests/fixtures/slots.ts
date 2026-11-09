@@ -1,3 +1,4 @@
+import type { ActionArgs, DeclaredAction } from "../../src/engine/actions.ts";
 import type { Action } from "../../src/engine/world.ts";
 
 /** A test world of numbered slots, from 1; each is empty (null) or held by one agent. */
@@ -19,3 +20,22 @@ export const take: Action<Slots, { agent: string; slot: number }> = {
     holder(slots, slot) === null ? { holds: true } : { holds: false, reason: SLOT_TAKEN },
   effect: (slots, { agent, slot }) => slots.map((current, index) => (index === slot - 1 ? agent : current)),
 };
+
+/** The test world's declared actions: "take <slot>" and "wait". */
+export const declaredActions: readonly DeclaredAction<Slots, ActionArgs>[] = [
+  {
+    name: "take",
+    description: "Take an empty slot.",
+    arguments: [{ name: "slot", read: Number }],
+    failureReasons: [SLOT_TAKEN],
+    ...take,
+  },
+  {
+    name: "wait",
+    description: "Do nothing this time.",
+    arguments: [],
+    failureReasons: [],
+    precondition: () => ({ holds: true }),
+    effect: (slots) => slots,
+  },
+];

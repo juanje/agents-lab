@@ -1,4 +1,5 @@
 import { World as CucumberWorld, setWorldConstructor } from "@cucumber/cucumber";
+import type { ActionArgs, DeclaredAction, Outcome } from "../../src/engine/actions.ts";
 import type { ActionResult, World } from "../../src/engine/world.ts";
 import type { Slots } from "../../tests/fixtures/slots.ts";
 
@@ -11,6 +12,8 @@ export class Context extends CucumberWorld {
   versionBefore!: number;
   result!: ActionResult;
   results!: ActionResult[];
+  actions!: readonly DeclaredAction<Slots, ActionArgs>[];
+  outcome!: Outcome;
 }
 
 setWorldConstructor(Context);
