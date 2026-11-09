@@ -45,7 +45,7 @@ Read a file when its trigger matches, not before.
 
 ## Procedure: build one FR
 
-0. **Input:** the FR id and the commit of its approved feature file. If either is missing, ask.
+0. **Input:** the FR id. Its approved contract is `features/FR-<id>.feature` as of its last `spec(FR-<id>)` commit. If that file or commit is missing, ask.
 1. **Contract.** Read the FR and its scenarios. If a scenario cannot be built as written, or the FR looks wrong, stop and propose the change with its reason.
 2. **Steps, Red.** Write the step definitions for the next scenario. Run `npx cucumber-js --tags @FR-…`. Go on only when it fails on an assertion about the missing behaviour, not on an undefined step or an import error.
 3. **Unit test, Red.** Write a vitest test for the next piece of logic the scenario needs. Run it and see it fail for the right reason. Commit it alone as `test(FR-…)`. The commit is the proof that the test came before its code.
@@ -58,7 +58,7 @@ Read a file when its trigger matches, not before.
 When no Red is possible (a guard, or behaviour an earlier scenario already built), use a mutant: break the lines the test covers, show that the test fails, restore them, and name the mutant in the commit message.
 
 Before reporting an FR:
-- [ ] Its feature file was approved and committed as `spec(FR-…)` before you started.
+- [ ] Its feature file is unchanged since its last `spec(FR-…)` commit.
 - [ ] Every scenario and test was seen failing for the right reason, or proved by a mutant.
 - [ ] Each test was committed before its code.
 - [ ] `npm run gate` passes, and its output is in the report.
