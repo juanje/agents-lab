@@ -1,15 +1,10 @@
 import assert from "node:assert/strict";
-import { Before, Given, Then, When } from "@cucumber/cucumber";
+import { Given, Then, When } from "@cucumber/cucumber";
 import { World, type ActionResult } from "../../src/engine/world.ts";
 import { SLOT_TAKEN, emptySlots, holder, take, type Slots } from "../../tests/fixtures/slots.ts";
 
 let world: World<Slots>;
 let result: ActionResult;
-let versionBefore: number;
-
-Before(() => {
-  world = new World(emptySlots(0));
-});
 
 Given("a test world with {int} slots, all empty", (count: number) => {
   world = new World(emptySlots(count));
@@ -25,7 +20,6 @@ Given(
 );
 
 When("agent {string} takes slot {int}", (agent: string, slot: number) => {
-  versionBefore = world.version;
   result = world.apply(take, { agent, slot });
 });
 
