@@ -1,222 +1,206 @@
 # agents-lab — Specification
 
-A small platform for running reproducible experiments with AI agents as strong agents in complex systems. The hypotheses, experiment designs and protocol live in the lab's own documents (`my-ab/user/projects/laboratorio-agentes/`: `index.md`, `hipotesis.md`, `experimentos.md`). This spec defines the core that runs those experiments.
+**Status:** draft. The person owns this contract. FRs are built only after their scenarios are approved and committed as `spec(FR-…)`.
 
-The core starts small: it implements what the first experiments need (Milestones) and grows only when an experiment needs more.
+## Purpose
 
-## 1. Principles
+agents-lab runs reproducible experiments with AI agents as agents in complex systems. Each experiment places one or more agents in a world, lets them act without turns on what they perceive locally, and records everything needed to measure the outcome from the world's state. The core grows one milestone at a time, each driven by one experiment.
 
-These hold for every scenario. A feature that breaks one of them is a bug.
+## Scope
 
-1. **No turns.** Every agent runs its own loop at its own pace on a shared state that keeps changing while it decides. An action is validated against the state at the moment it executes and can fail because what the agent saw is no longer there. Turn-taking or waiting may emerge from the agents; the core never imposes them.
-2. **Situated perception.** Each agent perceives from where it is and through its connections: local, partial, possibly delayed information. Global visibility exists only as an explicit condition of a scenario.
-3. **The environment has its own dynamics** where the system being modelled has them: processes that run whether or not any agent acts (decay, regeneration, events, deadlines).
-4. **Ground truth in code.** World state, quantities and rules are code, not narrated by an LLM. Every measure can be computed from the state, without a judge.
-5. **Everything the agent meets is declared.** Actions, their names and descriptions, the information each agent receives, pressures, per-decision messages and randomized variations are declared in the scenario and exported as an environment inventory.
-6. **Everything is recorded.** Every observation, prompt, raw response, parsed action, outcome, timing and state change goes to the log, with enough to replay the analysis.
-7. **An agent is LLM + harness + memory.** The adapter names which of the three each condition changes. The core never assumes the agent is only a model call.
-8. **One change per condition.** A condition is a named diff over a base configuration. Seeds, models and parallelism limits are part of the configuration.
+**In (v0.1):** the core needed to run E13 (Schelling with LLM agents):
+- a world with an arbiter and a version counter;
+- agent loops with their own rhythm;
+- local perception with information switches;
+- declared actions;
+- the Pi and Scripted adapters;
+- the recorder, the environment inventory and the generic metrics;
+- the runner;
+- the Schelling scenario.
 
-## 2. Non-goals
+**Out:**
+- everything listed under later milestones until its FRs are written;
+- a user interface or live visualization;
+- distributed execution;
+- a general agent-based modelling library;
+- human-like scaffolding (moods, needs named after human life, violence tools) unless a scenario declares it as the variable under study.
 
-- A general agent-based modelling library.
-- A user interface or live visualization.
-- Human-like scaffolding (moods, needs named after human life, violence tools) unless a scenario declares it as the variable under study.
-- Distributed execution.
+## Milestones
 
-## 3. Core concepts
-
-### 3.1 World
-
-- Holds the full state: entities, positions, quantities, relations, scenario-specific fields.
-- Exposes the actions of the scenario and applies them atomically, one at a time, against the current state (the arbiter).
-- Counts applied changes (`version`), so each decision records how many changes happened between observing and acting.
-- Serializes to a snapshot and restores from it (fork). *(v0.4)*
-
-### 3.2 Clock and scheduler
-
-- **Real-time mode** *(v0.1)*: agents run as asyncio tasks; timestamps are wall-clock seconds since start. The perception–action lag is the agent's real latency plus any wait for the parallelism limit, and both are recorded separately.
-- **Simulated-time mode** *(later)*: a discrete-event queue. An agent observes at t, its action is scheduled at t + d (d measured or modelled) and validated then. Use it for long or exactly repeatable runs.
-- Each agent has its own rhythm: an interval distribution between decisions, declared per scenario or per agent.
-- Environment processes are scheduled events, recurring or one-off, declared by the scenario.
-- A run ends at a time limit, a decision budget per agent, or a scenario condition.
-
-### 3.3 Perception
-
-- `perceive(world, agent) -> Observation` is defined by the scenario: what the agent can see from its location and connections.
-- **Information switches** (declared booleans or levels per condition): which fields an observation includes, for example a neighbourhood map, others' votes, the score, the list of admissible actions or the objective.
-- **Event masks and pending observations** *(v0.2)*: events carry tags; an agent receives the events its mask matches, and undelivered ones wait until it next observes.
-- **Delays** *(v0.2)*: information can arrive after a declared delay, by distance or by channel.
-
-### 3.4 Actions
-
-- Each action is declared with:
-  - a name;
-  - the description the agent sees;
-  - its arguments;
-  - a precondition, checked at execution;
-  - an effect on the state;
-  - its failure outcomes.
-- An action can succeed or fail with a named reason. Failure reasons that depend on what changed while the agent decided (for example `taken_while_deciding`) are distinct from invalid choices (`invalid_target`).
-- Actions are presented to the agent as tools, or as a reply format, whichever the scenario declares. The presentation is part of the environment inventory.
-
-### 3.5 Channels *(v0.2)*
-
-- Messages between agents go through declared channels:
-  - local speech, reaching agents within a radius;
-  - direct messages, reaching only declared contacts;
-  - broadcast, only if the scenario declares it.
-- Each channel has a reach (topology) and a delay.
-- Topologies are networkx graphs: complete, ring, small-world, modular, centre–periphery, or loaded from a file.
-
-### 3.6 Agent adapter
-
-Interface: `async decide(observation, actions) -> Decision`, where a decision holds the raw response, the parsed action and the timings.
-
-| Adapter | What it is | Memory | Milestone |
+| Milestone | Experiment | FRs | State |
 |:--|:--|:--|:--|
-| `PiPrint` | One `pi -p --no-tools` call per decision, with the scenario's system prompt | None between decisions, apart from what the scenario puts in the observation | v0.1 |
-| `PiRpc` | A long-lived Pi process (`--mode rpc`) per agent, whose working directory is the agent's own workspace (memory files) and whose session can be forked (`--fork`). Lab actions reach it as custom tools from a Pi extension that calls back to the core | Files in its workspace plus the session | v0.3 |
+| v0.1 | E13 micro vs macro (Schelling) | below, in this build order | to build |
+| v0.2 | E16 model monoculture and vote visibility | not written | later |
+| v0.3 | A single-agent experiment with tools and memory (E15 or E7) | not written | later |
+| v0.4 | World and agent forks | not written | later |
 
-- **Model selection** goes through Pi (`provider/model`), which gives several providers and local models behind one interface. Every scenario runs with two or more models unless a condition says otherwise.
-- **The model's identity is never placed in the agent's prompt** unless a condition declares it.
-- **Parallelism limit:** a global cap on concurrent model calls, declared in the configuration and recorded.
-- **Call timeout:** each model call has a timeout. A timed-out call is recorded as `timeout` and counts as no action.
-- **One experiment process at a time** per Pi authentication. Concurrent processes sharing a Pi login stalled every call in testing.
+**v0.1 build order.** The first slice is the thinnest end-to-end run. Each later FR deepens one piece:
+1. FR-WORLD-01
+2. FR-ACTION-01
+3. FR-ADAPTER-01
+4. FR-CLOCK-01
+5. FR-SCHELLING-01
+6. FR-SCHELLING-02
+7. FR-RECORD-01
+8. FR-CLOCK-02
+9. FR-PERCEPTION-01
+10. FR-SCHELLING-03
+11. FR-METRIC-01
+12. FR-RECORD-02
+13. FR-INVENTORY-01
+14. FR-ADAPTER-02
+15. FR-RUN-01
+16. FR-RUN-02
+17. FR-RUN-03
 
-### 3.7 Variations
+## Invariants
 
-- A scenario can declare per-decision variations: a set of texts or settings, one of which is drawn at random for each decision and recorded in that decision's log entry. This turns a run into a randomized experiment on the variation.
+- An action changes the world only if its precondition holds at the moment it is applied.
+- The world's version grows by exactly one for each applied action and never otherwise.
+- In the Schelling world, a cell holds at most one resident, and the number of residents never changes during a run.
+- A run never writes to an existing file.
+- Every recorded decision has exactly one outcome, from the declared set.
+- Every metric is computed from the world's state, never by a model.
 
-### 3.8 Recorder
+## Requirements
 
-- Writes one JSONL file per run. Each line is one event:
-  - `run_start`, with the full resolved configuration, the seeds, the git commit of the code and the environment inventory;
-  - `observation`;
-  - `decision`, with the prompt, the raw response, the parsed action, the variation drawn, the latency, the queue wait and the changes while deciding;
-  - `action_result`;
-  - `env_event`;
-  - `message` *(v0.2)*;
-  - `metric_snapshot`;
-  - `run_end`.
-- **Never overwrites:** each run writes to a new file named with the run id.
-- **Snapshots** *(v0.4)*: the full state at declared moments, to enable forking.
+### Functional
 
-### 3.9 Metrics
+#### FR-WORLD-01: Actions are applied one at a time against the current state
+The world applies one action at a time. When an action's precondition holds at that moment, its effect is applied and the world's version grows by one. When it does not hold, the state does not change and the result is a failure carrying the action's named reason.
+*Why:* experiments measure what happens when agents act on a state that changed while they decided; an action checked against an older state would hide those collisions.
 
-- Each scenario declares metrics computed from the state, at the individual and system levels, sampled on a schedule and at the end.
-- Generic metrics, provided by the core for every run:
-  - decisions per agent;
-  - outcome counts by reason;
-  - latency and queue wait;
-  - decisions taken on a stale state;
-  - say-vs-do divergence, where a scenario defines both.
+#### FR-ACTION-01: Actions are declared, and unknown answers apply nothing
+A scenario declares each action with its name, the description the agent sees, its arguments and its failure reasons. An agent's answer that matches no declared action applies nothing and is recorded with the outcome `unparsed`.
+*Why:* a guessed action would put the platform's reading in place of the agent's behaviour; unparsed answers must be counted, not repaired.
 
-### 3.10 Environment inventory
+#### FR-ADAPTER-01: The Scripted adapter answers from a script
+The Scripted adapter returns, for each agent, the answers listed in its script, in order, each after the delay the script gives. When the script runs out, the agent's decision is recorded with the outcome `script_exhausted` and nothing is applied.
+*Why:* the core must be testable without calling a model, deterministically.
 
-- Generated automatically for every run from the scenario: actions as the agent sees them, information switches, pressures and limits, channels and topology, per-decision variations, the system prompt, and what the agent knows about itself.
-- Written as `inventory.md` next to the run log, for the blind review required by the lab's control 11.
+#### FR-CLOCK-01: Each agent runs its own loop
+Each agent repeats its own cycle: wait an interval drawn from its rhythm, observe, decide, then act. No agent waits for another agent's decision. While one agent decides, the others go on observing and acting.
+*Why:* real complex systems have no turns (NFR-01); a scheduler that orders agents removes stale decisions and collisions from every result.
 
-### 3.11 Scenarios and conditions
+#### FR-SCHELLING-01: A Schelling world from a seed
+A Schelling scenario creates a grid of the configured width and height and places the configured number of residents of two kinds on distinct random cells. The same seed always gives the same placement.
+*Why:* replicas differ only by their seed, and a condition must be compared against the same starting worlds.
 
-- **A scenario** is a Python module (world, perception, actions, processes, metrics) plus a base configuration in TOML.
-- **A condition** is a named TOML diff over the base configuration.
-- **An experiment** is a TOML file listing the conditions, the models, the number of replicas and the seeds.
-- **The runner** executes the replicas sequentially, one process at a time.
+#### FR-SCHELLING-02: Residents stay, move near or move far
+A resident can do three things:
+- **STAY** applies nothing and succeeds.
+- **MOVE dx dy** moves it to the cell at that offset when the cell is inside the grid, inside the resident's view, and empty at the moment the action is applied. It fails with `taken_while_deciding` when the cell was empty when the resident observed but is occupied now. It fails with `invalid_target` otherwise.
+- **FAR** moves it to a random cell that is empty at the moment the action is applied. It fails with `no_empty_cell` when there is none.
 
-### 3.12 Runner (CLI)
+*Why:* separating a collision from a misread target is what lets E13 tell the effect of other agents' timing from the agent's own errors.
 
-- `lab run <experiment.toml>`: run every condition × model × replica.
-- `lab inventory <experiment.toml>`: print the environment inventory without running.
-- `lab summarize <run-dir>`: aggregate the metrics across runs into a table.
-- `lab fork <snapshot> --condition <name>` *(v0.4)*: continue a saved state under a condition.
+#### FR-RECORD-01: Every decision is recorded
+Each run writes one new JSONL file, named with the run id. Each decision of each agent adds one line with:
+- the agent and the time it observed;
+- the prompt and the raw answer;
+- the parsed action and the outcome;
+- the time spent waiting for a model slot, and the model latency;
+- the number of changes other agents applied between its observation and its action.
 
-## 4. Stack
+*Why:* every analysis of an experiment is done from this log, and a field not recorded cannot be recovered later.
 
-| Part | Choice | Why |
-|:--|:--|:--|
-| Language | Python 3.12 | asyncio for concurrent agent loops; the ecosystem for analysis and graphs |
-| Environment and dependencies | uv, `pyproject.toml`, locked | Fast, reproducible installs |
-| Concurrency | asyncio (agent loops, subprocess model calls, environment processes) | One process and one event loop give real concurrency of agents without threads |
-| State and configuration types | Standard-library dataclasses; TOML through `tomllib` | No extra dependencies in the core |
-| Graphs and topologies | networkx *(from v0.2)* | Standard generators and metrics for networks |
-| Model access | Pi CLI (`pi -p`, later `pi --mode rpc`) as the single gateway | One interface for several providers and local models, with the agent's harness and memory when needed |
-| Pi bridge for lab tools | A small TypeScript Pi extension *(v0.3)* | Pi extensions are TypeScript; it only forwards tool calls to the core |
-| Logs | JSONL per run, plus `inventory.md` | Append-only, easy to read and analyse |
-| Analysis | pandas in `analysis/` scripts and notebooks, outside the core | Keeps the core free of heavy dependencies |
-| Tests | pytest, including scenario tests with a scripted fake adapter (no model calls) | The world, actions and timing can be tested deterministically |
-| Lint and format | ruff | One tool |
+#### FR-CLOCK-02: A run ends at its budget or its time limit
+A run ends when every agent has used its decision budget or when its time limit passes, whichever comes first. A decision still pending at the time limit is recorded with the outcome `cut_off` and is not applied.
+*Why:* a run must end in a known state, and an action applied after the end would change a world that was already measured.
 
-## 5. Repository layout
+#### FR-PERCEPTION-01: An agent observes only its window
+An agent's observation contains only the cells within its view radius around it: its own kind, the other kind, empty and outside the grid each marked distinctly. Text gated by an information switch appears only when the condition turns the switch on.
+*Why:* situated perception (NFR-02) is a requirement of every experiment, and information switches are how conditions change what the agent knows.
 
-```
-agents-lab/
-  SPEC.md
-  pyproject.toml
-  src/agents_lab/
-    world.py        # state, arbiter, version counter, snapshots
-    clock.py        # agent loops, rhythms, environment processes, run limits
-    perception.py   # observation helpers, information switches, masks, delays
-    actions.py      # action declarations, validation, failure reasons
-    channels.py     # (v0.2) channels and topologies
-    adapters/       # PiPrint, PiRpc, Scripted (tests)
-    variations.py
-    recorder.py
-    inventory.py
-    metrics.py
-    runner.py       # CLI
-  scenarios/
-    schelling/      # E13
-    committee/      # E16
-  experiments/      # experiment TOML files
-  runs/             # outputs (git-ignored)
-  analysis/
-  tests/
-```
+#### FR-SCHELLING-03: Segregation and dissatisfaction are measured from the grid
+The Schelling scenario reports four metrics at the start of a run, at a configured interval and at the end:
+- **segregation:** the mean, over residents with at least one neighbour, of the share of their eight neighbours that are of their kind;
+- **dissatisfied:** the number of residents whose share is below the condition's threshold;
+- **tried_to_move_while_satisfied:** the number of decisions to move taken while the resident's share was at or above the threshold;
+- **stayed_while_dissatisfied:** the number of decisions to stay taken while it was below.
 
-## 6. Milestones
+*Why:* E13 compares the system-level pattern with what each agent declared; the last two metrics measure how far behaviour departs from the stated rule.
 
-Each milestone is driven by one experiment of the lab and implements only what it needs.
+#### FR-METRIC-01: Generic metrics for every run
+At the end of every run the core reports:
+- decisions per agent;
+- outcome counts by outcome;
+- mean and maximum model latency and wait for a slot;
+- the number of decisions taken on a state that had changed.
 
-**v0.1: E13, micro vs macro (Schelling).**
-- World on a grid with capacity 1.
-- Real-time agent loops with per-agent rhythm, and validation at execution with named failure reasons.
-- Local perception (a window around the agent), with switches for the preference text and the view radius.
-- Actions as a reply format: STAY, MOVE dx dy, FAR.
-- The `PiPrint` adapter, with a parallelism limit and a timeout per call.
-- Recorder, inventory, generic metrics, and the segregation and dissatisfaction metrics.
-- Conditions (a) preference, (b) no preference, and two models. Condition (c), with memory, waits for v0.3.
-- Runner with replicas and seeds.
-- Reference: the prototype in `~/git/mesa-sandbox/schelling_async.py`.
+*Why:* these show whether a run behaved as a run without turns before its scenario metrics are read.
 
-**v0.2: E16, model monoculture and vote visibility.**
-- Committee scenario: proposals, some with a planted flaw known only to the evaluator.
-- Votes with a deadline and no imposed order.
-- Information switch for others' votes: visible as cast, or hidden until close.
-- Private notes, to measure say vs do.
-- Channels (local speech or direct contacts), with networkx topologies and delays.
-- Event masks and pending observations.
-- Model composition as a condition: one model, or mixed.
+#### FR-RECORD-02: A run records what it ran
+The first line of each run's log holds:
+- the resolved configuration and the condition's name;
+- the seeds and the model;
+- the commit of the code;
+- the environment inventory.
 
-**v0.3: a single-agent experiment with tools and memory (E15 tools with intention, or E7 information vs experience).**
-- Workspace scenario: files as state, file actions as tools.
-- Tools with declared names and descriptions as the condition.
-- The `PiRpc` adapter: per-agent workspace and session, and the TypeScript extension that exposes lab tools.
-- Session sequences for agents with memory.
+*Why:* a result cannot be reproduced or checked without the exact setup that produced it.
 
-**v0.4: forks and persistence.**
-- World snapshots and agent workspace or session forks (`pi --fork`) at declared moments.
-- `lab fork` to continue under a condition.
-- Identical forks as the noise baseline for agents with memory.
+#### FR-INVENTORY-01: The environment inventory is generated, not written by hand
+For a scenario and a condition, the core writes `inventory.md`, listing:
+- the system prompt;
+- the actions with the descriptions the agent sees;
+- the information switches and their values;
+- the limits (view radius, decision budget, time limit, parallelism limit);
+- what the agent is told about itself;
+- the per-decision variations.
 
-**Later, when an experiment needs them:**
-- simulated-time mode;
-- quantities and an economy (markets, fisheries);
-- generated families of puzzles with a hidden rule and a changeable surface (A3–A7), possibly reusing TextWorld's generator;
-- environments whose rules change during a run (A6, A16).
+`lab inventory <experiment.toml>` prints it without running.
+*Why:* the lab reviews what each environment pushes agents to do before running, and a hand-written list drifts from the code.
 
-## 7. Open questions
+#### FR-ADAPTER-02: The Pi adapter calls one model per decision
+The Pi adapter makes one `pi -p` call per decision, with the scenario's system prompt and the observation, using the model from the configuration. The prompt never names the model unless the condition says so.
+- **Parallelism limit:** a decision waits for a free slot when the configured number of calls is already running.
+- **Timeout:** a call longer than the timeout is stopped and recorded with the outcome `timeout`, and nothing is applied.
 
-- The transport between the Pi extension and the core for lab tools: a local socket, HTTP or stdin. To decide in v0.3.
-- Whether real-time mode is enough for E16, or whether vote deadlines need simulated time to be repeatable.
-- How to record what reaches the agent through the harness itself (Pi's own system prompt, context compaction) so that it appears in the inventory.
+*Why:* agents are compared across models through one interface, and a hung call must not block a run.
+
+#### FR-RUN-01: An experiment runs every condition, model and replica
+`lab run <experiment.toml>` runs each condition with each model, for the configured number of replicas, one after another, each replica with its own seed. It fails before any model call when the file names an unknown scenario, condition or model, with an error that names it.
+*Why:* an experiment is the full grid of conditions and models, and a typo found after an hour of model calls wastes the run.
+
+#### FR-RUN-02: Summaries across replicas
+`lab summarize <runs-dir>` prints one row per condition and model, with the mean and range of each metric across replicas and the number of replicas.
+*Why:* hypotheses are judged on distributions across replicas, not on single runs.
+
+#### FR-RUN-03: One experiment at a time
+`lab run` refuses to start, with an error that says another run is active, while another `lab run` on the same machine holds the lock.
+*Why:* concurrent runs sharing one Pi login stall every model call.
+
+### Non-functional
+
+#### NFR-01: No turns
+No component orders agents or makes one wait for another's decision. Waiting may appear only through what agents do.
+*Why:* real complex systems are concurrent; imposed turns produce laboratory results, not results about the system.
+
+#### NFR-02: Situated perception
+An agent receives only what its scenario's perception gives it from where it is. Global information appears only as an explicit information switch.
+*Why:* in complex systems each agent perceives differently; global information erases the differences the experiments study.
+
+#### NFR-03: Ground truth in code
+World state, rules and metrics are code. No model decides what happens in the world or scores an outcome.
+*Why:* a measure that depends on a model's reading cannot be checked or reproduced.
+
+#### NFR-04: Everything the agent meets is declared
+Every text, action, switch, limit and variation an agent meets comes from the scenario or the condition and appears in the inventory.
+*Why:* undeclared pressures are the most common hidden cause of a result.
+
+#### NFR-05: A condition is one named change
+A condition is a named change over the scenario's base configuration, and its name and change are recorded in each run.
+*Why:* a difference between conditions can be attributed only when each changes one thing.
+
+#### NFR-06: Tests never call a model
+The test suite and the gate run with the Scripted adapter only. A real model runs only in a smoke test, outside the gate.
+*Why:* tests must be deterministic, free and runnable offline.
+
+## Draft notes
+
+- v0.2 will need, at least:
+  - channels with topology and delay;
+  - event masks with pending observations;
+  - votes with a deadline.
+- v0.3 will need the Pi adapter in RPC mode, with a workspace per agent and a Pi extension that exposes lab actions as tools. The transport between the extension and the core is open.
+- Open: whether real time is enough for E16's vote deadlines to be repeatable, or simulated time is needed.
