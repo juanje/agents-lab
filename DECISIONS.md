@@ -108,7 +108,7 @@ Only the decisions in force. A changed decision is rewritten in place; none supe
 
 **Decision.** This repository holds all the code, in three parts:
 - **the engine** (`src/engine/`);
-- **a library of reusable scenarios** (`src/scenarios/`), such as Schelling or a committee;
+- **a library of reusable scenarios** (`src/scenarios/`), such as a neighbourhood or a committee;
 - **the analysis** (`src/analysis/`).
 
 The experiments repository (`~/git/agents-lab-experiments`) holds only what defines and documents each experiment:

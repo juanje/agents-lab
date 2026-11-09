@@ -24,7 +24,7 @@ Experiments are written outside this repository, in the experiment language (FR-
 - the Pi adapter, with a scripted model for tests;
 - the recorder, the environment inventory, and the generic and scenario metrics;
 - the experiment language and the runner;
-- the Schelling scenario, in the scenario library;
+- the neighbourhood scenario, in the scenario library;
 - summaries across replicas and CSV export.
 
 **Out:**
@@ -69,9 +69,9 @@ Experiments are written outside this repository, in the experiment language (FR-
 21. FR-RUN-01
 22. FR-RUN-02
 23. FR-RUN-03
-24. FR-SCHELLING-01
-25. FR-SCHELLING-02
-26. FR-SCHELLING-03
+24. FR-NEIGHBOURHOOD-01
+25. FR-NEIGHBOURHOOD-02
+26. FR-NEIGHBOURHOOD-03
 27. FR-ANALYSIS-01
 
 ## Invariants
@@ -246,27 +246,26 @@ The engine reads them at run time, writes each path with a content hash to the r
 
 ### Scenario library
 
-#### FR-SCHELLING-01: A Schelling world from a seed
-The Schelling scenario creates a grid of the configured width and height and places the configured number of residents of two kinds on distinct random cells, from the replica's seed.
-*Why:* E13 compares the system-level pattern that grows from the same starting worlds under different conditions.
+#### FR-NEIGHBOURHOOD-01: A neighbourhood from a seed
+The neighbourhood scenario creates a grid of the configured width and height and places the configured number of residents of two kinds on distinct random cells, from the replica's seed. Its system prompt only describes the place and the actions; any preference or rule a resident is given comes from the condition.
+*Why:* the same neighbourhood serves several experiments (micro vs macro, diversity of thresholds or models, local vs global view), each of which brings its own rule as a condition.
 
-#### FR-SCHELLING-02: Residents stay, move near or move far
+#### FR-NEIGHBOURHOOD-02: Residents stay, move near or move far
 A resident can do three things:
 - **STAY** applies nothing and succeeds.
 - **MOVE dx dy** moves it to the cell at that offset when the cell is inside the grid, inside its view, and empty when the action is applied. It fails with `taken_while_deciding` when the cell was empty when the resident observed but is occupied now, and with `invalid_target` otherwise.
 - **FAR** moves it to a random cell that is empty when the action is applied. It fails with `no_empty_cell` when there is none.
 
 Its observation is its window of the configured radius, with its own kind, the other kind, empty and outside the grid marked distinctly.
-*Why:* separating a collision from a misread target is what lets E13 tell the effect of other agents' timing from the agent's own errors.
+*Why:* separating a collision from a misread target is what lets experiments tell the effect of other agents' timing from the agent's own errors.
 
-#### FR-SCHELLING-03: Segregation and dissatisfaction
-The Schelling scenario's metrics are:
-- **segregation:** the mean, over residents with at least one neighbour, of the share of their eight neighbours that are of their kind;
-- **dissatisfied:** the number of residents whose share is below the condition's threshold;
-- **tried_to_move_while_satisfied:** the number of decisions to move taken while the resident's share was at or above the threshold;
-- **stayed_while_dissatisfied:** the number of decisions to stay taken while it was below.
+#### FR-NEIGHBOURHOOD-03: Same-kind shares
+The neighbourhood scenario's metrics are:
+- **shares:** for each resident with at least one neighbour, the share of its eight neighbours that are of its kind;
+- **segregation:** the mean of those shares;
+- **moves:** the number of applied moves.
 
-*Why:* E13 compares the system-level pattern with what each agent declared; the last two metrics measure how far behaviour departs from the stated rule.
+*Why:* experiments read the system-level pattern from the shares. A measure that depends on a rule given to the residents, such as how many fall below a threshold, is computed by that experiment's analysis from the shares and the decisions.
 
 ### Analysis
 
