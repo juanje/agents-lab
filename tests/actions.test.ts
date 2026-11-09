@@ -23,4 +23,18 @@ describe("act", () => {
     expect(world.state).toEqual([null, null, null]);
     expect(world.version).toBe(0);
   });
+
+  it.each([
+    ["an argument it cannot read", "take seven"],
+    ["one argument more than it takes", "take 1 2"],
+    ["one argument less than it takes", "take"],
+  ])("applies nothing when an answer names a declared action with %s, and its outcome is invalid_arguments", (_, answer) => {
+    const world = new World(emptySlots(3));
+
+    const outcome = act(world, declaredActions, "a", answer);
+
+    expect(outcome).toBe("invalid_arguments");
+    expect(world.state).toEqual([null, null, null]);
+    expect(world.version).toBe(0);
+  });
 });

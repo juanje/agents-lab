@@ -21,12 +21,17 @@ export const take: Action<Slots, { agent: string; slot: number }> = {
   effect: (slots, { agent, slot }) => slots.map((current, index) => (index === slot - 1 ? agent : current)),
 };
 
+/** A slot number is a positive integer written in digits; any other text is not one. */
+function readSlot(text: string): number | undefined {
+  return /^[1-9][0-9]*$/.test(text) ? Number(text) : undefined;
+}
+
 /** The test world's declared actions: "take <slot>" and "wait". */
 export const declaredActions: readonly DeclaredAction<Slots, ActionArgs>[] = [
   {
     name: "take",
     description: "Take an empty slot.",
-    arguments: [{ name: "slot", read: Number }],
+    arguments: [{ name: "slot", read: readSlot }],
     failureReasons: [SLOT_TAKEN],
     ...take,
   },
