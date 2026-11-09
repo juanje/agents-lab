@@ -5,6 +5,7 @@ import { SLOT_TAKEN, emptySlots, holder, take, type Slots } from "../../tests/fi
 
 let world: World<Slots>;
 let result: ActionResult;
+let versionBefore: number;
 
 Given("a test world with {int} slots, all empty", (count: number) => {
   world = new World(emptySlots(count));
@@ -19,12 +20,26 @@ Given(
   },
 );
 
+Given("agent {string} holds slot {int}", (agent: string, slot: number) => {
+  // The arbiter is the only writer, so the setup goes through it too.
+  assert.deepEqual(world.apply(take, { agent, slot }), { applied: true });
+});
+
 When("agent {string} takes slot {int}", (agent: string, slot: number) => {
+  versionBefore = world.version;
   result = world.apply(take, { agent, slot });
 });
 
 Then("the action succeeds", () => {
   assert.deepEqual(result, { applied: true });
+});
+
+Then("the action fails with {string}", (reason: string) => {
+  assert.deepEqual(result, { applied: false, reason });
+});
+
+Then("the world's version is the same as before the action", () => {
+  assert.equal(world.version, versionBefore);
 });
 
 Then("slot {int} holds agent {string}", (slot: number, agent: string) => {
