@@ -6,6 +6,7 @@ import { SLOT_TAKEN, emptySlots, holder, take, type Slots } from "../../tests/fi
 let world: World<Slots>;
 let result: ActionResult;
 let versionBefore: number;
+let results: ActionResult[];
 
 Given("a test world with {int} slots, all empty", (count: number) => {
   world = new World(emptySlots(count));
@@ -48,4 +49,34 @@ Then("slot {int} holds agent {string}", (slot: number, agent: string) => {
 
 Then("the world's version is {int}", (version: number) => {
   assert.equal(world.version, version);
+});
+
+When(
+  "agents {string} and {string} both take slot {int} at the same moment",
+  async (first: string, second: string, slot: number) => {
+    versionBefore = world.version;
+    // Each request yields once before it reaches the arbiter, so both are in flight before either is applied,
+    // as when two agents' loops finish deciding in the same tick.
+    results = await Promise.all(
+      [first, second].map(async (agent) => {
+        await Promise.resolve();
+        return world.apply(take, { agent, slot });
+      }),
+    );
+  },
+);
+
+Then("exactly one of the two actions succeeds", () => {
+  assert.equal(results.filter((outcome) => outcome.applied).length, 1);
+});
+
+Then("the other fails with {string}", (reason: string) => {
+  assert.deepEqual(
+    results.filter((outcome) => !outcome.applied),
+    [{ applied: false, reason }],
+  );
+});
+
+Then("the world's version grew by {int}", (growth: number) => {
+  assert.equal(world.version, versionBefore + growth);
 });
