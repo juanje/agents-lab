@@ -13,4 +13,14 @@ describe("act", () => {
     expect(world.state).toEqual([null, "a", null]);
     expect(world.version).toBe(1);
   });
+
+  it("applies nothing when an answer matches no declared action, and its outcome is unparsed", () => {
+    const world = new World(emptySlots(3));
+
+    const outcome = act(world, declaredActions, "a", "fly to slot 1");
+
+    expect(outcome).toBe("unparsed");
+    expect(world.state).toEqual([null, null, null]);
+    expect(world.version).toBe(0);
+  });
 });
