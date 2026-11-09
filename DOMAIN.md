@@ -48,9 +48,6 @@ What the words mean here, how the pieces fit together, and how the tools behave 
 - Haiku 5.5 answers a short prompt in about 2 s.
 - `--mode rpc`, `--session-dir` and `--fork` exist for long-lived agents with sessions (v0.3).
 
-### Claude Code CLI
-- `claude -p` is not logged in on this machine. Do not use it as a model gateway (D-01).
-
 ### asyncio subprocesses
 - A model call that exceeds its timeout must be killed (`proc.kill()`), not only abandoned. Otherwise the process keeps its slot and its Pi login.
 

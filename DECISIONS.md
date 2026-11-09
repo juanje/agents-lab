@@ -6,11 +6,14 @@ Only the decisions in force. A changed decision is rewritten in place; none supe
 
 **Decision.** Every model call goes through the Pi CLI: `pi -p` in v0.1, Pi in RPC mode from v0.3.
 
-**Why.** Pi gives several providers and local models behind one interface, with the user's existing logins. From v0.3 it also gives the harness and session that an agent with memory needs.
+**Why.**
+- **One harness.** The experiments vary the agents and their environment, not the harness, so they use one harness and keep it under full control: its system prompt, its tools and its context.
+- **Several models.** Pi gives several providers and local models behind one interface, without depending on one provider's account.
+- **Memory.** From v0.3 it also gives the sessions that an agent with memory needs.
 
 **Rules out:**
+- other agent harnesses;
 - direct provider SDKs or HTTP clients in the core;
-- `claude -p` as a gateway;
 - one adapter per provider.
 
 **Follows.**
