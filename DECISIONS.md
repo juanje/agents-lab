@@ -102,3 +102,17 @@ Only the decisions in force. A changed decision is rewritten in place; none supe
 - configuration in TypeScript code.
 
 **Follows.** The run log records the resolved configuration as JSON, since the analysis reads the logs, not the TOML.
+
+## D-07: The engine and the experiments live apart
+
+**Decision.** This repository holds only the engine. Each experiment's scenarios, condition files and analysis live in the experiments' own repository, which depends on the engine.
+
+**Why.** An engine that contains experiments starts serving one of them and drifts from the others. Experiments change often, and the engine must stay the same across them for their results to be comparable.
+
+**Rules out:**
+- scenario code or experiment files for the lab's experiments in this repository;
+- engine features named after one experiment.
+
+**Follows.**
+- The engine's tests use their own test scenarios.
+- A feature an experiment needs is written as a generic engine FR.

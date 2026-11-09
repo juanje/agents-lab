@@ -4,30 +4,34 @@
 
 ## Purpose
 
-agents-lab runs reproducible experiments with AI agents as agents in complex systems. Each experiment places one or more agents in a world, lets them act without turns on what they perceive locally, and records everything needed to measure the outcome from the world's state. The core grows one milestone at a time, each driven by one experiment.
+agents-lab is the engine that runs reproducible experiments with AI agents as agents in complex systems. An experiment is defined outside this repository as a scenario and a set of conditions; the engine places its agents in the scenario's world, lets them act without turns on what they perceive locally, and records everything needed to measure the outcome from the world's state. The engine grows one milestone at a time; each milestone adds the features the next experiment needs.
 
 ## Scope
 
-**In (v0.1):** the core needed to run E13 (Schelling with LLM agents):
+**In (v0.1):** the engine features the E13 experiment (Schelling with LLM agents) needs:
 - a world with an arbiter and a version counter;
+- a scenario interface and its loading;
+- a grid space;
 - agent loops with their own rhythm;
 - local perception with information switches;
-- declared actions;
+- declared actions, with failures that tell a collision from an invalid choice;
+- seeded randomness;
 - the Pi adapter, with a scripted model for tests;
-- the recorder, the environment inventory and the generic metrics;
-- the runner;
-- the Schelling scenario.
+- the recorder, the environment inventory, and the generic and scenario metrics;
+- the runner.
 
 **Out:**
-- everything listed under later milestones until its FRs are written;
-- a user interface or live visualization;
-- distributed execution;
-- a general agent-based modelling library;
-- human-like scaffolding (moods, needs named after human life, violence tools) unless a scenario declares it as the variable under study.
+- **Experiments and their scenarios:** E13's Schelling world, its actions and its metrics, and any other experiment, live in the experiments' own repository. The engine's tests use small test scenarios of their own.
+- **Later milestones:** everything listed under them until its FRs are written.
+- **Other uses:**
+  - a user interface or live visualization;
+  - distributed execution;
+  - a general agent-based modelling library.
+- **Human-like scaffolding** (moods, needs named after human life, violence tools) is never provided by the engine.
 
 ## Milestones
 
-| Milestone | Experiment | FRs | State |
+| Milestone | Needed by | FRs | State |
 |:--|:--|:--|:--|
 | v0.1 | E13 micro vs macro (Schelling) | below, in this build order | to build |
 | v0.2 | E16 model monoculture and vote visibility | not written | later |
@@ -39,25 +43,27 @@ agents-lab runs reproducible experiments with AI agents as agents in complex sys
 2. FR-ACTION-01
 3. FR-ADAPTER-01
 4. FR-CLOCK-01
-5. FR-SCHELLING-01
-6. FR-SCHELLING-02
-7. FR-RECORD-01
-8. FR-CLOCK-02
-9. FR-PERCEPTION-01
-10. FR-SCHELLING-03
-11. FR-METRIC-01
-12. FR-RECORD-02
-13. FR-INVENTORY-01
-14. FR-ADAPTER-02
-15. FR-RUN-01
-16. FR-RUN-02
-17. FR-RUN-03
+5. FR-SCENARIO-01
+6. FR-SEED-01
+7. FR-SPACE-01
+8. FR-ACTION-02
+9. FR-RECORD-01
+10. FR-CLOCK-02
+11. FR-PERCEPTION-01
+12. FR-METRIC-01
+13. FR-METRIC-02
+14. FR-RECORD-02
+15. FR-INVENTORY-01
+16. FR-ADAPTER-02
+17. FR-RUN-01
+18. FR-RUN-02
+19. FR-RUN-03
 
 ## Invariants
 
 - An action changes the world only if its precondition holds at the moment it is applied.
 - The world's version grows by exactly one for each applied action and never otherwise.
-- In the Schelling world, a cell holds at most one resident, and the number of residents never changes during a run.
+- A grid cell never holds more entities than its capacity.
 - A run never writes to an existing file.
 - Every recorded decision has exactly one outcome, from the declared set.
 - Every metric is computed from the world's state, never by a model.
@@ -82,17 +88,34 @@ In tests, each agent's model is Pi's faux provider. It returns, in order, the an
 Each agent repeats its own cycle: wait an interval drawn from its rhythm, observe, decide, then act. No agent waits for another agent's decision. While one agent decides, the others go on observing and acting.
 *Why:* real complex systems have no turns (NFR-01); a scheduler that orders agents removes stale decisions and collisions from every result.
 
-#### FR-SCHELLING-01: A Schelling world from a seed
-A Schelling scenario creates a grid of the configured width and height and places the configured number of residents of two kinds on distinct random cells. The same seed always gives the same placement.
-*Why:* replicas differ only by their seed, and a condition must be compared against the same starting worlds.
+#### FR-SCENARIO-01: A scenario plugs into the engine
+A scenario provides:
+- its world's initial state;
+- its perception;
+- its actions;
+- its metrics;
+- its system prompt;
+- a base configuration in TOML.
 
-#### FR-SCHELLING-02: Residents stay, move near or move far
-A resident can do three things:
-- **STAY** applies nothing and succeeds.
-- **MOVE dx dy** moves it to the cell at that offset when the cell is inside the grid, inside the resident's view, and empty at the moment the action is applied. It fails with `taken_while_deciding` when the cell was empty when the resident observed but is occupied now. It fails with `invalid_target` otherwise.
-- **FAR** moves it to a random cell that is empty at the moment the action is applied. It fails with `no_empty_cell` when there is none.
+A condition is a TOML change over that base configuration. The engine refuses to run a scenario that lacks one of these parts, with an error that names the missing part.
+*Why:* experiments live outside the engine, and a scenario that loads with a missing part fails only after model calls have been spent.
 
-*Why:* separating a collision from a misread target is what lets E13 tell the effect of other agents' timing from the agent's own errors.
+#### FR-SEED-01: One seed gives the same start
+Each replica gets one seeded random source. The scenario's initial state and every agent's rhythm draw from it, so the same seed gives the same initial world and the same sequence of waiting intervals.
+*Why:* replicas differ only by their seed and the model's answers, and conditions are compared against the same starting worlds.
+
+#### FR-SPACE-01: A grid space
+The engine provides a grid of a given width and height, with a capacity per cell. It answers four questions:
+- **neighbours:** the eight neighbouring cells of a position;
+- **window:** the cells within a radius of a position, with the cells outside the grid marked as outside;
+- **random empty cell:** a random empty cell, drawn from the replica's random source, or none when there is none;
+- **move:** moves an entity from one cell to another. It fails with `cell_full` when the destination is at capacity.
+
+*Why:* several of the lab's scenarios are spatial, and a shared grid keeps neighbourhoods and views the same across them.
+
+#### FR-ACTION-02: An action can tell a collision from an invalid choice
+When an action is applied, it receives the current state and the state the agent observed. It can therefore fail with a reason saying the target changed after the agent observed it, as distinct from a reason saying the target was never valid.
+*Why:* separating the effect of other agents' timing from the agent's own errors is what experiments without turns measure.
 
 #### FR-RECORD-01: Every decision is recorded
 Each run writes one new JSONL file, named with the run id. Each decision of each agent adds one line with:
@@ -109,18 +132,9 @@ Each run writes one new JSONL file, named with the run id. Each decision of each
 A run ends when every agent has used its decision budget or when its time limit passes, whichever comes first. A decision still pending at the time limit is recorded with the outcome `cut_off` and is not applied.
 *Why:* a run must end in a known state, and an action applied after the end would change a world that was already measured.
 
-#### FR-PERCEPTION-01: An agent observes only its window
-An agent's observation contains only the cells within its view radius around it: its own kind, the other kind, empty and outside the grid each marked distinctly. Text gated by an information switch appears only when the condition turns the switch on.
+#### FR-PERCEPTION-01: An agent observes only what its perception gives it
+An agent's observation is what the scenario's perception returns for that agent at that moment, and nothing else. Text gated by an information switch appears only when the condition turns the switch on.
 *Why:* situated perception (NFR-02) is a requirement of every experiment, and information switches are how conditions change what the agent knows.
-
-#### FR-SCHELLING-03: Segregation and dissatisfaction are measured from the grid
-The Schelling scenario reports four metrics at the start of a run, at a configured interval and at the end:
-- **segregation:** the mean, over residents with at least one neighbour, of the share of their eight neighbours that are of their kind;
-- **dissatisfied:** the number of residents whose share is below the condition's threshold;
-- **tried_to_move_while_satisfied:** the number of decisions to move taken while the resident's share was at or above the threshold;
-- **stayed_while_dissatisfied:** the number of decisions to stay taken while it was below.
-
-*Why:* E13 compares the system-level pattern with what each agent declared; the last two metrics measure how far behaviour departs from the stated rule.
 
 #### FR-METRIC-01: Generic metrics for every run
 At the end of every run the core reports:
@@ -130,6 +144,10 @@ At the end of every run the core reports:
 - the number of decisions taken on a state that had changed.
 
 *Why:* these show whether a run behaved as a run without turns before its scenario metrics are read.
+
+#### FR-METRIC-02: Scenario metrics are sampled on a schedule
+The engine computes the scenario's metrics from the world's state at the start of a run, at the interval the configuration gives, and at the end, and writes each sample to the log.
+*Why:* experiments compare how a system-level pattern develops, not only where it ends.
 
 #### FR-RECORD-02: A run records what it ran
 The first line of each run's log holds:

@@ -8,10 +8,11 @@ What the words mean here, how the pieces fit together, and how the tools behave 
 |:--|:--|:--|
 | Agent | One participant in a world: a model, the harness that runs it and the memory it keeps. | The model alone. Two agents can use the same model. |
 | Adapter | The code that turns an observation into a decision for an agent, through a Pi session. | The agent. The adapter is how the core talks to it. |
-| World | The state of a scenario (cells, residents, quantities) plus its arbiter. | The scenario, which also declares perception, actions and metrics. |
+| World | The state of a scenario (entities, positions, quantities) plus its arbiter. | The scenario, which also declares perception, actions and metrics. |
 | Arbiter | The part of the world that applies one action at a time against the current state. | A scheduler. The arbiter never decides who acts next. |
 | Version | A counter of applied actions in a world. | A run id or a code version. |
-| Scenario | A TypeScript module (world, perception, actions, metrics) plus its base configuration. | An experiment. |
+| Scenario | A TypeScript module (world, perception, actions, metrics, system prompt) plus its base configuration, defined in the experiments' repository. | An experiment, which runs a scenario under several conditions. |
+| Test scenario | A small scenario under `tests/fixtures/`, written only to test the engine. | A lab experiment's scenario, which never enters this repository. |
 | Condition | A named change over a scenario's base configuration. | A run or a replica. |
 | Experiment | A TOML file listing conditions, models, replicas and seeds. | A hypothesis. An experiment tests one, but lives in the lab's documents. |
 | Replica | One run of a condition with one model and one seed. | A fork, which continues a saved state. |
@@ -22,14 +23,13 @@ What the words mean here, how the pieces fit together, and how the tools behave 
 | Variation | A text or setting drawn at random for each decision from a declared set, and recorded. | A condition. |
 | Decision | One observe–decide–act cycle of an agent, with its prompt, answer, action and outcome. | An action. A decision can apply no action. |
 | Action | A declared operation on the world, with a precondition, an effect and failure reasons. | An answer, which is the model's raw text. |
-| Outcome | The single recorded result of a decision: `success` or a failure reason (`taken_while_deciding`, `invalid_target`, `no_empty_cell`, `unparsed`, `timeout`, `cut_off`, `script_exhausted`). | A metric. |
+| Outcome | The single recorded result of a decision: `success`, an engine failure (`unparsed`, `timeout`, `cut_off`, `script_exhausted`, `cell_full`) or a failure reason the scenario declares (for example `taken_while_deciding`). | A metric. |
 | Changes while deciding | The number of actions other agents applied between a decision's observation and its action. | Latency. |
 | Stale decision | A decision whose changes while deciding is above zero. | A failed decision. A stale decision can still succeed. |
 | Latency | Time from a model call's start to its answer. | Wait for a slot, which comes before the call. |
 | Wait for a slot | Time a decision waited because the parallelism limit was reached. | Latency. |
 | Parallelism limit | The maximum number of model calls running at once. | The number of agents. |
 | Inventory | The generated list of everything an agent meets in a scenario and condition. | The log. |
-| Segregation (Schelling) | The mean share of same-kind neighbours, over residents with at least one neighbour. | Dissatisfaction, which counts residents below the threshold. |
 
 ## How the pieces fit
 
@@ -61,5 +61,6 @@ What the words mean here, how the pieces fit together, and how the tools behave 
 ## Testing agents-lab itself
 
 - **Unit and acceptance tests use Pi's faux provider** (FR-ADAPTER-01), with delays that make overlapping decisions happen deterministically.
+- **Tests run test scenarios from `tests/fixtures/`,** such as a small grid where two agents reach for the same cell. They never import a lab experiment's scenario.
 - **A real model runs only in the smoke test, outside the gate.**
-- **The E13 prototype** is in `~/git/mesa-sandbox/schelling_async.py`. It is a reference for behaviour, not code to copy.
+- **The E13 prototype** in `~/git/mesa-sandbox/schelling_async.py` shows the agent loops, the window and the collision outcomes working. It is a reference for behaviour, not code to copy.
