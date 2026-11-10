@@ -302,3 +302,32 @@ Then("agent {string}'s activation ended after its {string} call", function (this
 Then("the run recorded {string} for agent {string}", function (this: Context, outcome: string, agent: string) {
   assert.deepEqual(turnsOf(this, agent).map((turn) => turn.outcome), ["success", outcome]);
 });
+
+Given(
+  "agent {string} runs on a scripted model whose first turn is a call to {string}, after {int} milliseconds",
+  function (this: Context, agent: string, tool: string, delayMs: number) {
+    script(this, agent, [{ toolCalls: [{ name: tool, arguments: {} }], delayMs }]);
+    this.rhythms.set(agent, () => 0);
+  },
+);
+
+Given(
+  "agent {string} runs on a scripted model whose first turn is the text {string} with no tool call, and wakes {int} milliseconds after agent {string}",
+  function (this: Context, agent: string, text: string, laterMs: number, other: string) {
+    script(this, agent, [{ text, delayMs: 0 }]);
+    const wakes = this.rhythms.get(other);
+    assert.ok(wakes !== undefined, `agent "${other}" was not given a time to wake`);
+    this.rhythms.set(agent, () => wakes() + laterMs);
+  },
+);
+
+Then(
+  "agent {string}'s model turn started within {int} milliseconds of agent {string}'s",
+  function (this: Context, agent: string, withinMs: number, other: string) {
+    const [turn] = turnsOf(this, agent);
+    const [first] = turnsOf(this, other);
+    assert.ok(turn !== undefined && first !== undefined, `agents "${agent}" and "${other}" did not both make a model turn`);
+    const apart = turn.startedAtMs - first.startedAtMs;
+    assert.ok(apart <= withinMs, `agent "${agent}"'s model turn started ${apart} ms after agent "${other}"'s`);
+  },
+);

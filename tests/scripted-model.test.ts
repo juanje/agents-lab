@@ -1,8 +1,15 @@
-import { getCurrentTools } from "@earendil-works/pi-ai";
+import { type Context, type ModelsApiStreamOptions, createModels, getCurrentTools } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "vitest";
 import { ScriptedModel } from "../src/engine/scripted-model.ts";
 
 const look = { name: "look", description: "Look.", parameters: { type: "object", properties: {} } };
+
+/** Asks a scripted model for its next answer, through Pi's models with only its provider, as a session's call does. */
+function complete(scripted: ScriptedModel, context: Context, options?: ModelsApiStreamOptions<string>) {
+  const models = createModels();
+  models.setProvider(scripted.provider);
+  return models.complete(scripted.model, context, options);
+}
 
 describe("ScriptedModel", () => {
   it("answers a turn with its scripted text and tool calls, in that order", async () => {
@@ -61,5 +68,15 @@ describe("ScriptedModel", () => {
     const answer = await scripted.models.complete(scripted.model, { messages: [] });
 
     expect(answer).toMatchObject({ stopReason: "error", errorMessage: "overloaded", content: [] });
+  });
+
+  it("stops waiting for its delay when its call is aborted, and answers as aborted", async () => {
+    const scripted = new ScriptedModel([{ text: "late", delayMs: 2_000 }]);
+    const started = performance.now();
+
+    const answer = await complete(scripted, { messages: [] }, { signal: AbortSignal.timeout(50) });
+
+    expect(performance.now() - started).toBeLessThan(500);
+    expect(answer).toMatchObject({ stopReason: "aborted", content: [] });
   });
 });
