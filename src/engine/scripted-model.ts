@@ -1,4 +1,4 @@
-import { type JsonObject, type Message, type Model, type Models, createModels, fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai";
+import { type JsonObject, type Message, type Model, type Models, createModels, fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall } from "@earendil-works/pi-ai";
 import { waitAtLeast } from "./clock.ts";
 
 /** One answer of a script: its text, the tools it calls, and how long the model takes to give it. */
@@ -23,11 +23,14 @@ export class ScriptedModel {
     const faux = fauxProvider();
     // Each answer is a response factory, so its delay starts when the call reaches the provider, as a real model's does.
     faux.setResponses(
-      script.map(({ text, delayMs }) => async (context) => {
+      script.map(({ text, toolCalls = [], delayMs }) => async (context) => {
         // Copied: the caller may go on adding to the same transcript after this turn.
         this.received.push([...context.messages]);
         await waitAtLeast(delayMs);
-        return fauxAssistantMessage(text ?? "");
+        return fauxAssistantMessage([
+          ...(text === undefined ? [] : [fauxText(text)]),
+          ...toolCalls.map((call) => fauxToolCall(call.name, call.arguments)),
+        ]);
       }),
     );
     const models = createModels();
