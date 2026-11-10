@@ -178,4 +178,31 @@ describe("move", () => {
     expect(world.state).toBe(before);
     expect(world.version).toBe(0);
   });
+
+  it("refuses an entity the grid does not hold, naming it, and applies nothing", () => {
+    const world = new World(place(emptyGrid(3, 2, 1), "a", { x: 0, y: 0 }));
+    const before = world.state;
+
+    expect(() => world.apply(move, { entity: "z", to: { x: 2, y: 1 } })).toThrow(
+      "cannot move entity z to cell 2, 1: the grid holds no entity z",
+    );
+    expect(world.state).toBe(before);
+    expect(world.version).toBe(0);
+  });
+
+  it.each([
+    { x: 3, y: 0 },
+    { x: -1, y: 1 },
+    { x: 0, y: 2 },
+    { x: 1, y: -1 },
+  ])("refuses the cell $x, $y outside the 3 by 2 grid, naming it, and applies nothing", (to) => {
+    const world = new World(place(emptyGrid(3, 2, 1), "a", { x: 0, y: 0 }));
+    const before = world.state;
+
+    expect(() => world.apply(move, { entity: "a", to })).toThrow(
+      `cannot move entity a to cell ${to.x}, ${to.y}: the cell is outside the 3 by 2 grid`,
+    );
+    expect(world.state).toBe(before);
+    expect(world.version).toBe(0);
+  });
 });
