@@ -10,7 +10,7 @@ import {
   createAgentSession,
   createExtensionRuntime,
 } from "@earendil-works/pi-coding-agent";
-import { type Api, type Model, type Provider, getCurrentSystemMessage } from "@earendil-works/pi-ai";
+import { type Api, type AssistantMessage, type Model, type Provider, getCurrentSystemMessage } from "@earendil-works/pi-ai";
 import type { Effector, Tool } from "./tools.ts";
 import type { World } from "./world.ts";
 
@@ -25,6 +25,15 @@ export function labPiDirectory(): string {
   return join(homedir(), ".agents-lab", "pi");
 }
 
+/** One call to an agent's model within an activation, and how it ended. */
+export interface ModelTurn {
+  agent: string;
+  /** "model_error" when the provider answered with an error; "success" otherwise. */
+  outcome: "success" | "model_error";
+  /** The provider's message, for a model error. */
+  message?: string;
+}
+
 /** Opens the Pi session an agent keeps for the whole run (FR-ADAPTER-02). */
 export async function openSession<State>(
   world: World<State>,
@@ -32,6 +41,7 @@ export async function openSession<State>(
   agent: { name: string; model: AgentModel },
   runtime: ModelRuntime,
   systemPrompt: string,
+  turns: ModelTurn[],
 ): Promise<AgentSession> {
   const directory = labPiDirectory();
   const { session } = await createAgentSession({
@@ -44,11 +54,29 @@ export async function openSession<State>(
     customTools: tools.map((tool) => definition(world, tool, agent.name)),
     resourceLoader: resources(systemPrompt),
     sessionManager: SessionManager.inMemory(),
-    // Neither the person's nor any project's Pi settings reach the session.
-    settingsManager: SettingsManager.inMemory(),
+    // Neither the person's nor any project's Pi settings reach the session. A provider's error ends the activation
+    // (FR-ADAPTER-02), so Pi does not retry it: a retry would turn the provider's failure into another turn.
+    settingsManager: SettingsManager.inMemory({ retry: { enabled: false } }),
   });
   forceSystemPrompt(session, systemPrompt);
+  recordTurns(session, agent.name, turns);
   return session;
+}
+
+/** Records each of the session's model turns when its answer ends, by wrapping the session's call to the model. */
+function recordTurns(session: AgentSession, agent: string, turns: ModelTurn[]): void {
+  const call = session.agent.streamFunction;
+  session.agent.streamFunction = async (model, context, options) => {
+    const answer = await call(model, context, options);
+    void answer.result().then((message) => turns.push({ agent, ...outcomeOf(message) }));
+    return answer;
+  };
+}
+
+function outcomeOf(message: AssistantMessage): Pick<ModelTurn, "outcome" | "message"> {
+  return message.stopReason === "error"
+    ? { outcome: "model_error", message: message.errorMessage ?? "" }
+    : { outcome: "success" };
 }
 
 /**

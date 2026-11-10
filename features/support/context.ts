@@ -1,7 +1,7 @@
 import { World as CucumberWorld, setWorldConstructor } from "@cucumber/cucumber";
 import type { Grid, Position, WindowCell } from "../../src/engine/grid.ts";
 import type { Condition, Scenario } from "../../src/engine/scenario.ts";
-import type { ModelTurn } from "../../src/engine/run.ts";
+import type { ModelTurn } from "../../src/engine/adapter.ts";
 import type { ScriptedModel } from "../../src/engine/scripted-model.ts";
 import type { ActionResult, World } from "../../src/engine/world.ts";
 import type { Slots } from "../../tests/fixtures/slots.ts";
