@@ -19,6 +19,8 @@ export interface Agent {
 export interface RunSettings {
   /** The scenario's system prompt, which takes the place of Pi's own. */
   systemPrompt: string;
+  /** How long a model turn may run before it is aborted. */
+  modelTurnTimeoutMs: number;
 }
 
 /**
@@ -45,7 +47,7 @@ export async function run<State>(
   const turns: ModelTurn[] = [];
   await Promise.all(
     agents.map(async (agent) => {
-      const session = await openSession(world, tools, agent, runtime, settings.systemPrompt, turns);
+      const session = await openSession(world, tools, agent, runtime, settings, turns);
       try {
         await loop(session, agent, Random.derive(seed, `rhythm of ${agent.name}`));
       } finally {

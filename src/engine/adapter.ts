@@ -28,8 +28,8 @@ export function labPiDirectory(): string {
 /** One call to an agent's model within an activation, and how it ended. */
 export interface ModelTurn {
   agent: string;
-  /** "model_error" when the provider answered with an error; "success" otherwise. */
-  outcome: "success" | "model_error";
+  /** "model_error" when the provider answered with an error, "timeout" when the turn ran too long; "success" otherwise. */
+  outcome: "success" | "model_error" | "timeout";
   /** The provider's message, for a model error. */
   message?: string;
 }
@@ -40,7 +40,7 @@ export async function openSession<State>(
   tools: readonly Tool<State>[],
   agent: { name: string; model: AgentModel },
   runtime: ModelRuntime,
-  systemPrompt: string,
+  settings: { systemPrompt: string; modelTurnTimeoutMs: number },
   turns: ModelTurn[],
 ): Promise<AgentSession> {
   const directory = labPiDirectory();
@@ -52,23 +52,32 @@ export async function openSession<State>(
     // The allowlist leaves out Pi's built-in tools and filters custom tools too, so it names every scenario tool.
     tools: tools.map((tool) => tool.name),
     customTools: tools.map((tool) => definition(world, tool, agent.name)),
-    resourceLoader: resources(systemPrompt),
+    resourceLoader: resources(settings.systemPrompt),
     sessionManager: SessionManager.inMemory(),
     // Neither the person's nor any project's Pi settings reach the session. A provider's error ends the activation
     // (FR-ADAPTER-02), so Pi does not retry it: a retry would turn the provider's failure into another turn.
     settingsManager: SettingsManager.inMemory({ retry: { enabled: false } }),
   });
-  forceSystemPrompt(session, systemPrompt);
-  recordTurns(session, agent.name, turns);
+  forceSystemPrompt(session, settings.systemPrompt);
+  runTurns(session, agent.name, settings.modelTurnTimeoutMs, turns);
   return session;
 }
 
-/** Records each of the session's model turns when its answer ends, by wrapping the session's call to the model. */
-function recordTurns(session: AgentSession, agent: string, turns: ModelTurn[]): void {
+/**
+ * Wraps the session's call to the model, so each model turn is aborted when it runs longer than the timeout, and
+ * recorded when its answer ends. An aborted answer carries no tool calls Pi would run, and ends the activation.
+ */
+function runTurns(session: AgentSession, agent: string, timeoutMs: number, turns: ModelTurn[]): void {
   const call = session.agent.streamFunction;
   session.agent.streamFunction = async (model, context, options) => {
-    const answer = await call(model, context, options);
-    void answer.result().then((message) => turns.push({ agent, ...outcomeOf(message) }));
+    const timeout = new AbortController();
+    const timer = setTimeout(() => timeout.abort(), timeoutMs);
+    const signal = options?.signal === undefined ? timeout.signal : AbortSignal.any([options.signal, timeout.signal]);
+    const answer = await call(model, context, { ...options, signal });
+    void answer.result().then((message) => {
+      clearTimeout(timer);
+      turns.push({ agent, ...(timeout.signal.aborted ? { outcome: "timeout" } : outcomeOf(message)) });
+    });
     return answer;
   };
 }

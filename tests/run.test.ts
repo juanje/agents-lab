@@ -78,6 +78,7 @@ describe("run", () => {
     const model = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
 
     await run(new World(emptySlots(3)), slotTools, [{ name: "a", model, activations: 1, rhythm: noWait }], seed, {
+      ...settings,
       systemPrompt: "You live in a row of slots.",
     });
 
