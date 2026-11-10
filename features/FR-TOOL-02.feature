@@ -25,6 +25,16 @@ Feature: Only tool calls act
       | {}                 |
       | {"slot": 1, "x": 2} |
 
+  Scenario: A call with an argument the tool does not declare applies nothing, even when the tool's schema lets it through
+    Given the effector "take" declares only the argument "slot", and its schema does not forbid others
+    And agent "a" runs on a scripted model that calls "take" with the arguments {"slot": 1, "x": 2}, then ends without a tool call
+    When the run ends
+    Then agent "a"'s "take" call has the outcome "invalid_arguments"
+    And the call is kept with the arguments {"slot": 1, "x": 2}, as the model made it
+    And every slot is empty
+    And the result agent "a"'s model received for its "take" call is marked as an error and says "invalid_arguments: \"take\" takes no argument \"x\""
+    And agent "a"'s model was offered "take" with the schema the scenario declares, unchanged
+
   Scenario: A call to a tool the session does not offer applies nothing
     Given agent "a" runs on a scripted model that calls "fly" with slot 1, then ends without a tool call
     When the run ends
