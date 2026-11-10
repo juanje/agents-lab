@@ -64,3 +64,12 @@ Feature: A scenario plugs into the engine
     When the engine loads it
     Then loading fails with an error that names "rhythm"
     And no model was called
+
+  Scenario: A run uses exactly the parts of the scenario it loaded
+    Given the test scenario "slots", whose base configuration has 3 slots, none held
+    And the engine loads it
+    And agent "a" runs on a scripted model that ends its first turn without a tool call
+    When the loaded scenario runs
+    Then agent "a"'s model was offered exactly the scenario's tools
+    And the system prompt agent "a"'s model received is exactly the scenario's
+    And agent "a"'s activation began with the scenario's rhythm stimulus
