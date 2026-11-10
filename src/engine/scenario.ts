@@ -62,6 +62,10 @@ export function loadScenario<State>(
     if (parts[property] === undefined) throw lacks(part);
   }
   const scenario = parts as Scenario<State>;
+  // Each agent wakes by its rhythm's stimulus: without that channel the run would fail at the first wake.
+  if (!scenario.channels.some((channel) => channel.name === "rhythm")) {
+    throw new Error(`Scenario "${scenario.name}" declares no stimulus channel named "rhythm", which wakes each agent`);
+  }
   // A text part that holds nothing gives the agents nothing, so it counts as missing.
   if (scenario.systemPrompt.trim() === "") throw lacks("system prompt");
   const base = parse(scenario.baseConfiguration);
