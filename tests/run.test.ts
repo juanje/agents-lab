@@ -31,6 +31,22 @@ describe("run", () => {
     expect(first).toMatchObject({ role: "user", content: [{ type: "text", text: "rhythm: You wake up." }] });
   });
 
+  it("delivers a stimulus that arrives while the agent rests when it wakes, after the rhythm's", async () => {
+    const stimuli = new Stimuli([rhythmChannel, { name: "bell", source: "town bell", stimulus: "The bell rings." }]);
+    const model = new ScriptedModel([
+      { text: "Nothing to do.", delayMs: 0 },
+      { text: "Nothing to do.", delayMs: 0 },
+    ]);
+    let rests = 0;
+    // The agent wakes at once, then rests 100 ms, and the bell rings halfway through that rest.
+    const restsOnceWithBell = () => (rests++ === 0 ? 0 : (setTimeout(() => stimuli.deliver("a", "bell"), 50), 100));
+
+    await run(new World(emptySlots(3)), slotTools, stimuli, [{ name: "a", model, activations: 2, rhythm: restsOnceWithBell }], seed, settings);
+
+    const text = (value: string) => ({ role: "user", content: [{ type: "text", text: value }] });
+    expect(model.received[1]?.slice(-2)).toMatchObject([text("rhythm: You wake up."), text("town bell: The bell rings.")]);
+  });
+
   it("delivers a stimulus that arrives during a model turn at the agent's next model turn", async () => {
     const stimuli = new Stimuli([rhythmChannel, { name: "bell", source: "town bell", stimulus: "The bell rings." }]);
     const model = new ScriptedModel([
