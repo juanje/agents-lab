@@ -66,6 +66,14 @@ describe("loadScenario", () => {
     expect(() => loadScenario(rest, seed)).toThrow(`Scenario "slots" lacks its ${part}`);
   });
 
+  it("refuses a scenario whose stimulus channels include none named rhythm, which wakes each agent", () => {
+    const channels = [{ name: "notice", source: "board", stimulus: "A notice is posted." }];
+
+    expect(() => loadScenario({ ...slotsScenario, channels }, seed)).toThrow(
+      'Scenario "slots" declares no stimulus channel named "rhythm", which wakes each agent',
+    );
+  });
+
   /** A base configuration with a value of each kind TOML has. */
   const everyKind = [
     "text = 'a'",
