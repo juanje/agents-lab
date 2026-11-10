@@ -166,10 +166,11 @@ The same seed therefore gives the same initial world and, for each agent, the sa
 *Why:* replicas differ only by their seed and the model's answers, and conditions are compared against the same starting worlds. If purposes shared one sequence, a condition that changed the initial state would also change every agent's timing, and the difference between conditions would mix two changes (NFR-05).
 
 #### FR-SPACE-01: A grid space
-The engine provides a grid of a given width and height, with a capacity per cell. It answers four questions:
+The engine provides a grid of a given width and height, with a capacity per cell. It answers five questions:
 - **neighbours:** the eight neighbouring cells of a position;
 - **window:** the cells within a radius of a position, with the cells outside the grid marked as outside;
 - **random empty cell:** a random empty cell, drawn from the replica's random source, or none when there is none;
+- **position:** the cell an entity is in, or none when the grid does not hold it;
 - **move:** moves an entity from its cell to another. It fails with `cell_full` when the destination is at capacity. A move of an entity the grid does not hold, or to a cell outside the grid, is refused with an error that names the entity or the cell, and applies nothing.
 
 *Why:* several of the lab's scenarios are spatial, and a shared grid keeps neighbourhoods and views the same across them. An agent's bad choice is the scenario's to name (for example `invalid_target`); a move that reaches the grid with an unknown entity or a cell outside it is a defect in the scenario, and recording it as a change would put an entity or a position in the log that never existed.
