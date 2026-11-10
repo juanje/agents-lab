@@ -190,8 +190,8 @@ A sensor call takes its declared duration. Its result is the world as it is when
 *Why:* perceiving is an act that takes time, and what an agent knows is what it last perceived, not the world's current state.
 
 #### FR-TOOL-04: Acting takes time, and its effect is checked when it lands
-An effector call takes its declared duration, which may depend on its arguments and the state (for example, distance). The agent is busy until it ends; its effect is checked and applied then, against the world as it is at that moment. An effector can fail with a reason saying its target changed after the agent last sensed it, as distinct from a reason saying the target was not valid when the agent last sensed it.
-*Why:* doing things takes time, and the world goes on changing meanwhile; telling a collision from a misjudgement is what separates the effect of other agents' timing from the agent's own errors.
+An effector call takes its declared duration, which may depend on its arguments and the state (for example, distance). The agent is busy until it ends; its effect is checked and applied then, against the world as it is at that moment, and it fails only for a reason of the world (for example, the cell is held), whatever the agent perceived. Each effector call records, beside its outcome, what the agent last sensed of its target: `free`, `held` or `not_sensed`. The scenario declares, for each effector, how to read its target in the agent's last sensing.
+*Why:* doing things takes time, and the world goes on changing meanwhile. A collision is a physical event that happens whether or not the agent looked (NFR-11); what the agent knew is what tells stale information from a misjudgement or from acting without perceiving, and it belongs in the record, not in the outcome.
 
 #### FR-SPACE-02: Moving across the grid takes time in proportion to distance
 A move on the grid takes the scenario's time per cell multiplied by the distance, counted in steps between neighbouring cells. The entity stays in its cell until the move ends; the destination is checked when it arrives.
@@ -214,7 +214,7 @@ Each run writes one new JSONL file, named with the run id. It adds one line for 
   - the agent, the tool and the call exactly as the model made it;
   - when it started and ended, and its outcome;
   - its result, for a sensor;
-  - for an effector, the number of changes other agents applied between the agent's last sensor call and the moment its effect was applied.
+  - for an effector, what the agent last sensed of its target, and the number of changes other agents applied between the agent's last sensor call and the moment its effect was applied.
 
 When a run stops on an error, its log ends with a line that says the run stopped and gives the error.
 *Why:* every analysis of an experiment is done from this log, and a field not recorded cannot be recovered later. A run that stops on an error must say so, or its log reads as a run that simply ended.
@@ -229,7 +229,8 @@ At the end of every run the core reports, per agent and in total:
 - tool calls by tool and by outcome;
 - mean and maximum model latency and wait for a model slot;
 - energy spent;
-- the number of effector calls applied on a world that had changed since the agent last sensed it.
+- the number of effector calls applied on a world that had changed since the agent last sensed it;
+- the number of effector calls made without sensing their target first.
 
 *Why:* these show whether a run behaved as a run without turns, and how agents spent their time and effort, before its scenario metrics are read.
 
@@ -324,14 +325,13 @@ The engine reads them at run time, writes each path with a content hash to the r
 The neighbourhood scenario creates a grid of the configured width and height and places the configured number of residents of two kinds on distinct random cells, from the replica's seed. Its system prompt describes the resident; any preference or rule a resident is given comes from the condition.
 *Why:* the same neighbourhood serves several experiments (micro vs macro, diversity of thresholds or models, local vs global view), each of which brings its own rule as a condition.
 
-#### FR-NEIGHBOURHOOD-02: Residents look, and move near or far
-A resident has three tools:
+#### FR-NEIGHBOURHOOD-02: Residents look and move
+A resident has two tools:
 - **look** (sensor): returns its window of the configured radius, with its own kind, the other kind, empty and outside the grid marked distinctly.
-- **move dx dy** (effector): moves it to the cell at that offset, taking the grid's time for the distance. It fails with `taken_while_deciding` when the cell was empty when the resident last looked but is occupied when it arrives, and with `invalid_target` when the cell is outside the grid, outside its view, or was not empty when it last looked.
-- **move_far** (effector): moves it to a random cell that is empty when the move ends, taking the scenario's time for a far move. It fails with `no_empty_cell` when there is none.
+- **move dx dy** (effector): moves it to the cell at that offset, anywhere in the grid, seen or not, taking the grid's time for the distance. It fails with `cell_full` when the cell is held when it arrives, and with `invalid_target` when the cell is outside the grid. Its target, for the record, is that cell in the resident's last look.
 
 Staying is not acting: a resident that does not want to move ends its activation.
-*Why:* separating a collision from a misjudgement is what lets experiments tell the effect of other agents' timing from the agent's own errors.
+*Why:* a resident can walk towards a place it cannot see, and only what it finds there decides whether it can stay; whether it had looked, and what it saw, is recorded beside the outcome (FR-TOOL-04), so experiments can tell other agents' timing from the resident's own errors.
 
 #### FR-NEIGHBOURHOOD-03: Same-kind shares
 The neighbourhood scenario's metrics are:
@@ -389,6 +389,10 @@ The engine never hands an agent the world's state. An agent perceives only throu
 Every tool call takes time and every effector spends energy, as the scenario declares. No tool is instantaneous and free unless the scenario declares it so, and the inventory shows it.
 *Why:* in real systems, perceiving, moving and acting cost time and energy, and those costs are what make space, distance and choice matter.
 
+#### NFR-11: The world decides outcomes; perception is recorded beside them
+Every outcome comes from the world's rules applied to the world's state. What an agent perceived never changes an outcome; it is recorded beside it.
+*Why:* physical events, such as two agents reaching for the same place, happen whatever each agent knew; mixing the agent's knowledge into the world's rules would make the world depend on the agent, and hide the difference between what was and what was perceived.
+
 ## Draft notes
 
 - v0.2 will need, at least:
@@ -397,5 +401,6 @@ Every tool call takes time and every effector spends energy, as the scenario dec
   - votes with a deadline.
 - v0.3 will need memory across runs: a workspace for each agent's memory files. `@earendil-works/pi-durable` (experimental in Pi 1.5.0) may help with long runs.
 - Open: whether real time is enough for E16's vote deadlines to be repeatable, or simulated time is needed.
+- Later: sensors that return partial or wrong information, and stimuli an agent may not notice (by distance or attention), both declared in the inventory; the world stays as it is, only what reaches the agent changes.
 - Open: whether an agent can make several tool calls at once in one model turn, or they run one after another. Until decided, they run one after another.
 - FR-RECORD-01: `invalid_arguments` must be recognised from the harness's validation failure, not inferred because a call did not run; a call that did not run for another reason (a message cut at the token limit, an abort in the middle of a batch) needs its own outcome.
