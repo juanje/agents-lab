@@ -83,3 +83,6 @@ export const placingScenario: Scenario<Slots> = {
   },
   baseConfiguration: "[slots]\ncount = 10\nagents = 3\n",
 };
+
+/** The test world's rhythm channel, which wakes each agent. */
+export const rhythmChannel = { name: "rhythm", source: "rhythm", stimulus: "You wake up." };

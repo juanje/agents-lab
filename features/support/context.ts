@@ -4,7 +4,7 @@ import type { Condition, Scenario } from "../../src/engine/scenario.ts";
 import type { ModelTurn } from "../../src/engine/adapter.ts";
 import type { ScriptedModel } from "../../src/engine/scripted-model.ts";
 import type { ActionResult, World } from "../../src/engine/world.ts";
-import type { Slots } from "../../tests/fixtures/slots.ts";
+import { type Slots, rhythmChannel } from "../../tests/fixtures/slots.ts";
 
 /**
  * What one scenario's steps share. Cucumber builds a fresh one for each scenario, so no state leaks
@@ -29,6 +29,8 @@ export class Context extends CucumberWorld {
   personsPiFiles?: Map<string, string>;
   /** The model turns the run gave, in the order they ended. */
   turns?: readonly ModelTurn[];
+  /** The stimulus channels the scenario declares: the test world's rhythm channel, and any the scenario adds. */
+  readonly channels: { name: string; source: string; stimulus: string }[] = [rhythmChannel];
   /** The system prompt the scenario declares. */
   systemPrompt = "";
   /** How long a model turn may run, unless the scenario says: long enough for any scripted turn here. */
