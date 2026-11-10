@@ -1,5 +1,5 @@
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
-import { type AgentModel, type ModelTurn, type SessionSettings, openRuntime, openSession, wake } from "./adapter.ts";
+import { type AgentModel, type ModelTurn, type SessionSettings, type ToolCall, openRuntime, openSession, wake } from "./adapter.ts";
 import { waitAtLeast } from "./clock.ts";
 import { ParallelismLimit } from "./parallelism.ts";
 import { Random } from "./random.ts";
@@ -22,9 +22,13 @@ export interface RunSettings extends SessionSettings {
   parallelismLimit: number;
 }
 
-/** What a run gives: every agent's model turns in the order they ended, and what each agent's session held at its end. */
+/**
+ * What a run gives: every agent's model turns and tool calls, each in the order they ended, and what each agent's
+ * session held at its end.
+ */
 export interface RunResult {
   turns: ModelTurn[];
+  toolCalls: ToolCall[];
   messages: ReadonlyMap<string, AgentSession["messages"]>;
 }
 
@@ -43,10 +47,11 @@ export async function run<State>(
   const runtime = await openRuntime(agents.map((agent) => agent.model.provider));
   const parallelism = new ParallelismLimit(settings.parallelismLimit);
   const turns: ModelTurn[] = [];
+  const toolCalls: ToolCall[] = [];
   const messages = new Map<string, AgentSession["messages"]>();
   await Promise.all(
     agents.map(async (agent) => {
-      const session = await openSession(world, tools, agent, runtime, settings, parallelism, turns, stimuli);
+      const session = await openSession(world, tools, agent, runtime, settings, parallelism, turns, stimuli, toolCalls);
       try {
         // Each agent's rhythm has its own sequence, from the seed and the agent's name: sharing one would make an
         // agent's intervals depend on when the others' models answer, and deriving by order on which other agents run.
@@ -58,7 +63,7 @@ export async function run<State>(
       }
     }),
   );
-  return { turns, messages };
+  return { turns, toolCalls, messages };
 }
 
 /**

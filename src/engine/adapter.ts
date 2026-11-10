@@ -58,6 +58,16 @@ export interface ModelTurn {
   endedAtMs: number;
 }
 
+/** One tool call an agent's model made, and how it ended. */
+export interface ToolCall {
+  agent: string;
+  tool: string;
+  /** The arguments exactly as the model made them, before Pi coerces them. */
+  arguments: unknown;
+  /** "success", "invalid_arguments", or the reason the scenario gives for a failed effect. */
+  outcome: string;
+}
+
 /** What an agent's session is given besides its tools. */
 export interface SessionSettings {
   /** The scenario's system prompt, which takes the place of Pi's own. */
@@ -76,7 +86,9 @@ export async function openSession<State>(
   parallelism: ParallelismLimit,
   turns: ModelTurn[],
   stimuli: Stimuli,
+  toolCalls: ToolCall[],
 ): Promise<AgentSession> {
+  const executed = new Map<string, string>();
   const { session } = await createAgentSession({
     // Pi falls back to the person's directory (~/.pi/agent/) wherever a path is left out (NFR-08).
     agentDir: labPiDirectory(),
@@ -84,7 +96,7 @@ export async function openSession<State>(
     model: agent.model.model,
     // The allowlist leaves out Pi's built-in tools and filters custom tools too, so it names every scenario tool.
     tools: tools.map((tool) => tool.name),
-    customTools: tools.map((tool) => definition(world, tool, agent.name)),
+    customTools: tools.map((tool) => definition(world, tool, agent.name, executed)),
     resourceLoader: resources(settings.systemPrompt),
     sessionManager: SessionManager.inMemory(),
     // Neither the person's nor any project's Pi settings reach the session. A provider's error ends the activation
@@ -94,7 +106,24 @@ export async function openSession<State>(
   forceSystemPrompt(session, settings.systemPrompt);
   runTurns(session, agent.name, settings.modelTurnTimeoutMs, parallelism, turns);
   deliverBetweenTurns(session, agent.name, stimuli);
+  recordToolCalls(session, agent.name, executed, toolCalls);
   return session;
+}
+
+/**
+ * Records each of the agent's tool calls with the arguments its model made, which Pi passes on before it coerces them,
+ * and its outcome. Pi runs a tool only once its arguments pass the tool's schema, so a call that did not run had
+ * arguments the tool does not take.
+ */
+function recordToolCalls(session: AgentSession, agent: string, executed: ReadonlyMap<string, string>, toolCalls: ToolCall[]): void {
+  const made = new Map<string, unknown>();
+  session.subscribe((event) => {
+    if (event.type === "tool_execution_start") made.set(event.toolCallId, event.args);
+    if (event.type === "tool_execution_end") {
+      const outcome = executed.get(event.toolCallId) ?? "invalid_arguments";
+      toolCalls.push({ agent, tool: event.toolName, arguments: made.get(event.toolCallId), outcome });
+    }
+  });
 }
 
 /**
@@ -201,16 +230,24 @@ function resources(systemPrompt: string): ResourceLoader {
   };
 }
 
-/** A scenario's tool as Pi runs it for one agent: the agent sees what it is for and what it takes; how it works stays in the world. */
-function definition<State>(world: World<State>, tool: Tool<State>, agent: string): ToolDefinition {
+/**
+ * A scenario's tool as Pi runs it for one agent: the agent sees what it is for and what it takes; how it works stays in
+ * the world. Each call it runs leaves its outcome under the call's id.
+ */
+function definition<State>(world: World<State>, tool: Tool<State>, agent: string, executed: Map<string, string>): ToolDefinition {
   return {
     name: tool.name,
     label: tool.name,
     description: tool.description,
     parameters: tool.parameters as ToolDefinition["parameters"],
-    execute: async (_id, args: Record<string, unknown>) => {
-      const text = tool.kind === "sensor" ? tool.sense(world.state, agent) : effect(world, tool, agent, args);
-      return { content: [{ type: "text", text }], details: undefined };
+    execute: async (id, args: Record<string, unknown>) => {
+      if (tool.kind === "sensor") {
+        executed.set(id, "success");
+        return { content: [{ type: "text", text: tool.sense(world.state, agent) }], details: undefined };
+      }
+      const outcome = effect(world, tool, agent, args);
+      executed.set(id, outcome);
+      return { content: [{ type: "text", text: outcome }], details: undefined };
     },
   };
 }
