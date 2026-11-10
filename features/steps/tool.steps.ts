@@ -98,8 +98,8 @@ Given(
   },
 );
 
-/** The text the agent's model received back for its first call of the tool, in a later turn. */
-function returned(context: Context, agent: string, tool: string): string {
+/** The result the agent's model received back for its first call of the tool, in a later turn. */
+function resultOf(context: Context, agent: string, tool: string) {
   const messages = modelOf(context, agent).received.flat();
   const call = messages
     .flatMap((message) => (message.role === "assistant" ? message.content : []))
@@ -107,7 +107,14 @@ function returned(context: Context, agent: string, tool: string): string {
   assert.ok(call !== undefined && call.type === "toolCall", `agent "${agent}"'s model had no call of "${tool}" in its transcript`);
   const result = messages.find((message) => message.role === "toolResult" && message.toolCallId === call.id);
   assert.ok(result !== undefined && result.role === "toolResult", `agent "${agent}"'s "${tool}" call returned nothing`);
-  return result.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("");
+  return result;
+}
+
+/** The text the agent's model received back for its first call of the tool, in a later turn. */
+function returned(context: Context, agent: string, tool: string): string {
+  return resultOf(context, agent, tool)
+    .content.flatMap((block) => (block.type === "text" ? [block.text] : []))
+    .join("");
 }
 
 Then(
@@ -164,3 +171,11 @@ Then(/^the call is kept with the arguments (\{.*\}), as the model made it$/, fun
 Then("no slot holds agent {string}", function (this: Context, agent: string) {
   assert.ok(!this.world.state.includes(agent), `a slot holds agent "${agent}": ${JSON.stringify(this.world.state)}`);
 });
+
+Then(
+  "the result agent {string}'s model received for its {string} call is marked as an error and says {string}",
+  function (this: Context, agent: string, tool: string, text: string) {
+    assert.equal(resultOf(this, agent, tool).isError, true, "the result is not marked as an error");
+    assert.equal(returned(this, agent, tool), text);
+  },
+);

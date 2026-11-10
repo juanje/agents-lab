@@ -7,7 +7,7 @@ import { type RunSettings, run } from "../src/engine/run.ts";
 import { ScriptedModel } from "../src/engine/scripted-model.ts";
 import { Stimuli } from "../src/engine/stimuli.ts";
 import { World } from "../src/engine/world.ts";
-import { type Slots, emptySlots, rhythmChannel, slotTools } from "./fixtures/slots.ts";
+import { type Slots, emptySlots, rhythmChannel, slotTools, take } from "./fixtures/slots.ts";
 
 /** A rhythm with no waiting: the agent wakes again as soon as its previous activation ends. */
 const noWait = () => 0;
@@ -361,5 +361,29 @@ describe("run", () => {
     await run(world, takeAnyArguments, rhythmOnly(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
 
     expect(world.state).toEqual(["a", null, null]);
+  });
+  it("tells the agent a failed call failed: its result is marked as an error and gives the outcome", async () => {
+    const world = new World(emptySlots(3));
+    world.apply(take, { agent: "b", slot: 1 });
+    const model = new ScriptedModel([
+      { toolCalls: [{ name: "take", arguments: { slot: 1 } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+
+    const { toolCalls } = await run(world, slotTools, rhythmOnly(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+
+    expect(toolCalls).toEqual([{ agent: "a", tool: "take", arguments: { slot: 1 }, outcome: "slot_taken" }]);
+    expect(model.received[1]?.at(-1)).toMatchObject({ role: "toolResult", isError: true, content: [{ type: "text", text: "slot_taken" }] });
+  });
+
+  it("marks the result of a call that succeeded as no error", async () => {
+    const model = new ScriptedModel([
+      { toolCalls: [{ name: "take", arguments: { slot: 1 } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+
+    await run(new World(emptySlots(3)), slotTools, rhythmOnly(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+
+    expect(model.received[1]?.at(-1)).toMatchObject({ role: "toolResult", isError: false, content: [{ type: "text", text: "success" }] });
   });
 });
