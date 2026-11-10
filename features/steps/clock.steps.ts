@@ -4,7 +4,7 @@ import type { AgentCall } from "../../src/engine/tools.ts";
 import { slotTools } from "../../tests/fixtures/slots.ts";
 import type { Context } from "../support/context.ts";
 import { turnsOf } from "./adapter.steps.ts";
-import { callThenEnd, fixtureTool, modelOf, scriptActivations } from "./tool.steps.ts";
+import { callOf, callThenEnd, fixtureTool, modelOf, script, scriptActivations } from "./tool.steps.ts";
 
 Given(
   "the effector {string} takes {int} milliseconds and puts the agent in a slot, only if that slot is empty",
@@ -236,4 +236,43 @@ Given("the sensor {string} takes {int} milliseconds", function (this: Context, n
 Then("the engine has no sensing for agent {string}", function (this: Context, agent: string) {
   assert.ok(this.sensings !== undefined, "the run gave no sensings");
   assert.equal(this.sensings.last(agent), undefined);
+});
+
+Given(
+  "agent {string} runs on a scripted model that calls {string} with slot {int}, then writes {string} with no tool call",
+  function (this: Context, agent: string, tool: string, slot: number, text: string) {
+    script(this, agent, [
+      { toolCalls: [{ name: tool, arguments: { slot } }], delayMs: 0 },
+      { text, delayMs: 0 },
+    ]);
+  },
+);
+
+Given(
+  "agent {string} makes {int} activations, each ending its first turn without a tool call, waiting {int} milliseconds between them",
+  function (this: Context, agent: string, activations: number, waitMs: number) {
+    scriptActivations(this, agent, activations, () => [{ text: "Nothing to do.", delayMs: 0 }]);
+    this.rhythms.set(agent, () => waitMs);
+  },
+);
+
+Then("agent {string} made no model turn after its {string} call was cut off", function (this: Context, agent: string, tool: string) {
+  const call = callOf(this, agent, tool);
+  assert.equal(call.outcome, "cut_off", `agent "${agent}"'s "${tool}" call was not cut off`);
+  const after = turnsOf(this, agent).filter((turn) => turn.startedAtMs >= call.endedAtMs);
+  assert.deepEqual(after, [], `agent "${agent}" made ${after.length} model turns after its "${tool}" call was cut off`);
+  // The model is asked for no answer either: one turn, the one that made the call.
+  assert.equal(modelOf(this, agent).received.length, 1, `agent "${agent}"'s model was asked again`);
+});
+
+Then("agent {string} made only the activations that began before the time limit", function (this: Context, agent: string) {
+  assert.ok(this.runStartedAtMs !== undefined, "the run gave no start");
+  const limitAtMs = this.runStartedAtMs + this.timeLimitMs;
+  const wakes = this.wokeAtMs.get(agent) ?? [];
+  const budget = this.activations.get(agent) ?? 1;
+  // Otherwise the agent's budget, not the time limit, ended its activations, and the check below would say nothing.
+  assert.ok(wakes.length < budget, `agent "${agent}" made all ${budget} of its activations`);
+  for (const [index, wokeAtMs] of wakes.entries()) {
+    assert.ok(wokeAtMs < limitAtMs, `agent "${agent}"'s activation ${index + 1} began ${wokeAtMs - limitAtMs} ms after the time limit`);
+  }
 });
