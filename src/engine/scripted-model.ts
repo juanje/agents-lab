@@ -47,7 +47,9 @@ export class ScriptedModel {
         this.sessions.push(options?.sessionId);
         // Copied: the caller may go on adding to the same transcript after this turn.
         this.received.push([...context.messages]);
-        await waitAtLeast(delayMs);
+        // An aborted call stops waiting, so a timed-out turn frees its model slot at once; Pi's faux provider then
+        // answers it as aborted, whatever the script says.
+        await waitAtLeast(delayMs, options?.signal);
         if (error !== undefined) return fauxAssistantMessage([], { stopReason: "error", errorMessage: error });
         return fauxAssistantMessage([
           ...(text === undefined ? [] : [fauxText(text)]),
