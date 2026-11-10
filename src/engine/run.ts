@@ -35,10 +35,11 @@ export async function run<State>(
   agents: readonly Agent[],
   seed: number,
 ): Promise<Map<string, Decision[]>> {
-  // Stub: each agent's source still comes from one source of the replica's seed, in the agents' order.
-  const random = new Random(seed);
-  const sources = agents.map(() => new Random(Math.floor(random.next() * 2 ** 32)));
-  const made = await Promise.all(agents.map((agent, index) => loop(world, actions, agent, sources[index])));
+  // Each agent's rhythm has its own sequence, from the seed and the agent's name: sharing one would make an agent's
+  // intervals depend on when the others' models answer, and deriving by order on which other agents run.
+  const made = await Promise.all(
+    agents.map((agent) => loop(world, actions, agent, Random.derive(seed, `rhythm of ${agent.name}`))),
+  );
   return new Map(agents.map((agent, index) => [agent.name, made[index]]));
 }
 
