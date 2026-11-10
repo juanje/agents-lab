@@ -153,7 +153,9 @@ The engine refuses, before any model call:
 - a condition that sets a key the base configuration does not have, with an error that names the key by its full path (for example `slots.cuont`);
 - a condition that gives a key a value of another kind than the base configuration's (string, number, boolean, date and time, array or table), with an error that names the key and both kinds.
 
-*Why:* experiments live outside the engine, and a scenario that loads with a missing part fails only after model calls have been spent. A condition with a misspelled key, or a value of the wrong kind, would otherwise run as the baseline under another name, and the difference between conditions would be attributed to a change that never happened (NFR-05).
+A run takes the scenario as loaded: its world, tools, stimulus channels and system prompt all come from it, never passed separately.
+
+*Why:* experiments live outside the engine, and a scenario that loads with a missing part fails only after model calls have been spent. A condition with a misspelled key, or a value of the wrong kind, would otherwise run as the baseline under another name, and the difference between conditions would be attributed to a change that never happened (NFR-05). A run assembled from separate parts could use one scenario's tools with another's world, and its log would name a scenario it did not run.
 
 #### FR-SEED-01: One seed gives the same start
 Each replica has one seed. From it, the engine derives one random sequence per purpose:
