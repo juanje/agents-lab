@@ -95,8 +95,9 @@ The world applies one action at a time. When an action's precondition holds at t
 A scenario declares each action with its name, the description the agent sees, its arguments and its failure reasons. An agent's answer that matches no declared action applies nothing and is recorded with the outcome `unparsed`. An answer that names a declared action with arguments that action does not take applies nothing and is recorded with the outcome `invalid_arguments`.
 
 An answer is read by one rule, the same for every scenario:
-- the action is the answer's last non-empty line;
-- spaces at the start and end of that line are dropped, and repeated spaces count as one;
+- lines end in `\n` or `\r\n`;
+- the action is the answer's last line that holds anything besides whitespace;
+- whitespace at the start and end of that line is dropped, and any run of whitespace inside it counts as one space;
 - the action's name is matched without regard to case.
 
 Nothing else is repaired. The raw answer is always recorded.
