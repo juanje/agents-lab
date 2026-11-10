@@ -38,7 +38,7 @@ export const slotTools: readonly Tool<Slots>[] = [
     name: "look",
     description: "See which slots are empty and which are held, from slot 1, as a JSON array.",
     parameters: { type: "object", properties: {} },
-    durationMs: 0,
+    durationMs: () => 0,
     sense: (slots) => JSON.stringify(slots.map((holder): Seen => (holder === null ? "empty" : "held"))),
   },
   {

@@ -26,7 +26,8 @@ const bell = { name: "bell", source: "town bell", stimulus: "The bell rings." };
 const timed = { startedAtMs: expect.any(Number), endedAtMs: expect.any(Number) };
 
 /** The test world's tools, with its sensor "look" taking this long. */
-const withLookTaking = (durationMs: number) => slotTools.map((tool) => (tool.kind === "sensor" ? { ...tool, durationMs } : tool));
+const withLookTaking = (durationMs: number) =>
+  slotTools.map((tool) => (tool.kind === "sensor" ? { ...tool, durationMs: () => durationMs } : tool));
 
 /** The test world's tools, with its effector "take" taking this long. */
 const withTakeTaking = (durationMs: number) =>
@@ -477,6 +478,32 @@ describe("run", () => {
     expect(endedAtMs - startedAtMs).toBeGreaterThanOrEqual(50);
   });
 
+  it("takes the duration the sensor gives for the call's arguments, the calling agent and the state as the call starts", async () => {
+    const model = new ScriptedModel([
+      { toolCalls: [{ name: "look", arguments: {} }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+    const asked: unknown[] = [];
+    const tools = slotTools.map((tool) =>
+      tool.kind === "sensor"
+        ? {
+            ...tool,
+            durationMs: (state: Slots, call: EffectorCall): number => {
+              asked.push({ state, call });
+              return 40;
+            },
+          }
+        : tool,
+    );
+
+    const { toolCalls } = await run(slots({ tools }), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+
+    expect(asked).toEqual([{ state: emptySlots(3), call: { agent: "a", arguments: {} } }]);
+    const [{ outcome, startedAtMs, endedAtMs }] = toolCalls;
+    expect(outcome).toBe("success");
+    expect(endedAtMs - startedAtMs).toBeGreaterThanOrEqual(40);
+  });
+
   it("reads the world for a sensor's call when its duration ends, with what changed while it was under way", async () => {
     const looking = new ScriptedModel([
       { toolCalls: [{ name: "look", arguments: {} }], delayMs: 0 },
@@ -555,7 +582,7 @@ describe("run", () => {
       tool.kind === "effector"
         ? {
             ...tool,
-            durationMs: (state: Slots, call: EffectorCall) => {
+            durationMs: (state: Slots, call: EffectorCall): number => {
               asked.push({ state, call });
               return 40;
             },

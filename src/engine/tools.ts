@@ -1,24 +1,8 @@
 import type { Sensing } from "./sensings.ts";
 import type { Action } from "./world.ts";
 
-/** What a tool shares with the agent: its name, the description the agent sees, and its arguments as a JSON Schema. */
-interface Declared {
-  name: string;
-  description: string;
-  parameters: object;
-}
-
-/** A tool that returns part of the world, as seen from where the agent is, and changes nothing. */
-export interface Sensor<State> extends Declared {
-  kind: "sensor";
-  /** How long a call takes, in milliseconds, before it reads the world (FR-TOOL-03). */
-  durationMs: number;
-  /** The text the agent receives. */
-  sense(state: State, agent: string): string;
-}
-
 /**
- * What an effector's action receives: the agent that made the call and the call's arguments, kept apart so that no
+ * What a tool's call gives the tool: the agent that made the call and the call's arguments, kept apart so that no
  * argument can make the tool act as another agent (FR-TOOL-02).
  */
 export interface EffectorCall {
@@ -26,17 +10,33 @@ export interface EffectorCall {
   arguments: Record<string, unknown>;
 }
 
+/**
+ * What a tool declares: its name, the description the agent sees, its arguments as a JSON Schema, and its duration.
+ */
+interface Declared<State> {
+  name: string;
+  description: string;
+  parameters: object;
+  /**
+   * How long a call takes, in milliseconds, before a sensor reads the world or an effector's effect is checked and
+   * applied, from the call's arguments, the agent that makes it and the state as the call starts (FR-TOOL-03, FR-TOOL-04).
+   */
+  durationMs(state: State, call: EffectorCall): number;
+}
+
+/** A tool that returns part of the world, as seen from where the agent is, and changes nothing. */
+export interface Sensor<State> extends Declared<State> {
+  kind: "sensor";
+  /** The text the agent receives. */
+  sense(state: State, agent: string): string;
+}
+
 /** What an agent last sensed of an effector's target, recorded beside the call's outcome and never deciding it (NFR-11). */
 export type TargetAsSensed = "free" | "held" | "not_sensed";
 
 /** A tool that changes the world through the arbiter. */
-export interface Effector<State> extends Declared {
+export interface Effector<State> extends Declared<State> {
   kind: "effector";
-  /**
-   * How long a call takes, in milliseconds, before its effect is checked and applied, from the call's arguments, the
-   * agent that makes it and the state as the call starts (FR-TOOL-04).
-   */
-  durationMs(state: State, call: EffectorCall): number;
   action: Action<State, EffectorCall>;
   /** What the agent's last sensing says of the call's target; "not_sensed" when that sensing does not show it. */
   readTarget(sensing: Sensing, call: EffectorCall): TargetAsSensed;

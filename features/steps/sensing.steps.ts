@@ -9,7 +9,7 @@ Given(
   function (this: Context, name: string, durationMs: number) {
     const sensor = fixtureTool("sensor", name);
     assert.ok(sensor.kind === "sensor");
-    this.tools = this.tools.map((tool) => (tool.name === name ? { ...sensor, durationMs } : tool));
+    this.tools = this.tools.map((tool) => (tool.name === name ? { ...sensor, durationMs: () => durationMs } : tool));
   },
 );
 
@@ -33,12 +33,14 @@ Then(
 
 Given(
   "agent {string} runs on a scripted model that calls {string} with slot {int} while agent {string}'s {string} call is under way",
-  function (this: Context, agent: string, tool: string, slot: number, _other: string, sensor: string) {
+  function (this: Context, agent: string, tool: string, slot: number, other: string, sensor: string) {
     const declared = this.tools.find((candidate) => candidate.name === sensor);
-    assert.ok(declared?.kind === "sensor" && declared.durationMs > 0, `"${sensor}" takes no time for a call to land in`);
+    assert.ok(declared?.kind === "sensor", `the test world declares no sensor "${sensor}"`);
+    const durationMs = declared.durationMs(this.world.state, { agent: other, arguments: {} });
+    assert.ok(durationMs > 0, `"${sensor}" takes no time for a call to land in`);
     // Both agents wake at once, and the other agent's call starts as its first turn ends at once: this call lands halfway
     // through it. The step that checks the result checks that it did.
-    script(this, agent, callThenEnd(tool, slot, declared.durationMs / 2));
+    script(this, agent, callThenEnd(tool, slot, durationMs / 2));
   },
 );
 

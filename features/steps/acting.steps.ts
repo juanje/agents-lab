@@ -10,7 +10,8 @@ Given(
   "the sensor {string} takes no time and returns which slots are empty and which are held",
   function (this: Context, name: string) {
     const sensor = fixtureTool("sensor", name);
-    assert.ok(sensor.kind === "sensor" && sensor.durationMs === 0, `the test world's "${name}" takes time`);
+    // It takes no time for any call, in any state: the test world's "look" gives its duration from neither.
+    assert.ok(sensor.kind === "sensor" && sensor.durationMs([null], { agent: "a", arguments: {} }) === 0, `the test world's "${name}" takes time`);
   },
 );
 
