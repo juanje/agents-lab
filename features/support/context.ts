@@ -1,5 +1,6 @@
 import { World as CucumberWorld, setWorldConstructor } from "@cucumber/cucumber";
 import type { ActionArgs, DeclaredAction, Outcome } from "../../src/engine/actions.ts";
+import type { Grid } from "../../src/engine/grid.ts";
 import type { Decision } from "../../src/engine/run.ts";
 import type { Condition, LoadedScenario, Scenario } from "../../src/engine/scenario.ts";
 import type { ScriptedModel } from "../../src/engine/scripted-model.ts";
@@ -36,6 +37,8 @@ export class Context extends CucumberWorld {
   rhythmRange!: { minMs: number; maxMs: number };
   /** The intervals each agent's rhythm drew in each replica, in the order the scenario runs them. */
   replicaIntervals!: Map<string, number[]>[];
+  /** The grid the scenario sets up. */
+  grid!: Grid;
 }
 
 setWorldConstructor(Context);
