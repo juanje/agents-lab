@@ -286,3 +286,19 @@ Then("agent {string}'s first model turn had a latency of at least {int} millisec
   const latency = first.endedAtMs - first.startedAtMs;
   assert.ok(latency >= latencyMs, `agent "${agent}"'s first model turn took ${latency} ms`);
 });
+
+Given("agent {string} runs on a scripted model whose only turn is a call to {string}", function (this: Context, agent: string, tool: string) {
+  script(this, agent, [{ toolCalls: [{ name: tool, arguments: {} }], delayMs: 0 }]);
+});
+
+Then("agent {string}'s activation ended after its {string} call", function (this: Context, agent: string, tool: string) {
+  // The turn after the call is the one past the script: it calls nothing, so no turn follows it.
+  assert.deepEqual(
+    answersOf(this, agent).map((answer) => answer.toolCalls.map((call) => call.name)),
+    [[tool], []],
+  );
+});
+
+Then("the run recorded {string} for agent {string}", function (this: Context, outcome: string, agent: string) {
+  assert.deepEqual(turnsOf(this, agent).map((turn) => turn.outcome), ["success", outcome]);
+});

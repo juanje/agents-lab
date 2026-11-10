@@ -172,6 +172,18 @@ describe("run", () => {
     expect(model.received).toHaveLength(1);
   });
 
+  it("records the turn past the end of the script as script_exhausted, and ends the activation there", async () => {
+    const model = new ScriptedModel([{ toolCalls: [{ name: "look", arguments: {} }], delayMs: 0 }]);
+
+    const { turns, messages } = await run(new World(emptySlots(3)), slotTools, rhythmOnly(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+
+    expect(turns.map(({ outcome, message }) => ({ outcome, message }))).toEqual([
+      { outcome: "success", message: undefined },
+      { outcome: "script_exhausted", message: undefined },
+    ]);
+    expect(messages.get("a")?.filter((message) => message.role === "assistant")).toHaveLength(2);
+  });
+
   it("aborts a model turn longer than the timeout, records it as timeout, and runs none of its tool calls", async () => {
     const world = new World(emptySlots(3));
     const model = new ScriptedModel([
