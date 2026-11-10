@@ -17,6 +17,10 @@ When("agent {string} answers {string}", function (this: Context, agent: string, 
   this.outcome = act(this.world, this.actions, agent, answer);
 });
 
+When("agent {string} answers:", function (this: Context, agent: string, answer: string) {
+  this.outcome = act(this.world, this.actions, agent, answer);
+});
+
 Then("the decision's outcome is {string}", function (this: Context, outcome: string) {
   assert.equal(this.outcome, outcome);
 });
