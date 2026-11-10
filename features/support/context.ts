@@ -60,6 +60,11 @@ export class Context extends CucumberWorld {
   systemPrompt = "";
   /** How long a model turn may run, unless the scenario says: long enough for any scripted turn here. */
   modelTurnTimeoutMs = 10_000;
+  /** How long the run may last, unless the scenario says: longer than any scenario here runs. */
+  timeLimitMs = 60_000;
+  /** When the run started and ended, by performance.now(). */
+  runStartedAtMs?: number;
+  runEndedAtMs?: number;
   /** How many model calls may run at once, unless the scenario says: more than the agents of any scenario here. */
   parallelismLimit = 10;
   /** How long each agent waits before an activation. */

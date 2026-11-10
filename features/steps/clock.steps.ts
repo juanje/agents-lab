@@ -4,7 +4,61 @@ import type { AgentCall } from "../../src/engine/tools.ts";
 import { slotTools } from "../../tests/fixtures/slots.ts";
 import type { Context } from "../support/context.ts";
 import { turnsOf } from "./adapter.steps.ts";
-import { callThenEnd, modelOf, scriptActivations } from "./tool.steps.ts";
+import { callThenEnd, fixtureTool, modelOf, scriptActivations } from "./tool.steps.ts";
+
+Given(
+  "the effector {string} takes {int} milliseconds and puts the agent in a slot, only if that slot is empty",
+  function (this: Context, name: string, durationMs: number) {
+    const effector = fixtureTool("effector", name);
+    assert.ok(effector.kind === "effector");
+    this.tools = this.tools.map((tool) => (tool.name === name ? { ...effector, durationMs: () => durationMs } : tool));
+  },
+);
+
+Given(
+  "agent {string} makes {int} activations and agent {string} makes {int}, each ending its first turn without a tool call",
+  function (this: Context, first: string, firstCount: number, second: string, secondCount: number) {
+    for (const [agent, count] of [[first, firstCount], [second, secondCount]] as const) {
+      scriptActivations(this, agent, count, () => [{ text: "Nothing to do.", delayMs: 0 }]);
+    }
+  },
+);
+
+Given("the run's time limit is {int} second(s)", function (this: Context, seconds: number) {
+  this.timeLimitMs = seconds * 1000;
+});
+
+Given("the run's time limit is {int} milliseconds", function (this: Context, limitMs: number) {
+  this.timeLimitMs = limitMs;
+});
+
+Then(
+  "agent {string} made {int} activations and agent {string} made {int}",
+  function (this: Context, first: string, firstCount: number, second: string, secondCount: number) {
+    // An agent makes an activation each time it wakes, which its session does by taking its rhythm's stimulus.
+    for (const [agent, count] of [[first, firstCount], [second, secondCount]] as const) {
+      const woke = this.wokeAtMs.get(agent)?.length ?? 0;
+      assert.equal(woke, count, `agent "${agent}" made ${woke} activations`);
+    }
+  },
+);
+
+/** How long the run lasted, from its start to its end. */
+function runLastedMs(context: Context): number {
+  assert.ok(context.runStartedAtMs !== undefined && context.runEndedAtMs !== undefined, "the run did not end");
+  return context.runEndedAtMs - context.runStartedAtMs;
+}
+
+Then("the run ended well before its time limit", function (this: Context) {
+  // Well before: in less than half of it, which a run that waited for its limit could not.
+  const lastedMs = runLastedMs(this);
+  assert.ok(lastedMs < this.timeLimitMs / 2, `the run lasted ${lastedMs} ms of its ${this.timeLimitMs} ms time limit`);
+});
+
+Then("the run ended within {int} milliseconds of starting", function (this: Context, withinMs: number) {
+  const lastedMs = runLastedMs(this);
+  assert.ok(lastedMs <= withinMs, `the run lasted ${lastedMs} ms`);
+});
 
 /** Every slot some agent's script already names, so a "free slot" is one no other call can take first. */
 function namedSlots(context: Context): Set<number> {
