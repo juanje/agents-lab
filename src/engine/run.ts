@@ -33,10 +33,10 @@ export async function run<State>(
   world: World<State>,
   actions: readonly DeclaredAction<State, ActionArgs>[],
   agents: readonly Agent[],
-  random: Random,
+  seed: number,
 ): Promise<Map<string, Decision[]>> {
-  // Each agent draws from its own source, seeded from the replica's in the agents' order before any loop starts. Agents
-  // sharing the replica's source would draw in the order their models answer, so one seed would not give one sequence.
+  // Stub: each agent's source still comes from one source of the replica's seed, in the agents' order.
+  const random = new Random(seed);
   const sources = agents.map(() => new Random(Math.floor(random.next() * 2 ** 32)));
   const made = await Promise.all(agents.map((agent, index) => loop(world, actions, agent, sources[index])));
   return new Map(agents.map((agent, index) => [agent.name, made[index]]));

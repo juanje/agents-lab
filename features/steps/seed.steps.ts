@@ -77,7 +77,7 @@ const DECISIONS = 3;
  * drew, in order.
  */
 async function runReplica(context: Context, seed: number, condition?: Condition): Promise<Map<string, number[]>> {
-  const { world, scenario, configuration, random } = loadScenario(context.scenario, seed, condition);
+  const { world, scenario, configuration } = loadScenario(context.scenario, seed, condition);
   const { minMs, maxMs } = context.rhythmRange;
   const { agents } = configuration.slots as { agents: number };
   const drawn = new Map<string, number[]>();
@@ -96,7 +96,7 @@ async function runReplica(context: Context, seed: number, condition?: Condition)
       },
     };
   });
-  await run(world, scenario.actions, runningAgents, random);
+  await run(world, scenario.actions, runningAgents, seed);
   return drawn;
 }
 

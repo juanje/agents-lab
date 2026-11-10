@@ -66,7 +66,7 @@ async function load(context: Context, condition?: Condition): Promise<void> {
       world,
       scenario.actions,
       [{ name: "a", model, decisions: 1, rhythm: () => 0 }],
-      context.loaded.random,
+      1,
     );
   } catch {
     return;
