@@ -1,6 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { type Grid, emptyGrid, entitiesAt, neighbours, place, randomEmptyCell, window } from "../src/engine/grid.ts";
+import {
+  CELL_FULL,
+  type Grid,
+  emptyGrid,
+  entitiesAt,
+  move,
+  neighbours,
+  place,
+  randomEmptyCell,
+  window,
+} from "../src/engine/grid.ts";
 import type { Random } from "../src/engine/random.ts";
+import { World } from "../src/engine/world.ts";
 
 describe("neighbours", () => {
   const grid = emptyGrid(5, 4, 1);
@@ -138,5 +149,33 @@ describe("randomEmptyCell", () => {
 
     expect(randomEmptyCell(grid, random)).toBeUndefined();
     expect(random.draws).toBe(0);
+  });
+});
+
+describe("move", () => {
+  it("takes an entity out of its cell and puts it in the destination, through the arbiter", () => {
+    const world = new World(place(place(emptyGrid(3, 2, 2), "a", { x: 0, y: 0 }), "b", { x: 0, y: 0 }));
+
+    expect(world.apply(move, { entity: "a", to: { x: 2, y: 1 } })).toEqual({ applied: true });
+    expect(entitiesAt(world.state, { x: 0, y: 0 })).toEqual(["b"]);
+    expect(entitiesAt(world.state, { x: 2, y: 1 })).toEqual(["a"]);
+    expect(world.version).toBe(1);
+  });
+
+  it("moves into a cell that holds entities below its capacity", () => {
+    const world = new World(place(place(emptyGrid(2, 1, 2), "a", { x: 0, y: 0 }), "b", { x: 1, y: 0 }));
+
+    expect(world.apply(move, { entity: "a", to: { x: 1, y: 0 } })).toEqual({ applied: true });
+    expect(entitiesAt(world.state, { x: 1, y: 0 })).toEqual(["b", "a"]);
+  });
+
+  it("fails with cell_full when the destination is at capacity, and changes nothing", () => {
+    const world = new World(place(place(emptyGrid(2, 1, 1), "a", { x: 0, y: 0 }), "b", { x: 1, y: 0 }));
+    const before = world.state;
+
+    expect(world.apply(move, { entity: "a", to: { x: 1, y: 0 } })).toEqual({ applied: false, reason: CELL_FULL });
+    expect(CELL_FULL).toBe("cell_full");
+    expect(world.state).toBe(before);
+    expect(world.version).toBe(0);
   });
 });

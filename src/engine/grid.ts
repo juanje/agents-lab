@@ -97,3 +97,6 @@ export const move: Action<Grid, { entity: string; to: Position }> = {
   precondition: () => ({ holds: true }),
   effect: (grid) => grid,
 };
+
+/** Stub: the reason is not named yet, so the tests can fail on their assertions first. */
+export const CELL_FULL = "";
