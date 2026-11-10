@@ -110,10 +110,10 @@ Each tool is declared with its name, the description the agent sees, its argumen
 
 #### FR-TOOL-02: Only tool calls act
 Text an agent writes changes nothing and reaches no one; it is recorded as the agent's reflection.
-- A tool call whose arguments the tool does not take applies nothing and is recorded with the outcome `invalid_arguments`, together with the call exactly as the model made it, before any coercion.
+- A tool call whose arguments the tool does not take applies nothing and is recorded with the outcome `invalid_arguments`, together with the call exactly as the model made it, before any coercion. A tool takes only the arguments it declares: the engine rejects any other, whatever the tool's schema allows, without changing the schema the agent sees.
 - A call to a tool the agent's session does not offer applies nothing and is recorded with the outcome `unknown_tool`.
 - A tool always acts as the agent that called it; no argument can make it act as another agent.
-- A failed call tells the agent it failed, and why: its result is marked as an error and gives the outcome.
+- A failed call tells the agent it failed, and why: its result is marked as an error and gives the outcome. When the harness itself rejects a call (`invalid_arguments` it detects, `unknown_tool`), the agent receives the harness's explanation, marked as an error, and the outcome is in the log.
 
 *Why:* a guessed action would put the platform's reading in place of the agent's behaviour, and Pi coerces arguments before a tool sees them; a malformed call must be counted as made. A call to a missing tool is the agent's behaviour, not a defect of the scenario, and must not stop the run. An agent that could act in another's name would make every record of who did what unreliable. An agent told that a failure succeeded would act on a world it misreads.
 
@@ -384,3 +384,4 @@ Every tool call takes time and every effector spends energy, as the scenario dec
 - v0.3 will need memory across runs: a workspace for each agent's memory files. `@earendil-works/pi-durable` (experimental in Pi 1.5.0) may help with long runs.
 - Open: whether real time is enough for E16's vote deadlines to be repeatable, or simulated time is needed.
 - Open: whether an agent can make several tool calls at once in one model turn, or they run one after another. Until decided, they run one after another.
+- FR-RECORD-01: `invalid_arguments` must be recognised from the harness's validation failure, not inferred because a call did not run; a call that did not run for another reason (a message cut at the token limit, an abort in the middle of a batch) needs its own outcome.
