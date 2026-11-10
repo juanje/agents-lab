@@ -42,6 +42,22 @@ describe("run", () => {
     expect(actedAtMs).toBeLessThanOrEqual(performance.now());
   });
 
+  it("runs each agent's decisions in its own loop, so a slow agent does not hold back a fast one", async () => {
+    const world = new World(emptySlots(3));
+    const slow = new ScriptedModel([{ text: "wait", delayMs: 200 }]);
+    const fast = new ScriptedModel(Array.from({ length: 3 }, () => ({ text: "wait", delayMs: 20 })));
+
+    const decisions = await run(world, declaredActions, [
+      { name: "slow", model: slow, decisions: 1 },
+      { name: "fast", model: fast, decisions: 3 },
+    ]);
+
+    const slowActedAtMs = decisions.get("slow")?.[0]?.actedAtMs ?? -Infinity;
+    const fastActedAtMs = decisions.get("fast")?.map((decision) => decision.actedAtMs ?? Infinity);
+    expect(fastActedAtMs).toHaveLength(3);
+    for (const actedAtMs of fastActedAtMs ?? []) expect(actedAtMs).toBeLessThan(slowActedAtMs);
+  });
+
   it("gives a decision after the script runs out the outcome script_exhausted, with no answer, and applies nothing", async () => {
     const world = new World(emptySlots(3));
     const model = new ScriptedModel([{ text: "take 1", delayMs: 0 }]);
