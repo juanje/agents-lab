@@ -1,4 +1,4 @@
-import type { TomlTable } from "smol-toml";
+import { type TomlTable, parse } from "smol-toml";
 import type { ActionArgs, DeclaredAction } from "./actions.ts";
 import { World } from "./world.ts";
 
@@ -30,6 +30,8 @@ export interface LoadedScenario<State> {
 /**
  * Loads a scenario. Scenarios reach the engine as modules, not through the type checker, so any part may be missing.
  */
-export function loadScenario<State>(_scenario: Partial<Scenario<State>>): LoadedScenario<State> {
-  throw new Error("loading a scenario is not built");
+export function loadScenario<State>(parts: Partial<Scenario<State>>): LoadedScenario<State> {
+  const scenario = parts as Scenario<State>;
+  const configuration = parse(scenario.baseConfiguration);
+  return { scenario, configuration, world: new World(scenario.initialState(configuration)) };
 }
