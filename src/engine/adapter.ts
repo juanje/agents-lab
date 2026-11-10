@@ -289,7 +289,7 @@ function definition<State>(
     execute: async (id, args: Record<string, unknown>) => {
       const startedAtMs = performance.now();
       const { outcome, text } =
-        undeclared(tool, args) ?? (tool.kind === "sensor" ? await sense(world, tool, agent) : effect(world, tool, agent, args));
+        undeclared(tool, args) ?? (tool.kind === "sensor" ? await sense(world, tool, agent) : await effect(world, tool, agent, args));
       const endedAtMs = performance.now();
       executed.set(id, { outcome, startedAtMs, endedAtMs });
       if (tool.kind === "sensor" && outcome === "success") sensings.record(agent, { tool: tool.name, result: text, atMs: endedAtMs });
@@ -327,8 +327,12 @@ async function sense<State>(world: World<State>, sensor: Sensor<State>, agent: s
   return { outcome: "success", text: sensor.sense(world.state, agent) };
 }
 
-/** Applies an effector's call through the arbiter; the agent receives its outcome: "success" or the failure's reason. */
-function effect<State>(world: World<State>, effector: Effector<State>, agent: string, args: Record<string, unknown>): CallResult {
+/**
+ * Applies an effector's call through the arbiter once its duration has passed, against the world as it is then
+ * (FR-TOOL-04); the agent receives its outcome: "success" or the failure's reason.
+ */
+async function effect<State>(world: World<State>, effector: Effector<State>, agent: string, args: Record<string, unknown>): Promise<CallResult> {
+  await waitAtLeast(effector.durationMs);
   const result = world.apply(effector.action, { agent, arguments: args });
   const outcome = result.applied ? "success" : result.reason;
   return { outcome, text: outcome };

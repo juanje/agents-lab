@@ -15,8 +15,8 @@ Given(
 Given(
   "the effector {string} takes no time and puts the agent in a slot, only if that slot is empty, and otherwise fails with {string}",
   function (this: Context, name: string, reason: string) {
-    // Effectors have no duration yet (FR-TOOL-04): the test world's applies its effect as soon as it is called.
-    fixtureTool("effector", name);
+    const effector = fixtureTool("effector", name);
+    assert.ok(effector.kind === "effector" && effector.durationMs === 0, `the test world's "${name}" takes time`);
     assert.equal(reason, SLOT_TAKEN);
   },
 );
