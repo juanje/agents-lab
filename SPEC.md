@@ -50,35 +50,36 @@ Experiments are written outside this repository, in the experiment language (FR-
 1. FR-WORLD-01 (built)
 2. FR-TOOL-01 (built)
 3. FR-ADAPTER-02 (built)
-4. FR-STIMULUS-01
-5. FR-TOOL-02 (rebuild, was FR-ACTION-01)
-6. FR-ADAPTER-01 (rebuild)
+4. FR-STIMULUS-01 (built)
+5. FR-TOOL-02 (built)
+6. FR-ADAPTER-01 (built)
 7. FR-CLOCK-01 (rebuild)
 8. FR-SCENARIO-01 (rebuild: its parts change)
 9. FR-SEED-01 (built)
 10. FR-SPACE-01 (built)
-11. FR-TOOL-03
-12. FR-TOOL-04 (was FR-ACTION-02)
-13. FR-SPACE-02
-14. FR-PROCESS-01
-15. FR-EFFORT-01
+11. FR-SMOKE-01 — the basic pieces run with a real model
+12. FR-TOOL-03
+13. FR-TOOL-04 (was FR-ACTION-02)
+14. FR-SPACE-02
+15. FR-CLOCK-02
 16. FR-RECORD-01
-17. FR-CLOCK-02
-18. FR-METRIC-01
-19. FR-METRIC-02
-20. FR-RECORD-02
-21. FR-INVENTORY-01
-22. FR-EXPERIMENT-01
-23. FR-EXPERIMENT-02
-24. FR-EXPERIMENT-03
-25. FR-EXPERIMENT-04
-26. FR-RUN-01
-27. FR-RUN-02
-28. FR-RUN-03
-29. FR-NEIGHBOURHOOD-01
-30. FR-NEIGHBOURHOOD-02
-31. FR-NEIGHBOURHOOD-03
-32. FR-ANALYSIS-01
+17. FR-NEIGHBOURHOOD-01
+18. FR-NEIGHBOURHOOD-02
+19. FR-NEIGHBOURHOOD-03
+20. FR-EXPERIMENT-01
+21. FR-RUN-01 — a first pilot of E13 can run here; what follows makes it a valid experiment
+22. FR-PROCESS-01
+23. FR-EFFORT-01
+24. FR-METRIC-01
+25. FR-METRIC-02
+26. FR-RECORD-02
+27. FR-INVENTORY-01
+28. FR-EXPERIMENT-02
+29. FR-EXPERIMENT-03
+30. FR-EXPERIMENT-04
+31. FR-RUN-02
+32. FR-RUN-03
+33. FR-ANALYSIS-01
 
 ## Invariants
 
@@ -170,6 +171,17 @@ The engine provides a grid of a given width and height, with a capacity per cell
 - **move:** moves an entity from its cell to another. It fails with `cell_full` when the destination is at capacity. A move of an entity the grid does not hold, or to a cell outside the grid, is refused with an error that names the entity or the cell, and applies nothing.
 
 *Why:* several of the lab's scenarios are spatial, and a shared grid keeps neighbourhoods and views the same across them. An agent's bad choice is the scenario's to name (for example `invalid_target`); a move that reaches the grid with an unknown entity or a cell outside it is a defect in the scenario, and recording it as a change would put an entity or a position in the log that never existed.
+
+#### FR-SMOKE-01: The basic pieces run with a real model
+A smoke run, started by hand and outside the gate, runs two agents in the slots test scenario on a real model, through the lab's Pi login. The model is the one the environment variable `AGENTS_LAB_SMOKE_MODEL` names, in Pi's `provider/id` form. The run passes when:
+- it ends without stopping;
+- each agent's activations begin with its rhythm stimulus;
+- each agent makes at least one model turn with the outcome `success` and at least one tool call;
+- every tool call has an outcome from the declared set;
+- the person's Pi directory is unchanged.
+
+It prints, for each agent, its model turns with their latencies and its tool calls with their outcomes.
+*Why:* the tests run on a scripted model; only a real model shows whether the harness, the lab's login and the tools work together, and what latencies to expect, before an experiment spends calls.
 
 #### FR-TOOL-03: Sensing takes time and reads the world when it ends
 A sensor call takes its declared duration. Its result is the world as it is when the duration ends, as seen from where the agent is then. The engine keeps, for each agent, what each of its sensor calls returned and when.
