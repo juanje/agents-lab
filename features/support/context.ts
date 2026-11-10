@@ -1,6 +1,7 @@
 import { World as CucumberWorld, setWorldConstructor } from "@cucumber/cucumber";
 import type { Grid, Position, WindowCell } from "../../src/engine/grid.ts";
 import type { Condition, Scenario } from "../../src/engine/scenario.ts";
+import type { ModelTurn } from "../../src/engine/run.ts";
 import type { ScriptedModel } from "../../src/engine/scripted-model.ts";
 import type { ActionResult, World } from "../../src/engine/world.ts";
 import type { Slots } from "../../tests/fixtures/slots.ts";
@@ -26,6 +27,8 @@ export class Context extends CucumberWorld {
   lastAgent?: string;
   /** Every file in the person's Pi directory and its content, as the scenario left it before the run. */
   personsPiFiles?: Map<string, string>;
+  /** The model turns the run gave, in the order they ended. */
+  turns?: readonly ModelTurn[];
   /** The system prompt the scenario declares. */
   systemPrompt = "";
   /** The scenario the engine is given, and the condition it is loaded with. */

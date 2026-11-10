@@ -141,3 +141,45 @@ Then("the person's Pi directory is unchanged", function (this: Context) {
   assert.ok(this.personsPiFiles !== undefined, "the scenario set up no Pi directory for the person");
   assert.deepEqual(filesUnder(personsPiDirectory(this)), this.personsPiFiles);
 });
+
+Given(
+  "agent {string} runs on a scripted model whose first turn is a provider error {string}",
+  function (this: Context, agent: string, message: string) {
+    // A second activation shows whether the run went on after the error, and what the agent's session holds then.
+    this.activations.set(agent, 2);
+    script(this, agent, [
+      { error: message, delayMs: 0 },
+      { text: "Nothing to do.", delayMs: 0 },
+    ]);
+  },
+);
+
+/** The model turns of an agent the run gave, in the order they ended. */
+function turnsOf(context: Context, agent: string) {
+  assert.ok(context.turns !== undefined, "the run gave no model turns");
+  return context.turns.filter((turn) => turn.agent === agent);
+}
+
+Then(
+  "agent {string}'s first model turn has the outcome {string} with the message {string}",
+  function (this: Context, agent: string, outcome: string, message: string) {
+    assert.deepEqual(
+      (({ outcome, message }) => ({ outcome, message }))(turnsOf(this, agent)[0] ?? {}),
+      { outcome, message },
+    );
+  },
+);
+
+Then("agent {string}'s activation ended after it", function (this: Context, agent: string) {
+  // The next turn came from a new activation, whose prompt follows the first's: a retry would have repeated the first.
+  const [, next] = modelOf(this, agent).received;
+  assert.ok(next !== undefined, `agent "${agent}"'s model made no turn after the first`);
+  assert.equal(next.filter((message) => message.role === "user").length, 2, "the next turn was not a new activation's");
+});
+
+Then("the run did not stop", function (this: Context) {
+  // Every activation of every agent made its model turn.
+  for (const [agent, model] of this.models) {
+    assert.equal(model.received.length, this.activations.get(agent) ?? 1, `agent "${agent}" did not make all its activations`);
+  }
+});
