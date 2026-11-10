@@ -1,6 +1,6 @@
 import { getCurrentSystemPrompt, getCurrentTools } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "vitest";
-import { run } from "../src/engine/run.ts";
+import { type RunSettings, run } from "../src/engine/run.ts";
 import { ScriptedModel } from "../src/engine/scripted-model.ts";
 import { World } from "../src/engine/world.ts";
 import { type Slots, emptySlots, slotTools } from "./fixtures/slots.ts";
@@ -11,11 +11,14 @@ const noWait = () => 0;
 /** A replica's seed, for a run whose rhythms draw nothing from it. */
 const seed = 1;
 
+/** Settings for a run whose test looks at none of them. */
+const settings: RunSettings = { systemPrompt: "" };
+
 describe("run", () => {
   it("offers the agent's model exactly the scenario's tools, with their descriptions and arguments", async () => {
     const model = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
 
-    await run(new World(emptySlots(3)), slotTools, [{ name: "a", model, activations: 1, rhythm: noWait }], seed);
+    await run(new World(emptySlots(3)), slotTools, [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
 
     expect(model.received.map(getCurrentTools)).toEqual([
       slotTools.map(({ name, description, parameters }) => ({ name, description, parameters })),
@@ -29,7 +32,7 @@ describe("run", () => {
       { text: "Done.", delayMs: 0 },
     ]);
 
-    await run(world, slotTools, [{ name: "a", model, activations: 1, rhythm: noWait }], seed);
+    await run(world, slotTools, [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
 
     const [, next] = model.received;
     const call = next?.find((message) => message.role === "assistant")?.content[0];
@@ -50,7 +53,7 @@ describe("run", () => {
       { text: "Done.", delayMs: 0 },
     ]);
 
-    await run(world, slotTools, [{ name: "a", model, activations: 1, rhythm: noWait }], seed);
+    await run(world, slotTools, [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
 
     expect(world.state).toEqual(["a", null, null]);
     expect(world.version).toBe(1);
@@ -63,7 +66,7 @@ describe("run", () => {
       { text: "Nothing to do.", delayMs: 0 },
     ]);
 
-    await run(new World(emptySlots(3)), slotTools, [{ name: "a", model, activations: 2, rhythm: noWait }], seed);
+    await run(new World(emptySlots(3)), slotTools, [{ name: "a", model, activations: 2, rhythm: noWait }], seed, settings);
 
     expect(model.sessions).toEqual([expect.any(String), model.sessions[0], model.sessions[0]]);
   });
@@ -94,6 +97,7 @@ describe("run", () => {
         { name: "b", model: takes(2), activations: 1, rhythm: noWait },
       ],
       seed,
+      settings,
     );
 
     expect(world.state).toEqual(["a", "b", null]);
@@ -112,6 +116,7 @@ describe("run", () => {
           { name: "b", model: answers(bDelayMs), activations: 4, rhythm: (source) => source.next() * 5 },
         ],
         42,
+        settings,
       );
       return draws;
     }
@@ -136,6 +141,7 @@ describe("run", () => {
           rhythm: (source) => (name === "b" ? (draws.push(source.next()), 0) : source.next()),
         })),
         42,
+        settings,
       );
       return draws;
     }

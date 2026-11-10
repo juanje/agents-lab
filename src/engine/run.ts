@@ -14,6 +14,12 @@ export interface Agent {
   rhythm: (random: Random) => number;
 }
 
+/** What every agent's session in a run is given besides its tools. */
+export interface RunSettings {
+  /** The scenario's system prompt, which takes the place of Pi's own. */
+  systemPrompt: string;
+}
+
 /**
  * Runs every agent's activations in the world. Each agent runs its own loop and no agent waits for another: there are
  * no turns (NFR-01), only the arbiter ordering effects.
@@ -23,6 +29,7 @@ export async function run<State>(
   tools: readonly Tool<State>[],
   agents: readonly Agent[],
   seed: number,
+  settings: RunSettings,
 ): Promise<void> {
   const runtime = await ModelRuntime.create();
   for (const agent of agents) runtime.registerNativeProvider(agent.model.provider);
@@ -30,7 +37,7 @@ export async function run<State>(
   // intervals depend on when the others' models answer, and deriving by order on which other agents run.
   await Promise.all(
     agents.map(async (agent) => {
-      const session = await openSession(world, tools, agent, runtime);
+      const session = await openSession(world, tools, agent, runtime, settings.systemPrompt);
       try {
         await loop(session, agent, Random.derive(seed, `rhythm of ${agent.name}`));
       } finally {

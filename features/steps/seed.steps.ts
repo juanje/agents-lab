@@ -97,7 +97,7 @@ async function runReplica(context: Context, seed: number, condition?: Condition)
     };
   });
   // The placing scenario's agents only rest: their tools play no part in their intervals.
-  await run(world, [], runningAgents, seed);
+  await run(world, [], runningAgents, seed, { systemPrompt: context.scenario.systemPrompt ?? "" });
   return drawn;
 }
 

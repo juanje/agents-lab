@@ -1,11 +1,13 @@
 import {
   type AgentSession,
   type ModelRuntime,
+  type ResourceLoader,
   SessionManager,
   type ToolDefinition,
   createAgentSession,
+  createExtensionRuntime,
 } from "@earendil-works/pi-coding-agent";
-import type { Api, Model, Provider } from "@earendil-works/pi-ai";
+import { type Api, type Model, type Provider, getCurrentSystemMessage } from "@earendil-works/pi-ai";
 import type { Effector, Tool } from "./tools.ts";
 import type { World } from "./world.ts";
 
@@ -21,6 +23,7 @@ export async function openSession<State>(
   tools: readonly Tool<State>[],
   agent: { name: string; model: AgentModel },
   runtime: ModelRuntime,
+  systemPrompt: string,
 ): Promise<AgentSession> {
   const { session } = await createAgentSession({
     modelRuntime: runtime,
@@ -28,9 +31,52 @@ export async function openSession<State>(
     // The allowlist leaves out Pi's built-in tools and filters custom tools too, so it names every scenario tool.
     tools: tools.map((tool) => tool.name),
     customTools: tools.map((tool) => definition(world, tool, agent.name)),
+    resourceLoader: resources(systemPrompt),
     sessionManager: SessionManager.inMemory(),
   });
+  forceSystemPrompt(session, systemPrompt);
   return session;
+}
+
+/**
+ * Makes the system prompt the model receives exactly the scenario's. Pi adds sections of its own, such as the working
+ * directory, to every prompt it builds; only a forced prompt is sent as it is. Pi forces one by replacing the system
+ * message in the agent's context projection (AgentSession._installAgentForcedPromptProjection), and this does the same.
+ */
+function forceSystemPrompt(session: AgentSession, systemPrompt: string): void {
+  const projected = session.agent.transformContext;
+  session.agent.transformContext = async (messages, signal) => {
+    const transformed = projected === undefined ? messages : await projected(messages, signal);
+    const current = getCurrentSystemMessage(transformed);
+    const head = {
+      role: "system" as const,
+      content: systemPrompt,
+      ...(current?.toolsAdded === undefined ? {} : { toolsAdded: current.toolsAdded }),
+      timestamp: current?.timestamp ?? Date.now(),
+    };
+    return [head, ...transformed.filter((message) => message.role !== "system")];
+  };
+}
+
+/**
+ * What the session loads besides its tools: the scenario's system prompt in place of Pi's own, and nothing else: no
+ * extensions, skills, prompt templates, themes or context files such as AGENTS.md (NFR-04).
+ */
+function resources(systemPrompt: string): ResourceLoader {
+  const extensions = { extensions: [], errors: [], runtime: createExtensionRuntime() };
+  return {
+    getExtensions: () => extensions,
+    getSkills: () => ({ skills: [], diagnostics: [] }),
+    getPrompts: () => ({ prompts: [], diagnostics: [] }),
+    getThemes: () => ({ themes: [], diagnostics: [] }),
+    getAgentsFiles: () => ({ agentsFiles: [] }),
+    getSystemPrompt: () => systemPrompt,
+    getSystemPromptSource: () => undefined,
+    getAppendSystemPrompt: () => [],
+    getAppendSystemPromptSources: () => [],
+    extendResources: () => {},
+    reload: async () => {},
+  };
 }
 
 /** A scenario's tool as Pi runs it for one agent: the agent sees what it is for and what it takes; how it works stays in the world. */
