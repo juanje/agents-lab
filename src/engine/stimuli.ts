@@ -20,6 +20,12 @@ export class Stimuli {
     this.#channels = channels;
   }
 
+  deliver(_agent: string, _channel: string): void {}
+
+  take(_agent: string): Stimulus[] {
+    return [];
+  }
+
   /** What an agent receives when its rhythm wakes it. */
   wake(_agent: string): Stimulus[] {
     return [this.#stimulusOf("rhythm")];

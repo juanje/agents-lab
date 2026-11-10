@@ -10,4 +10,20 @@ describe("Stimuli", () => {
 
     expect(stimuli.wake("a")).toEqual([{ channel: "rhythm", source: "rhythm", content: "You wake up." }]);
   });
+
+  it("keeps a delivered stimulus for its agent until the agent's session takes it, once", () => {
+    const stimuli = new Stimuli([bell, rhythmChannel]);
+
+    stimuli.deliver("a", "bell");
+
+    expect(stimuli.take("b")).toEqual([]);
+    expect(stimuli.take("a")).toEqual([{ channel: "bell", source: "town bell", content: "The bell rings." }]);
+    expect(stimuli.take("a")).toEqual([]);
+  });
+
+  it("refuses a stimulus from a channel the scenario does not declare, naming it", () => {
+    const stimuli = new Stimuli([rhythmChannel]);
+
+    expect(() => stimuli.deliver("a", "bell")).toThrow('no channel named "bell" is declared');
+  });
 });

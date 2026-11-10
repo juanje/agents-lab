@@ -42,6 +42,10 @@ export class Context extends CucumberWorld {
   parallelismLimit = 10;
   /** How long each agent waits before an activation. */
   waitBeforeActivationMs = 0;
+  /** An agent's rhythm, when the scenario gives it one of its own; it is called each time the agent starts to rest. */
+  readonly rhythms = new Map<string, () => number>();
+  /** The text of the stimulus the scenario checked last, for a step that says "did not". */
+  lastStimulusRead?: string;
   /** The scenario the engine is given, and the condition it is loaded with. */
   scenario!: Partial<Scenario<Slots>>;
   condition?: Condition;

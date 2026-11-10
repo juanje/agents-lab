@@ -46,7 +46,7 @@ When("the run ends", async function (this: Context) {
     name,
     model,
     activations: this.activations.get(name) ?? 1,
-    rhythm: () => this.waitBeforeActivationMs,
+    rhythm: this.rhythms.get(name) ?? (() => this.waitBeforeActivationMs),
   }));
   // Any seed: these rhythms draw nothing from it.
   this.turns = await run(this.world, slotTools, this.stimuli, agents, 1, {
