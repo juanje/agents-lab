@@ -18,6 +18,13 @@ Given(
   },
 );
 
+Given(
+  "agent {string} runs on a scripted model that answers {string}",
+  function (this: Context, agent: string, text: string) {
+    this.models.set(agent, new ScriptedModel([{ text, delayMs: 0 }]));
+  },
+);
+
 Given("agent {string} makes {int} decision(s)", function (this: Context, agent: string, decisions: number) {
   this.budgets.set(agent, decisions);
 });
@@ -47,3 +54,7 @@ Then(
     );
   },
 );
+
+Then("agent {string}'s second decision has the outcome {string}", function (this: Context, agent: string, outcome: string) {
+  assert.equal(this.decisions.get(agent)?.[1]?.outcome, outcome);
+});

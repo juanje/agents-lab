@@ -43,6 +43,11 @@ Then("slot {int} holds agent {string}", function (this: Context, slot: number, a
   assert.equal(holder(this.world.state, slot), agent);
 });
 
+Then("only slot {int} is held", function (this: Context, slot: number) {
+  const held = this.world.state.flatMap((holder, index) => (holder === null ? [] : [index + 1]));
+  assert.deepEqual(held, [slot]);
+});
+
 Then("the world's version is {int}", function (this: Context, version: number) {
   assert.equal(this.world.version, version);
 });
