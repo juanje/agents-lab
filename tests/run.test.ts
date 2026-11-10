@@ -42,6 +42,18 @@ describe("run", () => {
     expect(actedAtMs).toBeLessThanOrEqual(performance.now());
   });
 
+  it("records when each decision observed, before its model call", async () => {
+    const world = new World(emptySlots(3));
+    const model = new ScriptedModel([{ text: "wait", delayMs: 50 }]);
+    const start = performance.now();
+
+    const decisions = await run(world, declaredActions, [{ name: "a", model, decisions: 1 }]);
+
+    const [decision] = decisions.get("a") ?? [];
+    expect(decision?.observedAtMs).toBeGreaterThanOrEqual(start);
+    expect((decision?.actedAtMs ?? -Infinity) - (decision?.observedAtMs ?? Infinity)).toBeGreaterThanOrEqual(50);
+  });
+
   it("runs each agent's decisions in its own loop, so a slow agent does not hold back a fast one", async () => {
     const world = new World(emptySlots(3));
     const slow = new ScriptedModel([{ text: "wait", delayMs: 200 }]);
