@@ -56,6 +56,9 @@ What the words mean here, how the pieces fit together, and how the tools behave 
 - **Models:** the lab's login is OpenAI's. The default model for experiments is `openai/gpt-6-luna`, used in oid; it answered a short prompt through the lab's login in about 3.7 s. Anthropic's models are not used: the SDK with a subscription login gave billing and quota errors before (my-ab rule 21).
 - **Not used yet:** `@earendil-works/pi-agent-core`, a lower-level stateful agent, if the coding agent's session adds behaviour we do not want; and `@earendil-works/pi-durable`, experimental persistence and resumption.
 
+### Random sequences
+- Each purpose's sequence comes from `Random.derive(seed, purpose)`: a 32-bit hash of the seed and the purpose's name starts a mulberry32 generator, whose state is a counter. Two purposes could in principle start within a few draws of each other and share part of a sequence; the chance is negligible for a few agents and short runs, but grows with many agents and long runs. If an experiment needs many of both, move to a generator with a larger state.
+
 ### Node
 - A timer can fire before `performance.now()` has moved its full delay (6.66 ms seen for a 7 ms timer, Node 26). Code that must wait at least a delay, as measured, waits again for what is left (`waitAtLeast` in `src/engine/clock.ts`).
 - An aborted session must also free its parallelism slot; otherwise later decisions wait for a call that will never end.
