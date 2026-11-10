@@ -295,4 +295,16 @@ describe("run", () => {
     expect(await drawsOfB(["b", "a"])).toEqual(draws);
     expect(await drawsOfB(["c", "d", "b"])).toEqual(draws);
   });
+  it("records the text of each model turn as the agent's reflection, and the text acts on nothing", async () => {
+    const world = new World(emptySlots(3));
+    const model = new ScriptedModel([
+      { text: "I take slot 1.", toolCalls: [{ name: "look", arguments: {} }], delayMs: 0 },
+      { text: "Slot 2 is mine.", delayMs: 0 },
+    ]);
+
+    const { turns } = await run(world, slotTools, rhythmOnly(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+
+    expect(turns.map((turn) => turn.text)).toEqual(["I take slot 1.", "Slot 2 is mine."]);
+    expect(world.version).toBe(0);
+  });
 });

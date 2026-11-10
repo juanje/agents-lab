@@ -122,3 +122,16 @@ Then(
 Then("the world's version is the same as before the run", function (this: Context) {
   assert.equal(this.world.version, this.versionBefore);
 });
+
+Given(
+  "agent {string} runs on a scripted model that writes {string} and makes no tool call",
+  function (this: Context, agent: string, text: string) {
+    script(this, agent, [{ text, delayMs: 0 }]);
+  },
+);
+
+Then("agent {string}'s reflection {string} was recorded", function (this: Context, agent: string, text: string) {
+  assert.ok(this.turns !== undefined, "the run gave no model turns");
+  const reflections = this.turns.filter((turn) => turn.agent === agent).map((turn) => turn.text);
+  assert.deepEqual(reflections, [text]);
+});
