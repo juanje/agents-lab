@@ -17,10 +17,26 @@ import type { Stimuli, Stimulus } from "./stimuli.ts";
 import type { Effector, Sensor, Tool } from "./tools.ts";
 import type { World } from "./world.ts";
 
-/** The model an agent works with, and the provider that serves it, which the run registers with Pi's model runtime. */
+/**
+ * The model an agent works with, and the provider that serves it when Pi's model runtime does not already: a scripted
+ * model's, which the run registers with the runtime.
+ */
 export interface AgentModel {
   model: Model<Api>;
-  provider: Provider;
+  provider?: Provider;
+}
+
+/**
+ * The model a name in Pi's provider/id form names, as the lab's Pi directory knows it, served through the lab's own
+ * login (D-08).
+ */
+export async function labModel(name: string): Promise<AgentModel> {
+  const separator = name.indexOf("/");
+  if (separator <= 0 || separator === name.length - 1) throw new Error(`Model name "${name}" is not in Pi's provider/id form`);
+  const runtime = await openRuntime([]);
+  const model = runtime.getModel(name.slice(0, separator), name.slice(separator + 1));
+  if (model === undefined) throw new Error(`The lab's Pi directory knows no model "${name}"`);
+  return { model };
 }
 
 /** The lab's own Pi directory (D-08). Read when a run starts, so it follows the home directory the run sees. */
@@ -32,14 +48,14 @@ function labPiDirectory(): string {
  * Makes the Pi model runtime a run's sessions share: the lab's own credentials and model definitions, never the
  * person's (NFR-08), with the providers of the agents' models registered like any other.
  */
-export async function openRuntime(providers: readonly Provider[]): Promise<ModelRuntime> {
+export async function openRuntime(providers: readonly (Provider | undefined)[]): Promise<ModelRuntime> {
   const directory = labPiDirectory();
   const runtime = await ModelRuntime.create({
     authPath: join(directory, "auth.json"),
     modelsPath: join(directory, "models.json"),
     modelsStorePath: join(directory, "models-store.json"),
   });
-  for (const provider of providers) runtime.registerNativeProvider(provider);
+  for (const provider of providers) if (provider !== undefined) runtime.registerNativeProvider(provider);
   return runtime;
 }
 
