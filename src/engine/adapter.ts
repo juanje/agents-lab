@@ -140,6 +140,7 @@ export async function openSession<State>(
   forceSystemPrompt(session, settings.systemPrompt);
   runTurns(session, agent.name, settings, parallelism, turns);
   deliverBetweenTurns(session, agent.name, stimuli);
+  endAtTimeLimit(session, settings.timeLimit);
   recordToolCalls(session, agent.name, new Set(tools.map((tool) => tool.name)), executed, toolCalls);
   return session;
 }
@@ -171,6 +172,19 @@ function recordToolCalls(
       toolCalls.push({ agent, tool: event.toolName, arguments: call?.args, ...ran });
     }
   });
+}
+
+/**
+ * Ends the agent's activation after a model turn that finished once the run's time limit had passed, so no model turn
+ * starts after the end (FR-CLOCK-02). Pi asks `finishTurn` after every turn, its tool calls done, and an "end" there
+ * stops the activation before Pi prepares another turn (pi-agent-core 1.5.0, agent-loop.js).
+ */
+function endAtTimeLimit(session: AgentSession, timeLimit: AbortSignal): void {
+  const finish = session.agent.finishTurn;
+  session.agent.finishTurn = async (turn, signal) => {
+    const decision = await finish?.(turn, signal);
+    return timeLimit.aborted ? { action: "end" as const } : (decision ?? undefined);
+  };
 }
 
 /**
