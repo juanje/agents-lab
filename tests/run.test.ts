@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { run } from "../src/engine/run.ts";
 import { ScriptedModel } from "../src/engine/scripted-model.ts";
 import { World } from "../src/engine/world.ts";
-import { emptySlots, slotTools } from "./fixtures/slots.ts";
+import { type Slots, emptySlots, slotTools } from "./fixtures/slots.ts";
 
 /** A rhythm with no waiting: the agent wakes again as soon as its previous activation ends. */
 const noWait = () => 0;
@@ -20,6 +20,27 @@ describe("run", () => {
     expect(model.received.map(getCurrentTools)).toEqual([
       slotTools.map(({ name, description, parameters }) => ({ name, description, parameters })),
     ]);
+  });
+
+  it("returns what a sensor the model called gave, at the model's next turn, and changes nothing", async () => {
+    const world = new World<Slots>([null, "b", null]);
+    const model = new ScriptedModel([
+      { toolCalls: [{ name: "look", arguments: {} }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+
+    await run(world, slotTools, [{ name: "a", model, activations: 1, rhythm: noWait }], seed);
+
+    const [, next] = model.received;
+    const call = next?.find((message) => message.role === "assistant")?.content[0];
+    expect(next?.at(-1)).toMatchObject({
+      role: "toolResult",
+      toolCallId: call?.type === "toolCall" ? call.id : "no call",
+      toolName: "look",
+      content: [{ type: "text", text: '["empty","held","empty"]' }],
+    });
+    expect(world.state).toEqual([null, "b", null]);
+    expect(world.version).toBe(0);
   });
 
   it("gives each agent's rhythm the same draws for the same seed, however long the other agents' models take", async () => {
