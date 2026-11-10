@@ -34,9 +34,9 @@ export class Stimuli {
     return waiting;
   }
 
-  /** What an agent receives when its rhythm wakes it. */
-  wake(_agent: string): Stimulus[] {
-    return [this.#stimulusOf("rhythm")];
+  /** What an agent receives when its rhythm wakes it: the rhythm's stimulus, then the stimuli waiting for it. */
+  wake(agent: string): Stimulus[] {
+    return [this.#stimulusOf("rhythm"), ...this.take(agent)];
   }
 
   #stimulusOf(name: string): Stimulus {
