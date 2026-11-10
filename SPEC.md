@@ -48,26 +48,26 @@ Experiments are written outside this repository, in the experiment language (FR-
 
 **v0.1 build order.** The first slice is the thinnest end-to-end run. Each later FR deepens one piece. FRs marked *built* are done; FRs marked *rebuild* were built against an earlier version of this SPEC and must be rebuilt against their new contract.
 1. FR-WORLD-01 (built)
-2. FR-TOOL-01 (rebuild, was FR-ACTION-01)
-3. FR-TOOL-02 (rebuild, was FR-ACTION-01)
-4. FR-ADAPTER-01 (rebuild)
-5. FR-STIMULUS-01
-6. FR-CLOCK-01 (rebuild)
-7. FR-SCENARIO-01 (rebuild: its parts change)
-8. FR-SEED-01 (built)
-9. FR-SPACE-01 (built)
-10. FR-TOOL-03
-11. FR-TOOL-04 (was FR-ACTION-02)
-12. FR-SPACE-02
-13. FR-PROCESS-01
-14. FR-EFFORT-01
-15. FR-RECORD-01
-16. FR-CLOCK-02
-17. FR-METRIC-01
-18. FR-METRIC-02
-19. FR-RECORD-02
-20. FR-INVENTORY-01
-21. FR-ADAPTER-02
+2. FR-TOOL-01 (built)
+3. FR-ADAPTER-02
+4. FR-TOOL-02 (rebuild, was FR-ACTION-01)
+5. FR-ADAPTER-01 (rebuild)
+6. FR-STIMULUS-01
+7. FR-CLOCK-01 (rebuild)
+8. FR-SCENARIO-01 (rebuild: its parts change)
+9. FR-SEED-01 (built)
+10. FR-SPACE-01 (built)
+11. FR-TOOL-03
+12. FR-TOOL-04 (was FR-ACTION-02)
+13. FR-SPACE-02
+14. FR-PROCESS-01
+15. FR-EFFORT-01
+16. FR-RECORD-01
+17. FR-CLOCK-02
+18. FR-METRIC-01
+19. FR-METRIC-02
+20. FR-RECORD-02
+21. FR-INVENTORY-01
 22. FR-EXPERIMENT-01
 23. FR-EXPERIMENT-02
 24. FR-EXPERIMENT-03
@@ -109,8 +109,13 @@ Each tool is declared with its name, the description the agent sees, its argumen
 *Why:* an agent knows and changes its world only through its interfaces with it, as a living being does through its senses and its body; an agent that is handed the world's state is a model answering a prompt, not an agent.
 
 #### FR-TOOL-02: Only tool calls act
-Text an agent writes changes nothing and reaches no one; it is recorded as the agent's reflection. A tool call whose arguments the tool does not take applies nothing and is recorded with the outcome `invalid_arguments`, together with the call exactly as the model made it, before any coercion.
-*Why:* a guessed action would put the platform's reading in place of the agent's behaviour, and Pi coerces arguments before a tool sees them; a malformed call must be counted as made.
+Text an agent writes changes nothing and reaches no one; it is recorded as the agent's reflection.
+- A tool call whose arguments the tool does not take applies nothing and is recorded with the outcome `invalid_arguments`, together with the call exactly as the model made it, before any coercion.
+- A call to a tool the agent's session does not offer applies nothing and is recorded with the outcome `unknown_tool`.
+- A tool always acts as the agent that called it; no argument can make it act as another agent.
+- A failed call tells the agent it failed, and why: its result is marked as an error and gives the outcome.
+
+*Why:* a guessed action would put the platform's reading in place of the agent's behaviour, and Pi coerces arguments before a tool sees them; a malformed call must be counted as made. A call to a missing tool is the agent's behaviour, not a defect of the scenario, and must not stop the run. An agent that could act in another's name would make every record of who did what unreliable. An agent told that a failure succeeded would act on a world it misreads.
 
 #### FR-ADAPTER-01: A scripted model answers in tests
 In tests, each agent's model is Pi's faux provider. For each model turn it returns, in order, what the agent's script lists for that turn (text, tool calls, or both), each after the delay the script gives. When the script runs out, the agent's activation ends and the run records `script_exhausted`.
