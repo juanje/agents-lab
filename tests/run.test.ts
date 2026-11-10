@@ -34,7 +34,7 @@ const withTakeTaking = (durationMs: number) =>
   slotTools.map((tool) => (tool.kind === "effector" ? { ...tool, durationMs: () => durationMs } : tool));
 
 /** Settings for a run whose test looks at none of them. */
-const settings: RunSettings = { modelTurnTimeoutMs: 10_000, parallelismLimit: 10 };
+const settings: RunSettings = { modelTurnTimeoutMs: 10_000, parallelismLimit: 10, timeLimitMs: 60_000 };
 
 describe("run", () => {
   it("starts an activation with the rhythm channel's stimulus, which the model reads with its source", async () => {
@@ -629,5 +629,31 @@ describe("run", () => {
     const { toolCalls } = await run(slots(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
 
     expect(toolCalls).toEqual([{ agent: "a", tool: "take", arguments: { slot: 1 }, outcome: "success", targetAsSensed: "not_sensed", ...timed }]);
+  });
+});
+
+describe("run's time limit", () => {
+  it("cuts off an effector call still running at the time limit: it applies nothing, ends then, and the agent is told so", async () => {
+    const loaded = slots({ tools: withTakeTaking(1000) });
+    const { world } = loaded;
+    const model = new ScriptedModel([
+      { toolCalls: [{ name: "take", arguments: { slot: 1 } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+
+    const runStartedAtMs = performance.now();
+    const { toolCalls, messages } = await run(loaded, [{ name: "a", model, activations: 1, rhythm: noWait }], seed, {
+      ...settings,
+      timeLimitMs: 100,
+    });
+
+    const [{ outcome, endedAtMs }] = toolCalls;
+    expect(outcome).toBe("cut_off");
+    expect(world.state).toEqual(emptySlots(3));
+    expect(world.version).toBe(0);
+    // Its call ends at the time limit, not when its 1000 ms would have.
+    expect(endedAtMs - runStartedAtMs).toBeLessThan(500);
+    const result = messages.get("a")?.find((message) => message.role === "toolResult");
+    expect(result).toMatchObject({ isError: true, content: [{ type: "text", text: "cut_off" }] });
   });
 });
