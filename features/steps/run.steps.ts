@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { Given, Then, When } from "@cucumber/cucumber";
-import { run } from "../../src/engine/run.ts";
+import { type Decision, run } from "../../src/engine/run.ts";
 import { ScriptedModel } from "../../src/engine/scripted-model.ts";
 import type { Context } from "../support/context.ts";
 
@@ -131,6 +131,21 @@ Then(
     );
   },
 );
+
+/** The single decision an agent made in the run. */
+function onlyDecision(context: Context, agent: string): Decision {
+  const decisions = context.decisions.get(agent) ?? [];
+  assert.equal(decisions.length, 1, `expected one decision of "${agent}", got ${decisions.length}`);
+  return decisions[0];
+}
+
+Then("agent {string}'s decision succeeded", function (this: Context, agent: string) {
+  assert.equal(onlyDecision(this, agent).outcome, "success");
+});
+
+Then("agent {string}'s decision failed with {string}", function (this: Context, agent: string, reason: string) {
+  assert.equal(onlyDecision(this, agent).outcome, reason);
+});
 
 Then("agent {string}'s second decision has the outcome {string}", function (this: Context, agent: string, outcome: string) {
   assert.equal(this.decisions.get(agent)?.[1]?.outcome, outcome);
