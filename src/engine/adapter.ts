@@ -66,9 +66,10 @@ export interface ModelTurn {
   agent: string;
   /**
    * "model_error" when the provider answered with an error, "timeout" when the turn ran too long, "script_exhausted" when
-   * a scripted model had no answer left (FR-ADAPTER-01); "success" otherwise.
+   * a scripted model had no answer left (FR-ADAPTER-01), "cut_off" when the run's time limit passed during it
+   * (FR-CLOCK-02); "success" otherwise.
    */
-  outcome: "success" | "model_error" | "timeout" | "script_exhausted";
+  outcome: "success" | "model_error" | "timeout" | "script_exhausted" | "cut_off";
   /** The provider's message, for a model error. */
   message?: string;
   /** The text the model wrote: the agent's reflection, which acts on nothing and reaches no one (FR-TOOL-02). */
@@ -137,7 +138,7 @@ export async function openSession<State>(
     settingsManager: SettingsManager.inMemory({ retry: { enabled: false } }),
   });
   forceSystemPrompt(session, settings.systemPrompt);
-  runTurns(session, agent.name, settings.modelTurnTimeoutMs, parallelism, turns);
+  runTurns(session, agent.name, settings, parallelism, turns);
   deliverBetweenTurns(session, agent.name, stimuli);
   recordToolCalls(session, agent.name, new Set(tools.map((tool) => tool.name)), executed, toolCalls);
   return session;
@@ -204,24 +205,35 @@ function message(stimulus: Stimulus) {
 
 /**
  * Wraps the session's call to the model, so each model turn waits for a free slot under the parallelism limit, is
- * aborted when it runs longer than the timeout, and is recorded when its answer ends. An aborted answer carries no tool
+ * aborted when it runs longer than the timeout or past the run's time limit, and is recorded when its answer ends. An
+ * aborted answer carries no tool
  * calls Pi would run, and ends the activation.
  */
-function runTurns(session: AgentSession, agent: string, timeoutMs: number, parallelism: ParallelismLimit, turns: ModelTurn[]): void {
+function runTurns(
+  session: AgentSession,
+  agent: string,
+  { modelTurnTimeoutMs, timeLimit }: SessionSettings,
+  parallelism: ParallelismLimit,
+  turns: ModelTurn[],
+): void {
   const call = session.agent.streamFunction;
   session.agent.streamFunction = async (model, context, options) => {
     const requestedAtMs = performance.now();
     const free = await parallelism.acquire();
     const startedAtMs = performance.now();
     const timeout = new AbortController();
-    const timer = setTimeout(() => timeout.abort(), timeoutMs);
-    const signal = options?.signal === undefined ? timeout.signal : AbortSignal.any([options.signal, timeout.signal]);
+    const timer = setTimeout(() => timeout.abort(), modelTurnTimeoutMs);
+    const signal = AbortSignal.any([...(options?.signal === undefined ? [] : [options.signal]), timeout.signal, timeLimit]);
     const answer = await call(model, context, { ...options, signal });
     void answer.result().then((message) => {
       const endedAtMs = performance.now();
       clearTimeout(timer);
       free();
-      const outcome = timeout.signal.aborted ? { outcome: "timeout" as const } : outcomeOf(message);
+      const outcome = timeLimit.aborted
+        ? { outcome: CUT_OFF }
+        : timeout.signal.aborted
+          ? { outcome: "timeout" as const }
+          : outcomeOf(message);
       const text = message.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("");
       turns.push({ agent, ...outcome, text, slotWaitMs: startedAtMs - requestedAtMs, startedAtMs, endedAtMs });
     });
@@ -307,8 +319,8 @@ function definition<State>(
   };
 }
 
-/** The outcome of a tool call still running when the run's time limit passes (FR-CLOCK-02). */
-const CUT_OFF = "cut_off";
+/** The outcome of a tool call or a model turn still running when the run's time limit passes (FR-CLOCK-02). */
+const CUT_OFF = "cut_off" as const;
 
 /** A call the tool ran: its outcome, when it started and ended, and for an effector, its target as sensed. */
 type Executed = Pick<ToolCall, "outcome" | "startedAtMs" | "endedAtMs" | "targetAsSensed">;
