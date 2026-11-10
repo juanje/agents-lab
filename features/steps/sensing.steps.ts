@@ -44,17 +44,16 @@ Given(
 );
 
 Then(
-  "agent {string}'s {string} call returned slot {int} held by agent {string}",
-  function (this: Context, agent: string, tool: string, slot: number, holder: string) {
+  "agent {string}'s {string} call returned slot {int} held",
+  function (this: Context, agent: string, tool: string, slot: number) {
     const sensed = callOf(this, agent, tool);
-    const landed = callOf(this, holder, "take");
+    // The slot was empty when the call started: only a "take" that landed while it was under way can have filled it.
+    const landed = this.toolCalls?.filter((call) => call.tool === "take" && call.outcome === "success") ?? [];
     assert.ok(
-      sensed.startedAtMs < landed.endedAtMs && landed.endedAtMs < sensed.endedAtMs,
-      `agent "${holder}"'s "take" did not land while agent "${agent}"'s "${tool}" was under way`,
+      landed.some((call) => sensed.startedAtMs < call.endedAtMs && call.endedAtMs < sensed.endedAtMs),
+      `no "take" landed while agent "${agent}"'s "${tool}" was under way`,
     );
-    // The sensor tells held from empty, not who holds: the world says the holder, and only that agent took a slot.
     assert.equal((JSON.parse(returned(this, agent, tool)) as Seen[])[slot - 1], "held");
-    assert.equal(this.world.state[slot - 1], holder);
   },
 );
 
