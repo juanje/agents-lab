@@ -297,10 +297,7 @@ function definition<State>(
     execute: async (id, args: Record<string, unknown>) => {
       const startedAtMs = performance.now();
       const { outcome, text, targetAsSensed } =
-        undeclared(tool, args) ??
-        (tool.kind === "sensor"
-          ? await sense(world, tool, { agent, arguments: args }, timeLimit)
-          : await effect(world, tool, { agent, arguments: args }, sensings.last(agent), timeLimit));
+        undeclared(tool, args) ?? (await perform(world, tool, { agent, arguments: args }, sensings.last(agent), timeLimit));
       const endedAtMs = performance.now();
       executed.set(id, { outcome, startedAtMs, endedAtMs, ...(targetAsSensed === undefined ? {} : { targetAsSensed }) });
       if (tool.kind === "sensor" && outcome === "success") sensings.record(agent, { tool: tool.name, result: text, atMs: endedAtMs });
@@ -337,32 +334,36 @@ function undeclared<State>(tool: Tool<State>, args: Record<string, unknown>): Ca
 }
 
 /**
- * Reads the world for a sensor's call once the sensor's duration has passed (FR-TOOL-03). It succeeds unless the run's
- * time limit cuts the duration short, and then reads nothing: the run has ended (FR-CLOCK-02).
+ * Runs a call the tool takes. It lasts the duration the tool gives for the call and the state as it starts (FR-TOOL-03,
+ * FR-TOOL-04); then a sensor reads the world, or an effector's effect goes to the arbiter. A call the run's time limit
+ * cuts short reads and applies nothing: the run has ended, and an effect would change a world already measured
+ * (FR-CLOCK-02). For an effector's call, what the agent last sensed of its target is read as the call starts, beside
+ * its outcome, and never reaches the arbiter (NFR-11).
  */
-async function sense<State>(world: World<State>, sensor: Sensor<State>, call: AgentCall, timeLimit: AbortSignal): Promise<CallResult> {
-  await waitAtLeast(sensor.durationMs(world.state, call), timeLimit);
-  if (timeLimit.aborted) return { outcome: CUT_OFF, text: CUT_OFF };
-  return { outcome: "success", text: sensor.sense(world.state, call.agent) };
-}
-
-/**
- * Applies an effector's call through the arbiter once its duration has passed, against the world as it is then
- * (FR-TOOL-04); the agent receives its outcome: "success" or the failure's reason. What the agent last sensed of the
- * call's target, before the call, is read beside it and never reaches the arbiter (NFR-11). A call whose duration the
- * run's time limit cuts short applies nothing: its effect would change a world that was already measured (FR-CLOCK-02).
- */
-async function effect<State>(
+async function perform<State>(
   world: World<State>,
-  effector: Effector<State>,
+  tool: Tool<State>,
   call: AgentCall,
   sensing: Sensing | undefined,
   timeLimit: AbortSignal,
 ): Promise<CallResult> {
-  const targetAsSensed = sensing === undefined ? "not_sensed" : effector.readTarget(sensing, call);
-  await waitAtLeast(effector.durationMs(world.state, call), timeLimit);
-  if (timeLimit.aborted) return { outcome: CUT_OFF, text: CUT_OFF, targetAsSensed };
+  const targetAsSensed = tool.kind === "effector" ? (sensing === undefined ? "not_sensed" : tool.readTarget(sensing, call)) : undefined;
+  await waitAtLeast(tool.durationMs(world.state, call), timeLimit);
+  const result = timeLimit.aborted ? { outcome: CUT_OFF, text: CUT_OFF } : tool.kind === "sensor" ? sense(world, tool, call) : effect(world, tool, call);
+  return targetAsSensed === undefined ? result : { ...result, targetAsSensed };
+}
+
+/** Reads the world for a sensor's call, which then always succeeds. */
+function sense<State>(world: World<State>, sensor: Sensor<State>, call: AgentCall): CallResult {
+  return { outcome: "success", text: sensor.sense(world.state, call.agent) };
+}
+
+/**
+ * Applies an effector's call through the arbiter, against the world as it is now; the agent receives its outcome:
+ * "success" or the failure's reason.
+ */
+function effect<State>(world: World<State>, effector: Effector<State>, call: AgentCall): CallResult {
   const result = world.apply(effector.action, call);
   const outcome = result.applied ? "success" : result.reason;
-  return { outcome, text: outcome, targetAsSensed };
+  return { outcome, text: outcome };
 }
