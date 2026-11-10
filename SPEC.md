@@ -326,7 +326,7 @@ The engine reads them at run time, writes each path with a content hash to the r
 ### Scenario library
 
 #### FR-NEIGHBOURHOOD-01: A neighbourhood from a seed
-The neighbourhood scenario creates a grid of the configured width and height and places the configured number of residents of two kinds on distinct random cells, from the replica's seed. Its system prompt describes the resident; any preference or rule a resident is given comes from the condition.
+The neighbourhood scenario creates a grid of the configured width and height and places the configured number of residents of two kinds on distinct random cells, from the replica's seed. Its system prompt describes the resident and its kind; any preference or rule a resident is given comes from the condition, as a text added to the system prompt. Its rhythm channel's source and text come from its configuration.
 *Why:* the same neighbourhood serves several experiments (micro vs macro, diversity of thresholds or models, local vs global view), each of which brings its own rule as a condition.
 
 #### FR-NEIGHBOURHOOD-02: Residents look and move
