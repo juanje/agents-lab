@@ -157,12 +157,13 @@ Then(
 );
 
 Then(
-  "agent {string}'s and agent {string}'s first activations began at different moments",
-  function (this: Context, first: string, second: string) {
+  "agent {string}'s and agent {string}'s first activations began at least {int} milliseconds apart",
+  function (this: Context, first: string, second: string, apartMs: number) {
     const [one] = this.wokeAtMs.get(first) ?? [];
     const [other] = this.wokeAtMs.get(second) ?? [];
     assert.ok(one !== undefined && other !== undefined, `agents "${first}" and "${second}" did not both wake`);
-    assert.notEqual(one, other, `agents "${first}" and "${second}" woke at the same moment, ${one} ms`);
+    const gap = Math.abs(one - other);
+    assert.ok(gap >= apartMs, `agents "${first}" and "${second}" first woke ${gap} ms apart`);
   },
 );
 
