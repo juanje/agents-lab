@@ -4,14 +4,12 @@ import type { AgentCall } from "../../src/engine/tools.ts";
 import { slotTools } from "../../tests/fixtures/slots.ts";
 import type { Context } from "../support/context.ts";
 import { turnsOf } from "./adapter.steps.ts";
-import { callOf, callThenEnd, fixtureTool, modelOf, script, scriptActivations } from "./tool.steps.ts";
+import { callOf, callThenEnd, modelOf, script, scriptActivations, takeTime } from "./tool.steps.ts";
 
 Given(
   "the effector {string} takes {int} milliseconds and puts the agent in a slot, only if that slot is empty",
   function (this: Context, name: string, durationMs: number) {
-    const effector = fixtureTool("effector", name);
-    assert.ok(effector.kind === "effector");
-    this.tools = this.tools.map((tool) => (tool.name === name ? { ...effector, durationMs: () => durationMs } : tool));
+    takeTime(this, "effector", name, durationMs);
   },
 );
 
@@ -228,9 +226,7 @@ Then(
 );
 
 Given("the sensor {string} takes {int} milliseconds", function (this: Context, name: string, durationMs: number) {
-  const sensor = fixtureTool("sensor", name);
-  assert.ok(sensor.kind === "sensor");
-  this.tools = this.tools.map((tool) => (tool.name === name ? { ...sensor, durationMs: () => durationMs } : tool));
+  takeTime(this, "sensor", name, durationMs);
 });
 
 Then("the engine has no sensing for agent {string}", function (this: Context, agent: string) {

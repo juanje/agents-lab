@@ -2,14 +2,12 @@ import assert from "node:assert/strict";
 import { Given, Then } from "@cucumber/cucumber";
 import { SLOT_TAKEN, type Seen } from "../../tests/fixtures/slots.ts";
 import type { Context } from "../support/context.ts";
-import { callOf, callThenEnd, fixtureTool, returned, script } from "./tool.steps.ts";
+import { callOf, callThenEnd, fixtureTool, returned, script, takeTime } from "./tool.steps.ts";
 
 Given(
   "the sensor {string} takes {int} milliseconds and returns which slots are empty and which are held",
   function (this: Context, name: string, durationMs: number) {
-    const sensor = fixtureTool("sensor", name);
-    assert.ok(sensor.kind === "sensor");
-    this.tools = this.tools.map((tool) => (tool.name === name ? { ...sensor, durationMs: () => durationMs } : tool));
+    takeTime(this, "sensor", name, durationMs);
   },
 );
 

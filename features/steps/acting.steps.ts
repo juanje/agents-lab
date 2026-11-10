@@ -4,7 +4,7 @@ import type { Action } from "../../src/engine/world.ts";
 import { SLOT_TAKEN, type Seen, type Slots, holder } from "../../tests/fixtures/slots.ts";
 import type { Context } from "../support/context.ts";
 import { turnsOf } from "./adapter.steps.ts";
-import { callOf, callThenEnd, fixtureTool, script } from "./tool.steps.ts";
+import { callOf, callThenEnd, fixtureTool, script, takeTime } from "./tool.steps.ts";
 
 Given(
   "the sensor {string} takes no time and returns which slots are empty and which are held",
@@ -18,10 +18,8 @@ Given(
 Given(
   "the effector {string} takes {int} milliseconds, puts the agent in a slot when it lands, and fails with {string} when the slot is held when it lands",
   function (this: Context, name: string, durationMs: number, reason: string) {
-    const effector = fixtureTool("effector", name);
-    assert.ok(effector.kind === "effector");
     assert.equal(reason, SLOT_TAKEN);
-    this.tools = this.tools.map((tool) => (tool.name === name ? { ...effector, durationMs: () => durationMs } : tool));
+    takeTime(this, "effector", name, durationMs);
   },
 );
 

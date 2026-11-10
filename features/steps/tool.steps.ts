@@ -17,6 +17,12 @@ export function fixtureTool(kind: string, name: string) {
   return tool;
 }
 
+/** Makes the test world's tool of a kind and a name take this long, for every call and in any state. */
+export function takeTime(context: Context, kind: string, name: string, durationMs: number): void {
+  const declared = fixtureTool(kind, name);
+  context.tools = context.tools.map((tool) => (tool.name === name ? { ...declared, durationMs: () => durationMs } : tool));
+}
+
 Given("the sensor {string} returns which slots are empty and which are held", function (this: Context, name: string) {
   fixtureTool("sensor", name);
 });
