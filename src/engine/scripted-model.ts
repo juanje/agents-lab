@@ -1,6 +1,12 @@
 import { type JsonObject, type Message, type Model, type Models, type Provider, createModels, fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall } from "@earendil-works/pi-ai";
 import { waitAtLeast } from "./clock.ts";
 
+/**
+ * The error message Pi's faux provider answers with once its script has run out (pi-ai 1.5.0, providers/faux.js), with
+ * empty content, so the turn calls no tool and the activation ends there.
+ */
+export const SCRIPT_EXHAUSTED_MESSAGE = "No more faux responses queued";
+
 /** How many scripted models have been made, so each gets a provider id of its own. */
 let made = 0;
 

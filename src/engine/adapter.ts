@@ -12,6 +12,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { type Api, type AssistantMessage, type Model, type Provider, getCurrentSystemMessage } from "@earendil-works/pi-ai";
 import type { ParallelismLimit } from "./parallelism.ts";
+import { SCRIPT_EXHAUSTED_MESSAGE } from "./scripted-model.ts";
 import type { Stimuli, Stimulus } from "./stimuli.ts";
 import type { Effector, Sensor, Tool } from "./tools.ts";
 import type { World } from "./world.ts";
@@ -45,8 +46,11 @@ export async function openRuntime(providers: readonly Provider[]): Promise<Model
 /** One call to an agent's model within an activation, and how it ended. */
 export interface ModelTurn {
   agent: string;
-  /** "model_error" when the provider answered with an error, "timeout" when the turn ran too long; "success" otherwise. */
-  outcome: "success" | "model_error" | "timeout";
+  /**
+   * "model_error" when the provider answered with an error, "timeout" when the turn ran too long, "script_exhausted" when
+   * a scripted model had no answer left (FR-ADAPTER-01); "success" otherwise.
+   */
+  outcome: "success" | "model_error" | "timeout" | "script_exhausted";
   /** The provider's message, for a model error. */
   message?: string;
   /** The text the model wrote: the agent's reflection, which acts on nothing and reaches no one (FR-TOOL-02). */
@@ -192,9 +196,9 @@ function runTurns(session: AgentSession, agent: string, timeoutMs: number, paral
 }
 
 function outcomeOf(message: AssistantMessage): Pick<ModelTurn, "outcome" | "message"> {
-  return message.stopReason === "error"
-    ? { outcome: "model_error", message: message.errorMessage ?? "" }
-    : { outcome: "success" };
+  if (message.stopReason !== "error") return { outcome: "success" };
+  if (message.errorMessage === SCRIPT_EXHAUSTED_MESSAGE) return { outcome: "script_exhausted" };
+  return { outcome: "model_error", message: message.errorMessage ?? "" };
 }
 
 /**
