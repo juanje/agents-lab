@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { Given, Then, When } from "@cucumber/cucumber";
+import { Random } from "../../src/engine/random.ts";
 import { type Decision, run } from "../../src/engine/run.ts";
 import { ScriptedModel } from "../../src/engine/scripted-model.ts";
 import type { Context } from "../support/context.ts";
@@ -108,7 +109,8 @@ When("the run ends", async function (this: Context) {
     decisions: this.budgets.get(name) ?? 0,
     rhythm: () => this.intervals.get(name) ?? 0,
   }));
-  this.decisions = await run(this.world, this.actions, agents);
+  // Any seed: these rhythms draw nothing from the replica's source.
+  this.decisions = await run(this.world, this.actions, agents, new Random(1));
 });
 
 Then(

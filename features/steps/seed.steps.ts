@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import { Given, Then, When } from "@cucumber/cucumber";
 import { parse } from "smol-toml";
+import type { Random } from "../../src/engine/random.ts";
+import { run } from "../../src/engine/run.ts";
 import { loadScenario } from "../../src/engine/scenario.ts";
-import { type Slots, placingScenario } from "../../tests/fixtures/slots.ts";
+import { ScriptedModel } from "../../src/engine/scripted-model.ts";
+import { type Slots, placedAgent, placingScenario } from "../../tests/fixtures/slots.ts";
 import type { Context } from "../support/context.ts";
 
 Given(
@@ -44,6 +47,62 @@ Then("both start with the agents on the same slots", function (this: Context) {
   assertPlaced(first);
   assertPlaced(second);
   assert.deepEqual(second, first, "expected the same seed to place the agents on the same slots");
+});
+
+Given(
+  "each agent waits a random interval between {int} and {int} milliseconds between decisions",
+  function (this: Context, minMs: number, maxMs: number) {
+    this.rhythmRange = { minMs, maxMs };
+  },
+);
+
+/** How many decisions each agent makes in a replica: enough for a sequence of intervals, not only one. */
+const DECISIONS = 3;
+
+/**
+ * Runs one replica of the scenario with a seed: each placed agent waits on a scripted model and draws its intervals
+ * uniformly from the scenario's range. Gives the intervals each agent's rhythm drew, in order.
+ */
+async function runReplica(context: Context, seed: number): Promise<Map<string, number[]>> {
+  const { world, scenario, random } = loadScenario(context.scenario, seed);
+  const { minMs, maxMs } = context.rhythmRange;
+  const agents = (parse(scenario.baseConfiguration).slots as { agents: number }).agents;
+  const drawn = new Map<string, number[]>();
+  const runningAgents = Array.from({ length: agents }, (_, index) => {
+    const name = placedAgent(index + 1);
+    const intervals: number[] = [];
+    drawn.set(name, intervals);
+    return {
+      name,
+      model: new ScriptedModel(Array.from({ length: DECISIONS }, () => ({ text: "wait", delayMs: 0 }))),
+      decisions: DECISIONS,
+      rhythm: (agentRandom: Random) => {
+        const intervalMs = minMs + agentRandom.next() * (maxMs - minMs);
+        intervals.push(intervalMs);
+        return intervalMs;
+      },
+    };
+  });
+  await run(world, scenario.actions, runningAgents, random);
+  return drawn;
+}
+
+When("two replicas run with the seed {int}", async function (this: Context, seed: number) {
+  this.replicaIntervals = [await runReplica(this, seed), await runReplica(this, seed)];
+});
+
+Then("each agent waited the same sequence of intervals in both replicas", function (this: Context) {
+  const [first, second] = this.replicaIntervals;
+  const { minMs, maxMs } = this.rhythmRange;
+  assert.ok(first.size > 1, `expected several agents to run, got ${first.size}`);
+  assert.deepEqual([...second.keys()], [...first.keys()]);
+  for (const [agent, intervals] of first) {
+    assert.equal(intervals.length, DECISIONS, `expected ${DECISIONS} intervals of "${agent}", got ${intervals.length}`);
+    for (const intervalMs of intervals) {
+      assert.ok(minMs <= intervalMs && intervalMs <= maxMs, `"${agent}" waited ${intervalMs} ms, outside the range`);
+    }
+    assert.deepEqual(second.get(agent), intervals, `expected "${agent}" to wait the same intervals in both replicas`);
+  }
 });
 
 Then("the agents start on different slots in the two replicas", function (this: Context) {

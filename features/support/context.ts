@@ -32,6 +32,10 @@ export class Context extends CucumberWorld {
   loadingError?: Error;
   /** The initial state each replica started with, in the order the scenario starts them. */
   replicaStarts!: Slots[];
+  /** The range each agent's waiting interval is drawn from, as the scenario gives it. */
+  rhythmRange!: { minMs: number; maxMs: number };
+  /** The intervals each agent's rhythm drew in each replica, in the order the scenario runs them. */
+  replicaIntervals!: Map<string, number[]>[];
 }
 
 setWorldConstructor(Context);

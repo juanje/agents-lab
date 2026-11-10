@@ -62,7 +62,12 @@ async function load(context: Context, condition?: Condition): Promise<void> {
   // A run on a scenario that should have been refused can break on its missing part; the model was still called,
   // which the scenario's own checks report, so the break is not what this step reports.
   try {
-    context.decisions = await run(world, scenario.actions, [{ name: "a", model, decisions: 1, rhythm: () => 0 }]);
+    context.decisions = await run(
+      world,
+      scenario.actions,
+      [{ name: "a", model, decisions: 1, rhythm: () => 0 }],
+      context.loaded.random,
+    );
   } catch {
     return;
   }

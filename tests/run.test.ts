@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { Random } from "../src/engine/random.ts";
 import { run } from "../src/engine/run.ts";
 import { ScriptedModel } from "../src/engine/scripted-model.ts";
 import { World } from "../src/engine/world.ts";
@@ -6,6 +7,9 @@ import { declaredActions, emptySlots } from "./fixtures/slots.ts";
 
 /** A rhythm with no waiting: the agent decides again as soon as its previous decision ends. */
 const noWait = () => 0;
+
+/** A replica's source, for a run whose rhythms draw nothing from it. */
+const random = () => new Random(1);
 
 describe("run", () => {
   it("gives each decision the next answer of the agent's scripted model, and applies the action it names", async () => {
@@ -15,7 +19,7 @@ describe("run", () => {
       { text: "wait", delayMs: 0 },
     ]);
 
-    const decisions = await run(world, declaredActions, [{ name: "a", model, decisions: 2, rhythm: noWait }]);
+    const decisions = await run(world, declaredActions, [{ name: "a", model, decisions: 2, rhythm: noWait }], random());
 
     expect(decisions.get("a")?.map(({ answer, outcome }) => ({ answer, outcome }))).toEqual([
       { answer: "take 2", outcome: "success" },
@@ -28,7 +32,7 @@ describe("run", () => {
     const world = new World(emptySlots(3));
     const model = new ScriptedModel([{ text: "wait", delayMs: 50 }]);
 
-    const decisions = await run(world, declaredActions, [{ name: "a", model, decisions: 1, rhythm: noWait }]);
+    const decisions = await run(world, declaredActions, [{ name: "a", model, decisions: 1, rhythm: noWait }], random());
 
     expect(decisions.get("a")?.[0]?.latencyMs).toBeGreaterThanOrEqual(50);
   });
@@ -38,7 +42,7 @@ describe("run", () => {
     const model = new ScriptedModel([{ text: "wait", delayMs: 50 }]);
     const start = performance.now();
 
-    const decisions = await run(world, declaredActions, [{ name: "a", model, decisions: 1, rhythm: noWait }]);
+    const decisions = await run(world, declaredActions, [{ name: "a", model, decisions: 1, rhythm: noWait }], random());
 
     const actedAtMs = decisions.get("a")?.[0]?.actedAtMs;
     expect(actedAtMs).toBeGreaterThanOrEqual(start + 50);
@@ -50,7 +54,7 @@ describe("run", () => {
     const model = new ScriptedModel([{ text: "wait", delayMs: 50 }]);
     const start = performance.now();
 
-    const decisions = await run(world, declaredActions, [{ name: "a", model, decisions: 1, rhythm: noWait }]);
+    const decisions = await run(world, declaredActions, [{ name: "a", model, decisions: 1, rhythm: noWait }], random());
 
     const [decision] = decisions.get("a") ?? [];
     expect(decision?.observedAtMs).toBeGreaterThanOrEqual(start);
@@ -68,7 +72,7 @@ describe("run", () => {
 
     const decisions = await run(world, declaredActions, [
       { name: "a", model, decisions: 2, rhythm: () => intervals.shift() ?? 0 },
-    ]);
+    ], random());
 
     const [first, second] = decisions.get("a") ?? [];
     expect(first?.observedAtMs).toBeGreaterThanOrEqual(start + 30);
@@ -83,7 +87,7 @@ describe("run", () => {
     const decisions = await run(world, declaredActions, [
       { name: "slow", model: slow, decisions: 1, rhythm: noWait },
       { name: "fast", model: fast, decisions: 3, rhythm: noWait },
-    ]);
+    ], random());
 
     const slowActedAtMs = decisions.get("slow")?.[0]?.actedAtMs ?? -Infinity;
     const fastActedAtMs = decisions.get("fast")?.map((decision) => decision.actedAtMs ?? Infinity);
@@ -95,7 +99,7 @@ describe("run", () => {
     const world = new World(emptySlots(3));
     const model = new ScriptedModel([{ text: "take 1", delayMs: 0 }]);
 
-    const decisions = await run(world, declaredActions, [{ name: "a", model, decisions: 2, rhythm: noWait }]);
+    const decisions = await run(world, declaredActions, [{ name: "a", model, decisions: 2, rhythm: noWait }], random());
 
     expect(decisions.get("a")?.[1]).toEqual({ outcome: "script_exhausted" });
     expect(world.state).toEqual(["a", null, null]);

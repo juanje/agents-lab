@@ -1,5 +1,6 @@
 import { type ActionArgs, type DeclaredAction, type Outcome, act } from "./actions.ts";
 import { waitAtLeast } from "./clock.ts";
+import { Random } from "./random.ts";
 import type { ScriptedModel } from "./scripted-model.ts";
 import type { World } from "./world.ts";
 
@@ -8,8 +9,8 @@ export interface Agent {
   name: string;
   model: ScriptedModel;
   decisions: number;
-  /** Draws the agent's next waiting interval before it observes, in milliseconds. */
-  rhythm: () => number;
+  /** Draws the agent's next waiting interval before it observes, in milliseconds, from the agent's random source. */
+  rhythm: (random: Random) => number;
 }
 
 /**
@@ -32,8 +33,12 @@ export async function run<State>(
   world: World<State>,
   actions: readonly DeclaredAction<State, ActionArgs>[],
   agents: readonly Agent[],
+  _random: Random,
 ): Promise<Map<string, Decision[]>> {
-  const made = await Promise.all(agents.map((agent) => loop(world, actions, agent)));
+  // Stub: each rhythm draws from a source unrelated to the replica's, so the steps can fail on their assertions first.
+  const made = await Promise.all(
+    agents.map((agent) => loop(world, actions, agent, new Random(Math.floor(Math.random() * 2 ** 32)))),
+  );
   return new Map(agents.map((agent, index) => [agent.name, made[index]]));
 }
 
@@ -42,10 +47,11 @@ async function loop<State>(
   world: World<State>,
   actions: readonly DeclaredAction<State, ActionArgs>[],
   agent: Agent,
+  random: Random,
 ): Promise<Decision[]> {
   const made: Decision[] = [];
   for (let count = 0; count < agent.decisions; count += 1) {
-    await waitAtLeast(agent.rhythm());
+    await waitAtLeast(agent.rhythm(random));
     made.push(await decide(world, actions, agent));
   }
   return made;
