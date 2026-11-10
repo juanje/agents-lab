@@ -23,13 +23,15 @@ export interface DeclaredAction<State, Args extends ActionArgs> extends Action<S
 export type Outcome = string;
 
 /**
- * The line of an answer that holds its action, by the one reading rule every scenario shares: the last non-empty
- * line, without spaces at its start and end, and with repeated spaces counted as one. The rule ignores only layout;
- * anything else in the answer is left for the action's arguments to accept or refuse.
+ * The line of an answer that holds its action, by the one reading rule every scenario shares: lines end in "\n" or
+ * "\r\n"; the action is the last line that holds anything besides whitespace, without whitespace at its start and end,
+ * and with any run of whitespace inside it counted as one space. The rule ignores only layout; anything else in the
+ * answer is left for the action's arguments to accept or refuse.
  */
 function actionLine(answer: string): string {
-  const lastLine = answer.split("\n").filter((line) => line.length > 0).at(-1) ?? "";
-  return lastLine.replace(/^ +| +$/g, "").replace(/ +/g, " ");
+  // "\r" is whitespace, so splitting on "\n" and trimming each line also reads "\r\n" as a line break.
+  const lastLine = answer.split("\n").filter((line) => line.trim().length > 0).at(-1) ?? "";
+  return lastLine.trim().replace(/\s+/g, " ");
 }
 
 /** Reads an agent's answer against the declared actions and applies the action it names through the world's arbiter. */
