@@ -1,4 +1,4 @@
-import type { ActionArgs, DeclaredAction, Outcome } from "./actions.ts";
+import { type ActionArgs, type DeclaredAction, type Outcome, act } from "./actions.ts";
 import type { ScriptedModel } from "./scripted-model.ts";
 import type { World } from "./world.ts";
 
@@ -18,9 +18,28 @@ export interface Decision {
 
 /** Runs every agent's decisions against the world, and gives each agent's decisions in order. */
 export async function run<State>(
-  _world: World<State>,
-  _actions: readonly DeclaredAction<State, ActionArgs>[],
-  _agents: readonly Agent[],
+  world: World<State>,
+  actions: readonly DeclaredAction<State, ActionArgs>[],
+  agents: readonly Agent[],
 ): Promise<Map<string, Decision[]>> {
-  return new Map();
+  const decisions = new Map<string, Decision[]>();
+  for (const agent of agents) {
+    const made: Decision[] = [];
+    for (let count = 0; count < agent.decisions; count += 1) {
+      made.push(await decide(world, actions, agent));
+    }
+    decisions.set(agent.name, made);
+  }
+  return decisions;
+}
+
+/** One decision: the agent's model answers through Pi, and the action the answer names goes to the world's arbiter. */
+async function decide<State>(
+  world: World<State>,
+  actions: readonly DeclaredAction<State, ActionArgs>[],
+  agent: Agent,
+): Promise<Decision> {
+  const message = await agent.model.models.complete(agent.model.model, { messages: [] });
+  const answer = message.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("");
+  return { answer, outcome: act(world, actions, agent.name, answer) };
 }
