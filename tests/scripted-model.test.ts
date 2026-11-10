@@ -17,7 +17,7 @@ describe("ScriptedModel", () => {
       { text: "Looking.", toolCalls: [{ name: "look", arguments: { far: true } }], delayMs: 0 },
     ]);
 
-    const answer = await scripted.models.complete(scripted.model, { messages: [], tools: [look] });
+    const answer = await complete(scripted, { messages: [], tools: [look] });
 
     expect(answer.content).toEqual([
       { type: "text", text: "Looking." },
@@ -31,8 +31,8 @@ describe("ScriptedModel", () => {
       { text: "second", delayMs: 0 },
     ]);
 
-    await scripted.models.complete(scripted.model, { messages: [], tools: [look] });
-    const answer = await scripted.models.complete(scripted.model, { messages: [], tools: [] });
+    await complete(scripted, { messages: [], tools: [look] });
+    const answer = await complete(scripted, { messages: [], tools: [] });
 
     expect(answer.content).toEqual([{ type: "text", text: "second" }]);
     expect(scripted.received.map((messages) => getCurrentTools(messages).map((tool) => tool.name))).toEqual([
@@ -47,8 +47,8 @@ describe("ScriptedModel", () => {
       { text: "second", delayMs: 0 },
     ]);
 
-    await scripted.models.complete(scripted.model, { messages: [] }, { sessionId: "session 1" });
-    await scripted.models.complete(scripted.model, { messages: [] });
+    await complete(scripted, { messages: [] }, { sessionId: "session 1" });
+    await complete(scripted, { messages: [] });
 
     expect(scripted.sessions).toEqual(["session 1", undefined]);
   });
@@ -56,7 +56,7 @@ describe("ScriptedModel", () => {
   it("answers as a model with the id it is given", async () => {
     const scripted = new ScriptedModel([{ text: "first", delayMs: 0 }], "scripted-model-x");
 
-    const answer = await scripted.models.complete(scripted.model, { messages: [] });
+    const answer = await complete(scripted, { messages: [] });
 
     expect(scripted.model.id).toBe("scripted-model-x");
     expect(answer.model).toBe("scripted-model-x");
@@ -65,7 +65,7 @@ describe("ScriptedModel", () => {
   it("answers a turn with a provider error when the script says so", async () => {
     const scripted = new ScriptedModel([{ error: "overloaded", delayMs: 0 }]);
 
-    const answer = await scripted.models.complete(scripted.model, { messages: [] });
+    const answer = await complete(scripted, { messages: [] });
 
     expect(answer).toMatchObject({ stopReason: "error", errorMessage: "overloaded", content: [] });
   });

@@ -1,4 +1,4 @@
-import { type JsonObject, type Message, type Model, type Models, type Provider, createModels, fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall } from "@earendil-works/pi-ai";
+import { type JsonObject, type Message, type Model, type Provider, fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall } from "@earendil-works/pi-ai";
 import { waitAtLeast } from "./clock.ts";
 
 /**
@@ -26,8 +26,6 @@ export interface ScriptedAnswer {
  * provider of its own, so one agent's script is never consumed by another agent's calls.
  */
 export class ScriptedModel {
-  /** Pi's models, holding only this model's faux provider; their credentials are kept in memory, never read from disk. */
-  readonly models: Models;
   /** The faux provider giving this model's answers, for a run to register with Pi's model runtime. */
   readonly provider: Provider;
   readonly model: Model<string>;
@@ -57,9 +55,6 @@ export class ScriptedModel {
         ]);
       }),
     );
-    const models = createModels();
-    models.setProvider(faux.provider);
-    this.models = models;
     this.provider = faux.provider;
     this.model = faux.getModel();
   }
