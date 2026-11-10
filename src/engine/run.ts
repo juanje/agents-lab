@@ -22,9 +22,15 @@ export interface RunSettings extends SessionSettings {
   parallelismLimit: number;
 }
 
+/** What a run gives: every agent's model turns in the order they ended, and what each agent's session held at its end. */
+export interface RunResult {
+  turns: ModelTurn[];
+  messages: ReadonlyMap<string, AgentSession["messages"]>;
+}
+
 /**
- * Runs every agent's activations in the world, and gives every agent's model turns in the order they ended. Each agent
- * runs its own loop and no agent waits for another: there are no turns (NFR-01), only the arbiter ordering effects.
+ * Runs every agent's activations in the world. Each agent runs its own loop and no agent waits for another: there are
+ * no turns (NFR-01), only the arbiter ordering effects.
  */
 export async function run<State>(
   world: World<State>,
@@ -33,7 +39,7 @@ export async function run<State>(
   agents: readonly Agent[],
   seed: number,
   settings: RunSettings,
-): Promise<ModelTurn[]> {
+): Promise<RunResult> {
   const runtime = await openRuntime(agents.map((agent) => agent.model.provider));
   const parallelism = new ParallelismLimit(settings.parallelismLimit);
   const turns: ModelTurn[] = [];
@@ -49,7 +55,7 @@ export async function run<State>(
       }
     }),
   );
-  return turns;
+  return { turns, messages: new Map() };
 }
 
 /**

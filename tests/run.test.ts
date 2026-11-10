@@ -31,6 +31,22 @@ describe("run", () => {
     expect(first).toMatchObject({ role: "user", content: [{ type: "text", text: "rhythm: You wake up." }] });
   });
 
+  it("gives what each agent's session held at the end: its stimuli, keeping their channel and source, and its model turns", async () => {
+    const model = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
+
+    const { messages } = await run(new World(emptySlots(3)), slotTools, rhythmOnly(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+
+    expect(messages.get("a")?.filter((message) => message.role !== "system")).toMatchObject([
+      {
+        role: "custom",
+        customType: "stimulus",
+        content: "rhythm: You wake up.",
+        details: { channel: "rhythm", source: "rhythm", content: "You wake up." },
+      },
+      { role: "assistant", content: [{ type: "text", text: "Nothing to do." }] },
+    ]);
+  });
+
   it("delivers a stimulus that arrives while the agent rests when it wakes, after the rhythm's", async () => {
     const stimuli = new Stimuli([rhythmChannel, { name: "bell", source: "town bell", stimulus: "The bell rings." }]);
     const model = new ScriptedModel([
@@ -150,7 +166,7 @@ describe("run", () => {
       { text: "Nothing to do.", delayMs: 0 },
     ]);
 
-    const turns = await run(new World(emptySlots(3)), slotTools, rhythmOnly(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+    const { turns } = await run(new World(emptySlots(3)), slotTools, rhythmOnly(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
 
     expect(turns).toEqual([expect.objectContaining({ agent: "a", outcome: "model_error", message: "overloaded" })]);
     expect(model.received).toHaveLength(1);
@@ -163,7 +179,7 @@ describe("run", () => {
       { text: "Done.", delayMs: 0 },
     ]);
 
-    const turns = await run(world, slotTools, rhythmOnly(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, {
+    const { turns } = await run(world, slotTools, rhythmOnly(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, {
       ...settings,
       modelTurnTimeoutMs: 50,
     });
@@ -177,7 +193,8 @@ describe("run", () => {
     const model = new ScriptedModel([{ text: "Nothing to do.", delayMs: 50 }]);
     const before = performance.now();
 
-    const [turn] = await run(new World(emptySlots(3)), slotTools, rhythmOnly(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+    const { turns } = await run(new World(emptySlots(3)), slotTools, rhythmOnly(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+    const [turn] = turns;
 
     expect(turn?.startedAtMs).toBeGreaterThanOrEqual(before);
     expect((turn?.endedAtMs ?? 0) - (turn?.startedAtMs ?? 0)).toBeGreaterThanOrEqual(50);
@@ -187,7 +204,7 @@ describe("run", () => {
   it("makes a model turn wait for a free slot when the parallelism limit is reached, and records the wait", async () => {
     const answersAfter50 = () => new ScriptedModel([{ text: "Nothing to do.", delayMs: 50 }]);
 
-    const turns = await run(
+    const { turns } = await run(
       new World(emptySlots(3)),
       slotTools,
       rhythmOnly(),

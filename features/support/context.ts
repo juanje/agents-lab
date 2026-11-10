@@ -2,6 +2,7 @@ import { World as CucumberWorld, setWorldConstructor } from "@cucumber/cucumber"
 import type { Grid, Position, WindowCell } from "../../src/engine/grid.ts";
 import type { Condition, Scenario } from "../../src/engine/scenario.ts";
 import type { ModelTurn } from "../../src/engine/adapter.ts";
+import type { RunResult } from "../../src/engine/run.ts";
 import type { ScriptedModel } from "../../src/engine/scripted-model.ts";
 import type { Channel, Stimuli } from "../../src/engine/stimuli.ts";
 import type { ActionResult, World } from "../../src/engine/world.ts";
@@ -30,6 +31,8 @@ export class Context extends CucumberWorld {
   personsPiFiles?: Map<string, string>;
   /** The model turns the run gave, in the order they ended. */
   turns?: readonly ModelTurn[];
+  /** What each agent's session held when the run ended. */
+  sessionMessages?: RunResult["messages"];
   /** The stimulus channels the scenario declares: the test world's rhythm channel, and any the scenario adds. */
   readonly channels: Channel[] = [rhythmChannel];
   /** The run's stimuli, from the moment the run starts, for what the scenario delivers while it runs. */

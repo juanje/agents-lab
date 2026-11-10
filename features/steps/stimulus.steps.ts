@@ -119,6 +119,29 @@ Then(
   },
 );
 
+Then(
+  "agent {string}'s session holds only its system prompt, its stimuli, its model turns and its tool results",
+  function (this: Context, agent: string) {
+    const held = this.sessionMessages?.get(agent);
+    assert.ok(held !== undefined && held.length > 0, `the run gave nothing agent "${agent}"'s session holds`);
+    for (const [index, message] of held.entries()) {
+      const what = `message ${index + 1} of agent "${agent}"'s session`;
+      if (message.role === "assistant" || message.role === "toolResult") continue;
+      if (message.role === "system") {
+        assert.equal(message.content, this.systemPrompt, `${what} is a system message other than the system prompt`);
+        continue;
+      }
+      assert.equal(message.role, "custom", `${what} is a ${message.role} message`);
+      assert.equal(message.customType, "stimulus", `${what} is a custom message of type "${message.customType}"`);
+      const stimulus = message.details as { channel: string; source: string; content: string };
+      const channel = this.channels.find((declared) => declared.name === stimulus.channel);
+      assert.ok(channel !== undefined, `${what} comes from the undeclared channel "${stimulus.channel}"`);
+      assert.deepEqual(stimulus, { channel: channel.name, source: channel.source, content: channel.stimulus });
+      assert.equal(message.content, asRead(channel.source, channel.stimulus), `${what} reads otherwise than its stimulus`);
+    }
+  },
+);
+
 Then("its first model turn did not", function (this: Context) {
   assert.ok(this.lastAgent !== undefined && this.lastStimulusRead !== undefined, "no stimulus was checked before");
   const [first] = modelOf(this, this.lastAgent).received;
