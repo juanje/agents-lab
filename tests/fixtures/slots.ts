@@ -1,4 +1,5 @@
 import type { Scenario } from "../../src/engine/scenario.ts";
+import type { Tool } from "../../src/engine/tools.ts";
 import type { Action } from "../../src/engine/world.ts";
 
 /** A test world of numbered slots, from 1; each is empty (null) or held by one agent. */
@@ -20,6 +21,27 @@ export const take: Action<Slots, { agent: string; slot: number }> = {
     holder(slots, slot) === null ? { holds: true } : { holds: false, reason: SLOT_TAKEN },
   effect: (slots, { agent, slot }) => slots.map((current, index) => (index === slot - 1 ? agent : current)),
 };
+
+/** What "look" gives for a slot. */
+export type Seen = "empty" | "held";
+
+/** The test world's tools: the sensor "look" and the effector "take <slot>". */
+export const slotTools: readonly Tool<Slots>[] = [
+  {
+    kind: "sensor",
+    name: "look",
+    description: "See which slots are empty and which are held, from slot 1, as a JSON array.",
+    parameters: { type: "object", properties: {} },
+    sense: (slots) => JSON.stringify(slots.map((holder): Seen => (holder === null ? "empty" : "held"))),
+  },
+  {
+    kind: "effector",
+    name: "take",
+    description: "Take an empty slot.",
+    parameters: { type: "object", properties: { slot: { type: "integer", minimum: 1 } }, required: ["slot"] },
+    action: take,
+  },
+];
 
 /** Who holds the slots a configuration has held at the start. */
 export const START_HOLDER = "start";

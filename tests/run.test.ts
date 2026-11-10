@@ -12,6 +12,7 @@ describe("run", () => {
       const answers = (delayMs: number) => new ScriptedModel(Array.from({ length: 4 }, () => ({ text: "resting", delayMs })));
       await run(
         new World(emptySlots(3)),
+        [],
         [
           { name: "a", model: answers(0), activations: 4, rhythm: (source) => (draws.push(source.next()), 5) },
           { name: "b", model: answers(bDelayMs), activations: 4, rhythm: (source) => source.next() * 5 },
@@ -33,6 +34,7 @@ describe("run", () => {
       const draws: number[] = [];
       await run(
         new World(emptySlots(3)),
+        [],
         names.map((name) => ({
           name,
           model: new ScriptedModel(Array.from({ length: 3 }, () => ({ text: "resting", delayMs: 0 }))),

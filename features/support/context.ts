@@ -1,6 +1,7 @@
 import { World as CucumberWorld, setWorldConstructor } from "@cucumber/cucumber";
 import type { Grid, Position, WindowCell } from "../../src/engine/grid.ts";
 import type { Condition, Scenario } from "../../src/engine/scenario.ts";
+import type { ScriptedModel } from "../../src/engine/scripted-model.ts";
 import type { ActionResult, World } from "../../src/engine/world.ts";
 import type { Slots } from "../../tests/fixtures/slots.ts";
 
@@ -13,6 +14,8 @@ export class Context extends CucumberWorld {
   versionBefore!: number;
   result!: ActionResult;
   results!: ActionResult[];
+  /** Each agent's scripted model, as the scenario gives it before the run. */
+  readonly models = new Map<string, ScriptedModel>();
   /** The scenario the engine is given, and the condition it is loaded with. */
   scenario!: Partial<Scenario<Slots>>;
   condition?: Condition;

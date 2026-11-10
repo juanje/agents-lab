@@ -1,9 +1,10 @@
-import { type Model, type Models, createModels, fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai";
+import { type JsonObject, type Message, type Model, type Models, createModels, fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai";
 import { waitAtLeast } from "./clock.ts";
 
-/** One answer of a script: its text, and how long the model takes to give it. */
+/** One answer of a script: its text, the tools it calls, and how long the model takes to give it. */
 export interface ScriptedAnswer {
-  text: string;
+  text?: string;
+  toolCalls?: readonly { name: string; arguments: JsonObject }[];
   delayMs: number;
 }
 
@@ -15,6 +16,8 @@ export class ScriptedModel {
   /** Pi's models, holding only this model's faux provider; their credentials are kept in memory, never read from disk. */
   readonly models: Models;
   readonly model: Model<string>;
+  /** The messages each turn received, in order, tool declarations included. */
+  readonly received: Message[][] = [];
 
   constructor(script: readonly ScriptedAnswer[]) {
     const faux = fauxProvider();
@@ -22,7 +25,7 @@ export class ScriptedModel {
     faux.setResponses(
       script.map(({ text, delayMs }) => async () => {
         await waitAtLeast(delayMs);
-        return fauxAssistantMessage(text);
+        return fauxAssistantMessage(text ?? "");
       }),
     );
     const models = createModels();

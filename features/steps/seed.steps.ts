@@ -96,7 +96,8 @@ async function runReplica(context: Context, seed: number, condition?: Condition)
       },
     };
   });
-  await run(world, runningAgents, seed);
+  // The placing scenario's agents only rest: their tools play no part in their intervals.
+  await run(world, [], runningAgents, seed);
   return drawn;
 }
 
