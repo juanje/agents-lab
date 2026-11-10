@@ -335,4 +335,17 @@ describe("run", () => {
     expect(toolCalls).toEqual([{ agent: "a", tool: "take", arguments: { slot: "2" }, outcome: "success" }]);
     expect(world.state).toEqual([null, "a", null]);
   });
+  it("records a call to a tool the session does not offer as unknown_tool, applies nothing, and goes on", async () => {
+    const world = new World(emptySlots(3));
+    const model = new ScriptedModel([
+      { toolCalls: [{ name: "fly", arguments: { slot: 1 } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+
+    const { toolCalls } = await run(world, slotTools, rhythmOnly(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+
+    expect(toolCalls).toEqual([{ agent: "a", tool: "fly", arguments: { slot: 1 }, outcome: "unknown_tool" }]);
+    expect(world.version).toBe(0);
+    expect(model.received).toHaveLength(2);
+  });
 });
