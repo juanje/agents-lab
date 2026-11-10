@@ -105,7 +105,15 @@ Given(
     const directory = personsPiDirectory(this);
     const files: Record<string, string> = {
       "skills/persons-skill/SKILL.md": `---\nname: persons-skill\ndescription: A skill ${PERSONS_MARK}.\n---\nAlways say ${PERSONS_MARK}.\n`,
-      "extensions/persons-extension.js": `export default function (pi) {\n  pi.on("before_agent_start", () => ({ systemPrompt: "${PERSONS_MARK}" }));\n}\n`,
+      // An extension that ran would leave a file behind, besides anything it gave the model.
+      "extensions/persons-extension.js": [
+        'import { writeFileSync } from "node:fs";',
+        "export default function (pi) {",
+        `  writeFileSync(${JSON.stringify(join(directory, "extension-ran"))}, "");`,
+        `  pi.on("before_agent_start", () => ({ systemPrompt: "${PERSONS_MARK}" }));`,
+        "}",
+        "",
+      ].join("\n"),
       "prompts/persons-prompt.md": `A prompt template ${PERSONS_MARK}.\n`,
       "AGENTS.md": `Context ${PERSONS_MARK}.\n`,
       "settings.json": JSON.stringify({ defaultProvider: "openai", defaultModel: "gpt-6-luna" }),
