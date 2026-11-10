@@ -135,8 +135,12 @@ The engine refuses, before any model call:
 *Why:* experiments live outside the engine, and a scenario that loads with a missing part fails only after model calls have been spent. A condition with a misspelled key, or a value of the wrong kind, would otherwise run as the baseline under another name, and the difference between conditions would be attributed to a change that never happened (NFR-05).
 
 #### FR-SEED-01: One seed gives the same start
-Each replica gets one seeded random source. The scenario's initial state and every agent's rhythm draw from it, so the same seed gives the same initial world and the same sequence of waiting intervals.
-*Why:* replicas differ only by their seed and the model's answers, and conditions are compared against the same starting worlds.
+Each replica has one seed. From it, the engine derives one random sequence per purpose:
+- one for the scenario's initial state;
+- one for each agent's rhythm, derived from the seed and the agent's name.
+
+The same seed therefore gives the same initial world and, for each agent, the same sequence of waiting intervals. How many values one purpose draws never changes another purpose's sequence: a condition that places more agents leaves the other agents' intervals as they were.
+*Why:* replicas differ only by their seed and the model's answers, and conditions are compared against the same starting worlds. If purposes shared one sequence, a condition that changed the initial state would also change every agent's timing, and the difference between conditions would mix two changes (NFR-05).
 
 #### FR-SPACE-01: A grid space
 The engine provides a grid of a given width and height, with a capacity per cell. It answers four questions:
@@ -222,7 +226,7 @@ An experiment file (TOML) gives:
 - its id;
 - the scenario it runs;
 - the models;
-- the number of replicas and the base seed;
+- the number of replicas and the base seed, a whole number from 0 to 4294967295;
 - the run limits (time, decisions per agent, parallelism, timeout);
 - its conditions, each a named change over the scenario's base configuration.
 
