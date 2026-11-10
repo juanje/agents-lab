@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { Given, Then, When } from "@cucumber/cucumber";
-import { parse } from "smol-toml";
+import { type TomlTable, type TomlValue, parse, stringify } from "smol-toml";
 import { run } from "../../src/engine/run.ts";
 import { type Condition, type Scenario, loadScenario } from "../../src/engine/scenario.ts";
 import { ScriptedModel } from "../../src/engine/scripted-model.ts";
@@ -25,6 +25,16 @@ Given(
     this.condition = { name, change: `[slots]\ncount = ${count}\n` };
   },
 );
+
+/** A condition whose change, in TOML, sets one value at a dotted path such as "slots.held". */
+function setAt(name: string, path: string, value: TomlValue): Condition {
+  const change = path.split(".").reduceRight<TomlValue>((inner, key) => ({ [key]: inner }), value) as TomlTable;
+  return { name, change: stringify(change) };
+}
+
+Given("a condition {string} that sets {string} to {int}", function (this: Context, name: string, path: string, value: number) {
+  this.condition = setAt(name, path, value);
+});
 
 /**
  * Loads the scenario as the engine does before a run: an agent waits on a scripted model, and the run starts only
@@ -66,6 +76,13 @@ Then("it loads", function (this: Context) {
 Then("its world starts with {int} empty slots", function (this: Context, slots: number) {
   assert.ok(this.start !== undefined, `expected a loaded scenario, but loading failed: ${this.loadingError?.message}`);
   assert.deepEqual(this.start, { state: Array.from({ length: slots }, () => null), version: 0 });
+});
+
+Then("its world starts with {int} slots, {int} of them held", function (this: Context, count: number, held: number) {
+  assert.ok(this.start !== undefined, `expected a loaded scenario, but loading failed: ${this.loadingError?.message}`);
+  assert.equal(this.start.state.length, count, `expected ${count} slots, got ${this.start.state.length}`);
+  assert.equal(this.start.state.filter((holder) => holder !== null).length, held);
+  assert.equal(this.start.version, 0);
 });
 
 /** The scenario's words for each part, and the scenario's property that holds it. */
