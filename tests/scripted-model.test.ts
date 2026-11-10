@@ -33,4 +33,16 @@ describe("ScriptedModel", () => {
       [],
     ]);
   });
+
+  it("keeps the Pi session each turn came from", async () => {
+    const scripted = new ScriptedModel([
+      { text: "first", delayMs: 0 },
+      { text: "second", delayMs: 0 },
+    ]);
+
+    await scripted.models.complete(scripted.model, { messages: [] }, { sessionId: "session 1" });
+    await scripted.models.complete(scripted.model, { messages: [] });
+
+    expect(scripted.sessions).toEqual(["session 1", undefined]);
+  });
 });
