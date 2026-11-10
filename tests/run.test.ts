@@ -471,4 +471,27 @@ describe("run", () => {
     const [{ startedAtMs, endedAtMs }] = toolCalls;
     expect(endedAtMs - startedAtMs).toBeGreaterThanOrEqual(50);
   });
+
+  it("reads the world for a sensor's call when its duration ends, with what changed while it was under way", async () => {
+    const looking = new ScriptedModel([
+      { toolCalls: [{ name: "look", arguments: {} }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+    const taking = new ScriptedModel([
+      { toolCalls: [{ name: "take", arguments: { slot: 1 } }], delayMs: 50 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+    const agents = [
+      { name: "a", model: looking, activations: 1, rhythm: noWait },
+      { name: "b", model: taking, activations: 1, rhythm: noWait },
+    ];
+
+    const { toolCalls } = await run(slots({ tools: withLookTaking(100) }), agents, seed, settings);
+
+    const look = toolCalls.find((call) => call.tool === "look");
+    const take = toolCalls.find((call) => call.tool === "take");
+    expect(take?.endedAtMs).toBeGreaterThan(look?.startedAtMs ?? Infinity);
+    expect(take?.endedAtMs).toBeLessThan(look?.endedAtMs ?? -Infinity);
+    expect(looking.received[1]?.at(-1)).toMatchObject({ role: "toolResult", content: [{ type: "text", text: '["held","empty","empty"]' }] });
+  });
 });

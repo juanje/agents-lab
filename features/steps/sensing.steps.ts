@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { Given, Then } from "@cucumber/cucumber";
-import { SLOT_TAKEN, slotTools } from "../../tests/fixtures/slots.ts";
+import { SLOT_TAKEN, type Seen, slotTools } from "../../tests/fixtures/slots.ts";
 import type { Context } from "../support/context.ts";
+import { returned, script } from "./tool.steps.ts";
 
 Given(
   "the sensor {string} takes {int} milliseconds and returns which slots are empty and which are held",
@@ -35,5 +36,34 @@ Then(
   function (this: Context, agent: string, tool: string, durationMs: number) {
     const { startedAtMs, endedAtMs } = callOf(this, agent, tool);
     assert.ok(endedAtMs - startedAtMs >= durationMs, `the call took ${endedAtMs - startedAtMs} ms`);
+  },
+);
+
+Given(
+  "agent {string} runs on a scripted model that calls {string} with slot {int} while agent {string}'s {string} call is under way",
+  function (this: Context, agent: string, tool: string, slot: number, _other: string, sensor: string) {
+    const declared = this.tools.find((candidate) => candidate.name === sensor);
+    assert.ok(declared?.kind === "sensor" && declared.durationMs > 0, `"${sensor}" takes no time for a call to land in`);
+    // Both agents wake at once, and the other agent's call starts as its first turn ends at once: this call lands halfway
+    // through it. The step that checks the result checks that it did.
+    script(this, agent, [
+      { toolCalls: [{ name: tool, arguments: { slot } }], delayMs: declared.durationMs / 2 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+  },
+);
+
+Then(
+  "agent {string}'s {string} call returned slot {int} held by agent {string}",
+  function (this: Context, agent: string, tool: string, slot: number, holder: string) {
+    const sensed = callOf(this, agent, tool);
+    const landed = callOf(this, holder, "take");
+    assert.ok(
+      sensed.startedAtMs < landed.endedAtMs && landed.endedAtMs < sensed.endedAtMs,
+      `agent "${holder}"'s "take" did not land while agent "${agent}"'s "${tool}" was under way`,
+    );
+    // The sensor tells held from empty, not who holds: the world says the holder, and only that agent took a slot.
+    assert.equal((JSON.parse(returned(this, agent, tool)) as Seen[])[slot - 1], "held");
+    assert.equal(this.world.state[slot - 1], holder);
   },
 );

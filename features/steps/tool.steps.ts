@@ -138,7 +138,7 @@ function resultOf(context: Context, agent: string, tool: string) {
 }
 
 /** The text the agent's model received back for its first call of the tool, in a later turn. */
-function returned(context: Context, agent: string, tool: string): string {
+export function returned(context: Context, agent: string, tool: string): string {
   return resultOf(context, agent, tool)
     .content.flatMap((block) => (block.type === "text" ? [block.text] : []))
     .join("");
