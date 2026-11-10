@@ -26,6 +26,13 @@ When("two replicas start with the seed {int}", function (this: Context, seed: nu
   this.replicaStarts = [start(this, seed), start(this, seed)];
 });
 
+When(
+  "one replica starts with the seed {int} and another with the seed {int}",
+  function (this: Context, first: number, second: number) {
+    this.replicaStarts = [start(this, first), start(this, second)];
+  },
+);
+
 /** Checks that a replica started with the scenario's agents placed, so comparing two starts compares placements. */
 function assertPlaced(slots: Slots): void {
   const agents = (parse(placingScenario.baseConfiguration).slots as { agents: number }).agents;
@@ -37,4 +44,11 @@ Then("both start with the agents on the same slots", function (this: Context) {
   assertPlaced(first);
   assertPlaced(second);
   assert.deepEqual(second, first, "expected the same seed to place the agents on the same slots");
+});
+
+Then("the agents start on different slots in the two replicas", function (this: Context) {
+  const [first, second] = this.replicaStarts;
+  assertPlaced(first);
+  assertPlaced(second);
+  assert.notDeepEqual(second, first, `expected different seeds to place the agents differently, both gave ${first}`);
 });
