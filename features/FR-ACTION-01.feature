@@ -50,3 +50,13 @@ Feature: Actions are declared, and unknown answers apply nothing
       """
     Then the decision's outcome is "unparsed"
     And every slot is empty
+
+  Scenario: A line with only whitespace counts as empty
+    When agent "a" answers "take 1", followed by a line that holds only spaces and a tab
+    Then the decision's outcome is "success"
+    And slot 1 holds agent "a"
+
+  Scenario: Windows line breaks are read like any other line break
+    When agent "a" answers "take 1", ending with a Windows line break
+    Then the decision's outcome is "success"
+    And slot 1 holds agent "a"
