@@ -4,8 +4,8 @@
 
 ## Purpose
 
-agents-lab is the code that runs reproducible experiments with AI agents as agents in complex systems. It has three parts:
-- **the engine**, which places agents in a scenario's world, lets them act without turns on what they perceive locally, and records everything needed to measure the outcome from the world's state;
+agents-lab is the code that runs reproducible experiments with AI agents as agents in complex systems. It evaluates agents, not models: each agent is a model in a harness, with memory, that perceives and acts in a world only through its tools. It has three parts:
+- **the engine**, which places agents in a scenario's world, lets each one perceive, reflect and act at its own pace through its tools, makes doing things cost time and effort, and records everything needed to measure the outcome from the world's state;
 - **a library of reusable scenarios**;
 - **the analysis of the logs.**
 
@@ -15,12 +15,13 @@ Experiments are written outside this repository, in the experiment language (FR-
 
 **In (v0.1):** what the E13 experiment (Schelling with LLM agents) needs:
 - a world with an arbiter and a version counter;
+- tools as the agent's only interface: sensors and effectors, each with a duration and an effort;
+- stimuli that reach an agent through a declared channel, with their source;
+- activations: each agent's own rhythm wakes it, and it works through its tools in a session that lasts the whole run;
+- energy that tools spend and that recovers over time, and environment processes;
 - a scenario interface and its loading;
-- a grid space;
-- agent loops with their own rhythm;
-- local perception with information switches;
-- declared actions, with failures that tell a collision from an invalid choice;
 - seeded randomness;
+- a grid space where moving takes time in proportion to distance;
 - the Pi adapter, with a scripted model for tests;
 - the recorder, the environment inventory, and the generic and scenario metrics;
 - the experiment language and the runner;
@@ -40,47 +41,55 @@ Experiments are written outside this repository, in the experiment language (FR-
 
 | Milestone | Needed by | FRs | State |
 |:--|:--|:--|:--|
-| v0.1 | E13 micro vs macro (Schelling) | below, in this build order | to build |
+| v0.1 | E13 micro vs macro (Schelling) | below, in this build order | building |
 | v0.2 | E16 model monoculture and vote visibility | not written | later |
-| v0.3 | A single-agent experiment with tools and memory (E15 or E7) | not written | later |
+| v0.3 | A single-agent experiment with tools and memory across runs (E15 or E7) | not written | later |
 | v0.4 | World and agent forks | not written | later |
 
-**v0.1 build order.** The first slice is the thinnest end-to-end run. Each later FR deepens one piece:
-1. FR-WORLD-01
-2. FR-ACTION-01
-3. FR-ADAPTER-01
-4. FR-CLOCK-01
-5. FR-SCENARIO-01
-6. FR-SEED-01
-7. FR-SPACE-01
-8. FR-ACTION-02
-9. FR-RECORD-01
-10. FR-CLOCK-02
-11. FR-PERCEPTION-01
-12. FR-METRIC-01
-13. FR-METRIC-02
-14. FR-RECORD-02
-15. FR-INVENTORY-01
-16. FR-ADAPTER-02
-17. FR-EXPERIMENT-01
-18. FR-EXPERIMENT-02
-19. FR-EXPERIMENT-03
-20. FR-EXPERIMENT-04
-21. FR-RUN-01
-22. FR-RUN-02
-23. FR-RUN-03
-24. FR-NEIGHBOURHOOD-01
-25. FR-NEIGHBOURHOOD-02
-26. FR-NEIGHBOURHOOD-03
-27. FR-ANALYSIS-01
+**v0.1 build order.** The first slice is the thinnest end-to-end run. Each later FR deepens one piece. FRs marked *built* are done; FRs marked *rebuild* were built against an earlier version of this SPEC and must be rebuilt against their new contract.
+1. FR-WORLD-01 (built)
+2. FR-TOOL-01 (rebuild, was FR-ACTION-01)
+3. FR-TOOL-02 (rebuild, was FR-ACTION-01)
+4. FR-ADAPTER-01 (rebuild)
+5. FR-STIMULUS-01
+6. FR-CLOCK-01 (rebuild)
+7. FR-SCENARIO-01 (rebuild: its parts change)
+8. FR-SEED-01 (built)
+9. FR-SPACE-01 (built)
+10. FR-TOOL-03
+11. FR-TOOL-04 (was FR-ACTION-02)
+12. FR-SPACE-02
+13. FR-PROCESS-01
+14. FR-EFFORT-01
+15. FR-RECORD-01
+16. FR-CLOCK-02
+17. FR-METRIC-01
+18. FR-METRIC-02
+19. FR-RECORD-02
+20. FR-INVENTORY-01
+21. FR-ADAPTER-02
+22. FR-EXPERIMENT-01
+23. FR-EXPERIMENT-02
+24. FR-EXPERIMENT-03
+25. FR-EXPERIMENT-04
+26. FR-RUN-01
+27. FR-RUN-02
+28. FR-RUN-03
+29. FR-NEIGHBOURHOOD-01
+30. FR-NEIGHBOURHOOD-02
+31. FR-NEIGHBOURHOOD-03
+32. FR-ANALYSIS-01
 
 ## Invariants
 
-- An action changes the world only if its precondition holds at the moment it is applied.
-- The world's version grows by exactly one for each applied action and never otherwise.
+- An effector changes the world only if its precondition holds at the moment its effect is applied.
+- The world's version grows by exactly one for each applied effect and never otherwise.
+- A sensor never changes the world.
 - A grid cell never holds more entities than its capacity.
+- An agent's energy never goes below zero.
+- Nothing reaches an agent except a tool's result or a stimulus from a declared channel.
 - A run never writes to an existing file.
-- Every recorded decision has exactly one outcome, from the declared set.
+- Every recorded tool call has exactly one outcome, from the declared set.
 - Every metric is computed from the world's state, never by a model.
 
 ## Requirements
@@ -91,36 +100,40 @@ Experiments are written outside this repository, in the experiment language (FR-
 The world applies one action at a time. When an action's precondition holds at that moment, its effect is applied and the world's version grows by one. When it does not hold, the state does not change and the result is a failure carrying the action's named reason.
 *Why:* experiments measure what happens when agents act on a state that changed while they decided; an action checked against an older state would hide those collisions.
 
-#### FR-ACTION-01: Actions are declared, and unknown answers apply nothing
-A scenario declares each action with its name, the description the agent sees, its arguments and its failure reasons. An agent's answer that matches no declared action applies nothing and is recorded with the outcome `unparsed`. An answer that names a declared action with arguments that action does not take applies nothing and is recorded with the outcome `invalid_arguments`.
+#### FR-TOOL-01: Tools are the agent's only interface with the world
+A scenario declares each tool an agent can call, as one of two kinds:
+- **sensor:** returns part of the world, as seen from where the agent is, and changes nothing;
+- **effector:** changes the world through the arbiter.
 
-An answer is read by one rule, the same for every scenario:
-- lines end in `\n` or `\r\n`;
-- the action is the answer's last line that holds anything besides whitespace;
-- whitespace at the start and end of that line is dropped, and any run of whitespace inside it counts as one space;
-- the action's name is matched without regard to case.
+Each tool is declared with its name, the description the agent sees, its arguments, its duration, its effort and its failure reasons. The agent's session offers exactly these tools and no others.
+*Why:* an agent knows and changes its world only through its interfaces with it, as a living being does through its senses and its body; an agent that is handed the world's state is a model answering a prompt, not an agent.
 
-Nothing else is repaired. The raw answer is always recorded.
-*Why:* a guessed action would put the platform's reading in place of the agent's behaviour; malformed answers must be counted, not repaired, and an answer that picks a real action badly is a different behaviour from one that picks none. The reading rule ignores only layout (reasoning before the action, spacing, case), so `unparsed` measures behaviour in the world rather than formatting.
+#### FR-TOOL-02: Only tool calls act
+Text an agent writes changes nothing and reaches no one; it is recorded as the agent's reflection. A tool call whose arguments the tool does not take applies nothing and is recorded with the outcome `invalid_arguments`, together with the call exactly as the model made it, before any coercion.
+*Why:* a guessed action would put the platform's reading in place of the agent's behaviour, and Pi coerces arguments before a tool sees them; a malformed call must be counted as made.
 
 #### FR-ADAPTER-01: A scripted model answers in tests
-In tests, each agent's model is Pi's faux provider. It returns, in order, the answers listed in the agent's script, each after the delay the script gives. When the script runs out, the agent's decision is recorded with the outcome `script_exhausted` and nothing is applied.
+In tests, each agent's model is Pi's faux provider. For each model turn it returns, in order, what the agent's script lists for that turn (text, tool calls, or both), each after the delay the script gives. When the script runs out, the agent's activation ends and the run records `script_exhausted`.
 *Why:* the core must be testable deterministically and offline, through the same harness path real runs use.
 
-#### FR-CLOCK-01: Each agent runs its own loop
-Each agent repeats its own cycle: wait an interval drawn from its rhythm, observe, decide, then act. No agent waits for another agent's decision. While one agent decides, the others go on observing and acting.
-*Why:* real complex systems have no turns (NFR-01); a scheduler that orders agents removes stale decisions and collisions from every result.
+#### FR-STIMULUS-01: Stimuli reach an agent through a declared channel
+Information an agent does not ask for reaches it only as a stimulus: a message delivered into its session, through a channel the scenario declares, with the source the channel names (another agent, or a mechanism of the world, such as the agent's own rhythm). A stimulus that arrives while the agent is working is delivered at its next model turn; one that arrives while it is resting is delivered when it next wakes.
+*Why:* information does not come from nowhere; who or what sends it, and through what channel, is part of the system and must be declared like everything else the agent meets (NFR-04).
+
+#### FR-CLOCK-01: Each agent has its own activations
+Each agent's rhythm wakes it with a stimulus from its rhythm channel. Awake, the agent works through its tools in its session; its activation ends when a model turn makes no tool call. It then waits an interval drawn from its rhythm and wakes again. Its session lasts the whole run, so the agent keeps what it perceived and did. No agent waits for another, and agents' paces differ through their rhythms, their models' latency, their tools' durations, their energy and what they wait for.
+*Why:* real complex systems have no turns (NFR-01), and their agents do not move in step; a strong agent keeps its history while it acts.
 
 #### FR-SCENARIO-01: A scenario plugs into the engine
 A scenario provides:
 - its world's initial state;
-- its perception;
-- its actions;
+- its tools (sensors and effectors);
+- its stimulus channels;
 - its metrics;
 - its system prompt;
 - a base configuration in TOML.
 
-A system prompt that holds nothing besides whitespace, or a base configuration that sets no key, counts as missing.
+A system prompt that holds nothing besides whitespace, or a base configuration that sets no key, counts as missing. The system prompt describes the agent, never the state of the world.
 
 A condition is a TOML change over that base configuration:
 - a value the condition gives replaces the base configuration's value under the same key;
@@ -151,39 +164,53 @@ The engine provides a grid of a given width and height, with a capacity per cell
 
 *Why:* several of the lab's scenarios are spatial, and a shared grid keeps neighbourhoods and views the same across them. An agent's bad choice is the scenario's to name (for example `invalid_target`); a move that reaches the grid with an unknown entity or a cell outside it is a defect in the scenario, and recording it as a change would put an entity or a position in the log that never existed.
 
-#### FR-ACTION-02: An action can tell a collision from an invalid choice
-When an action is applied, it receives the current state and the state the agent observed. It can therefore fail with a reason saying the target changed after the agent observed it, as distinct from a reason saying the target was never valid.
-*Why:* separating the effect of other agents' timing from the agent's own errors is what experiments without turns measure.
+#### FR-TOOL-03: Sensing takes time and reads the world when it ends
+A sensor call takes its declared duration. Its result is the world as it is when the duration ends, as seen from where the agent is then. The engine keeps, for each agent, what each of its sensor calls returned and when.
+*Why:* perceiving is an act that takes time, and what an agent knows is what it last perceived, not the world's current state.
 
-#### FR-RECORD-01: Every decision is recorded
-Each run writes one new JSONL file, named with the run id. Each decision of each agent adds one line with:
-- the agent and the time it observed;
-- the prompt and the raw answer;
-- the parsed action and the outcome;
-- the time spent waiting for a model slot, and the model latency;
-- the model that answered, and the tokens and cost Pi reports;
-- the number of changes other agents applied between its observation and its action.
+#### FR-TOOL-04: Acting takes time, and its effect is checked when it lands
+An effector call takes its declared duration, which may depend on its arguments and the state (for example, distance). The agent is busy until it ends; its effect is checked and applied then, against the world as it is at that moment. An effector can fail with a reason saying its target changed after the agent last sensed it, as distinct from a reason saying the target was not valid when the agent last sensed it.
+*Why:* doing things takes time, and the world goes on changing meanwhile; telling a collision from a misjudgement is what separates the effect of other agents' timing from the agent's own errors.
 
-A decision that ends before its agent observes (for example `script_exhausted`) adds a line with the agent and the outcome only. When a run stops on an error, its log ends with a line that says the run stopped and gives the error.
+#### FR-SPACE-02: Moving across the grid takes time in proportion to distance
+A move on the grid takes the scenario's time per cell multiplied by the distance, counted in steps between neighbouring cells. The entity stays in its cell until the move ends; the destination is checked when it arrives.
+*Why:* if moving costs nothing, space and distance stop shaping who meets whom and who arrives first, and the grid becomes decoration.
 
+#### FR-PROCESS-01: The environment changes on its own
+A scenario can declare processes: changes the world applies at a given interval, through the arbiter, whether or not any agent acts (for example, energy recovering or a resource growing back).
+*Why:* real environments have their own dynamics; a world that changes only when agents act is a laboratory artefact.
+
+#### FR-EFFORT-01: Doing things spends energy
+Each agent has energy, up to a maximum the scenario sets. Each tool call spends its declared effort when it starts. A call the agent cannot afford fails with `no_energy`, takes no time and spends nothing. Energy recovers through a process the scenario declares. An agent learns its energy only through a sensor or a tool result the scenario declares.
+*Why:* real agents pay for what they do, and the cost shapes what they choose; an agent for which every action is free has no reason to choose between them.
+
+#### FR-RECORD-01: Everything an agent does is recorded
+Each run writes one new JSONL file, named with the run id. It adds one line for each:
+- **activation:** the agent, when it woke and when it ended;
+- **stimulus:** the agent, the channel, the source, the content, and when it was delivered;
+- **model turn:** the agent, its text, the model that answered, the wait for a model slot, the latency, and the tokens and cost Pi reports;
+- **tool call:**
+  - the agent, the tool and the call exactly as the model made it;
+  - when it started and ended, and its outcome;
+  - its result, for a sensor;
+  - for an effector, the number of changes other agents applied between the agent's last sensor call and the moment its effect was applied.
+
+When a run stops on an error, its log ends with a line that says the run stopped and gives the error.
 *Why:* every analysis of an experiment is done from this log, and a field not recorded cannot be recovered later. A run that stops on an error must say so, or its log reads as a run that simply ended.
 
 #### FR-CLOCK-02: A run ends at its budget or its time limit
-A run ends when every agent has used its decision budget or when its time limit passes, whichever comes first. A decision still pending at the time limit is recorded with the outcome `cut_off` and is not applied.
-*Why:* a run must end in a known state, and an action applied after the end would change a world that was already measured.
-
-#### FR-PERCEPTION-01: An agent observes only what its perception gives it
-An agent's observation is what the scenario's perception returns for that agent at that moment, and nothing else. Text gated by an information switch appears only when the condition turns the switch on.
-*Why:* situated perception (NFR-02) is a requirement of every experiment, and information switches are how conditions change what the agent knows.
+A run ends when every agent has used its activation budget or when its time limit passes, whichever comes first. A tool call still running at the time limit is recorded with the outcome `cut_off` and applies nothing.
+*Why:* a run must end in a known state, and an effect applied after the end would change a world that was already measured.
 
 #### FR-METRIC-01: Generic metrics for every run
-At the end of every run the core reports:
-- decisions per agent;
-- outcome counts by outcome;
-- mean and maximum model latency and wait for a slot;
-- the number of decisions taken on a state that had changed.
+At the end of every run the core reports, per agent and in total:
+- activations and model turns;
+- tool calls by tool and by outcome;
+- mean and maximum model latency and wait for a model slot;
+- energy spent;
+- the number of effector calls applied on a world that had changed since the agent last sensed it.
 
-*Why:* these show whether a run behaved as a run without turns before its scenario metrics are read.
+*Why:* these show whether a run behaved as a run without turns, and how agents spent their time and effort, before its scenario metrics are read.
 
 #### FR-METRIC-02: Scenario metrics are sampled on a schedule
 The engine computes the scenario's metrics from the world's state at the start of a run, at the interval the configuration gives, and at the end, and writes each sample to the log.
@@ -201,27 +228,27 @@ The first line of each run's log holds:
 #### FR-INVENTORY-01: The environment inventory is generated, not written by hand
 For a scenario and a condition, the core writes `inventory.md`, listing:
 - the system prompt;
-- the actions with the descriptions the agent sees, and the rule that reads an answer;
-- the information switches and their values;
-- the limits (view radius, decision budget, time limit, parallelism limit);
-- what the agent is told about itself;
-- the per-decision variations.
+- the tools, with their kind, the descriptions the agent sees, their durations and efforts;
+- the stimulus channels, with their sources and what they deliver;
+- the energy model and the environment processes;
+- the limits (activation budget, time limit, parallelism limit, timeout);
+- what the agent is told about itself.
 
 `lab inventory <experiment.toml>` prints it without running.
 *Why:* the lab reviews what each environment pushes agents to do before running, and a hand-written list drifts from the code.
 
-#### FR-ADAPTER-02: Each decision is one stateless Pi session
-For each decision, the core opens a Pi session in memory, using the model from the configuration. The session has:
+#### FR-ADAPTER-02: Each agent is one Pi session for the whole run
+Each agent runs in one Pi session that lasts the whole run, using the model from the configuration. The session has:
 - the scenario's system prompt in place of Pi's own;
-- no built-in tools;
-- the observation as the prompt.
+- no built-in tools, and exactly the scenario's tools;
+- the agent's stimuli as its messages.
 
-The session's answer is the decision's answer. The prompt never names the model unless the condition says so. The scripted model of FR-ADAPTER-01 runs through this same session, registered with Pi's model runtime like any other model.
-- **Model errors:** when the provider answers with an error instead of an answer, the decision is recorded with the outcome `model_error` and the provider's message, and nothing is applied.
-- **Parallelism limit:** a decision waits for a free slot when the configured number of calls is already running.
-- **Timeout:** a session that runs longer than the timeout is aborted and recorded with the outcome `timeout`, and nothing is applied.
+The prompt never names the model unless the condition says so. The scripted model of FR-ADAPTER-01 runs through this same session, registered with Pi's model runtime like any other model.
+- **Model errors:** when the provider answers with an error, the model turn is recorded with the outcome `model_error` and the provider's message, and the activation ends.
+- **Parallelism limit:** a model turn waits for a free slot when the configured number of calls is already running.
+- **Timeout:** a model turn that runs longer than the timeout is aborted and recorded with the outcome `timeout`, and the activation ends.
 
-*Why:* agents are compared across models through one harness the core controls; a hung call must not block a run; and a provider's failure is not the agent's behaviour, so it must not be counted as an `unparsed` answer.
+*Why:* agents are compared across models through one harness the core controls; a hung call must not block a run; and a provider's failure is not the agent's behaviour.
 
 #### FR-EXPERIMENT-01: An experiment file names its scenario, conditions, models and replicas
 An experiment file (TOML) gives:
@@ -229,7 +256,7 @@ An experiment file (TOML) gives:
 - the scenario it runs;
 - the models;
 - the number of replicas and the base seed, a whole number from 0 to 4294967295;
-- the run limits (time, decisions per agent, parallelism, timeout);
+- the run limits (time, activations per agent, parallelism, timeout);
 - its conditions, each a named change over the scenario's base configuration.
 
 The engine validates the file against the experiment schema before anything runs. An invalid file fails with an error that names the field and what was expected.
@@ -250,8 +277,7 @@ An experiment file gives:
 
 #### FR-EXPERIMENT-04: Materials are files, referenced and fingerprinted
 An experiment or a condition can reference materials by path, relative to the experiment file:
-- texts for the system prompt or the observations;
-- variation sets;
+- texts for the system prompt or for stimuli;
 - seeded memory;
 - held-out keys.
 
@@ -268,22 +294,22 @@ The engine reads them at run time, writes each path with a content hash to the r
 
 #### FR-RUN-03: One experiment at a time
 `lab run` refuses to start, with an error that says another run is active, while another `lab run` on the same machine holds the lock.
-*Why:* two processes making model calls with the same Pi login at the same time stalled every call, and two experiments on one machine would share its parallelism limit without recording it.
+*Why:* two experiments on one machine would share its parallelism limit and its Pi login without recording it.
 
 ### Scenario library
 
 #### FR-NEIGHBOURHOOD-01: A neighbourhood from a seed
-The neighbourhood scenario creates a grid of the configured width and height and places the configured number of residents of two kinds on distinct random cells, from the replica's seed. Its system prompt only describes the place and the actions; any preference or rule a resident is given comes from the condition.
+The neighbourhood scenario creates a grid of the configured width and height and places the configured number of residents of two kinds on distinct random cells, from the replica's seed. Its system prompt describes the resident; any preference or rule a resident is given comes from the condition.
 *Why:* the same neighbourhood serves several experiments (micro vs macro, diversity of thresholds or models, local vs global view), each of which brings its own rule as a condition.
 
-#### FR-NEIGHBOURHOOD-02: Residents stay, move near or move far
-A resident can do three things:
-- **STAY** applies nothing and succeeds.
-- **MOVE dx dy** moves it to the cell at that offset when the cell is inside the grid, inside its view, and empty when the action is applied. It fails with `taken_while_deciding` when the cell was empty when the resident observed but is occupied now, and with `invalid_target` otherwise.
-- **FAR** moves it to a random cell that is empty when the action is applied. It fails with `no_empty_cell` when there is none.
+#### FR-NEIGHBOURHOOD-02: Residents look, and move near or far
+A resident has three tools:
+- **look** (sensor): returns its window of the configured radius, with its own kind, the other kind, empty and outside the grid marked distinctly.
+- **move dx dy** (effector): moves it to the cell at that offset, taking the grid's time for the distance. It fails with `taken_while_deciding` when the cell was empty when the resident last looked but is occupied when it arrives, and with `invalid_target` when the cell is outside the grid, outside its view, or was not empty when it last looked.
+- **move_far** (effector): moves it to a random cell that is empty when the move ends, taking the scenario's time for a far move. It fails with `no_empty_cell` when there is none.
 
-Its observation is its window of the configured radius, with its own kind, the other kind, empty and outside the grid marked distinctly.
-*Why:* separating a collision from a misread target is what lets experiments tell the effect of other agents' timing from the agent's own errors.
+Staying is not acting: a resident that does not want to move ends its activation.
+*Why:* separating a collision from a misjudgement is what lets experiments tell the effect of other agents' timing from the agent's own errors.
 
 #### FR-NEIGHBOURHOOD-03: Same-kind shares
 The neighbourhood scenario's metrics are:
@@ -291,26 +317,22 @@ The neighbourhood scenario's metrics are:
 - **segregation:** the mean of those shares;
 - **moves:** the number of applied moves.
 
-*Why:* experiments read the system-level pattern from the shares. A measure that depends on a rule given to the residents, such as how many fall below a threshold, is computed by that experiment's analysis from the shares and the decisions.
+*Why:* experiments read the system-level pattern from the shares. A measure that depends on a rule given to the residents, such as how many fall below a threshold, is computed by that experiment's analysis from the shares and the tool calls.
 
 ### Analysis
 
 #### FR-ANALYSIS-01: Logs export as CSV
-`lab export <runs-dir>` writes two CSV files:
-- **decisions:** one row per decision, with the run's condition, model, replica and seed;
-- **metric samples:** one row per metric sample.
-
-The export reads only the logs.
+`lab export <runs-dir>` writes CSV files for activations, model turns, tool calls and metric samples, each row with the run's condition, model, replica and seed. The export reads only the logs.
 *Why:* an analysis that needs heavier statistics than the built-in summaries can use an outside tool without a second language in the repository (D-02).
 
 ### Non-functional
 
-#### NFR-01: No turns
-No component orders agents or makes one wait for another's decision. Waiting may appear only through what agents do.
-*Why:* real complex systems are concurrent; imposed turns produce laboratory results, not results about the system.
+#### NFR-01: No turns, and no imposed pace
+No component orders agents, makes one wait for another, or makes them move in step. Waiting may appear only through what agents do, and differences of pace only through their rhythms, models, tools, energy and interactions.
+*Why:* real complex systems are concurrent, and their agents do not act at the same speed; imposed turns or an imposed common pace produce laboratory results, not results about the system.
 
 #### NFR-02: Situated perception
-An agent receives only what its scenario's perception gives it from where it is. Global information appears only as an explicit information switch.
+An agent's sensors return only what can be perceived from where the agent is. Global information exists only as a sensor or channel the scenario declares for it.
 *Why:* in complex systems each agent perceives differently; global information erases the differences the experiments study.
 
 #### NFR-03: Ground truth in code
@@ -318,7 +340,7 @@ World state, rules and metrics are code. No model decides what happens in the wo
 *Why:* a measure that depends on a model's reading cannot be checked or reproduced.
 
 #### NFR-04: Everything the agent meets is declared
-Every text, action, switch, limit and variation an agent meets comes from the scenario or the condition and appears in the inventory.
+Every text, tool, channel, source, limit, duration and effort an agent meets comes from the scenario or the condition and appears in the inventory.
 *Why:* undeclared pressures are the most common hidden cause of a result.
 
 #### NFR-05: A condition is one named change
@@ -337,11 +359,20 @@ Code in `src/engine/` never imports from `src/scenarios/` or `src/analysis/`. Sc
 Every Pi session the engine opens uses the lab's own Pi directory (`~/.agents-lab/pi/`): its credentials, its model definitions and nothing else. The engine never reads or writes the person's Pi setup (`~/.pi/agent/`): no settings, extensions, skills, prompt templates, themes, context files such as `AGENTS.md`, model definitions or credentials. Session settings come from the experiment's configuration, held in memory.
 *Why:* an agent's environment must contain only what the experiment declares (NFR-04); the person's own Pi setup would change the agents without anyone seeing it, and the lab would change the person's coding agent and compete with it for one login.
 
+#### NFR-09: Agents, not models
+The engine never hands an agent the world's state. An agent perceives only through its sensors and the stimuli of its declared channels, acts only through its effectors, and keeps its session for the whole run.
+*Why:* the lab studies strong agents perceiving, reflecting and acting in their environment; a model answering a prompt that describes the world is a different object of study.
+
+#### NFR-10: Doing things costs time and effort
+Every tool call takes time and every effector spends energy, as the scenario declares. No tool is instantaneous and free unless the scenario declares it so, and the inventory shows it.
+*Why:* in real systems, perceiving, moving and acting cost time and energy, and those costs are what make space, distance and choice matter.
+
 ## Draft notes
 
 - v0.2 will need, at least:
-  - channels with topology and delay;
-  - event masks with pending observations;
+  - channels between agents with topology and delay;
+  - event masks with pending stimuli;
   - votes with a deadline.
-- v0.3 will need persistent Pi sessions per agent, a workspace for its memory files, and lab actions as custom tools. `@earendil-works/pi-durable` (experimental in Pi 1.5.0) may help with long runs.
+- v0.3 will need memory across runs: a workspace for each agent's memory files. `@earendil-works/pi-durable` (experimental in Pi 1.5.0) may help with long runs.
 - Open: whether real time is enough for E16's vote deadlines to be repeatable, or simulated time is needed.
+- Open: whether an agent can make several tool calls at once in one model turn, or they run one after another. Until decided, they run one after another.
