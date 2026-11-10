@@ -92,11 +92,19 @@ export function randomEmptyCell(grid: Grid, random: Random): Position | undefine
   return empty[Math.floor(random.next() * empty.length)];
 }
 
-/** Stub: always applies and moves nothing, so the steps can fail on their assertions first. */
-export const move: Action<Grid, { entity: string; to: Position }> = {
-  precondition: () => ({ holds: true }),
-  effect: (grid) => grid,
-};
+/** Why a move fails when its destination already holds as many entities as its capacity. */
+export const CELL_FULL = "cell_full";
 
-/** Stub: the reason is not named yet, so the tests can fail on their assertions first. */
-export const CELL_FULL = "";
+/** Moves an entity from its cell to another. It fails with `cell_full` when the destination is at its capacity. */
+export const move: Action<Grid, { entity: string; to: Position }> = {
+  precondition: (grid, { to }) =>
+    entitiesAt(grid, to).length < grid.capacity ? { holds: true } : { holds: false, reason: CELL_FULL },
+  effect: (grid, { entity, to }) => {
+    const destination = indexOf(grid, to);
+    const cells = grid.cells.map((cell, index) => {
+      const others = cell.filter((held) => held !== entity);
+      return index === destination ? [...others, entity] : others;
+    });
+    return { ...grid, cells };
+  },
+};
