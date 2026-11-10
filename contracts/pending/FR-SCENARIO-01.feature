@@ -58,3 +58,9 @@ Feature: A scenario plugs into the engine
     When the engine loads it with the condition "text-count"
     Then loading fails with an error that names "slots.count", "number" and "string"
     And no model was called
+
+  Scenario: A scenario without a rhythm channel is refused before any model call
+    Given the test scenario "slots", whose stimulus channels do not include one named "rhythm"
+    When the engine loads it
+    Then loading fails with an error that names "rhythm"
+    And no model was called
