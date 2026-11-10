@@ -21,4 +21,17 @@ describe("loadScenario", () => {
     expect(loaded.configuration).toEqual({ slots: 4, label: "base" });
     expect(loaded.world.state).toEqual([null, null, null, null]);
   });
+
+  it.each([
+    ["initialState", "initial state"],
+    ["perception", "perception"],
+    ["actions", "actions"],
+    ["metrics", "metrics"],
+    ["systemPrompt", "system prompt"],
+    ["baseConfiguration", "base configuration"],
+  ] as const)("refuses a scenario without its %s, with an error that names the %s", (property, part) => {
+    const { [property]: _left, ...rest } = slotsScenario;
+
+    expect(() => loadScenario(rest)).toThrow(`Scenario "slots" lacks its ${part}`);
+  });
 });
