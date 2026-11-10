@@ -307,4 +307,32 @@ describe("run", () => {
     expect(turns.map((turn) => turn.text)).toEqual(["I take slot 1.", "Slot 2 is mine."]);
     expect(world.version).toBe(0);
   });
+  it.each([[{ slot: "seven" }], [{}]])(
+    "records a call with arguments %j, which the tool does not take, as invalid_arguments, and applies nothing",
+    async (args) => {
+      const world = new World(emptySlots(3));
+      const model = new ScriptedModel([
+        { toolCalls: [{ name: "take", arguments: args }], delayMs: 0 },
+        { text: "Done.", delayMs: 0 },
+      ]);
+
+      const { toolCalls } = await run(world, slotTools, rhythmOnly(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+
+      expect(toolCalls).toEqual([{ agent: "a", tool: "take", arguments: args, outcome: "invalid_arguments" }]);
+      expect(world.version).toBe(0);
+    },
+  );
+
+  it("records a call with the arguments as the model made them, before Pi coerces them", async () => {
+    const world = new World(emptySlots(3));
+    const model = new ScriptedModel([
+      { toolCalls: [{ name: "take", arguments: { slot: "2" } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+
+    const { toolCalls } = await run(world, slotTools, rhythmOnly(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+
+    expect(toolCalls).toEqual([{ agent: "a", tool: "take", arguments: { slot: "2" }, outcome: "success" }]);
+    expect(world.state).toEqual([null, "a", null]);
+  });
 });

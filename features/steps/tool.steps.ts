@@ -49,13 +49,14 @@ When("the run ends", async function (this: Context) {
     rhythm: this.rhythms.get(name) ?? (() => this.waitBeforeActivationMs),
   }));
   // Any seed: these rhythms draw nothing from it.
-  const { turns, messages } = await run(this.world, slotTools, this.stimuli, agents, 1, {
+  const { turns, messages, toolCalls } = await run(this.world, slotTools, this.stimuli, agents, 1, {
     systemPrompt: this.systemPrompt,
     modelTurnTimeoutMs: this.modelTurnTimeoutMs,
     parallelismLimit: this.parallelismLimit,
   });
   this.turns = turns;
   this.sessionMessages = messages;
+  this.toolCalls = toolCalls;
 });
 
 /** The scripted model agent runs on, which has made at least one turn. */
@@ -134,4 +135,27 @@ Then("agent {string}'s reflection {string} was recorded", function (this: Contex
   assert.ok(this.turns !== undefined, "the run gave no model turns");
   const reflections = this.turns.filter((turn) => turn.agent === agent).map((turn) => turn.text);
   assert.deepEqual(reflections, [text]);
+});
+
+Given(
+  /^agent "([^"]*)" runs on a scripted model that calls "([^"]*)" with the arguments (\{.*\}), then ends without a tool call$/,
+  function (this: Context, agent: string, tool: string, json: string) {
+    script(this, agent, [
+      { toolCalls: [{ name: tool, arguments: JSON.parse(json) }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+  },
+);
+
+Then("agent {string}'s {string} call has the outcome {string}", function (this: Context, agent: string, tool: string, outcome: string) {
+  assert.ok(this.toolCalls !== undefined, "the run gave no tool calls");
+  const calls = this.toolCalls.filter((call) => call.agent === agent && call.tool === tool);
+  assert.equal(calls.length, 1, `agent "${agent}" made ${calls.length} "${tool}" calls`);
+  assert.equal(calls[0]?.outcome, outcome);
+  this.lastToolCall = calls[0];
+});
+
+Then(/^the call is kept with the arguments (\{.*\}), as the model made it$/, function (this: Context, json: string) {
+  assert.ok(this.lastToolCall !== undefined, "no call was checked before");
+  assert.deepEqual(this.lastToolCall.arguments, JSON.parse(json));
 });

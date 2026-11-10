@@ -31,6 +31,10 @@ export class Context extends CucumberWorld {
   personsPiFiles?: Map<string, string>;
   /** The model turns the run gave, in the order they ended. */
   turns?: readonly ModelTurn[];
+  /** The tool calls the run gave. */
+  toolCalls?: RunResult["toolCalls"];
+  /** The tool call the scenario checked last, for a step that says "the call". */
+  lastToolCall?: RunResult["toolCalls"][number];
   /** What each agent's session held when the run ended. */
   sessionMessages?: RunResult["messages"];
   /** The stimulus channels the scenario declares: the test world's rhythm channel, and any the scenario adds. */
