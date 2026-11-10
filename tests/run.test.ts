@@ -97,6 +97,18 @@ describe("run", () => {
     expect(model.received).toHaveLength(1);
   });
 
+  it("records a turn the provider answered with an error as model_error, with its message, and ends the activation there", async () => {
+    const model = new ScriptedModel([
+      { error: "overloaded", delayMs: 0 },
+      { text: "Nothing to do.", delayMs: 0 },
+    ]);
+
+    const turns = await run(new World(emptySlots(3)), slotTools, [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+
+    expect(turns).toEqual([expect.objectContaining({ agent: "a", outcome: "model_error", message: "overloaded" })]);
+    expect(model.received).toHaveLength(1);
+  });
+
   it("gives each agent's model turns to that agent's own model", async () => {
     const world = new World(emptySlots(3));
     const takes = (slot: number) =>
