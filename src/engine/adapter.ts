@@ -2,7 +2,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import {
   type AgentSession,
-  type ModelRuntime,
+  ModelRuntime,
   type ResourceLoader,
   SessionManager,
   SettingsManager,
@@ -22,8 +22,23 @@ export interface AgentModel {
 }
 
 /** The lab's own Pi directory (D-08). Read when a run starts, so it follows the home directory the run sees. */
-export function labPiDirectory(): string {
+function labPiDirectory(): string {
   return join(homedir(), ".agents-lab", "pi");
+}
+
+/**
+ * Makes the Pi model runtime a run's sessions share: the lab's own credentials and model definitions, never the
+ * person's (NFR-08), with the providers of the agents' models registered like any other.
+ */
+export async function openRuntime(providers: readonly Provider[]): Promise<ModelRuntime> {
+  const directory = labPiDirectory();
+  const runtime = await ModelRuntime.create({
+    authPath: join(directory, "auth.json"),
+    modelsPath: join(directory, "models.json"),
+    modelsStorePath: join(directory, "models-store.json"),
+  });
+  for (const provider of providers) runtime.registerNativeProvider(provider);
+  return runtime;
 }
 
 /** One call to an agent's model within an activation, and how it ended. */
@@ -58,10 +73,9 @@ export async function openSession<State>(
   parallelism: ParallelismLimit,
   turns: ModelTurn[],
 ): Promise<AgentSession> {
-  const directory = labPiDirectory();
   const { session } = await createAgentSession({
     // Pi falls back to the person's directory (~/.pi/agent/) wherever a path is left out (NFR-08).
-    agentDir: directory,
+    agentDir: labPiDirectory(),
     modelRuntime: runtime,
     model: agent.model.model,
     // The allowlist leaves out Pi's built-in tools and filters custom tools too, so it names every scenario tool.

@@ -1,6 +1,5 @@
-import { type AgentSession, ModelRuntime } from "@earendil-works/pi-coding-agent";
-import { join } from "node:path";
-import { type AgentModel, type ModelTurn, type SessionSettings, labPiDirectory, openSession } from "./adapter.ts";
+import type { AgentSession } from "@earendil-works/pi-coding-agent";
+import { type AgentModel, type ModelTurn, type SessionSettings, openRuntime, openSession } from "./adapter.ts";
 import { waitAtLeast } from "./clock.ts";
 import { ParallelismLimit } from "./parallelism.ts";
 import { Random } from "./random.ts";
@@ -23,8 +22,8 @@ export interface RunSettings extends SessionSettings {
 }
 
 /**
- * Runs every agent's activations in the world, and gives every agent's model turns in the order they ended. Each agent runs its own loop and no agent waits for another: there are
- * no turns (NFR-01), only the arbiter ordering effects.
+ * Runs every agent's activations in the world, and gives every agent's model turns in the order they ended. Each agent
+ * runs its own loop and no agent waits for another: there are no turns (NFR-01), only the arbiter ordering effects.
  */
 export async function run<State>(
   world: World<State>,
@@ -33,22 +32,15 @@ export async function run<State>(
   seed: number,
   settings: RunSettings,
 ): Promise<ModelTurn[]> {
-  // The lab's own credentials and model definitions, never the person's (NFR-08).
-  const directory = labPiDirectory();
-  const runtime = await ModelRuntime.create({
-    authPath: join(directory, "auth.json"),
-    modelsPath: join(directory, "models.json"),
-    modelsStorePath: join(directory, "models-store.json"),
-  });
-  for (const agent of agents) runtime.registerNativeProvider(agent.model.provider);
-  // Each agent's rhythm has its own sequence, from the seed and the agent's name: sharing one would make an agent's
-  // intervals depend on when the others' models answer, and deriving by order on which other agents run.
+  const runtime = await openRuntime(agents.map((agent) => agent.model.provider));
   const parallelism = new ParallelismLimit(settings.parallelismLimit);
   const turns: ModelTurn[] = [];
   await Promise.all(
     agents.map(async (agent) => {
       const session = await openSession(world, tools, agent, runtime, settings, parallelism, turns);
       try {
+        // Each agent's rhythm has its own sequence, from the seed and the agent's name: sharing one would make an
+        // agent's intervals depend on when the others' models answer, and deriving by order on which other agents run.
         await loop(session, agent, Random.derive(seed, `rhythm of ${agent.name}`));
       } finally {
         session.dispose();
