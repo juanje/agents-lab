@@ -8,14 +8,19 @@ import { ScriptedModel } from "../../src/engine/scripted-model.ts";
 import { type Slots, placedAgent, placingScenario } from "../../tests/fixtures/slots.ts";
 import type { Context } from "../support/context.ts";
 
+/** The placing scenario's [slots] table: how many slots it has and how many agents it places. */
+function placingSlots(): { count: number; agents: number } {
+  // smol-toml gives tables a null prototype, so the fields are copied out of the table.
+  const { count, agents } = parse(placingScenario.baseConfiguration).slots as { count: number; agents: number };
+  return { count, agents };
+}
+
 Given(
   "the test scenario {string} with {int} slots, which places {int} agents on random empty slots",
   function (this: Context, name: string, count: number, agents: number) {
     // The scenario lives in the fixture; these checks keep the scenario's words and the fixture from drifting apart.
     assert.equal(placingScenario.name, name);
-    // smol-toml gives tables a null prototype, so the fields are compared, not the table.
-    const slots = parse(placingScenario.baseConfiguration).slots as { count: number; agents: number };
-    assert.deepEqual({ count: slots.count, agents: slots.agents }, { count, agents });
+    assert.deepEqual(placingSlots(), { count, agents });
     this.scenario = placingScenario;
   },
 );
@@ -38,7 +43,7 @@ When(
 
 /** Checks that a replica started with the scenario's agents placed, so comparing two starts compares placements. */
 function assertPlaced(slots: Slots): void {
-  const agents = (parse(placingScenario.baseConfiguration).slots as { agents: number }).agents;
+  const { agents } = placingSlots();
   assert.equal(slots.filter((holder) => holder !== null).length, agents, `expected ${agents} agents placed, got ${slots}`);
 }
 
@@ -47,6 +52,13 @@ Then("both start with the agents on the same slots", function (this: Context) {
   assertPlaced(first);
   assertPlaced(second);
   assert.deepEqual(second, first, "expected the same seed to place the agents on the same slots");
+});
+
+Then("the agents start on different slots in the two replicas", function (this: Context) {
+  const [first, second] = this.replicaStarts;
+  assertPlaced(first);
+  assertPlaced(second);
+  assert.notDeepEqual(second, first, `expected different seeds to place the agents differently, both gave ${first}`);
 });
 
 Given(
@@ -66,7 +78,7 @@ const DECISIONS = 3;
 async function runReplica(context: Context, seed: number): Promise<Map<string, number[]>> {
   const { world, scenario, random } = loadScenario(context.scenario, seed);
   const { minMs, maxMs } = context.rhythmRange;
-  const agents = (parse(scenario.baseConfiguration).slots as { agents: number }).agents;
+  const { agents } = placingSlots();
   const drawn = new Map<string, number[]>();
   const runningAgents = Array.from({ length: agents }, (_, index) => {
     const name = placedAgent(index + 1);
@@ -103,11 +115,4 @@ Then("each agent waited the same sequence of intervals in both replicas", functi
     }
     assert.deepEqual(second.get(agent), intervals, `expected "${agent}" to wait the same intervals in both replicas`);
   }
-});
-
-Then("the agents start on different slots in the two replicas", function (this: Context) {
-  const [first, second] = this.replicaStarts;
-  assertPlaced(first);
-  assertPlaced(second);
-  assert.notDeepEqual(second, first, `expected different seeds to place the agents differently, both gave ${first}`);
 });
