@@ -101,6 +101,31 @@ describe("run", () => {
     expect(await drawsOfA(30)).toEqual(draws);
   });
 
+  it("gives an agent's rhythm the same draws for the same seed, whichever agents run with it and in whatever order", async () => {
+    /** Runs the named agents with seed 42, in that order, and gives the draws of "b"'s rhythm. */
+    async function drawsOfB(names: readonly string[]): Promise<number[]> {
+      const draws: number[] = [];
+      await run(
+        new World(emptySlots(3)),
+        declaredActions,
+        names.map((name) => ({
+          name,
+          model: new ScriptedModel(Array.from({ length: 3 }, () => ({ text: "wait", delayMs: 0 }))),
+          decisions: 3,
+          rhythm: (source) => (name === "b" ? (draws.push(source.next()), 0) : source.next()),
+        })),
+        42,
+      );
+      return draws;
+    }
+
+    const draws = await drawsOfB(["a", "b"]);
+
+    expect(draws).toHaveLength(3);
+    expect(await drawsOfB(["b", "a"])).toEqual(draws);
+    expect(await drawsOfB(["c", "d", "b"])).toEqual(draws);
+  });
+
   it("runs each agent's decisions in its own loop, so a slow agent does not hold back a fast one", async () => {
     const world = new World(emptySlots(3));
     const slow = new ScriptedModel([{ text: "wait", delayMs: 200 }]);
