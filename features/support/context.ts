@@ -6,7 +6,8 @@ import type { Agent, RunResult } from "../../src/engine/run.ts";
 import type { ScriptedAnswer, ScriptedModel } from "../../src/engine/scripted-model.ts";
 import type { Channel, Stimuli } from "../../src/engine/stimuli.ts";
 import type { Action, ActionResult, World } from "../../src/engine/world.ts";
-import { type Slots, rhythmChannel } from "../../tests/fixtures/slots.ts";
+import type { Tool } from "../../src/engine/tools.ts";
+import { type Slots, rhythmChannel, slotTools } from "../../tests/fixtures/slots.ts";
 
 /**
  * What one scenario's steps share. Cucumber builds a fresh one for each scenario, so no state leaks
@@ -47,6 +48,8 @@ export class Context extends CucumberWorld {
   readonly channels: Channel[] = [rhythmChannel];
   /** The run's stimuli, from the moment the run starts, for what the scenario delivers while it runs. */
   stimuli!: Stimuli;
+  /** The tools the scenario declares: the test world's, as the scenario sets them. */
+  tools: readonly Tool<Slots>[] = slotTools;
   /** The system prompt the scenario declares. */
   systemPrompt = "";
   /** How long a model turn may run, unless the scenario says: long enough for any scripted turn here. */

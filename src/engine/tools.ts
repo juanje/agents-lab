@@ -10,6 +10,8 @@ interface Declared {
 /** A tool that returns part of the world, as seen from where the agent is, and changes nothing. */
 export interface Sensor<State> extends Declared {
   kind: "sensor";
+  /** How long a call takes, in milliseconds, before it reads the world (FR-TOOL-03). */
+  durationMs: number;
   /** The text the agent receives. */
   sense(state: State, agent: string): string;
 }

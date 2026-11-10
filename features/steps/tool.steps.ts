@@ -65,7 +65,7 @@ When("the run ends", async function (this: Context) {
   // Most of these scenarios set up their world and the scenario's parts step by step rather than from a base
   // configuration, so the slots scenario is assembled around them as loading would give it.
   const loaded: LoadedScenario<Slots> = this.loaded ?? {
-    scenario: { ...slotsScenario, channels: this.channels, systemPrompt: this.systemPrompt },
+    scenario: { ...slotsScenario, tools: this.tools, channels: this.channels, systemPrompt: this.systemPrompt },
     configuration: {},
     world: this.world,
   };

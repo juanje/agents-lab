@@ -86,6 +86,9 @@ export interface ToolCall {
   arguments: unknown;
   /** "success", "invalid_arguments", "unknown_tool", or the reason the scenario gives for a failed effect. */
   outcome: string;
+  /** When the call started and ended, by performance.now(). */
+  startedAtMs: number;
+  endedAtMs: number;
 }
 
 /** What an agent's session is given besides its tools. */

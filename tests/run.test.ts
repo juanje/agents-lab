@@ -21,6 +21,12 @@ const slots = (parts: Partial<Scenario<Slots>> = {}) => loadScenario({ ...slotsS
 /** A channel besides the rhythm, for stimuli the test delivers. */
 const bell = { name: "bell", source: "town bell", stimulus: "The bell rings." };
 
+/** When a recorded tool call started and ended, for a test that checks neither. */
+const timed = { startedAtMs: expect.any(Number), endedAtMs: expect.any(Number) };
+
+/** The test world's tools, with its sensor "look" taking this long. */
+const withLookTaking = (durationMs: number) => slotTools.map((tool) => (tool.kind === "sensor" ? { ...tool, durationMs } : tool));
+
 /** Settings for a run whose test looks at none of them. */
 const settings: RunSettings = { modelTurnTimeoutMs: 10_000, parallelismLimit: 10 };
 
@@ -350,7 +356,7 @@ describe("run", () => {
 
       const { toolCalls } = await run(loaded, [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
 
-      expect(toolCalls).toEqual([{ agent: "a", tool: "take", arguments: args, outcome: "invalid_arguments" }]);
+      expect(toolCalls).toEqual([{ agent: "a", tool: "take", arguments: args, outcome: "invalid_arguments", ...timed }]);
       expect(world.version).toBe(0);
     },
   );
@@ -365,7 +371,7 @@ describe("run", () => {
 
     const { toolCalls } = await run(loaded, [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
 
-    expect(toolCalls).toEqual([{ agent: "a", tool: "take", arguments: { slot: "2" }, outcome: "success" }]);
+    expect(toolCalls).toEqual([{ agent: "a", tool: "take", arguments: { slot: "2" }, outcome: "success", ...timed }]);
     expect(world.state).toEqual([null, "a", null]);
   });
   it("records a call to a tool the session does not offer as unknown_tool, applies nothing, and goes on", async () => {
@@ -378,7 +384,7 @@ describe("run", () => {
 
     const { toolCalls } = await run(loaded, [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
 
-    expect(toolCalls).toEqual([{ agent: "a", tool: "fly", arguments: { slot: 1 }, outcome: "unknown_tool" }]);
+    expect(toolCalls).toEqual([{ agent: "a", tool: "fly", arguments: { slot: 1 }, outcome: "unknown_tool", ...timed }]);
     expect(world.version).toBe(0);
     expect(model.received).toHaveLength(2);
   });
@@ -410,7 +416,7 @@ describe("run", () => {
 
     const { toolCalls } = await run(loaded, [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
 
-    expect(toolCalls).toEqual([{ agent: "a", tool: "take", arguments: { slot: 1 }, outcome: "slot_taken" }]);
+    expect(toolCalls).toEqual([{ agent: "a", tool: "take", arguments: { slot: 1 }, outcome: "slot_taken", ...timed }]);
     expect(model.received[1]?.at(-1)).toMatchObject({ role: "toolResult", isError: true, content: [{ type: "text", text: "slot_taken" }] });
   });
 
@@ -434,7 +440,7 @@ describe("run", () => {
 
     const { toolCalls } = await run(loaded, [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
 
-    expect(toolCalls).toEqual([{ agent: "a", tool: "take", arguments: { slot: 1, x: 2 }, outcome: "invalid_arguments" }]);
+    expect(toolCalls).toEqual([{ agent: "a", tool: "take", arguments: { slot: 1, x: 2 }, outcome: "invalid_arguments", ...timed }]);
     expect(world.version).toBe(0);
     expect(model.received[1]?.at(-1)).toMatchObject({
       role: "toolResult",
@@ -450,7 +456,19 @@ describe("run", () => {
 
     const { toolCalls } = await run(slots(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
 
-    expect(toolCalls).toEqual([{ agent: "a", tool: "look", arguments: { slot: 1 }, outcome: "invalid_arguments" }]);
+    expect(toolCalls).toEqual([{ agent: "a", tool: "look", arguments: { slot: 1 }, outcome: "invalid_arguments", ...timed }]);
     expect(model.received[1]?.at(-1)).toMatchObject({ role: "toolResult", isError: true });
+  });
+
+  it("records when each tool call started and ended, and a sensor's call takes its declared duration", async () => {
+    const model = new ScriptedModel([
+      { toolCalls: [{ name: "look", arguments: {} }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+
+    const { toolCalls } = await run(slots({ tools: withLookTaking(50) }), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+
+    const [{ startedAtMs, endedAtMs }] = toolCalls;
+    expect(endedAtMs - startedAtMs).toBeGreaterThanOrEqual(50);
   });
 });
