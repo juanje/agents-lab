@@ -19,6 +19,8 @@ export class Context extends CucumberWorld {
   /** Each agent's scripted model and decision budget, as the scenario gives them before the run. */
   readonly models = new Map<string, ScriptedModel>();
   readonly budgets = new Map<string, number>();
+  /** Each agent's waiting interval between decisions, in milliseconds, as the scenario gives it. */
+  readonly intervals = new Map<string, number>();
   decisions!: Map<string, Decision[]>;
 }
 

@@ -29,6 +29,50 @@ Given("agent {string} makes {int} decision(s)", function (this: Context, agent: 
   this.budgets.set(agent, decisions);
 });
 
+/** Gives an agent a script with one answer per decision, each after the same delay. */
+function scriptEachDecision(context: Context, agent: string, text: string, delayMs: number, decisions: number): void {
+  context.models.set(agent, new ScriptedModel(Array.from({ length: decisions }, () => ({ text, delayMs }))));
+  context.budgets.set(agent, decisions);
+}
+
+Given(
+  "agent {string} runs on a scripted model that answers {string} after {int} milliseconds, and makes {int} decision(s)",
+  function (this: Context, agent: string, text: string, delayMs: number, decisions: number) {
+    scriptEachDecision(this, agent, text, delayMs, decisions);
+  },
+);
+
+Given(
+  "agent {string} runs on a scripted model that answers {string} after {int} milliseconds each time, and makes {int} decision(s)",
+  function (this: Context, agent: string, text: string, delayMs: number, decisions: number) {
+    scriptEachDecision(this, agent, text, delayMs, decisions);
+  },
+);
+
+Given("both agents wait {int} milliseconds between decisions", function (this: Context, intervalMs: number) {
+  assert.equal(this.models.size, 2, "the scenario names two agents before their interval");
+  for (const agent of this.models.keys()) this.intervals.set(agent, intervalMs);
+});
+
+Then(
+  "all {int} of agent {string}'s decisions were applied before agent {string}'s decision was applied",
+  function (this: Context, count: number, fast: string, slow: string) {
+    const fastDecisions = this.decisions.get(fast) ?? [];
+    const [slowDecision] = this.decisions.get(slow) ?? [];
+    assert.equal(fastDecisions.length, count);
+    assert.deepEqual(
+      fastDecisions.map((decision) => decision.outcome),
+      Array.from({ length: count }, () => "success"),
+    );
+    assert.equal(slowDecision?.outcome, "success");
+    const fastActed = fastDecisions.map((decision) => decision.actedAtMs);
+    assert.ok(
+      fastActed.every((actedAtMs) => actedAtMs !== undefined && actedAtMs < (slowDecision?.actedAtMs ?? -Infinity)),
+      `expected every decision of "${fast}" (applied at ${fastActed.join(", ")} ms) before "${slow}"'s (applied at ${slowDecision?.actedAtMs} ms)`,
+    );
+  },
+);
+
 When("the run ends", async function (this: Context) {
   const agents = [...this.models].map(([name, model]) => ({ name, model, decisions: this.budgets.get(name) ?? 0 }));
   this.decisions = await run(this.world, this.actions, agents);
