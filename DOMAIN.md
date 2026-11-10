@@ -6,35 +6,44 @@ What the words mean here, how the pieces fit together, and how the tools behave 
 
 | Term | Means | Not to be confused with |
 |:--|:--|:--|
-| Agent | One participant in a world: a model, the harness that runs it and the memory it keeps. | The model alone. Two agents can use the same model. |
-| Adapter | The code that turns an observation into a decision for an agent, through a Pi session. | The agent. The adapter is how the core talks to it. |
-| World | The state of a scenario (entities, positions, quantities) plus its arbiter. | The scenario, which also declares perception, actions and metrics. |
-| Arbiter | The part of the world that applies one action at a time against the current state. | A scheduler. The arbiter never decides who acts next. |
-| Version | A counter of applied actions in a world. | A run id or a code version. |
-| Scenario | A TypeScript module in `src/scenarios/` (world, perception, actions, metrics, system prompt) plus its base configuration, reusable by several experiments. | An experiment, which runs a scenario under several conditions. |
+| Agent | One participant in a world: a model, the harness that runs it (a Pi session for the whole run) and the memory it keeps. | The model alone. Two agents can use the same model. |
+| Tool | An agent's only interface with the world: a sensor or an effector, declared by the scenario with its description, arguments, duration, effort and failure reasons. | A function of the engine. Tools are what the agent's session offers. |
+| Sensor | A tool that returns part of the world as seen from where the agent is, when its duration ends. It changes nothing. | An observation handed to the agent. Nothing is handed; the agent senses. |
+| Effector | A tool that changes the world through the arbiter, when its duration ends. | Text the agent writes, which acts on nothing. |
+| Reflection | The text an agent writes in a model turn. It is recorded and reaches no one. | An action. |
+| Stimulus | A message delivered into an agent's session through a declared channel, with its source (another agent or a mechanism of the world). | A tool result, which the agent asked for. |
+| Channel | A declared path by which stimuli reach agents, naming their source (for example the agent's rhythm). | A tool. |
+| Activation | A stretch in which an agent is awake: it starts with a stimulus from its rhythm and ends when a model turn makes no tool call. | A turn. Activations of different agents overlap and run at different paces. |
+| Model turn | One call to the agent's model within an activation, giving text, tool calls or both. | An activation, which can hold many model turns. |
+| Rhythm | The distribution an agent draws its waiting interval from between activations. | A turn. Rhythms are independent per agent. |
+| Duration | The time a tool call takes before its result or effect. It can depend on the arguments and the state, such as distance. | Latency, which is the model's time. |
+| Effort | The energy a tool call spends when it starts. | Duration. |
+| Energy | An agent's capacity to act, up to a maximum; spent by effort and recovered by a process. The agent knows it only through a declared sensor or result. | A metric. |
+| Process | A change the world applies on its own at an interval, through the arbiter (for example energy recovering). | An agent's action. |
+| Adapter | The code that runs an agent's Pi session: its system prompt, tools, stimuli and model. | The agent. The adapter is how the engine talks to it. |
+| World | The state of a scenario (entities, positions, quantities, energy) plus its arbiter. | The scenario, which also declares tools, channels and metrics. |
+| Arbiter | The part of the world that applies one effect at a time against the current state. | A scheduler. The arbiter never decides who acts next. |
+| Version | A counter of applied effects in a world. | A run id or a code version. |
+| Scenario | A TypeScript module in `src/scenarios/` (initial state, tools, channels, metrics, system prompt) plus its base configuration, reusable by several experiments. | An experiment, which runs a scenario under several conditions. |
 | Test scenario | A small scenario under `tests/fixtures/`, written only to test the engine. | A library scenario in `src/scenarios/`, which experiments use. |
 | Condition | A named change over a scenario's base configuration, written directly or produced by combining factor levels. | A run or a replica. |
 | Experiment | A file in the experiment language (TOML) in the experiments repository: scenario, factors and conditions, models, replicas, seeds, prediction and materials. | A hypothesis, which the experiment states and tests. |
 | Replica | One run of a condition with one model and one seed. | A fork, which continues a saved state. |
 | Run | One execution of one replica; produces one log file. | An experiment, which is many runs. |
-| Rhythm | The distribution an agent draws its waiting interval from between decisions. | A turn. Rhythms are independent per agent. |
-| Observation | What an agent receives at one moment, from its scenario's perception. | The world's state, which the agent never sees whole. |
-| Information switch | A condition setting that adds or removes a piece of an observation (for example a preference text). | A variation, which is drawn at random per decision. |
-| Variation | A text or setting drawn at random for each decision from a declared set, and recorded. | A condition. |
-| Decision | One observe–decide–act cycle of an agent, with its prompt, answer, action and outcome. | An action. A decision can apply no action. |
-| Action | A declared operation on the world, with a precondition, an effect and failure reasons. | An answer, which is the model's raw text. |
-| Outcome | The single recorded result of a decision: `success`, an engine failure (`unparsed`, `invalid_arguments`, `model_error`, `timeout`, `cut_off`, `script_exhausted`, `cell_full`) or a failure reason the scenario declares (for example `taken_while_deciding`). | A metric. |
-| Changes while deciding | The number of actions other agents applied between a decision's observation and its action. | Latency. |
-| Stale decision | A decision whose changes while deciding is above zero. | A failed decision. A stale decision can still succeed. |
-| Latency | Time from a model call's start to its answer. | Wait for a slot, which comes before the call. |
-| Wait for a slot | Time a decision waited because the parallelism limit was reached. | Latency. |
+| Outcome | The single recorded result of a tool call: `success`, an engine failure (`invalid_arguments`, `no_energy`, `cut_off`, `cell_full`) or a failure reason the scenario declares (for example `taken_while_deciding`). Model turns can end with `model_error` or `timeout`; a script that runs out records `script_exhausted`. | A metric. |
+| Changes since sensing | For an effector call, the number of effects other agents applied between the agent's last sensor call and the moment its effect was applied. | Latency. |
+| Stale action | An effector call whose changes since sensing is above zero. | A failed call. A stale action can still succeed. |
+| Latency | Time from a model turn's start to its answer. | Wait for a slot, which comes before the call. |
+| Wait for a slot | Time a model turn waited because the parallelism limit was reached. | Latency. |
 | Parallelism limit | The maximum number of model calls running at once. | The number of agents. |
 | Inventory | The generated list of everything an agent meets in a scenario and condition. | The log. |
 
 ## How the pieces fit
 
-- **Each agent is an async loop** on Node's event loop: rhythm wait, observe, decide (through its Pi session) and act (through the arbiter).
-- **The arbiter is the only writer** of the world's state; agents read through perception.
+- **Each agent is a Pi session** that lasts the run, driven by an async loop on Node's event loop: wait the rhythm, wake with a stimulus, run model turns and tool calls until a turn makes no call, then wait again.
+- **Every tool call goes through the world:** a sensor reads it when its duration ends; an effector's effect is checked and applied by the arbiter when its duration ends. The arbiter is the only writer of the world's state.
+- **Stimuli** from channels enter the session at the agent's next model turn, or when it wakes.
+- **Processes** change the world on their own schedule, through the arbiter.
 - **The recorder writes a line per event.** The inventory and the run's setup go first.
 - **Metrics read the state** at the start, on an interval and at the end.
 - **The runner** expands an experiment into runs and executes them one after another.
