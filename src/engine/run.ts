@@ -1,11 +1,10 @@
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
-import { type AgentModel, type ModelTurn, type SessionSettings, type ToolCall, openRuntime, openSession, wake } from "./adapter.ts";
+import { type AgentModel, type ModelTurn, type ToolCall, openRuntime, openSession, wake } from "./adapter.ts";
 import { waitAtLeast } from "./clock.ts";
 import { ParallelismLimit } from "./parallelism.ts";
 import { Random } from "./random.ts";
-import type { Stimuli } from "./stimuli.ts";
-import type { Tool } from "./tools.ts";
-import type { World } from "./world.ts";
+import type { LoadedScenario } from "./scenario.ts";
+import { Stimuli } from "./stimuli.ts";
 
 /** An agent in a run: its name, the model it works with, how many activations it has, and its rhythm. */
 export interface Agent {
@@ -16,10 +15,17 @@ export interface Agent {
   rhythm: (random: Random) => number;
 }
 
-/** What a run gives every agent's session besides its tools, and the limit their model calls share. */
-export interface RunSettings extends SessionSettings {
+/** What a run takes besides the scenario: the limits on its model calls. */
+export interface RunSettings {
+  /** How long a model turn may run before it is aborted. */
+  modelTurnTimeoutMs: number;
   /** The maximum number of model calls running at once, across all agents. */
   parallelismLimit: number;
+  /**
+   * Called with the run's stimuli before any agent wakes, so a caller can deliver stimuli while the run goes on. A seam
+   * until the world's processes deliver them (FR-PROCESS-01).
+   */
+  onStart?: (stimuli: Stimuli) => void;
 }
 
 /**
@@ -33,17 +39,21 @@ export interface RunResult {
 }
 
 /**
- * Runs every agent's activations in the world. Each agent runs its own loop and no agent waits for another: there are
+ * Runs every agent's activations in the loaded scenario's world, with the scenario's tools, stimulus channels and
+ * system prompt: a run takes them only from the scenario it loaded, so it cannot mix one scenario's parts with
+ * another's (FR-SCENARIO-01). Each agent runs its own loop and no agent waits for another: there are
  * no turns (NFR-01), only the arbiter ordering effects.
  */
 export async function run<State>(
-  world: World<State>,
-  tools: readonly Tool<State>[],
-  stimuli: Stimuli,
+  loaded: LoadedScenario<State>,
   agents: readonly Agent[],
   seed: number,
   settings: RunSettings,
 ): Promise<RunResult> {
+  const { world, scenario } = loaded;
+  const stimuli = new Stimuli(scenario.channels);
+  settings.onStart?.(stimuli);
+  const sessionSettings = { systemPrompt: scenario.systemPrompt, modelTurnTimeoutMs: settings.modelTurnTimeoutMs };
   const runtime = await openRuntime(agents.map((agent) => agent.model.provider));
   const parallelism = new ParallelismLimit(settings.parallelismLimit);
   const turns: ModelTurn[] = [];
@@ -51,7 +61,7 @@ export async function run<State>(
   const messages = new Map<string, AgentSession["messages"]>();
   await Promise.all(
     agents.map(async (agent) => {
-      const session = await openSession(world, tools, agent, runtime, settings, parallelism, turns, stimuli, toolCalls);
+      const session = await openSession(world, scenario.tools, agent, runtime, sessionSettings, parallelism, turns, stimuli, toolCalls);
       try {
         // Each agent's rhythm has its own sequence, from the seed and the agent's name: sharing one would make an
         // agent's intervals depend on when the others' models answer, and deriving by order on which other agents run.
