@@ -54,6 +54,11 @@ export function window(grid: Grid, { x, y }: Position, radius: number): WindowCe
   return cells;
 }
 
+/** Refuses a cell outside the grid, saying what was attempted (`where`) and the grid's size. */
+function assertInside(grid: Grid, at: Position, where: string): void {
+  if (!inside(grid, at)) throw new Error(`${where}: the cell is outside the ${grid.width} by ${grid.height} grid`);
+}
+
 function indexOf(grid: Grid, { x, y }: Position): number {
   return y * grid.width + x;
 }
@@ -69,7 +74,7 @@ export function entitiesAt(grid: Grid, at: Position): readonly string[] {
  */
 export function place(grid: Grid, entity: string, at: Position): Grid {
   const where = `cannot place ${entity} at ${at.x}, ${at.y}`;
-  if (!inside(grid, at)) throw new Error(`${where}: the cell is outside the ${grid.width} by ${grid.height} grid`);
+  assertInside(grid, at, where);
   if (entitiesAt(grid, at).length >= grid.capacity) {
     throw new Error(`${where}: the cell is at its capacity of ${grid.capacity}`);
   }
@@ -99,7 +104,7 @@ export const move: Action<Grid, { entity: string; to: Position }> = {
   // it is refused before the world changes rather than recorded as an outcome.
   precondition: (grid, { entity, to }) => {
     const where = `cannot move entity ${entity} to cell ${to.x}, ${to.y}`;
-    if (!inside(grid, to)) throw new Error(`${where}: the cell is outside the ${grid.width} by ${grid.height} grid`);
+    assertInside(grid, to, where);
     if (!grid.cells.some((cell) => cell.includes(entity))) throw new Error(`${where}: the grid holds no entity ${entity}`);
     return entitiesAt(grid, to).length < grid.capacity ? { holds: true } : { holds: false, reason: CELL_FULL };
   },
