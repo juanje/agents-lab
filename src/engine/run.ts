@@ -41,6 +41,8 @@ export interface RunResult {
   messages: ReadonlyMap<string, AgentSession["messages"]>;
   /** What each agent sensed. */
   sensings: Sensings;
+  /** When the agents could start, once every session was open, by performance.now(); the time limit counts from it. */
+  startedAtMs: number;
 }
 
 /**
@@ -55,49 +57,47 @@ export async function run<State>(
   seed: number,
   settings: RunSettings,
 ): Promise<RunResult> {
-  const timeLimit = new AbortController();
-  const timer = setTimeout(() => timeLimit.abort(), settings.timeLimitMs);
-  try {
-    return await runUntil(loaded, agents, seed, settings, timeLimit.signal);
-  } finally {
-    // A run that ends at its budget must not leave its time limit pending.
-    clearTimeout(timer);
-  }
-}
-
-/** Runs the agents until each has used its activation budget, with the signal that aborts at the run's time limit. */
-async function runUntil<State>(
-  loaded: LoadedScenario<State>,
-  agents: readonly Agent[],
-  seed: number,
-  settings: RunSettings,
-  timeLimit: AbortSignal,
-): Promise<RunResult> {
   const { world, scenario } = loaded;
   const stimuli = new Stimuli(scenario.channels);
   settings.onStart?.(stimuli);
-  const sessionSettings = { systemPrompt: scenario.systemPrompt, modelTurnTimeoutMs: settings.modelTurnTimeoutMs, timeLimit };
+  const timeLimit = new AbortController();
+  const sessionSettings = {
+    systemPrompt: scenario.systemPrompt,
+    modelTurnTimeoutMs: settings.modelTurnTimeoutMs,
+    timeLimit: timeLimit.signal,
+  };
   const runtime = await openRuntime(agents.map((agent) => agent.model.provider));
   const parallelism = new ParallelismLimit(settings.parallelismLimit);
   const turns: ModelTurn[] = [];
   const toolCalls: ToolCall[] = [];
   const sensings = new Sensings();
   const messages = new Map<string, AgentSession["messages"]>();
-  await Promise.all(
-    agents.map(async (agent) => {
-      const session = await openSession(world, scenario.tools, agent, runtime, sessionSettings, parallelism, turns, stimuli, toolCalls, sensings);
-      try {
-        // Each agent's rhythm has its own sequence, from the seed and the agent's name: sharing one would make an
-        // agent's intervals depend on when the others' models answer, and deriving by order on which other agents run.
-        await loop(session, agent, stimuli, Random.derive(seed, `rhythm of ${agent.name}`));
-      } finally {
-        // Copied: disposing the session may clear what it holds.
-        messages.set(agent.name, [...session.messages]);
-        session.dispose();
-      }
-    }),
+  // Every session is open before any agent starts, so opening them uses none of the time limit (FR-CLOCK-02).
+  const sessions = await Promise.all(
+    agents.map((agent) => openSession(world, scenario.tools, agent, runtime, sessionSettings, parallelism, turns, stimuli, toolCalls, sensings)),
   );
-  return { turns, toolCalls, messages, sensings };
+  const startedAtMs = performance.now();
+  const timer = setTimeout(() => timeLimit.abort(), settings.timeLimitMs);
+  try {
+    await Promise.all(
+      agents.map(async (agent, index) => {
+        const session = sessions[index];
+        try {
+          // Each agent's rhythm has its own sequence, from the seed and the agent's name: sharing one would make an
+          // agent's intervals depend on when the others' models answer, and deriving by order on which other agents run.
+          await loop(session, agent, stimuli, Random.derive(seed, `rhythm of ${agent.name}`));
+        } finally {
+          // Copied: disposing the session may clear what it holds.
+          messages.set(agent.name, [...session.messages]);
+          session.dispose();
+        }
+      }),
+    );
+  } finally {
+    // A run that ends at its budget must not leave its time limit pending.
+    clearTimeout(timer);
+  }
+  return { turns, toolCalls, messages, sensings, startedAtMs };
 }
 
 /**
