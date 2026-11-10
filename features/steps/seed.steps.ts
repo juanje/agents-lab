@@ -5,7 +5,8 @@ import type { Random } from "../../src/engine/random.ts";
 import { run } from "../../src/engine/run.ts";
 import { type Condition, loadScenario } from "../../src/engine/scenario.ts";
 import { ScriptedModel } from "../../src/engine/scripted-model.ts";
-import { type Slots, placedAgent, placingScenario } from "../../tests/fixtures/slots.ts";
+import { Stimuli } from "../../src/engine/stimuli.ts";
+import { type Slots, placedAgent, placingScenario, rhythmChannel } from "../../tests/fixtures/slots.ts";
 import type { Context } from "../support/context.ts";
 
 /** The placing scenario's [slots] table: how many slots it has and how many agents it places. */
@@ -97,7 +98,7 @@ async function runReplica(context: Context, seed: number, condition?: Condition)
     };
   });
   // The placing scenario's agents only rest: their tools play no part in their intervals.
-  await run(world, [], runningAgents, seed, {
+  await run(world, [], new Stimuli([rhythmChannel]), runningAgents, seed, {
     systemPrompt: context.scenario.systemPrompt ?? "",
     modelTurnTimeoutMs: context.modelTurnTimeoutMs,
     parallelismLimit: context.parallelismLimit,

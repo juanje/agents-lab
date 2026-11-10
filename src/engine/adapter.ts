@@ -12,6 +12,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { type Api, type AssistantMessage, type Model, type Provider, getCurrentSystemMessage } from "@earendil-works/pi-ai";
 import type { ParallelismLimit } from "./parallelism.ts";
+import type { Stimulus } from "./stimuli.ts";
 import type { Effector, Tool } from "./tools.ts";
 import type { World } from "./world.ts";
 
@@ -90,6 +91,19 @@ export async function openSession<State>(
   forceSystemPrompt(session, settings.systemPrompt);
   runTurns(session, agent.name, settings.modelTurnTimeoutMs, parallelism, turns);
   return session;
+}
+
+/**
+ * Starts an activation with the stimuli the agent wakes to. Each stimulus enters the session as a message of its own,
+ * which keeps its channel and source; the model reads its source, then what it says.
+ */
+export async function wake(session: AgentSession, [first]: readonly Stimulus[]): Promise<void> {
+  await session.sendCustomMessage(message(first), { triggerTurn: true });
+}
+
+/** A stimulus as a message of the agent's session. */
+function message(stimulus: Stimulus) {
+  return { customType: "stimulus", content: `${stimulus.source}: ${stimulus.content}`, display: true, details: stimulus };
 }
 
 /**
