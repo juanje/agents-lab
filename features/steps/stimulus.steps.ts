@@ -90,8 +90,8 @@ Given("the bell rings while agent {string} rests", function (this: Context, agen
   const rhythm = this.rhythms.get(agent);
   assert.ok(rhythm !== undefined, `agent "${agent}" has no rhythm of its own to rest by`);
   // Halfway through each rest the agent takes.
-  this.rhythms.set(agent, () => {
-    const restMs = rhythm();
+  this.rhythms.set(agent, (random) => {
+    const restMs = rhythm(random);
     if (restMs > 0) setTimeout(() => this.stimuli.deliver(agent, "bell"), restMs / 2);
     return restMs;
   });

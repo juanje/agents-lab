@@ -2,7 +2,7 @@ import { World as CucumberWorld, setWorldConstructor } from "@cucumber/cucumber"
 import type { Grid, Position, WindowCell } from "../../src/engine/grid.ts";
 import type { Condition, Scenario } from "../../src/engine/scenario.ts";
 import type { ModelTurn } from "../../src/engine/adapter.ts";
-import type { RunResult } from "../../src/engine/run.ts";
+import type { Agent, RunResult } from "../../src/engine/run.ts";
 import type { ScriptedAnswer, ScriptedModel } from "../../src/engine/scripted-model.ts";
 import type { Channel, Stimuli } from "../../src/engine/stimuli.ts";
 import type { Action, ActionResult, World } from "../../src/engine/world.ts";
@@ -54,7 +54,11 @@ export class Context extends CucumberWorld {
   /** How long each agent waits before an activation. */
   waitBeforeActivationMs = 0;
   /** An agent's rhythm, when the scenario gives it one of its own; it is called each time the agent starts to rest. */
-  readonly rhythms = new Map<string, () => number>();
+  readonly rhythms = new Map<string, Agent["rhythm"]>();
+  /** The replica's seed the run is given; any, unless the scenario says, for rhythms that draw nothing from it. */
+  seed = 1;
+  /** The intervals each agent's rhythm drew, in order, for an agent whose rhythm draws from its random sequence. */
+  readonly drawnMs = new Map<string, number[]>();
   /** When each agent woke, by performance.now(): when its session took its rhythm's stimulus. */
   readonly wokeAtMs = new Map<string, number[]>();
   /** When each agent started each rest, by performance.now(), for an agent whose rhythm the scenario watches. */

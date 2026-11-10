@@ -317,7 +317,7 @@ Given(
     script(this, agent, [{ text, delayMs: 0 }]);
     const wakes = this.rhythms.get(other);
     assert.ok(wakes !== undefined, `agent "${other}" was not given a time to wake`);
-    this.rhythms.set(agent, () => wakes() + laterMs);
+    this.rhythms.set(agent, (random) => wakes(random) + laterMs);
   },
 );
 

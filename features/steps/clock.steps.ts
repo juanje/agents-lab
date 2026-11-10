@@ -112,6 +112,60 @@ Then(
   },
 );
 
+Given(
+  "agents {string} and {string} each make {int} activation(s), ending its first turn without a tool call",
+  function (this: Context, first: string, second: string, activations: number) {
+    for (const agent of [first, second]) scriptActivations(this, agent, activations, () => [{ text: "Nothing to do.", delayMs: 0 }]);
+  },
+);
+
+Given(
+  "each agent waits a random interval between {int} and {int} milliseconds before each activation",
+  function (this: Context, minMs: number, maxMs: number) {
+    for (const agent of this.models.keys()) {
+      const rests: number[] = [];
+      const drawn: number[] = [];
+      this.restedAtMs.set(agent, rests);
+      this.drawnMs.set(agent, drawn);
+      this.rhythms.set(agent, (random) => {
+        rests.push(performance.now());
+        drawn.push(minMs + random.next() * (maxMs - minMs));
+        return drawn[drawn.length - 1];
+      });
+    }
+  },
+);
+
+Given("the run's seed is {int}", function (this: Context, seed: number) {
+  this.seed = seed;
+});
+
+Then(
+  "each agent's first activation began at least the first interval of its rhythm after the run started",
+  function (this: Context) {
+    for (const agent of this.models.keys()) {
+      const [rested] = this.restedAtMs.get(agent) ?? [];
+      const [intervalMs] = this.drawnMs.get(agent) ?? [];
+      const [woke] = this.wokeAtMs.get(agent) ?? [];
+      assert.ok(rested !== undefined && intervalMs !== undefined, `agent "${agent}"'s rhythm drew no interval before its first activation`);
+      assert.ok(woke !== undefined, `agent "${agent}" never woke`);
+      // The first rest starts no sooner than the run did, so the time from it to the first wake is never longer than
+      // the time from the run's start.
+      assert.ok(woke - rested >= intervalMs, `agent "${agent}" woke ${woke - rested} ms into a first rest of ${intervalMs} ms`);
+    }
+  },
+);
+
+Then(
+  "agent {string}'s and agent {string}'s first activations began at different moments",
+  function (this: Context, first: string, second: string) {
+    const [one] = this.wokeAtMs.get(first) ?? [];
+    const [other] = this.wokeAtMs.get(second) ?? [];
+    assert.ok(one !== undefined && other !== undefined, `agents "${first}" and "${second}" did not both wake`);
+    assert.notEqual(one, other, `agents "${first}" and "${second}" woke at the same moment, ${one} ms`);
+  },
+);
+
 Then(
   "the model turn of agent {string}'s second activation received the {string} result of its first activation",
   function (this: Context, agent: string, tool: string) {
