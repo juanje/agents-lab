@@ -1,4 +1,4 @@
-import { getCurrentTools } from "@earendil-works/pi-ai";
+import { getCurrentSystemPrompt, getCurrentTools } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "vitest";
 import { run } from "../src/engine/run.ts";
 import { ScriptedModel } from "../src/engine/scripted-model.ts";
@@ -66,6 +66,16 @@ describe("run", () => {
     await run(new World(emptySlots(3)), slotTools, [{ name: "a", model, activations: 2, rhythm: noWait }], seed);
 
     expect(model.sessions).toEqual([expect.any(String), model.sessions[0], model.sessions[0]]);
+  });
+
+  it("gives the agent's model the scenario's system prompt and nothing else", async () => {
+    const model = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
+
+    await run(new World(emptySlots(3)), slotTools, [{ name: "a", model, activations: 1, rhythm: noWait }], seed, {
+      systemPrompt: "You live in a row of slots.",
+    });
+
+    expect(model.received.map(getCurrentSystemPrompt)).toEqual(["You live in a row of slots."]);
   });
 
   it("gives each agent's model turns to that agent's own model", async () => {
