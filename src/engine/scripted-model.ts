@@ -23,7 +23,9 @@ export class ScriptedModel {
     const faux = fauxProvider();
     // Each answer is a response factory, so its delay starts when the call reaches the provider, as a real model's does.
     faux.setResponses(
-      script.map(({ text, delayMs }) => async () => {
+      script.map(({ text, delayMs }) => async (context) => {
+        // Copied: the caller may go on adding to the same transcript after this turn.
+        this.received.push([...context.messages]);
         await waitAtLeast(delayMs);
         return fauxAssistantMessage(text ?? "");
       }),
