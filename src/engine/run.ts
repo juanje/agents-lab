@@ -20,21 +20,30 @@ export interface Decision {
   outcome: Outcome;
 }
 
-/** Runs every agent's decisions against the world, and gives each agent's decisions in order. */
+/**
+ * Runs every agent's decisions against the world, and gives each agent's decisions in order. Each agent runs its own
+ * loop and no agent waits for another's decision: there are no turns (NFR-01), only the arbiter ordering actions.
+ */
 export async function run<State>(
   world: World<State>,
   actions: readonly DeclaredAction<State, ActionArgs>[],
   agents: readonly Agent[],
 ): Promise<Map<string, Decision[]>> {
-  const decisions = new Map<string, Decision[]>();
-  for (const agent of agents) {
-    const made: Decision[] = [];
-    for (let count = 0; count < agent.decisions; count += 1) {
-      made.push(await decide(world, actions, agent));
-    }
-    decisions.set(agent.name, made);
+  const made = await Promise.all(agents.map((agent) => loop(world, actions, agent)));
+  return new Map(agents.map((agent, index) => [agent.name, made[index]]));
+}
+
+/** One agent's loop: its decisions, one after another. */
+async function loop<State>(
+  world: World<State>,
+  actions: readonly DeclaredAction<State, ActionArgs>[],
+  agent: Agent,
+): Promise<Decision[]> {
+  const made: Decision[] = [];
+  for (let count = 0; count < agent.decisions; count += 1) {
+    made.push(await decide(world, actions, agent));
   }
-  return decisions;
+  return made;
 }
 
 /** One decision: the agent's model answers through Pi, and the action the answer names goes to the world's arbiter. */
