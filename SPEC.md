@@ -220,7 +220,10 @@ When a run stops on an error, its log ends with a line that says the run stopped
 *Why:* every analysis of an experiment is done from this log, and a field not recorded cannot be recovered later. A run that stops on an error must say so, or its log reads as a run that simply ended.
 
 #### FR-CLOCK-02: A run ends at its budget or its time limit
-A run ends when every agent has used its activation budget or when its time limit passes, whichever comes first. A tool call still running at the time limit is recorded with the outcome `cut_off` and applies nothing.
+A run ends when every agent has used its activation budget or when its time limit passes, whichever comes first. The time limit counts from the moment the agents can start, once every session is open. When it passes, everything stops:
+- a tool call still running is recorded with the outcome `cut_off` and applies nothing;
+- a model turn still running is aborted and recorded with the outcome `cut_off`;
+- no agent starts another model turn or another activation.
 *Why:* a run must end in a known state, and an effect applied after the end would change a world that was already measured.
 
 #### FR-METRIC-01: Generic metrics for every run
@@ -266,7 +269,7 @@ Each agent runs in one Pi session that lasts the whole run, using the model from
 - the agent's stimuli as its messages.
 
 The prompt never names the model unless the condition says so. The scripted model of FR-ADAPTER-01 runs through this same session, registered with Pi's model runtime like any other model.
-- **Outcomes:** a model turn ends with `success`, `model_error`, `timeout` or, in tests, `script_exhausted`.
+- **Outcomes:** a model turn ends with `success`, `model_error`, `timeout`, `cut_off` (FR-CLOCK-02) or, in tests, `script_exhausted`.
 - **Model errors:** when the provider answers with an error, the model turn is recorded with the outcome `model_error` and the provider's message, and the activation ends.
 - **Parallelism limit:** a model turn waits for a free slot when the configured number of calls is already running.
 - **Timeout:** a model turn that runs longer than the timeout is aborted and recorded with the outcome `timeout`, and the activation ends.
