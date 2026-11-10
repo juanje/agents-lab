@@ -63,3 +63,29 @@ Then(
     assert.ok(Math.max(...mine) < Math.min(...theirs), `the arbiter applied "${tool}" calls in the order ${JSON.stringify(order)}`);
   },
 );
+
+Given(
+  "agent {string} makes {int} activation(s), whose turns are: a call to {string}; a call to {string}; the text {string} with no tool call",
+  function (this: Context, agent: string, activations: number, first: string, second: string, text: string) {
+    this.activations.set(agent, activations);
+    const activation: ScriptedAnswer[] = [
+      { toolCalls: [{ name: first, arguments: {} }], delayMs: 0 },
+      { toolCalls: [{ name: second, arguments: {} }], delayMs: 0 },
+      { text, delayMs: 0 },
+    ];
+    script(this, agent, Array.from({ length: activations }, () => activation).flat());
+  },
+);
+
+/** The model turns of an agent the run gave, in the order they ended. */
+function turnsOf(context: Context, agent: string) {
+  assert.ok(context.turns !== undefined, "the run gave no model turns");
+  return context.turns.filter((turn) => turn.agent === agent);
+}
+
+Then("agent {string}'s activation ended after its third model turn", function (this: Context, agent: string) {
+  // The script holds three answers: a fourth turn would have been recorded as script_exhausted.
+  assert.deepEqual(turnsOf(this, agent).map((turn) => turn.outcome), ["success", "success", "success"]);
+  const [, , third] = this.scripts.get(agent) ?? [];
+  assert.deepEqual(third?.toolCalls ?? [], [], `agent "${agent}"'s third model turn made a tool call`);
+});
