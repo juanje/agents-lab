@@ -160,3 +160,7 @@ Then(/^the call is kept with the arguments (\{.*\}), as the model made it$/, fun
   assert.ok(this.lastToolCall !== undefined, "no call was checked before");
   assert.deepEqual(this.lastToolCall.arguments, JSON.parse(json));
 });
+
+Then("no slot holds agent {string}", function (this: Context, agent: string) {
+  assert.ok(!this.world.state.includes(agent), `a slot holds agent "${agent}": ${JSON.stringify(this.world.state)}`);
+});

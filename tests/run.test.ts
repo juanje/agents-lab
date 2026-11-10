@@ -348,4 +348,18 @@ describe("run", () => {
     expect(world.version).toBe(0);
     expect(model.received).toHaveLength(2);
   });
+  it("applies an effector as the agent that called it, even when its schema lets a call name another agent", async () => {
+    const world = new World(emptySlots(3));
+    const takeAnyArguments = slotTools.map((tool) =>
+      tool.name === "take" ? { ...tool, parameters: { ...tool.parameters, additionalProperties: true } } : tool,
+    );
+    const model = new ScriptedModel([
+      { toolCalls: [{ name: "take", arguments: { slot: 1, agent: "b" } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+
+    await run(world, takeAnyArguments, rhythmOnly(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+
+    expect(world.state).toEqual(["a", null, null]);
+  });
 });
