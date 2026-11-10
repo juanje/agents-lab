@@ -53,7 +53,7 @@ What the words mean here, how the pieces fit together, and how the tools behave 
 - **Authentication:** the lab's login lives in `~/.agents-lab/pi/auth.json` (D-08) and serves every session in the process. The person creates it once with `PI_CODING_AGENT_DIR=~/.agents-lab/pi pi` and `/login`. On this machine `ANTHROPIC_API_KEY` is set to an invalid key; remove it from the environment so Pi uses the login.
 - **Isolation:** without an explicit `agentDir`, the SDK falls back to `~/.pi/agent/` and reads the person's settings and model definitions; `ModelRuntime.create` likewise defaults its models file there (seen in Buddy, NFR-SEC-19). Pass the lab's directory everywhere a path is taken, use `SettingsManager.inMemory`, and give `createAgentSession` a resource loader that returns no extensions, skills, prompts, themes or context files (oid's `resourcesFor`).
 - **Concurrency:** two processes making model calls with the same login stalled every call (observed with the CLI on 1.4.0; 1.5.0 changed the auth lock). Run one experiment process at a time (FR-RUN-03).
-- **Latency:** Haiku 5.5 answers a short prompt in about 2 s.
+- **Models:** the lab's login is OpenAI's. The default model for experiments is `openai/gpt-6-luna`, used in oid; it answered a short prompt through the lab's login in about 3.7 s. Anthropic's models are not used: the SDK with a subscription login gave billing and quota errors before (my-ab rule 21).
 - **Not used yet:** `@earendil-works/pi-agent-core`, a lower-level stateful agent, if the coding agent's session adds behaviour we do not want; and `@earendil-works/pi-durable`, experimental persistence and resumption.
 
 ### Node
