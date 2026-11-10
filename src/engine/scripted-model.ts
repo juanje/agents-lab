@@ -18,12 +18,15 @@ export class ScriptedModel {
   readonly model: Model<string>;
   /** The messages each turn received, in order, tool declarations included. */
   readonly received: Message[][] = [];
+  /** The Pi session each turn came from, in order; undefined for a call made outside a session. */
+  readonly sessions: (string | undefined)[] = [];
 
   constructor(script: readonly ScriptedAnswer[]) {
     const faux = fauxProvider();
     // Each answer is a response factory, so its delay starts when the call reaches the provider, as a real model's does.
     faux.setResponses(
-      script.map(({ text, toolCalls = [], delayMs }) => async (context) => {
+      script.map(({ text, toolCalls = [], delayMs }) => async (context, options) => {
+        this.sessions.push(options?.sessionId);
         // Copied: the caller may go on adding to the same transcript after this turn.
         this.received.push([...context.messages]);
         await waitAtLeast(delayMs);
