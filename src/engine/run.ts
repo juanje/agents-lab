@@ -10,10 +10,11 @@ export interface Agent {
 }
 
 /**
- * One decision of an agent: the model's raw answer and its latency, when the model gave one, when the action the
- * answer names went to the arbiter (by performance.now()), and the outcome.
+ * One decision of an agent: when it observed, the model's raw answer and its latency, when the model gave one, when the
+ * action the answer names went to the arbiter, and the outcome. Times are read from performance.now().
  */
 export interface Decision {
+  observedAtMs?: number;
   answer?: string;
   latencyMs?: number;
   actedAtMs?: number;
@@ -55,10 +56,11 @@ async function decide<State>(
   // Checked before the call: past its script the faux provider answers with an error and no text, which would be
   // read as an unparsed answer instead of the end of the script.
   if (agent.model.exhausted) return { outcome: "script_exhausted" };
+  const observedAtMs = performance.now();
   const start = performance.now();
   const message = await agent.model.models.complete(agent.model.model, { messages: [] });
   const latencyMs = performance.now() - start;
   const answer = message.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("");
   const actedAtMs = performance.now();
-  return { answer, latencyMs, actedAtMs, outcome: act(world, actions, agent.name, answer) };
+  return { observedAtMs, answer, latencyMs, actedAtMs, outcome: act(world, actions, agent.name, answer) };
 }
