@@ -43,3 +43,12 @@ Feature: A run ends at its budget or its time limit
     When the run ends
     Then agent "a" made no model turn after its "take" call was cut off
     And agent "b" made only the activations that began before the time limit
+
+  Scenario: A model turn still waiting for a slot at the time limit is cut off without calling the model
+    Given the parallelism limit is 1
+    And agent "a" runs on a scripted model whose first turn is the text "Busy." with no tool call, after 1000 milliseconds
+    And agent "b" runs on a scripted model whose first turn is the text "Waiting." with no tool call, and wakes 50 milliseconds after agent "a"
+    And the run's time limit is 200 milliseconds
+    When the run ends
+    Then agent "b"'s first model turn has the outcome "cut_off"
+    And agent "b"'s scripted model was never called
