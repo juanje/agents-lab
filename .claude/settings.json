@@ -20,7 +20,10 @@
       "Bash(sed -i'' *)",
       "Bash(sed -E -i *)",
       "Bash(perl -i *)",
-      "Bash(perl -pi *)"
+      "Bash(perl -pi *)",
+      "Read(~/.agents-lab/**/auth*.json)",
+      "Edit(~/.agents-lab/**)",
+      "Bash(cat ~/.agents-lab/*)"
     ]
   }
 }
