@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { Given, Then } from "@cucumber/cucumber";
 import { SLOT_TAKEN, type Seen, type Slots, holder } from "../../tests/fixtures/slots.ts";
 import type { Context } from "../support/context.ts";
+import { turnsOf } from "./adapter.steps.ts";
 import { callOf, fixtureTool } from "./tool.steps.ts";
 
 Given(
@@ -35,6 +36,16 @@ Given(
         assert.equal(read, slot === held ? "held" : "free", `"${name}" of slot ${slot} reads "${read}" when slot ${held} is held`);
       }
     }
+  },
+);
+
+Then(
+  "agent {string}'s second model turn began after its {string} call ended",
+  function (this: Context, agent: string, tool: string) {
+    const second = turnsOf(this, agent)[1];
+    assert.ok(second !== undefined, `agent "${agent}" made no second model turn`);
+    const { endedAtMs } = callOf(this, agent, tool);
+    assert.ok(second.startedAtMs >= endedAtMs, `the second turn began ${endedAtMs - second.startedAtMs} ms before the call ended`);
   },
 );
 
