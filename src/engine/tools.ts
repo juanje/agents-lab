@@ -14,13 +14,19 @@ export interface Sensor<State> extends Declared {
   sense(state: State, agent: string): string;
 }
 
-/** What an effector's action receives: the call's arguments and the agent that made it. */
-export type EffectorArguments = { agent: string } & Record<string, unknown>;
+/**
+ * What an effector's action receives: the agent that made the call and the call's arguments, kept apart so that no
+ * argument can make the tool act as another agent (FR-TOOL-02).
+ */
+export interface EffectorCall {
+  agent: string;
+  arguments: Record<string, unknown>;
+}
 
 /** A tool that changes the world through the arbiter. */
 export interface Effector<State> extends Declared {
   kind: "effector";
-  action: Action<State, EffectorArguments>;
+  action: Action<State, EffectorCall>;
 }
 
 /** An agent's only interface with the world (FR-TOOL-01). */

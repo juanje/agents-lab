@@ -1,5 +1,5 @@
 import type { Scenario } from "../../src/engine/scenario.ts";
-import type { Tool } from "../../src/engine/tools.ts";
+import type { EffectorCall, Tool } from "../../src/engine/tools.ts";
 import type { Action } from "../../src/engine/world.ts";
 
 /** A test world of numbered slots, from 1; each is empty (null) or held by one agent. */
@@ -21,6 +21,11 @@ export const take: Action<Slots, { agent: string; slot: number }> = {
     holder(slots, slot) === null ? { holds: true } : { holds: false, reason: SLOT_TAKEN },
   effect: (slots, { agent, slot }) => slots.map((current, index) => (index === slot - 1 ? agent : current)),
 };
+
+/** A call of the effector "take" as the action "take" reads it: the calling agent, and the slot its arguments give. */
+function takeCall({ agent, arguments: args }: EffectorCall) {
+  return { agent, slot: args.slot as number };
+}
 
 /** What "look" gives for a slot. */
 export type Seen = "empty" | "held";
@@ -46,7 +51,10 @@ export const slotTools: readonly Tool<Slots>[] = [
       required: ["slot"],
       additionalProperties: false,
     },
-    action: take,
+    action: {
+      precondition: (slots, call) => take.precondition(slots, takeCall(call)),
+      effect: (slots, call) => take.effect(slots, takeCall(call)),
+    },
   },
 ];
 

@@ -269,8 +269,7 @@ function sense<State>(world: World<State>, sensor: Sensor<State>, agent: string)
 
 /** Applies an effector's call through the arbiter; the agent receives its outcome: "success" or the failure's reason. */
 function effect<State>(world: World<State>, effector: Effector<State>, agent: string, args: Record<string, unknown>): CallResult {
-  // The agent comes last, so a call cannot act in another agent's name.
-  const result = world.apply(effector.action, { ...args, agent });
+  const result = world.apply(effector.action, { agent, arguments: args });
   const outcome = result.applied ? "success" : result.reason;
   return { outcome, text: outcome };
 }
