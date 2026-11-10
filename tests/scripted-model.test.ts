@@ -54,4 +54,12 @@ describe("ScriptedModel", () => {
     expect(scripted.model.id).toBe("scripted-model-x");
     expect(answer.model).toBe("scripted-model-x");
   });
+
+  it("answers a turn with a provider error when the script says so", async () => {
+    const scripted = new ScriptedModel([{ error: "overloaded", delayMs: 0 }]);
+
+    const answer = await scripted.models.complete(scripted.model, { messages: [] });
+
+    expect(answer).toMatchObject({ stopReason: "error", errorMessage: "overloaded", content: [] });
+  });
 });
