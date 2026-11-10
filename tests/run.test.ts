@@ -29,4 +29,15 @@ describe("run", () => {
 
     expect(decisions.get("a")?.[0]?.latencyMs).toBeGreaterThanOrEqual(50);
   });
+
+  it("gives a decision after the script runs out the outcome script_exhausted, with no answer, and applies nothing", async () => {
+    const world = new World(emptySlots(3));
+    const model = new ScriptedModel([{ text: "take 1", delayMs: 0 }]);
+
+    const decisions = await run(world, declaredActions, [{ name: "a", model, decisions: 2 }]);
+
+    expect(decisions.get("a")?.[1]).toEqual({ outcome: "script_exhausted" });
+    expect(world.state).toEqual(["a", null, null]);
+    expect(world.version).toBe(1);
+  });
 });
