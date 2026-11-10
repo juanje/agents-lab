@@ -3,6 +3,7 @@ import type { Grid, Position, WindowCell } from "../../src/engine/grid.ts";
 import type { Condition, Scenario } from "../../src/engine/scenario.ts";
 import type { ModelTurn } from "../../src/engine/adapter.ts";
 import type { ScriptedModel } from "../../src/engine/scripted-model.ts";
+import type { Channel, Stimuli } from "../../src/engine/stimuli.ts";
 import type { ActionResult, World } from "../../src/engine/world.ts";
 import { type Slots, rhythmChannel } from "../../tests/fixtures/slots.ts";
 
@@ -30,7 +31,9 @@ export class Context extends CucumberWorld {
   /** The model turns the run gave, in the order they ended. */
   turns?: readonly ModelTurn[];
   /** The stimulus channels the scenario declares: the test world's rhythm channel, and any the scenario adds. */
-  readonly channels: { name: string; source: string; stimulus: string }[] = [rhythmChannel];
+  readonly channels: Channel[] = [rhythmChannel];
+  /** The run's stimuli, from the moment the run starts, for what the scenario delivers while it runs. */
+  stimuli!: Stimuli;
   /** The system prompt the scenario declares. */
   systemPrompt = "";
   /** How long a model turn may run, unless the scenario says: long enough for any scripted turn here. */

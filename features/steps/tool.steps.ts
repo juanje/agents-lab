@@ -3,6 +3,7 @@ import { Given, Then, When } from "@cucumber/cucumber";
 import { getCurrentTools } from "@earendil-works/pi-ai";
 import { run } from "../../src/engine/run.ts";
 import { type ScriptedAnswer, ScriptedModel } from "../../src/engine/scripted-model.ts";
+import { Stimuli } from "../../src/engine/stimuli.ts";
 import { SLOT_TAKEN, type Seen, slotTools } from "../../tests/fixtures/slots.ts";
 import type { Context } from "../support/context.ts";
 
@@ -40,6 +41,7 @@ Given(
 
 When("the run ends", async function (this: Context) {
   this.versionBefore = this.world.version;
+  this.stimuli = new Stimuli(this.channels);
   const agents = [...this.models].map(([name, model]) => ({
     name,
     model,
@@ -47,7 +49,7 @@ When("the run ends", async function (this: Context) {
     rhythm: () => this.waitBeforeActivationMs,
   }));
   // Any seed: these rhythms draw nothing from it.
-  this.turns = await run(this.world, slotTools, agents, 1, {
+  this.turns = await run(this.world, slotTools, this.stimuli, agents, 1, {
     systemPrompt: this.systemPrompt,
     modelTurnTimeoutMs: this.modelTurnTimeoutMs,
     parallelismLimit: this.parallelismLimit,
