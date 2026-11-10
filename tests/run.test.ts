@@ -1,10 +1,27 @@
+import { getCurrentTools } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "vitest";
 import { run } from "../src/engine/run.ts";
 import { ScriptedModel } from "../src/engine/scripted-model.ts";
 import { World } from "../src/engine/world.ts";
-import { emptySlots } from "./fixtures/slots.ts";
+import { emptySlots, slotTools } from "./fixtures/slots.ts";
+
+/** A rhythm with no waiting: the agent wakes again as soon as its previous activation ends. */
+const noWait = () => 0;
+
+/** A replica's seed, for a run whose rhythms draw nothing from it. */
+const seed = 1;
 
 describe("run", () => {
+  it("offers the agent's model exactly the scenario's tools, with their descriptions and arguments", async () => {
+    const model = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
+
+    await run(new World(emptySlots(3)), slotTools, [{ name: "a", model, activations: 1, rhythm: noWait }], seed);
+
+    expect(model.received.map(getCurrentTools)).toEqual([
+      slotTools.map(({ name, description, parameters }) => ({ name, description, parameters })),
+    ]);
+  });
+
   it("gives each agent's rhythm the same draws for the same seed, however long the other agents' models take", async () => {
     /** Runs agents "a" and "b" with seed 42, "b" answering after its delay, and gives the draws of "a"'s rhythm. */
     async function drawsOfA(bDelayMs: number): Promise<number[]> {
