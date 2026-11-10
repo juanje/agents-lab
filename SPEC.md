@@ -164,7 +164,9 @@ Each run writes one new JSONL file, named with the run id. Each decision of each
 - the model that answered, and the tokens and cost Pi reports;
 - the number of changes other agents applied between its observation and its action.
 
-*Why:* every analysis of an experiment is done from this log, and a field not recorded cannot be recovered later.
+A decision that ends before its agent observes (for example `script_exhausted`) adds a line with the agent and the outcome only. When a run stops on an error, its log ends with a line that says the run stopped and gives the error.
+
+*Why:* every analysis of an experiment is done from this log, and a field not recorded cannot be recovered later. A run that stops on an error must say so, or its log reads as a run that simply ended.
 
 #### FR-CLOCK-02: A run ends at its budget or its time limit
 A run ends when every agent has used its decision budget or when its time limit passes, whichever comes first. A decision still pending at the time limit is recorded with the outcome `cut_off` and is not applied.
@@ -343,4 +345,3 @@ Every Pi session the engine opens uses the lab's own Pi directory (`~/.agents-la
   - votes with a deadline.
 - v0.3 will need persistent Pi sessions per agent, a workspace for its memory files, and lab actions as custom tools. `@earendil-works/pi-durable` (experimental in Pi 1.5.0) may help with long runs.
 - Open: whether real time is enough for E16's vote deadlines to be repeatable, or simulated time is needed.
-- FR-RECORD-01: a decision that ends before its agent observes (`script_exhausted`) has no observation time; its contract must say what is recorded for it.
