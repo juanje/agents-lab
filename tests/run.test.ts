@@ -677,6 +677,21 @@ describe("run's time limit", () => {
     expect(loaded.world.state).toEqual(emptySlots(3));
   });
 
+  it("starts no model turn once the time limit has passed, even in an activation whose last turn called a tool", async () => {
+    const model = new ScriptedModel([
+      { toolCalls: [{ name: "take", arguments: { slot: 1 } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+
+    const { turns } = await run(slots({ tools: withTakeTaking(1000) }), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, {
+      ...settings,
+      timeLimitMs: 100,
+    });
+
+    expect(turns).toHaveLength(1);
+    expect(model.received).toHaveLength(1);
+  });
+
   it("cuts off an effector call still running at the time limit: it applies nothing, ends then, and the agent is told so", async () => {
     const loaded = slots({ tools: withTakeTaking(1000) });
     const { world } = loaded;
