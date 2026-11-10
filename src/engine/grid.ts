@@ -1,3 +1,5 @@
+import type { Random } from "./random.ts";
+
 /** A cell's place on a grid: x from 0 at the left, y from 0 at the top. */
 export interface Position {
   x: number;
@@ -51,4 +53,14 @@ export function window(grid: Grid, { x, y }: Position, radius: number): WindowCe
     }
   }
   return cells;
+}
+
+/** Stub: places nothing, so the steps can fail on their assertions first. */
+export function place(grid: Grid, _entity: string, _at: Position): Grid {
+  return grid;
+}
+
+/** Stub: never finds an empty cell, so the steps can fail on their assertions first. */
+export function randomEmptyCell(_grid: Grid, _random: Random): Position | undefined {
+  return undefined;
 }

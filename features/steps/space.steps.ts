@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { Given, Then, When } from "@cucumber/cucumber";
-import { emptyGrid, neighbours, window } from "../../src/engine/grid.ts";
+import { type Grid, emptyGrid, neighbours, place, randomEmptyCell, window } from "../../src/engine/grid.ts";
+import { Random } from "../../src/engine/random.ts";
 import type { Context } from "../support/context.ts";
 
 Given(
@@ -29,4 +30,38 @@ Then("the window has {int} cells", function (this: Context, count: number) {
 Then("{int} of them are marked as outside the grid", function (this: Context, count: number) {
   const outside = this.window.filter((cell) => cell.outside);
   assert.equal(outside.length, count, `expected ${count} cells outside the grid, got ${JSON.stringify(outside)}`);
+});
+
+/** Places one entity, named after its cell, in every cell of the grid that the scenario does not leave empty. */
+function fill(grid: Grid, except?: { x: number; y: number }): Grid {
+  let filled = grid;
+  for (let y = 0; y < grid.height; y += 1) {
+    for (let x = 0; x < grid.width; x += 1) {
+      if (x !== except?.x || y !== except?.y) filled = place(filled, `entity at ${x}, ${y}`, { x, y });
+    }
+  }
+  return filled;
+}
+
+Given("every cell holds an entity except the cell at {int}, {int}", function (this: Context, x: number, y: number) {
+  this.grid = fill(this.grid, { x, y });
+});
+
+Given("every cell holds an entity", function (this: Context) {
+  this.grid = fill(this.grid);
+});
+
+/** The seed of the sequence the steps draw cells from; any seed must give the only empty cell, or none. */
+const DRAW_SEED = 42;
+
+When("I ask for a random empty cell", function (this: Context) {
+  this.drawnCell = randomEmptyCell(this.grid, new Random(DRAW_SEED));
+});
+
+Then("I get the cell at {int}, {int}", function (this: Context, x: number, y: number) {
+  assert.deepEqual(this.drawnCell, { x, y });
+});
+
+Then("I get no cell", function (this: Context) {
+  assert.equal(this.drawnCell, undefined, `expected no cell, got ${JSON.stringify(this.drawnCell)}`);
 });
