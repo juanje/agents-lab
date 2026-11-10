@@ -93,6 +93,6 @@ Then("loading fails with an error that names {string}", function (this: Context,
 
 Then("no model was called", function (this: Context) {
   for (const [agent, model] of this.models) {
-    assert.equal(model.exhausted, false, `expected no call to agent "${agent}"'s model, but its script was used`);
+    if (model.exhausted) assert.fail(`expected no call to agent "${agent}"'s model, but its script was used`);
   }
 });
