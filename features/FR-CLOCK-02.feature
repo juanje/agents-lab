@@ -20,3 +20,26 @@ Feature: A run ends at its budget or its time limit
     Then agent "a"'s "take" call has the outcome "cut_off"
     And every slot is empty
     And the run ended within 300 milliseconds of starting
+
+  Scenario: A sensor call still running at the time limit is cut off and leaves no sensing
+    Given the sensor "look" takes 1000 milliseconds
+    And agent "a" runs on a scripted model that calls "look", then ends without a tool call
+    And the run's time limit is 200 milliseconds
+    When the run ends
+    Then agent "a"'s "look" call has the outcome "cut_off"
+    And the engine has no sensing for agent "a"
+
+  Scenario: A model turn still running at the time limit is aborted
+    Given agent "a" runs on a scripted model whose first turn is the text "Thinking." with no tool call, after 1000 milliseconds
+    And the run's time limit is 200 milliseconds
+    When the run ends
+    Then agent "a"'s first model turn has the outcome "cut_off"
+    And the run ended within 300 milliseconds of starting
+
+  Scenario: After the time limit, no agent takes another turn or wakes again
+    Given agent "a" runs on a scripted model that calls "take" with slot 1, then writes "Done." with no tool call
+    And agent "b" makes 3 activations, each ending its first turn without a tool call, waiting 150 milliseconds between them
+    And the run's time limit is 200 milliseconds
+    When the run ends
+    Then agent "a" made no model turn after its "take" call was cut off
+    And agent "b" made only the activations that began before the time limit
