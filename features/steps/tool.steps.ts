@@ -9,7 +9,7 @@ import { SLOT_TAKEN, type Seen, type Slots, slotTools, slotsScenario } from "../
 import type { Context } from "../support/context.ts";
 
 /** The test world's tool of a kind and a name; the tools live in the fixture, and this keeps the words and it in step. */
-function fixtureTool(kind: string, name: string) {
+export function fixtureTool(kind: string, name: string) {
   const tool = slotTools.find((declared) => declared.name === name);
   assert.ok(tool !== undefined, `the test world declares no tool "${name}"`);
   assert.equal(tool.kind, kind);
@@ -183,12 +183,18 @@ Given(
   },
 );
 
-Then("agent {string}'s {string} call has the outcome {string}", function (this: Context, agent: string, tool: string, outcome: string) {
-  assert.ok(this.toolCalls !== undefined, "the run gave no tool calls");
-  const calls = this.toolCalls.filter((call) => call.agent === agent && call.tool === tool);
+/** The agent's only call of the tool, as the run recorded it. */
+export function callOf(context: Context, agent: string, tool: string) {
+  assert.ok(context.toolCalls !== undefined, "the run gave no tool calls");
+  const calls = context.toolCalls.filter((call) => call.agent === agent && call.tool === tool);
   assert.equal(calls.length, 1, `agent "${agent}" made ${calls.length} "${tool}" calls`);
-  assert.equal(calls[0]?.outcome, outcome);
-  this.lastToolCall = calls[0];
+  return calls[0];
+}
+
+Then("agent {string}'s {string} call has the outcome {string}", function (this: Context, agent: string, tool: string, outcome: string) {
+  const call = callOf(this, agent, tool);
+  assert.equal(call.outcome, outcome);
+  this.lastToolCall = call;
 });
 
 Then(/^the call is kept with the arguments (\{.*\}), as the model made it$/, function (this: Context, json: string) {
