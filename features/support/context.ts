@@ -1,9 +1,6 @@
 import { World as CucumberWorld, setWorldConstructor } from "@cucumber/cucumber";
-import type { ActionArgs, DeclaredAction, Outcome } from "../../src/engine/actions.ts";
 import type { Grid, Position, WindowCell } from "../../src/engine/grid.ts";
-import type { Decision } from "../../src/engine/run.ts";
-import type { Condition, LoadedScenario, Scenario } from "../../src/engine/scenario.ts";
-import type { ScriptedModel } from "../../src/engine/scripted-model.ts";
+import type { Condition, Scenario } from "../../src/engine/scenario.ts";
 import type { ActionResult, World } from "../../src/engine/world.ts";
 import type { Slots } from "../../tests/fixtures/slots.ts";
 
@@ -16,21 +13,9 @@ export class Context extends CucumberWorld {
   versionBefore!: number;
   result!: ActionResult;
   results!: ActionResult[];
-  actions!: readonly DeclaredAction<Slots, ActionArgs>[];
-  outcome!: Outcome;
-  /** Each agent's scripted model and decision budget, as the scenario gives them before the run. */
-  readonly models = new Map<string, ScriptedModel>();
-  readonly budgets = new Map<string, number>();
-  /** Each agent's waiting interval between decisions, in milliseconds, as the scenario gives it. */
-  readonly intervals = new Map<string, number>();
-  decisions!: Map<string, Decision[]>;
-  /** The scenario the engine is given, and what loading it gave: the loaded scenario or the error that refused it. */
+  /** The scenario the engine is given, and the condition it is loaded with. */
   scenario!: Partial<Scenario<Slots>>;
   condition?: Condition;
-  loaded?: LoadedScenario<Slots>;
-  /** The loaded world's state and version before anything ran on it. */
-  start?: { state: Slots; version: number };
-  loadingError?: Error;
   /** The initial state each replica started with, in the order the scenario starts them. */
   replicaStarts!: Slots[];
   /** The range each agent's waiting interval is drawn from, as the scenario gives it. */

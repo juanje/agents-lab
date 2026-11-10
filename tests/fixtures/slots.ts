@@ -1,4 +1,3 @@
-import type { ActionArgs, DeclaredAction } from "../../src/engine/actions.ts";
 import type { Scenario } from "../../src/engine/scenario.ts";
 import type { Action } from "../../src/engine/world.ts";
 
@@ -22,30 +21,6 @@ export const take: Action<Slots, { agent: string; slot: number }> = {
   effect: (slots, { agent, slot }) => slots.map((current, index) => (index === slot - 1 ? agent : current)),
 };
 
-/** A slot number is a positive integer written in digits; any other text is not one. */
-function readSlot(text: string): number | undefined {
-  return /^[1-9][0-9]*$/.test(text) ? Number(text) : undefined;
-}
-
-/** The test world's declared actions: "take <slot>" and "wait". */
-export const declaredActions: readonly DeclaredAction<Slots, ActionArgs>[] = [
-  {
-    name: "take",
-    description: "Take an empty slot.",
-    arguments: [{ name: "slot", read: readSlot }],
-    failureReasons: [SLOT_TAKEN],
-    ...take,
-  },
-  {
-    name: "wait",
-    description: "Do nothing this time.",
-    arguments: [],
-    failureReasons: [],
-    precondition: () => ({ holds: true }),
-    effect: (slots) => slots,
-  },
-];
-
 /** Who holds the slots a configuration has held at the start. */
 export const START_HOLDER = "start";
 
@@ -59,10 +34,8 @@ export const slotsScenario: Scenario<Slots> = {
     const { count, held } = configuration.slots as { count: number; held: number };
     return Array.from({ length: count }, (_, index) => (index < held ? START_HOLDER : null));
   },
-  perception: (slots) => slots.map((holder, index) => `slot ${index + 1}: ${holder ?? "empty"}`).join("\n"),
-  actions: declaredActions,
   metrics: { held: (slots) => slots.filter((holder) => holder !== null).length },
-  systemPrompt: "You can take an empty slot or wait.",
+  systemPrompt: "You are an agent in a world of slots.",
   baseConfiguration: "[slots]\ncount = 3\nheld = 0\n",
 };
 

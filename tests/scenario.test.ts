@@ -12,7 +12,7 @@ describe("loadScenario", () => {
     expect(loaded.configuration).toEqual({ slots: { count: 2, held: 1 } });
     expect(loaded.world.state).toEqual([START_HOLDER, null]);
     expect(loaded.world.version).toBe(0);
-    expect(loaded.scenario.actions).toBe(slotsScenario.actions);
+    expect(loaded.scenario.metrics).toBe(slotsScenario.metrics);
   });
 
   it("applies the condition's change over the base configuration, keeping what the change does not set", () => {
@@ -55,8 +55,6 @@ describe("loadScenario", () => {
 
   it.each([
     ["initialState", "initial state"],
-    ["perception", "perception"],
-    ["actions", "actions"],
     ["metrics", "metrics"],
     ["systemPrompt", "system prompt"],
     ["baseConfiguration", "base configuration"],

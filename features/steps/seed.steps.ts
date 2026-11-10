@@ -68,8 +68,8 @@ Given(
   },
 );
 
-/** How many decisions each agent makes in a replica: enough for a sequence of intervals, not only one. */
-const DECISIONS = 3;
+/** How many activations each agent has in a replica: enough for a sequence of intervals, not only one. */
+const ACTIVATIONS = 3;
 
 /**
  * Runs one replica of the scenario with a seed, under a condition or its base configuration: each placed agent waits on
@@ -77,7 +77,7 @@ const DECISIONS = 3;
  * drew, in order.
  */
 async function runReplica(context: Context, seed: number, condition?: Condition): Promise<Map<string, number[]>> {
-  const { world, scenario, configuration } = loadScenario(context.scenario, seed, condition);
+  const { world, configuration } = loadScenario(context.scenario, seed, condition);
   const { minMs, maxMs } = context.rhythmRange;
   const { agents } = configuration.slots as { agents: number };
   const drawn = new Map<string, number[]>();
@@ -87,8 +87,8 @@ async function runReplica(context: Context, seed: number, condition?: Condition)
     drawn.set(name, intervals);
     return {
       name,
-      model: new ScriptedModel(Array.from({ length: DECISIONS }, () => ({ text: "wait", delayMs: 0 }))),
-      decisions: DECISIONS,
+      model: new ScriptedModel(Array.from({ length: ACTIVATIONS }, () => ({ text: "resting", delayMs: 0 }))),
+      activations: ACTIVATIONS,
       rhythm: (agentRandom: Random) => {
         const intervalMs = minMs + agentRandom.next() * (maxMs - minMs);
         intervals.push(intervalMs);
@@ -96,7 +96,7 @@ async function runReplica(context: Context, seed: number, condition?: Condition)
       },
     };
   });
-  await run(world, scenario.actions, runningAgents, seed);
+  await run(world, runningAgents, seed);
   return drawn;
 }
 
@@ -130,7 +130,7 @@ function assertSameIntervals(context: Context, agents: readonly string[]): void 
   assert.ok(agents.length > 1, `expected several agents to run, got ${agents.length}`);
   for (const agent of agents) {
     const intervals = first.get(agent) ?? [];
-    assert.equal(intervals.length, DECISIONS, `expected ${DECISIONS} intervals of "${agent}", got ${intervals.length}`);
+    assert.equal(intervals.length, ACTIVATIONS, `expected ${ACTIVATIONS} intervals of "${agent}", got ${intervals.length}`);
     for (const intervalMs of intervals) {
       assert.ok(minMs <= intervalMs && intervalMs <= maxMs, `"${agent}" waited ${intervalMs} ms, outside the range`);
     }

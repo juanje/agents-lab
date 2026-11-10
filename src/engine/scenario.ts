@@ -1,5 +1,4 @@
 import { type TomlTable, type TomlValue, parse } from "smol-toml";
-import type { ActionArgs, DeclaredAction } from "./actions.ts";
 import { Random } from "./random.ts";
 import { World } from "./world.ts";
 
@@ -11,9 +10,6 @@ export interface Scenario<State> {
   name: string;
   /** Builds the world's initial state from the resolved configuration, drawing any chance from its own sequence. */
   initialState: (configuration: Configuration, random: Random) => State;
-  /** What an agent observes of the state. */
-  perception: (state: State, agent: string) => string;
-  actions: readonly DeclaredAction<State, ActionArgs>[];
   /** Each metric by its name, computed from the world's state. */
   metrics: Readonly<Record<string, (state: State) => number>>;
   systemPrompt: string;
@@ -38,8 +34,6 @@ export interface LoadedScenario<State> {
 /** Each part a scenario must provide, and how an error names it. */
 const requiredParts = [
   ["initialState", "initial state"],
-  ["perception", "perception"],
-  ["actions", "actions"],
   ["metrics", "metrics"],
   ["systemPrompt", "system prompt"],
   ["baseConfiguration", "base configuration"],
