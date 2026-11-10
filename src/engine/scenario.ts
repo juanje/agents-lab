@@ -20,6 +20,13 @@ export interface Scenario<State> {
   baseConfiguration: string;
 }
 
+/** A named change over a scenario's base configuration. */
+export interface Condition {
+  name: string;
+  /** The change, in TOML. */
+  change: string;
+}
+
 /** A scenario ready to run: its parts, its resolved configuration and its world in its initial state. */
 export interface LoadedScenario<State> {
   scenario: Scenario<State>;
@@ -30,7 +37,7 @@ export interface LoadedScenario<State> {
 /**
  * Loads a scenario. Scenarios reach the engine as modules, not through the type checker, so any part may be missing.
  */
-export function loadScenario<State>(parts: Partial<Scenario<State>>): LoadedScenario<State> {
+export function loadScenario<State>(parts: Partial<Scenario<State>>, _condition?: Condition): LoadedScenario<State> {
   const scenario = parts as Scenario<State>;
   const configuration = parse(scenario.baseConfiguration);
   return { scenario, configuration, world: new World(scenario.initialState(configuration)) };

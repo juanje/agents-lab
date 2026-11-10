@@ -1,7 +1,7 @@
 import { World as CucumberWorld, setWorldConstructor } from "@cucumber/cucumber";
 import type { ActionArgs, DeclaredAction, Outcome } from "../../src/engine/actions.ts";
 import type { Decision } from "../../src/engine/run.ts";
-import type { LoadedScenario, Scenario } from "../../src/engine/scenario.ts";
+import type { Condition, LoadedScenario, Scenario } from "../../src/engine/scenario.ts";
 import type { ScriptedModel } from "../../src/engine/scripted-model.ts";
 import type { ActionResult, World } from "../../src/engine/world.ts";
 import type { Slots } from "../../tests/fixtures/slots.ts";
@@ -25,6 +25,7 @@ export class Context extends CucumberWorld {
   decisions!: Map<string, Decision[]>;
   /** The scenario the engine is given, and what loading it gave: the loaded scenario or the error that refused it. */
   scenario!: Partial<Scenario<Slots>>;
+  condition?: Condition;
   loaded?: LoadedScenario<Slots>;
   loadingError?: Error;
 }
