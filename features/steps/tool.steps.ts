@@ -26,8 +26,8 @@ Given(
   },
 );
 
-/** Gives an agent a scripted model with these answers; the run gives each agent one activation to give them in. */
-function script(context: Context, agent: string, answers: readonly ScriptedAnswer[]): void {
+/** Gives an agent a scripted model with these answers. */
+export function script(context: Context, agent: string, answers: readonly ScriptedAnswer[]): void {
   context.models.set(agent, new ScriptedModel(answers));
 }
 
@@ -40,13 +40,18 @@ Given(
 
 When("the run ends", async function (this: Context) {
   this.versionBefore = this.world.version;
-  const agents = [...this.models].map(([name, model]) => ({ name, model, activations: 1, rhythm: () => 0 }));
+  const agents = [...this.models].map(([name, model]) => ({
+    name,
+    model,
+    activations: this.activations.get(name) ?? 1,
+    rhythm: () => 0,
+  }));
   // Any seed: these rhythms draw nothing from it.
   await run(this.world, slotTools, agents, 1);
 });
 
 /** The scripted model agent runs on, which has made at least one turn. */
-function modelOf(context: Context, agent: string): ScriptedModel {
+export function modelOf(context: Context, agent: string): ScriptedModel {
   const model = context.models.get(agent);
   assert.ok(model !== undefined, `agent "${agent}" runs on no scripted model`);
   assert.ok(model.received.length > 0, `agent "${agent}"'s model made no turn`);

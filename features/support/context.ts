@@ -16,6 +16,10 @@ export class Context extends CucumberWorld {
   results!: ActionResult[];
   /** Each agent's scripted model, as the scenario gives it before the run. */
   readonly models = new Map<string, ScriptedModel>();
+  /** How many activations each agent makes, when the scenario gives it; otherwise one. */
+  readonly activations = new Map<string, number>();
+  /** The system prompt the scenario declares. */
+  systemPrompt = "";
   /** The scenario the engine is given, and the condition it is loaded with. */
   scenario!: Partial<Scenario<Slots>>;
   condition?: Condition;
