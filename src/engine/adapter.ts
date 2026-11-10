@@ -16,7 +16,7 @@ import type { ParallelismLimit } from "./parallelism.ts";
 import { SCRIPT_EXHAUSTED_MESSAGE } from "./scripted-model.ts";
 import type { Sensing, Sensings } from "./sensings.ts";
 import type { Stimuli, Stimulus } from "./stimuli.ts";
-import type { Effector, EffectorCall, Sensor, TargetAsSensed, Tool } from "./tools.ts";
+import type { AgentCall, Effector, Sensor, TargetAsSensed, Tool } from "./tools.ts";
 import type { World } from "./world.ts";
 
 /**
@@ -328,7 +328,7 @@ function undeclared<State>(tool: Tool<State>, args: Record<string, unknown>): Ca
 }
 
 /** Reads the world for a sensor's call, which always succeeds, once the sensor's duration has passed (FR-TOOL-03). */
-async function sense<State>(world: World<State>, sensor: Sensor<State>, call: EffectorCall): Promise<CallResult> {
+async function sense<State>(world: World<State>, sensor: Sensor<State>, call: AgentCall): Promise<CallResult> {
   await waitAtLeast(sensor.durationMs(world.state, call));
   return { outcome: "success", text: sensor.sense(world.state, call.agent) };
 }
@@ -338,7 +338,7 @@ async function sense<State>(world: World<State>, sensor: Sensor<State>, call: Ef
  * (FR-TOOL-04); the agent receives its outcome: "success" or the failure's reason. What the agent last sensed of the
  * call's target, before the call, is read beside it and never reaches the arbiter (NFR-11).
  */
-async function effect<State>(world: World<State>, effector: Effector<State>, call: EffectorCall, sensing: Sensing | undefined): Promise<CallResult> {
+async function effect<State>(world: World<State>, effector: Effector<State>, call: AgentCall, sensing: Sensing | undefined): Promise<CallResult> {
   const targetAsSensed = sensing === undefined ? "not_sensed" : effector.readTarget(sensing, call);
   await waitAtLeast(effector.durationMs(world.state, call));
   const result = world.apply(effector.action, call);

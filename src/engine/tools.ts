@@ -5,7 +5,7 @@ import type { Action } from "./world.ts";
  * What a tool's call gives the tool: the agent that made the call and the call's arguments, kept apart so that no
  * argument can make the tool act as another agent (FR-TOOL-02).
  */
-export interface EffectorCall {
+export interface AgentCall {
   agent: string;
   arguments: Record<string, unknown>;
 }
@@ -21,7 +21,7 @@ interface Declared<State> {
    * How long a call takes, in milliseconds, before a sensor reads the world or an effector's effect is checked and
    * applied, from the call's arguments, the agent that makes it and the state as the call starts (FR-TOOL-03, FR-TOOL-04).
    */
-  durationMs(state: State, call: EffectorCall): number;
+  durationMs(state: State, call: AgentCall): number;
 }
 
 /** A tool that returns part of the world, as seen from where the agent is, and changes nothing. */
@@ -37,9 +37,9 @@ export type TargetAsSensed = "free" | "held" | "not_sensed";
 /** A tool that changes the world through the arbiter. */
 export interface Effector<State> extends Declared<State> {
   kind: "effector";
-  action: Action<State, EffectorCall>;
+  action: Action<State, AgentCall>;
   /** What the agent's last sensing says of the call's target; "not_sensed" when that sensing does not show it. */
-  readTarget(sensing: Sensing, call: EffectorCall): TargetAsSensed;
+  readTarget(sensing: Sensing, call: AgentCall): TargetAsSensed;
 }
 
 /** An agent's only interface with the world (FR-TOOL-01). */

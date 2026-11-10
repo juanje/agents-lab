@@ -7,7 +7,7 @@ import { type RunSettings, run } from "../src/engine/run.ts";
 import { ScriptedModel } from "../src/engine/scripted-model.ts";
 import { type Scenario, loadScenario } from "../src/engine/scenario.ts";
 import type { Stimuli } from "../src/engine/stimuli.ts";
-import type { EffectorCall } from "../src/engine/tools.ts";
+import type { AgentCall } from "../src/engine/tools.ts";
 import { type Slots, emptySlots, rhythmChannel, slotTools, slotsScenario, take } from "./fixtures/slots.ts";
 
 /** A rhythm with no waiting: the agent wakes again as soon as its previous activation ends. */
@@ -488,7 +488,7 @@ describe("run", () => {
       tool.kind === "sensor"
         ? {
             ...tool,
-            durationMs: (state: Slots, call: EffectorCall): number => {
+            durationMs: (state: Slots, call: AgentCall): number => {
               asked.push({ state, call });
               return 40;
             },
@@ -582,7 +582,7 @@ describe("run", () => {
       tool.kind === "effector"
         ? {
             ...tool,
-            durationMs: (state: Slots, call: EffectorCall): number => {
+            durationMs: (state: Slots, call: AgentCall): number => {
               asked.push({ state, call });
               return 40;
             },

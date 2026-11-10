@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { Given, Then } from "@cucumber/cucumber";
-import type { EffectorCall } from "../../src/engine/tools.ts";
+import type { AgentCall } from "../../src/engine/tools.ts";
 import { slotTools } from "../../tests/fixtures/slots.ts";
 import type { Context } from "../support/context.ts";
 import { turnsOf } from "./adapter.steps.ts";
@@ -38,7 +38,7 @@ Given("both agents wait {int} milliseconds between activations", function (this:
 function appliedCallsOf(context: Context, tool: string): string[] {
   const effector = slotTools.find((declared) => declared.name === tool);
   assert.ok(effector?.kind === "effector", `the test world declares no effector "${tool}"`);
-  return context.applied.filter(({ action }) => action === effector.action).map(({ args }) => (args as EffectorCall).agent);
+  return context.applied.filter(({ action }) => action === effector.action).map(({ args }) => (args as AgentCall).agent);
 }
 
 Then(

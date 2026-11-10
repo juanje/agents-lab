@@ -1,6 +1,6 @@
 import { type Grid, type Position, distance, move } from "../../src/engine/grid.ts";
 import type { Scenario } from "../../src/engine/scenario.ts";
-import type { Effector, EffectorCall, Tool } from "../../src/engine/tools.ts";
+import type { AgentCall, Effector, Tool } from "../../src/engine/tools.ts";
 import { rhythmChannel } from "./slots.ts";
 
 /** The cell an entity is in, or none when the grid does not hold it. */
@@ -10,7 +10,7 @@ export function cellOf(grid: Grid, entity: string): Position | undefined {
 }
 
 /** A call of the effector "walk" as the grid's move reads it: the calling agent moves to the cell its arguments give. */
-function walkCall({ agent, arguments: args }: EffectorCall) {
+function walkCall({ agent, arguments: args }: AgentCall) {
   return { entity: agent, to: { x: args.x as number, y: args.y as number } };
 }
 

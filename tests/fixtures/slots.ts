@@ -1,6 +1,6 @@
 import type { Scenario } from "../../src/engine/scenario.ts";
 import type { Channel } from "../../src/engine/stimuli.ts";
-import type { EffectorCall, Tool } from "../../src/engine/tools.ts";
+import type { AgentCall, Tool } from "../../src/engine/tools.ts";
 import type { Action } from "../../src/engine/world.ts";
 
 /** A test world of numbered slots, from 1; each is empty (null) or held by one agent. */
@@ -24,7 +24,7 @@ export const take: Action<Slots, { agent: string; slot: number }> = {
 };
 
 /** A call of the effector "take" as the action "take" reads it: the calling agent, and the slot its arguments give. */
-function takeCall({ agent, arguments: args }: EffectorCall) {
+function takeCall({ agent, arguments: args }: AgentCall) {
   return { agent, slot: args.slot as number };
 }
 
