@@ -316,6 +316,10 @@ The test suite and the gate use Pi's faux provider only. A real model runs only 
 Code in `src/engine/` never imports from `src/scenarios/` or `src/analysis/`. Scenarios use only the engine's public interface.
 *Why:* an engine shaped by one scenario stops being the same engine for the next experiment, and results across experiments stop being comparable.
 
+#### NFR-08: The lab's Pi is isolated from the person's
+Every Pi session the engine opens uses the lab's own Pi directory (`~/.agents-lab/pi/`): its credentials, its model definitions and nothing else. The engine never reads or writes the person's Pi setup (`~/.pi/agent/`): no settings, extensions, skills, prompt templates, themes, context files such as `AGENTS.md`, model definitions or credentials. Session settings come from the experiment's configuration, held in memory.
+*Why:* an agent's environment must contain only what the experiment declares (NFR-04); the person's own Pi setup would change the agents without anyone seeing it, and the lab would change the person's coding agent and compete with it for one login.
+
 ## Draft notes
 
 - v0.2 will need, at least:

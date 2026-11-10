@@ -127,3 +127,23 @@ The experiments repository (`~/git/agents-lab-experiments`) holds only what defi
 **Follows.**
 - A feature a new experiment needs is written as a generic engine FR, or as a new scenario.
 - The engine's own tests use test scenarios, not the library's.
+
+## D-08: The lab has its own Pi directory and login
+
+**Decision.** The lab's Pi directory is `~/.agents-lab/pi/`, outside the repository. It holds the lab's own credentials (`auth.json`, from a separate login) and model definitions (`models.json`), and nothing else. Every session gets:
+- that directory as its agent directory, and its credentials and model definitions through Pi's model runtime;
+- settings held in memory;
+- a resource loader that loads no extensions, skills, prompt templates, themes or context files.
+
+**Why.**
+- The experiments must declare everything their agents meet (NFR-04).
+- The person's coding agent must not be changed by the lab.
+- Two processes making calls with one Pi login stalled each other, so the lab must not share the person's login.
+
+**Rules out:**
+- reading or writing `~/.pi/agent/`;
+- passing credentials through the repository or environment variables in the code.
+
+**Follows.**
+- Setup happens once, by the person: `PI_CODING_AGENT_DIR=~/.agents-lab/pi pi`, then `/login`.
+- oid's `resourcesFor` and `SettingsManager.inMemory` are the pattern to follow.
