@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { Given, Then } from "@cucumber/cucumber";
 import { slotTools } from "../../tests/fixtures/slots.ts";
 import type { Context } from "../support/context.ts";
-import { modelOf, script } from "./tool.steps.ts";
+import { modelOf, script, scriptActivations } from "./tool.steps.ts";
 
 Given(
   "the channel {string} delivers the stimulus {string} from the source {string}",
@@ -79,8 +79,7 @@ Then(
 Given(
   "agent {string} makes {int} activations, each ending its first turn without a tool call, and waits {int} milliseconds between them",
   function (this: Context, agent: string, activations: number, waitMs: number) {
-    this.activations.set(agent, activations);
-    script(this, agent, Array.from({ length: activations }, () => ({ text: "Nothing to do.", delayMs: 0 })));
+    scriptActivations(this, agent, activations, () => [{ text: "Nothing to do.", delayMs: 0 }]);
     let rests = 0;
     // The rhythm is called before each activation; the agent wakes at once the first time.
     this.rhythms.set(agent, () => (rests++ === 0 ? 0 : waitMs));

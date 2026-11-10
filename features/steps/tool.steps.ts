@@ -34,6 +34,12 @@ export function script(context: Context, agent: string, answers: readonly Script
   context.scripts.set(agent, answers);
 }
 
+/** Gives an agent a number of activations, each scripted by its index from 0, all in one scripted model. */
+export function scriptActivations(context: Context, agent: string, count: number, activation: (index: number) => readonly ScriptedAnswer[]): void {
+  context.activations.set(agent, count);
+  script(context, agent, Array.from({ length: count }, (_, index) => activation(index)).flat());
+}
+
 Given(
   "agent {string} runs on a scripted model that ends its first turn without a tool call",
   function (this: Context, agent: string) {

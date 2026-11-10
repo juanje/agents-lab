@@ -4,7 +4,8 @@ import type { ScriptedAnswer } from "../../src/engine/scripted-model.ts";
 import type { EffectorCall } from "../../src/engine/tools.ts";
 import { slotTools } from "../../tests/fixtures/slots.ts";
 import type { Context } from "../support/context.ts";
-import { modelOf, script } from "./tool.steps.ts";
+import { turnsOf } from "./adapter.steps.ts";
+import { modelOf, scriptActivations } from "./tool.steps.ts";
 
 /** An activation whose model calls a tool with a slot after a delay, then ends its next turn without a tool call. */
 function callThenEnd(tool: string, slot: number, delayMs: number): ScriptedAnswer[] {
@@ -23,8 +24,7 @@ function namedSlots(context: Context): Set<number> {
 Given(
   "agent {string} makes {int} activation(s), whose model calls {string} with slot {int} after {int} milliseconds, then ends",
   function (this: Context, agent: string, activations: number, tool: string, slot: number, delayMs: number) {
-    this.activations.set(agent, activations);
-    script(this, agent, Array.from({ length: activations }, () => callThenEnd(tool, slot, delayMs)).flat());
+    scriptActivations(this, agent, activations, () => callThenEnd(tool, slot, delayMs));
   },
 );
 
@@ -34,8 +34,7 @@ Given(
     const named = namedSlots(this);
     const free = this.world.state.flatMap((holder, index) => (holder === null && !named.has(index + 1) ? [index + 1] : []));
     assert.ok(free.length >= activations, `the test world has ${free.length} free slots for ${activations} activations`);
-    this.activations.set(agent, activations);
-    script(this, agent, free.slice(0, activations).flatMap((slot) => callThenEnd(tool, slot, delayMs)));
+    scriptActivations(this, agent, activations, (index) => callThenEnd(tool, free[index], delayMs));
   },
 );
 
@@ -67,21 +66,13 @@ Then(
 Given(
   "agent {string} makes {int} activation(s), whose turns are: a call to {string}; a call to {string}; the text {string} with no tool call",
   function (this: Context, agent: string, activations: number, first: string, second: string, text: string) {
-    this.activations.set(agent, activations);
-    const activation: ScriptedAnswer[] = [
+    scriptActivations(this, agent, activations, () => [
       { toolCalls: [{ name: first, arguments: {} }], delayMs: 0 },
       { toolCalls: [{ name: second, arguments: {} }], delayMs: 0 },
       { text, delayMs: 0 },
-    ];
-    script(this, agent, Array.from({ length: activations }, () => activation).flat());
+    ]);
   },
 );
-
-/** The model turns of an agent the run gave, in the order they ended. */
-function turnsOf(context: Context, agent: string) {
-  assert.ok(context.turns !== undefined, "the run gave no model turns");
-  return context.turns.filter((turn) => turn.agent === agent);
-}
 
 Then("agent {string}'s activation ended after its third model turn", function (this: Context, agent: string) {
   // The script holds three answers: a fourth turn would have been recorded as script_exhausted.
@@ -93,8 +84,7 @@ Then("agent {string}'s activation ended after its third model turn", function (t
 Given(
   "agent {string} makes {int} activations, each ending its first turn without a tool call",
   function (this: Context, agent: string, activations: number) {
-    this.activations.set(agent, activations);
-    script(this, agent, Array.from({ length: activations }, () => ({ text: "Nothing to do.", delayMs: 0 })));
+    scriptActivations(this, agent, activations, () => [{ text: "Nothing to do.", delayMs: 0 }]);
   },
 );
 

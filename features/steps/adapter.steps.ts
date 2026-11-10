@@ -156,7 +156,7 @@ Given(
 );
 
 /** The model turns of an agent the run gave, in the order they ended. */
-function turnsOf(context: Context, agent: string) {
+export function turnsOf(context: Context, agent: string) {
   assert.ok(context.turns !== undefined, "the run gave no model turns");
   return context.turns.filter((turn) => turn.agent === agent);
 }
