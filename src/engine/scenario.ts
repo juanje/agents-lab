@@ -34,10 +34,24 @@ export interface LoadedScenario<State> {
   world: World<State>;
 }
 
+/** Each part a scenario must provide, and how an error names it. */
+const requiredParts = [
+  ["initialState", "initial state"],
+  ["perception", "perception"],
+  ["actions", "actions"],
+  ["metrics", "metrics"],
+  ["systemPrompt", "system prompt"],
+  ["baseConfiguration", "base configuration"],
+] as const satisfies readonly (readonly [keyof Scenario<unknown>, string])[];
+
 /**
- * Loads a scenario. Scenarios reach the engine as modules, not through the type checker, so any part may be missing.
+ * Loads a scenario under a condition, or under its base configuration alone. Scenarios reach the engine as modules,
+ * not through the type checker, so any part may be missing; a scenario that lacks one is refused before anything runs.
  */
 export function loadScenario<State>(parts: Partial<Scenario<State>>, condition?: Condition): LoadedScenario<State> {
+  for (const [property, part] of requiredParts) {
+    if (parts[property] === undefined) throw new Error(`Scenario "${parts.name}" lacks its ${part}`);
+  }
   const scenario = parts as Scenario<State>;
   const configuration = { ...parse(scenario.baseConfiguration), ...parse(condition?.change ?? "") };
   return { scenario, configuration, world: new World(scenario.initialState(configuration)) };
