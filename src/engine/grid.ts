@@ -34,6 +34,14 @@ export function neighbours(grid: Grid, position: Position): Position[] {
     .map(({ x, y }) => ({ x, y }));
 }
 
+/**
+ * The distance between two cells, counted in steps between neighbouring cells: a diagonal step counts as one, as a
+ * diagonal cell is a neighbour (FR-SPACE-02).
+ */
+export function distance(from: Position, to: Position): number {
+  return Math.max(Math.abs(to.x - from.x), Math.abs(to.y - from.y));
+}
+
 /** A cell of a window, marked when it lies outside the grid. */
 export interface WindowCell extends Position {
   outside: boolean;
