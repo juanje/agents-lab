@@ -22,6 +22,16 @@ export interface DeclaredAction<State, Args extends ActionArgs> extends Action<S
 /** The single result of a decision: "success", an engine failure, or a failure reason the scenario declares. */
 export type Outcome = string;
 
+/**
+ * The line of an answer that holds its action, by the one reading rule every scenario shares: the last non-empty
+ * line, without spaces at its start and end, and with repeated spaces counted as one. The rule ignores only layout;
+ * anything else in the answer is left for the action's arguments to accept or refuse.
+ */
+function actionLine(answer: string): string {
+  const lastLine = answer.split("\n").filter((line) => line.length > 0).at(-1) ?? "";
+  return lastLine.replace(/^ +| +$/g, "").replace(/ +/g, " ");
+}
+
 /** Reads an agent's answer against the declared actions and applies the action it names through the world's arbiter. */
 export function act<State>(
   world: World<State>,
@@ -29,8 +39,8 @@ export function act<State>(
   agent: string,
   answer: string,
 ): Outcome {
-  const [name, ...texts] = answer.split(" ");
-  const action = actions.find((declared) => declared.name === name);
+  const [name, ...texts] = actionLine(answer).split(" ");
+  const action = actions.find((declared) => declared.name.toLowerCase() === name.toLowerCase());
   if (action === undefined) return "unparsed";
   // A malformed answer is counted, never repaired: extra or missing arguments are not dropped or filled in.
   if (texts.length !== action.arguments.length) return "invalid_arguments";
