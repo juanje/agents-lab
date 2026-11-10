@@ -32,3 +32,13 @@ export function neighbours(grid: Grid, { x, y }: Position): Position[] {
   }
   return around;
 }
+
+/** A cell of a window, marked when it lies outside the grid. */
+export interface WindowCell extends Position {
+  outside: boolean;
+}
+
+/** Stub: an empty window, so the steps can fail on their assertions first. */
+export function window(_grid: Grid, _position: Position, _radius: number): WindowCell[] {
+  return [];
+}
