@@ -405,4 +405,15 @@ describe("run", () => {
       content: [{ type: "text", text: 'invalid_arguments: "take" takes no argument "x"' }],
     });
   });
+  it("rejects an argument a sensor does not declare, as it does for an effector", async () => {
+    const model = new ScriptedModel([
+      { toolCalls: [{ name: "look", arguments: { slot: 1 } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+
+    const { toolCalls } = await run(new World(emptySlots(3)), slotTools, rhythmOnly(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+
+    expect(toolCalls).toEqual([{ agent: "a", tool: "look", arguments: { slot: 1 }, outcome: "invalid_arguments" }]);
+    expect(model.received[1]?.at(-1)).toMatchObject({ role: "toolResult", isError: true });
+  });
 });
