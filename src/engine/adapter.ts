@@ -114,7 +114,8 @@ export async function openSession<State>(
  * Records each of the agent's tool calls with the arguments its model made, which Pi passes on before it coerces them,
  * and its outcome. Pi answers a call to a tool the session does not offer with an error, and runs an offered tool only
  * once its arguments pass the tool's schema, so a call to an offered tool that did not run had arguments the tool does
- * not take.
+ * not take. A call that ran gives its own outcome, invalid_arguments included when the engine rejected an argument the
+ * tool does not declare.
  */
 function recordToolCalls(
   session: AgentSession,
@@ -248,7 +249,8 @@ function definition<State>(world: World<State>, tool: Tool<State>, agent: string
     description: tool.description,
     parameters: tool.parameters as ToolDefinition["parameters"],
     execute: async (id, args: Record<string, unknown>) => {
-      const { outcome, text } = tool.kind === "sensor" ? sense(world, tool, agent) : effect(world, tool, agent, args);
+      const { outcome, text } =
+        undeclared(tool, args) ?? (tool.kind === "sensor" ? sense(world, tool, agent) : effect(world, tool, agent, args));
       executed.set(id, outcome);
       // A failure is marked as one: an agent told that a failure succeeded would act on a world it misreads.
       return { content: [{ type: "text", text }], details: undefined, isError: outcome !== "success" };
@@ -260,6 +262,19 @@ function definition<State>(world: World<State>, tool: Tool<State>, agent: string
 interface CallResult {
   outcome: string;
   text: string;
+}
+
+/**
+ * Rejects a call with an argument the tool does not declare. Pi lets through whatever the tool's schema allows, and a
+ * schema allows any argument unless it says otherwise; the engine checks here, so the schema the agent sees stays the
+ * scenario's (FR-TOOL-02).
+ */
+function undeclared<State>(tool: Tool<State>, args: Record<string, unknown>): CallResult | undefined {
+  const declared = Object.keys((tool.parameters as { properties?: object }).properties ?? {});
+  const others = Object.keys(args).filter((name) => !declared.includes(name));
+  if (others.length === 0) return undefined;
+  const names = others.map((name) => `"${name}"`).join(", ");
+  return { outcome: "invalid_arguments", text: `invalid_arguments: "${tool.name}" takes no argument ${names}` };
 }
 
 /** Reads the world for a sensor's call, which always succeeds. */
