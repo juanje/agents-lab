@@ -9,10 +9,14 @@ export interface Agent {
   decisions: number;
 }
 
-/** One decision of an agent: the model's raw answer and its latency, when the model gave one, and the outcome. */
+/**
+ * One decision of an agent: the model's raw answer and its latency, when the model gave one, when the action the
+ * answer names went to the arbiter (by performance.now()), and the outcome.
+ */
 export interface Decision {
   answer?: string;
   latencyMs?: number;
+  actedAtMs?: number;
   outcome: Outcome;
 }
 
@@ -46,5 +50,6 @@ async function decide<State>(
   const message = await agent.model.models.complete(agent.model.model, { messages: [] });
   const latencyMs = performance.now() - start;
   const answer = message.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("");
-  return { answer, latencyMs, outcome: act(world, actions, agent.name, answer) };
+  const actedAtMs = performance.now();
+  return { answer, latencyMs, actedAtMs, outcome: act(world, actions, agent.name, answer) };
 }
