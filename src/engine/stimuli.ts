@@ -1,3 +1,6 @@
+/** The channel whose stimulus wakes each agent: every scenario declares it (FR-SCENARIO-01). */
+export const RHYTHM_CHANNEL = "rhythm";
+
 /** A declared path by which stimuli reach agents: its name, the source it names, and what it delivers. */
 export interface Channel {
   name: string;
@@ -36,7 +39,7 @@ export class Stimuli {
 
   /** What an agent receives when its rhythm wakes it: the rhythm's stimulus, then the stimuli waiting for it. */
   wake(agent: string): Stimulus[] {
-    return [this.#stimulusOf("rhythm"), ...this.take(agent)];
+    return [this.#stimulusOf(RHYTHM_CHANNEL), ...this.take(agent)];
   }
 
   #stimulusOf(name: string): Stimulus {

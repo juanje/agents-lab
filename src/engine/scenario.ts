@@ -1,6 +1,6 @@
 import { type TomlTable, type TomlValue, parse } from "smol-toml";
 import { Random } from "./random.ts";
-import type { Channel } from "./stimuli.ts";
+import { type Channel, RHYTHM_CHANNEL } from "./stimuli.ts";
 import type { Tool } from "./tools.ts";
 import { World } from "./world.ts";
 
@@ -63,8 +63,8 @@ export function loadScenario<State>(
   }
   const scenario = parts as Scenario<State>;
   // Each agent wakes by its rhythm's stimulus: without that channel the run would fail at the first wake.
-  if (!scenario.channels.some((channel) => channel.name === "rhythm")) {
-    throw new Error(`Scenario "${scenario.name}" declares no stimulus channel named "rhythm", which wakes each agent`);
+  if (!scenario.channels.some((channel) => channel.name === RHYTHM_CHANNEL)) {
+    throw new Error(`Scenario "${scenario.name}" declares no stimulus channel named "${RHYTHM_CHANNEL}", which wakes each agent`);
   }
   // A text part that holds nothing gives the agents nothing, so it counts as missing.
   if (scenario.systemPrompt.trim() === "") throw lacks("system prompt");
