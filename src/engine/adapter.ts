@@ -14,9 +14,9 @@ import { type Api, type AssistantMessage, type Model, type Provider, getCurrentS
 import { waitAtLeast } from "./clock.ts";
 import type { ParallelismLimit } from "./parallelism.ts";
 import { SCRIPT_EXHAUSTED_MESSAGE } from "./scripted-model.ts";
-import type { Sensings } from "./sensings.ts";
+import type { Sensing, Sensings } from "./sensings.ts";
 import type { Stimuli, Stimulus } from "./stimuli.ts";
-import type { Effector, Sensor, TargetAsSensed, Tool } from "./tools.ts";
+import type { Effector, EffectorCall, Sensor, TargetAsSensed, Tool } from "./tools.ts";
 import type { World } from "./world.ts";
 
 /**
@@ -290,10 +290,11 @@ function definition<State>(
     parameters: tool.parameters as ToolDefinition["parameters"],
     execute: async (id, args: Record<string, unknown>) => {
       const startedAtMs = performance.now();
-      const { outcome, text } =
-        undeclared(tool, args) ?? (tool.kind === "sensor" ? await sense(world, tool, agent) : await effect(world, tool, agent, args));
+      const { outcome, text, targetAsSensed } =
+        undeclared(tool, args) ??
+        (tool.kind === "sensor" ? await sense(world, tool, agent) : await effect(world, tool, { agent, arguments: args }, sensings.last(agent)));
       const endedAtMs = performance.now();
-      executed.set(id, { outcome, startedAtMs, endedAtMs });
+      executed.set(id, { outcome, startedAtMs, endedAtMs, ...(targetAsSensed === undefined ? {} : { targetAsSensed }) });
       if (tool.kind === "sensor" && outcome === "success") sensings.record(agent, { tool: tool.name, result: text, atMs: endedAtMs });
       // A failure is marked as one: an agent told that a failure succeeded would act on a world it misreads.
       return { content: [{ type: "text", text }], details: undefined, isError: outcome !== "success" };
@@ -301,13 +302,14 @@ function definition<State>(
   };
 }
 
-/** A call the tool ran: its outcome, and when it started and ended. */
-type Executed = Pick<ToolCall, "outcome" | "startedAtMs" | "endedAtMs">;
+/** A call the tool ran: its outcome, when it started and ended, and for an effector, its target as sensed. */
+type Executed = Pick<ToolCall, "outcome" | "startedAtMs" | "endedAtMs" | "targetAsSensed">;
 
-/** What a call gives: its outcome, and the text the agent receives. */
+/** What a call gives: its outcome, the text the agent receives, and for an effector's call, its target as sensed. */
 interface CallResult {
   outcome: string;
   text: string;
+  targetAsSensed?: TargetAsSensed;
 }
 
 /**
@@ -331,11 +333,13 @@ async function sense<State>(world: World<State>, sensor: Sensor<State>, agent: s
 
 /**
  * Applies an effector's call through the arbiter once its duration has passed, against the world as it is then
- * (FR-TOOL-04); the agent receives its outcome: "success" or the failure's reason.
+ * (FR-TOOL-04); the agent receives its outcome: "success" or the failure's reason. What the agent last sensed of the
+ * call's target, before the call, is read beside it and never reaches the arbiter (NFR-11).
  */
-async function effect<State>(world: World<State>, effector: Effector<State>, agent: string, args: Record<string, unknown>): Promise<CallResult> {
+async function effect<State>(world: World<State>, effector: Effector<State>, call: EffectorCall, sensing: Sensing | undefined): Promise<CallResult> {
+  const targetAsSensed = sensing === undefined ? "not_sensed" : effector.readTarget(sensing, call);
   await waitAtLeast(effector.durationMs);
-  const result = world.apply(effector.action, { agent, arguments: args });
+  const result = world.apply(effector.action, call);
   const outcome = result.applied ? "success" : result.reason;
-  return { outcome, text: outcome };
+  return { outcome, text: outcome, targetAsSensed };
 }

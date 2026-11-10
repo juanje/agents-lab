@@ -374,7 +374,7 @@ describe("run", () => {
 
     const { toolCalls } = await run(loaded, [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
 
-    expect(toolCalls).toEqual([{ agent: "a", tool: "take", arguments: { slot: "2" }, outcome: "success", ...timed }]);
+    expect(toolCalls).toEqual([{ agent: "a", tool: "take", arguments: { slot: "2" }, outcome: "success", targetAsSensed: "not_sensed", ...timed }]);
     expect(world.state).toEqual([null, "a", null]);
   });
   it("records a call to a tool the session does not offer as unknown_tool, applies nothing, and goes on", async () => {
@@ -419,7 +419,7 @@ describe("run", () => {
 
     const { toolCalls } = await run(loaded, [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
 
-    expect(toolCalls).toEqual([{ agent: "a", tool: "take", arguments: { slot: 1 }, outcome: "slot_taken", ...timed }]);
+    expect(toolCalls).toEqual([{ agent: "a", tool: "take", arguments: { slot: 1 }, outcome: "slot_taken", targetAsSensed: "not_sensed", ...timed }]);
     expect(model.received[1]?.at(-1)).toMatchObject({ role: "toolResult", isError: true, content: [{ type: "text", text: "slot_taken" }] });
   });
 
