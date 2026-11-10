@@ -26,10 +26,11 @@ export class ScriptedModel {
   /** The Pi session each turn came from, in order; undefined for a call made outside a session. */
   readonly sessions: (string | undefined)[] = [];
 
-  constructor(script: readonly ScriptedAnswer[]) {
+  /** Gives the script's answers as the model `id`, or as the faux provider's default model when no id is given. */
+  constructor(script: readonly ScriptedAnswer[], id?: string) {
     // Pi's model runtime keeps one provider per id: a shared id would hand one agent's turns to another's script.
     made += 1;
-    const faux = fauxProvider({ provider: `scripted-${made}` });
+    const faux = fauxProvider({ provider: `scripted-${made}`, ...(id === undefined ? {} : { models: [{ id }] }) });
     // Each answer is a response factory, so its delay starts when the call reaches the provider, as a real model's does.
     faux.setResponses(
       script.map(({ text, toolCalls = [], delayMs }) => async (context, options) => {
