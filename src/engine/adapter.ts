@@ -292,7 +292,9 @@ function definition<State>(
       const startedAtMs = performance.now();
       const { outcome, text, targetAsSensed } =
         undeclared(tool, args) ??
-        (tool.kind === "sensor" ? await sense(world, tool, agent) : await effect(world, tool, { agent, arguments: args }, sensings.last(agent)));
+        (tool.kind === "sensor"
+          ? await sense(world, tool, { agent, arguments: args })
+          : await effect(world, tool, { agent, arguments: args }, sensings.last(agent)));
       const endedAtMs = performance.now();
       executed.set(id, { outcome, startedAtMs, endedAtMs, ...(targetAsSensed === undefined ? {} : { targetAsSensed }) });
       if (tool.kind === "sensor" && outcome === "success") sensings.record(agent, { tool: tool.name, result: text, atMs: endedAtMs });
@@ -326,9 +328,9 @@ function undeclared<State>(tool: Tool<State>, args: Record<string, unknown>): Ca
 }
 
 /** Reads the world for a sensor's call, which always succeeds, once the sensor's duration has passed (FR-TOOL-03). */
-async function sense<State>(world: World<State>, sensor: Sensor<State>, agent: string): Promise<CallResult> {
-  await waitAtLeast(sensor.durationMs);
-  return { outcome: "success", text: sensor.sense(world.state, agent) };
+async function sense<State>(world: World<State>, sensor: Sensor<State>, call: EffectorCall): Promise<CallResult> {
+  await waitAtLeast(sensor.durationMs(world.state, call));
+  return { outcome: "success", text: sensor.sense(world.state, call.agent) };
 }
 
 /**
