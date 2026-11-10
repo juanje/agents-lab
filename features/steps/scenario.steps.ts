@@ -36,6 +36,13 @@ Given("a condition {string} that sets {string} to {int}", function (this: Contex
   this.condition = setAt(name, path, value);
 });
 
+Given(
+  "a condition {string} that sets {string} to the text {string}",
+  function (this: Context, name: string, path: string, text: string) {
+    this.condition = setAt(name, path, text);
+  },
+);
+
 /**
  * Loads the scenario as the engine does before a run: an agent waits on a scripted model, and the run starts only
  * when loading succeeds. A refusal that came after the run would show as a call to that model.
@@ -122,6 +129,17 @@ Then("loading fails with an error that names {string}", function (this: Context,
     assert.fail(`expected the error to name "${part}", got: ${this.loadingError.message}`);
   }
 });
+
+Then(
+  "loading fails with an error that names {string}, {string} and {string}",
+  function (this: Context, first: string, second: string, third: string) {
+    if (this.loadingError === undefined) assert.fail("expected loading to fail, but it loaded");
+    const unnamed = [first, second, third].filter((name) => !this.loadingError?.message.includes(name));
+    if (unnamed.length > 0) {
+      assert.fail(`expected the error to name ${unnamed.map((name) => `"${name}"`).join(", ")}, got: ${this.loadingError.message}`);
+    }
+  },
+);
 
 Then("no model was called", function (this: Context) {
   for (const [agent, model] of this.models) {
