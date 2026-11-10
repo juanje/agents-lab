@@ -9,4 +9,11 @@ describe("Sensings", () => {
     sensings.record("b", { tool: "look", result: "b's", atMs: 30 });
 
     expect(sensings.last("a")).toEqual({ tool: "look", result: "second", atMs: 20 });
+  });
+
+  it("gives nothing for an agent that has sensed nothing", () => {
+    const sensings = new Sensings();
+    sensings.record("b", { tool: "look", result: "b's", atMs: 30 });
+
+    expect(sensings.last("a")).toBeUndefined();
   });});

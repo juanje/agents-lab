@@ -504,4 +504,16 @@ describe("run", () => {
     const { toolCalls, sensings } = await run(slots(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
 
     expect(sensings?.last("a")).toEqual({ tool: "look", result: '["empty","empty","empty"]', atMs: toolCalls[0]?.endedAtMs });
+  });
+
+  it("keeps no sensing of an effector's call, nor of a sensor's call it rejected", async () => {
+    const model = new ScriptedModel([
+      { toolCalls: [{ name: "take", arguments: { slot: 1 } }], delayMs: 0 },
+      { toolCalls: [{ name: "look", arguments: { slot: 1 } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+
+    const { sensings } = await run(slots(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+
+    expect(sensings.last("a")).toBeUndefined();
   });});
