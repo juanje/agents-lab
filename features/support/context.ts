@@ -21,6 +21,8 @@ export class Context extends CucumberWorld {
   results!: ActionResult[];
   /** Each agent's scripted model, as the scenario gives it before the run. */
   readonly models = new Map<string, ScriptedModel>();
+  /** How many answers each agent's script holds. */
+  readonly scriptLengths = new Map<string, number>();
   /** How many activations each agent makes, when the scenario gives it; otherwise one. */
   readonly activations = new Map<string, number>();
   /** The model id an agent's scripted model has, when the scenario names one. */

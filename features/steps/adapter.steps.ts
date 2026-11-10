@@ -179,9 +179,9 @@ Then("agent {string}'s activation ended after it", function (this: Context, agen
 });
 
 Then("the run did not stop", function (this: Context) {
-  // Every activation of every agent made its model turn.
+  // Every agent's model was asked for every answer its script holds: a run that stopped would have left some unasked.
   for (const [agent, model] of this.models) {
-    assert.equal(model.received.length, this.activations.get(agent) ?? 1, `agent "${agent}" did not make all its activations`);
+    assert.equal(model.received.length, this.scriptLengths.get(agent), `agent "${agent}"'s model was not asked for all its scripted answers`);
   }
 });
 
