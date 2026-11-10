@@ -55,6 +55,8 @@ describe("loadScenario", () => {
 
   it.each([
     ["initialState", "initial state"],
+    ["tools", "tools"],
+    ["channels", "stimulus channels"],
     ["metrics", "metrics"],
     ["systemPrompt", "system prompt"],
     ["baseConfiguration", "base configuration"],
