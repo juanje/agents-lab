@@ -1,5 +1,7 @@
 import { type TomlTable, type TomlValue, parse } from "smol-toml";
 import { Random } from "./random.ts";
+import type { Channel } from "./stimuli.ts";
+import type { Tool } from "./tools.ts";
 import { World } from "./world.ts";
 
 /** A resolved configuration: the scenario's base configuration with the condition's change over it. */
@@ -10,6 +12,10 @@ export interface Scenario<State> {
   name: string;
   /** Builds the world's initial state from the resolved configuration, drawing any chance from its own sequence. */
   initialState: (configuration: Configuration, random: Random) => State;
+  /** The agents' only interface with the world: its sensors and effectors. */
+  tools: readonly Tool<State>[];
+  /** The declared paths by which stimuli reach agents. */
+  channels: readonly Channel[];
   /** Each metric by its name, computed from the world's state. */
   metrics: Readonly<Record<string, (state: State) => number>>;
   systemPrompt: string;
@@ -34,6 +40,8 @@ export interface LoadedScenario<State> {
 /** Each part a scenario must provide, and how an error names it. */
 const requiredParts = [
   ["initialState", "initial state"],
+  ["tools", "tools"],
+  ["channels", "stimulus channels"],
   ["metrics", "metrics"],
   ["systemPrompt", "system prompt"],
   ["baseConfiguration", "base configuration"],
