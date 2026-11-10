@@ -103,6 +103,19 @@ Given("the test scenario {string} without its {}", function (this: Context, name
   this.scenario = rest;
 });
 
+/** A text part that holds nothing: a system prompt of whitespace only, a base configuration that sets no key. */
+const emptyParts: Readonly<Record<string, Partial<Scenario<Slots>>>> = {
+  "system prompt": { systemPrompt: " \n\t\r\n" },
+  "base configuration": { baseConfiguration: "# no key is set\n\n" },
+};
+
+Given("the test scenario {string} with an empty {}", function (this: Context, name: string, part: string) {
+  assert.equal(slotsScenario.name, name);
+  const empty = emptyParts[part];
+  assert.ok(empty !== undefined, `no text part of a scenario is called "${part}"`);
+  this.scenario = { ...slotsScenario, ...empty };
+});
+
 Then("loading fails with an error that names {string}", function (this: Context, part: string) {
   if (this.loadingError === undefined) assert.fail("expected loading to fail, but it loaded");
   if (!this.loadingError.message.includes(part)) {
