@@ -85,7 +85,7 @@ export async function run<State>(
         try {
           // Each agent's rhythm has its own sequence, from the seed and the agent's name: sharing one would make an
           // agent's intervals depend on when the others' models answer, and deriving by order on which other agents run.
-          await loop(session, agent, stimuli, Random.derive(seed, `rhythm of ${agent.name}`));
+          await loop(session, agent, stimuli, Random.derive(seed, `rhythm of ${agent.name}`), timeLimit.signal);
         } finally {
           // Copied: disposing the session may clear what it holds.
           messages.set(agent.name, [...session.messages]);
@@ -102,11 +102,13 @@ export async function run<State>(
 
 /**
  * One agent's loop: it repeats its cycle of waiting an interval from its rhythm, then an activation, which its rhythm's
- * stimulus starts and in which the agent's session runs model turns and tool calls until a turn makes no tool call.
+ * stimulus starts and in which the agent's session runs model turns and tool calls until a turn makes no tool call. It
+ * ends when the agent has used its activation budget or the run's time limit passes, even while it rests (FR-CLOCK-02).
  */
-async function loop(session: AgentSession, agent: Agent, stimuli: Stimuli, random: Random): Promise<void> {
+async function loop(session: AgentSession, agent: Agent, stimuli: Stimuli, random: Random, timeLimit: AbortSignal): Promise<void> {
   for (let count = 0; count < agent.activations; count += 1) {
-    await waitAtLeast(agent.rhythm(random));
+    await waitAtLeast(agent.rhythm(random), timeLimit);
+    if (timeLimit.aborted) return;
     await wake(session, stimuli.wake(agent.name));
   }
 }
