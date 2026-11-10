@@ -222,7 +222,7 @@ When a run stops on an error, its log ends with a line that says the run stopped
 #### FR-CLOCK-02: A run ends at its budget or its time limit
 A run ends when every agent has used its activation budget or when its time limit passes, whichever comes first. The time limit counts from the moment the agents can start, once every session is open. When it passes, everything stops:
 - a tool call still running is recorded with the outcome `cut_off` and applies nothing;
-- a model turn still running is aborted and recorded with the outcome `cut_off`;
+- a model turn still running, or still waiting for a model slot, is aborted and recorded with the outcome `cut_off`; a turn still waiting never calls the model;
 - no agent starts another model turn or another activation.
 *Why:* a run must end in a known state, and an effect applied after the end would change a world that was already measured.
 
