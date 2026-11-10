@@ -91,7 +91,23 @@ function applyChange(configuration: TomlTable, change: TomlTable, path: readonly
       );
     }
     const current = configuration[key];
+    if (kindOf(value) !== kindOf(current)) {
+      throw new Error(
+        `Condition "${applying.condition}" gives ${keyPath.join(".")} ${kindOf(value)}, where the base configuration of scenario "${applying.scenario}" has ${kindOf(current)}`,
+      );
+    }
     changed[key] = isTable(value) && isTable(current) ? applyChange(current, value, keyPath, applying) : value;
   }
   return changed;
+}
+
+/**
+ * The kind of a TOML value, with its article, as errors name it. Integers and fractions are one kind, numbers, as
+ * smol-toml reads both as JavaScript numbers.
+ */
+function kindOf(value: TomlValue): string {
+  if (Array.isArray(value)) return "an array";
+  if (value instanceof Date) return "a date and time";
+  if (isTable(value)) return "a table";
+  return `a ${typeof value}`;
 }
