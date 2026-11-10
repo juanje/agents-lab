@@ -338,7 +338,7 @@ async function sense<State>(world: World<State>, sensor: Sensor<State>, agent: s
  */
 async function effect<State>(world: World<State>, effector: Effector<State>, call: EffectorCall, sensing: Sensing | undefined): Promise<CallResult> {
   const targetAsSensed = sensing === undefined ? "not_sensed" : effector.readTarget(sensing, call);
-  await waitAtLeast(effector.durationMs);
+  await waitAtLeast(effector.durationMs(world.state, call));
   const result = world.apply(effector.action, call);
   const outcome = result.applied ? "success" : result.reason;
   return { outcome, text: outcome, targetAsSensed };
