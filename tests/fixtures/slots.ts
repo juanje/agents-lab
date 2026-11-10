@@ -46,13 +46,22 @@ export const declaredActions: readonly DeclaredAction<Slots, ActionArgs>[] = [
   },
 ];
 
-/** The test world as a scenario: its base configuration gives the number of slots, all empty at the start. */
+/** Who holds the slots a configuration has held at the start. */
+export const START_HOLDER = "start";
+
+/**
+ * The test world as a scenario. Its base configuration's [slots] table gives the number of slots and how many of them,
+ * from slot 1, are held at the start.
+ */
 export const slotsScenario: Scenario<Slots> = {
   name: "slots",
-  initialState: (configuration) => emptySlots(configuration.slots as number),
+  initialState: (configuration) => {
+    const { count, held } = configuration.slots as { count: number; held: number };
+    return Array.from({ length: count }, (_, index) => (index < held ? START_HOLDER : null));
+  },
   perception: (slots) => slots.map((holder, index) => `slot ${index + 1}: ${holder ?? "empty"}`).join("\n"),
   actions: declaredActions,
   metrics: { held: (slots) => slots.filter((holder) => holder !== null).length },
   systemPrompt: "You can take an empty slot or wait.",
-  baseConfiguration: "slots = 3\n",
+  baseConfiguration: "[slots]\ncount = 3\nheld = 0\n",
 };

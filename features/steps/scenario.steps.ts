@@ -8,19 +8,21 @@ import { type Slots, slotsScenario } from "../../tests/fixtures/slots.ts";
 import type { Context } from "../support/context.ts";
 
 Given(
-  "the test scenario {string}, whose base configuration has {int} slots",
-  function (this: Context, name: string, slots: number) {
+  "the test scenario {string}, whose base configuration has {int} slots, none held",
+  function (this: Context, name: string, count: number) {
     // The scenario lives in the fixture; these checks keep the scenario's words and the fixture from drifting apart.
     assert.equal(slotsScenario.name, name);
-    assert.equal(parse(slotsScenario.baseConfiguration).slots, slots);
+    const slots = parse(slotsScenario.baseConfiguration).slots as { count: number; held: number };
+    assert.equal(slots.count, count);
+    assert.equal(slots.held, 0);
     this.scenario = slotsScenario;
   },
 );
 
 Given(
   "a condition {string} that sets the number of slots to {int}",
-  function (this: Context, name: string, slots: number) {
-    this.condition = { name, change: `slots = ${slots}\n` };
+  function (this: Context, name: string, count: number) {
+    this.condition = { name, change: `[slots]\ncount = ${count}\n` };
   },
 );
 
