@@ -19,20 +19,22 @@ export interface Agent {
  */
 export async function run<State>(
   _world: World<State>,
-  _tools: readonly Tool<State>[],
+  tools: readonly Tool<State>[],
   agents: readonly Agent[],
   seed: number,
 ): Promise<void> {
   // Each agent's rhythm has its own sequence, from the seed and the agent's name: sharing one would make an agent's
   // intervals depend on when the others' models answer, and deriving by order on which other agents run.
-  await Promise.all(agents.map((agent) => loop(agent, Random.derive(seed, `rhythm of ${agent.name}`))));
+  await Promise.all(agents.map((agent) => loop(tools, agent, Random.derive(seed, `rhythm of ${agent.name}`))));
 }
 
 /** One agent's loop: it repeats its cycle of waiting an interval from its rhythm, then waking. */
-async function loop(agent: Agent, random: Random): Promise<void> {
+async function loop<State>(tools: readonly Tool<State>[], agent: Agent, random: Random): Promise<void> {
+  // The agent sees what each tool is for and what it takes; how the tool works stays in the world.
+  const offered = tools.map(({ name, description, parameters }) => ({ name, description, parameters }));
   for (let count = 0; count < agent.activations; count += 1) {
     await waitAtLeast(agent.rhythm(random));
     // Text the model writes acts on nothing (FR-TOOL-02).
-    await agent.model.models.complete(agent.model.model, { messages: [] });
+    await agent.model.models.complete(agent.model.model, { messages: [], tools: offered });
   }
 }
