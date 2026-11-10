@@ -35,4 +35,4 @@ Feature: Each agent has its own activations
     And the run's seed is 42
     When the run ends
     Then each agent's first activation began at least the first interval of its rhythm after the run started
-    And agent "a"'s and agent "b"'s first activations began at different moments
+    And agent "a"'s and agent "b"'s first activations began at least 10 milliseconds apart
