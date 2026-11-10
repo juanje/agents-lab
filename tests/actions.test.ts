@@ -55,6 +55,10 @@ describe("act reads an answer by one rule", () => {
     ["from its last non-empty line", "Slot 2 looks free.\n\ntake 2\n\n"],
     ["dropping spaces at the start and end of that line, and counting repeated spaces as one", "  take   2  "],
     ["matching the action's name without regard to case", "TaKe 2"],
+    ["from the last line that holds anything besides whitespace", "take 2\n \t \n"],
+    ["from lines that end in a Windows line break", "Slot 2 looks free.\r\ntake 2\r\n"],
+    ["dropping any whitespace at the start and end of that line", "\t take 2 \t"],
+    ["counting any run of whitespace inside that line as one space", "take \t 2"],
   ])("reads the action %s", (_, answer) => {
     const world = new World(emptySlots(3));
 
