@@ -22,3 +22,12 @@ Feature: A scripted model answers in tests
     When the run ends
     Then agent "a"'s activation ended after its "look" call
     And the run recorded "script_exhausted" for agent "a"
+
+  Scenario: A scripted turn that runs past the timeout frees its model slot
+    Given the parallelism limit is 1
+    And the timeout for a model turn is 200 milliseconds
+    And agent "a" runs on a scripted model whose first turn is a call to "look", after 2000 milliseconds
+    And agent "b" runs on a scripted model whose first turn is the text "Done." with no tool call, and wakes 50 milliseconds after agent "a"
+    When the run ends
+    Then agent "a"'s first model turn has the outcome "timeout"
+    And agent "b"'s model turn started within 300 milliseconds of agent "a"'s
