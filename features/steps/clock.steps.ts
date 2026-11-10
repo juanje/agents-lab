@@ -4,7 +4,7 @@ import type { ScriptedAnswer } from "../../src/engine/scripted-model.ts";
 import type { EffectorCall } from "../../src/engine/tools.ts";
 import { slotTools } from "../../tests/fixtures/slots.ts";
 import type { Context } from "../support/context.ts";
-import { script } from "./tool.steps.ts";
+import { modelOf, script } from "./tool.steps.ts";
 
 /** An activation whose model calls a tool with a slot after a delay, then ends its next turn without a tool call. */
 function callThenEnd(tool: string, slot: number, delayMs: number): ScriptedAnswer[] {
@@ -119,5 +119,20 @@ Then(
       const gap = wakes[index] - rests[index];
       assert.ok(gap >= waitMs, `activation ${index + 1} of agent "${agent}" began ${gap} ms after activation ${index} ended`);
     }
+  },
+);
+
+Then(
+  "the model turn of agent {string}'s second activation received the {string} result of its first activation",
+  function (this: Context, agent: string, tool: string) {
+    // The first activation is two turns, a call and its end; the second activation's model turn is the third.
+    const [, end, second] = modelOf(this, agent).received;
+    assert.ok(second !== undefined, `agent "${agent}"'s second activation made no model turn`);
+    const result = end?.find((message) => message.role === "toolResult" && message.toolName === tool);
+    assert.ok(result !== undefined, `agent "${agent}"'s first activation got no "${tool}" result`);
+    assert.ok(
+      second.some((message) => JSON.stringify(message) === JSON.stringify(result)),
+      `the model turn of agent "${agent}"'s second activation did not receive the "${tool}" result of its first`,
+    );
   },
 );
