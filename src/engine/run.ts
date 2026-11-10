@@ -39,7 +39,7 @@ export async function run<State>(
   const turns: ModelTurn[] = [];
   await Promise.all(
     agents.map(async (agent) => {
-      const session = await openSession(world, tools, agent, runtime, settings, parallelism, turns);
+      const session = await openSession(world, tools, agent, runtime, settings, parallelism, turns, stimuli);
       try {
         // Each agent's rhythm has its own sequence, from the seed and the agent's name: sharing one would make an
         // agent's intervals depend on when the others' models answer, and deriving by order on which other agents run.

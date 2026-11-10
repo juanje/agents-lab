@@ -12,7 +12,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { type Api, type AssistantMessage, type Model, type Provider, getCurrentSystemMessage } from "@earendil-works/pi-ai";
 import type { ParallelismLimit } from "./parallelism.ts";
-import type { Stimulus } from "./stimuli.ts";
+import type { Stimuli, Stimulus } from "./stimuli.ts";
 import type { Effector, Tool } from "./tools.ts";
 import type { World } from "./world.ts";
 
@@ -73,6 +73,7 @@ export async function openSession<State>(
   settings: SessionSettings,
   parallelism: ParallelismLimit,
   turns: ModelTurn[],
+  stimuli: Stimuli,
 ): Promise<AgentSession> {
   const { session } = await createAgentSession({
     // Pi falls back to the person's directory (~/.pi/agent/) wherever a path is left out (NFR-08).
@@ -90,7 +91,23 @@ export async function openSession<State>(
   });
   forceSystemPrompt(session, settings.systemPrompt);
   runTurns(session, agent.name, settings.modelTurnTimeoutMs, parallelism, turns);
+  deliverBetweenTurns(session, agent.name, stimuli);
   return session;
+}
+
+/**
+ * Delivers the stimuli that arrived while the agent worked at its next model turn. Pi prepares each model turn after the
+ * first of an activation only when the activation goes on, so a stimulus never extends one: one that arrives during the
+ * activation's last turn waits for the agent to wake. Pi's own steering would not, since a steered message after a turn
+ * without tool calls makes another turn (pi-agent-core 1.5.0, agent-loop.js).
+ */
+function deliverBetweenTurns(session: AgentSession, agent: string, stimuli: Stimuli): void {
+  const prepare = session.agent.prepareNextTurnWithContext;
+  session.agent.prepareNextTurnWithContext = async (turn, signal) => {
+    const prepared = await prepare?.(turn, signal);
+    const arrived = stimuli.take(agent).map((stimulus) => ({ role: "custom" as const, ...message(stimulus), timestamp: Date.now() }));
+    return { ...prepared, messages: [...(prepared?.messages ?? []), ...arrived] };
+  };
 }
 
 /**
