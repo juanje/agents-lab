@@ -120,8 +120,19 @@ A scenario provides:
 - its system prompt;
 - a base configuration in TOML.
 
-A condition is a TOML change over that base configuration. The engine refuses to run a scenario that lacks one of these parts, with an error that names the missing part.
-*Why:* experiments live outside the engine, and a scenario that loads with a missing part fails only after model calls have been spent.
+A system prompt that holds nothing besides whitespace, or a base configuration that sets no key, counts as missing.
+
+A condition is a TOML change over that base configuration:
+- a value the condition gives replaces the base configuration's value under the same key;
+- a table the condition gives is applied the same way inside the base configuration's table, so the keys it does not name keep their base values;
+- an array is a value, and is replaced whole.
+
+The engine refuses, before any model call:
+- a scenario that lacks one of these parts, with an error that names the missing part;
+- a condition that sets a key the base configuration does not have, with an error that names the key by its full path (for example `slots.cuont`);
+- a condition that gives a key a value of another kind than the base configuration's (string, number, boolean, date and time, array or table), with an error that names the key and both kinds.
+
+*Why:* experiments live outside the engine, and a scenario that loads with a missing part fails only after model calls have been spent. A condition with a misspelled key, or a value of the wrong kind, would otherwise run as the baseline under another name, and the difference between conditions would be attributed to a change that never happened (NFR-05).
 
 #### FR-SEED-01: One seed gives the same start
 Each replica gets one seeded random source. The scenario's initial state and every agent's rhythm draw from it, so the same seed gives the same initial world and the same sequence of waiting intervals.
