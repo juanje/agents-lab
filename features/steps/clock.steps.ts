@@ -226,3 +226,14 @@ Then(
     );
   },
 );
+
+Given("the sensor {string} takes {int} milliseconds", function (this: Context, name: string, durationMs: number) {
+  const sensor = fixtureTool("sensor", name);
+  assert.ok(sensor.kind === "sensor");
+  this.tools = this.tools.map((tool) => (tool.name === name ? { ...sensor, durationMs: () => durationMs } : tool));
+});
+
+Then("the engine has no sensing for agent {string}", function (this: Context, agent: string) {
+  assert.ok(this.sensings !== undefined, "the run gave no sensings");
+  assert.equal(this.sensings.last(agent), undefined);
+});
