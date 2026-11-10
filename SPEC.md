@@ -339,7 +339,7 @@ Staying is not acting: a resident that does not want to move ends its activation
 
 #### FR-NEIGHBOURHOOD-03: Same-kind shares
 The neighbourhood scenario's metrics are:
-- **shares:** for each resident with at least one neighbour, the share of its eight neighbours that are of its kind;
+- **shares:** for each resident with at least one occupied neighbouring cell, the share of those residents that are of its kind;
 - **segregation:** the mean of those shares;
 - **moves:** the number of applied moves.
 
