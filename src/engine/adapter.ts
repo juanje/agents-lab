@@ -32,6 +32,9 @@ export interface ModelTurn {
   outcome: "success" | "model_error" | "timeout";
   /** The provider's message, for a model error. */
   message?: string;
+  /** When the call to the model started and when its answer ended, by performance.now(). */
+  startedAtMs: number;
+  endedAtMs: number;
 }
 
 /** Opens the Pi session an agent keeps for the whole run (FR-ADAPTER-02). */
@@ -70,13 +73,16 @@ export async function openSession<State>(
 function runTurns(session: AgentSession, agent: string, timeoutMs: number, turns: ModelTurn[]): void {
   const call = session.agent.streamFunction;
   session.agent.streamFunction = async (model, context, options) => {
+    const startedAtMs = performance.now();
     const timeout = new AbortController();
     const timer = setTimeout(() => timeout.abort(), timeoutMs);
     const signal = options?.signal === undefined ? timeout.signal : AbortSignal.any([options.signal, timeout.signal]);
     const answer = await call(model, context, { ...options, signal });
     void answer.result().then((message) => {
+      const endedAtMs = performance.now();
       clearTimeout(timer);
-      turns.push({ agent, ...(timeout.signal.aborted ? { outcome: "timeout" } : outcomeOf(message)) });
+      const outcome = timeout.signal.aborted ? { outcome: "timeout" as const } : outcomeOf(message);
+      turns.push({ agent, ...outcome, startedAtMs, endedAtMs });
     });
     return answer;
   };
