@@ -11,4 +11,14 @@ describe("loadScenario", () => {
     expect(loaded.world.version).toBe(0);
     expect(loaded.scenario.actions).toBe(slotsScenario.actions);
   });
+
+  it("applies the condition's change over the base configuration, keeping what the change does not set", () => {
+    const loaded = loadScenario(
+      { ...slotsScenario, baseConfiguration: "slots = 2\nlabel = 'base'\n" },
+      { name: "four-slots", change: "slots = 4\n" },
+    );
+
+    expect(loaded.configuration).toEqual({ slots: 4, label: "base" });
+    expect(loaded.world.state).toEqual([null, null, null, null]);
+  });
 });
