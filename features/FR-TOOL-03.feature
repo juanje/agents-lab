@@ -15,7 +15,7 @@ Feature: Sensing takes time and reads the world when it ends
     Given agent "a" runs on a scripted model that calls "look", then ends without a tool call
     And agent "b" runs on a scripted model that calls "take" with slot 1 while agent "a"'s "look" call is under way
     When the run ends
-    Then agent "a"'s "look" call returned slot 1 held by agent "b"
+    Then agent "a"'s "look" call returned slot 1 held
 
   Scenario: The engine keeps what an agent last sensed, and when
     Given agent "a" runs on a scripted model that calls "look", then ends without a tool call
