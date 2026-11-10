@@ -114,7 +114,9 @@ function deliverBetweenTurns(session: AgentSession, agent: string, stimuli: Stim
  * Starts an activation with the stimuli the agent wakes to. Each stimulus enters the session as a message of its own,
  * which keeps its channel and source; the model reads its source, then what it says.
  */
-export async function wake(session: AgentSession, [first]: readonly Stimulus[]): Promise<void> {
+export async function wake(session: AgentSession, [first, ...rest]: readonly Stimulus[]): Promise<void> {
+  // Pi puts "nextTurn" messages right after the message that starts the run (AgentSession._prepareRun, 1.5.0).
+  for (const stimulus of rest) await session.sendCustomMessage(message(stimulus), { deliverAs: "nextTurn" });
   await session.sendCustomMessage(message(first), { triggerTurn: true });
 }
 
