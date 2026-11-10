@@ -2,7 +2,7 @@ import type { Message, ToolCall, ToolResultMessage } from "@earendil-works/pi-ai
 import { waitAtLeast } from "./clock.ts";
 import { Random } from "./random.ts";
 import type { ScriptedModel } from "./scripted-model.ts";
-import type { Tool } from "./tools.ts";
+import type { Effector, Tool } from "./tools.ts";
 import type { World } from "./world.ts";
 
 /** An agent in a run: its name, the model it works with, how many activations it has, and its rhythm. */
@@ -55,8 +55,8 @@ async function activate<State>(world: World<State>, tools: readonly Tool<State>[
 /** Uses the tool an agent's call names, and gives what returns to the agent. */
 function use<State>(world: World<State>, tools: readonly Tool<State>[], agent: string, call: ToolCall): ToolResultMessage {
   const tool = tools.find((declared) => declared.name === call.name);
-  if (tool?.kind !== "sensor") throw new Error(`Agent "${agent}" called "${call.name}", which is not a sensor of the scenario`);
-  const text = tool.sense(world.state, agent);
+  if (tool === undefined) throw new Error(`Agent "${agent}" called "${call.name}", which the scenario does not declare`);
+  const text = tool.kind === "sensor" ? tool.sense(world.state, agent) : effect(world, tool, agent, call);
   return {
     role: "toolResult",
     toolCallId: call.id,
@@ -65,4 +65,11 @@ function use<State>(world: World<State>, tools: readonly Tool<State>[], agent: s
     isError: false,
     timestamp: Date.now(),
   };
+}
+
+/** Applies an effector's call through the arbiter, and gives its outcome: "success" or the failure's reason. */
+function effect<State>(world: World<State>, effector: Effector<State>, agent: string, call: ToolCall): string {
+  // The agent comes last, so a call cannot act in another agent's name.
+  const result = world.apply(effector.action, { ...call.arguments, agent });
+  return result.applied ? "success" : result.reason;
 }
