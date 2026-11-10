@@ -1,8 +1,11 @@
+import { homedir } from "node:os";
+import { join } from "node:path";
 import {
   type AgentSession,
   type ModelRuntime,
   type ResourceLoader,
   SessionManager,
+  SettingsManager,
   type ToolDefinition,
   createAgentSession,
   createExtensionRuntime,
@@ -17,6 +20,11 @@ export interface AgentModel {
   provider: Provider;
 }
 
+/** The lab's own Pi directory (D-08). Read when a run starts, so it follows the home directory the run sees. */
+export function labPiDirectory(): string {
+  return join(homedir(), ".agents-lab", "pi");
+}
+
 /** Opens the Pi session an agent keeps for the whole run (FR-ADAPTER-02). */
 export async function openSession<State>(
   world: World<State>,
@@ -25,7 +33,10 @@ export async function openSession<State>(
   runtime: ModelRuntime,
   systemPrompt: string,
 ): Promise<AgentSession> {
+  const directory = labPiDirectory();
   const { session } = await createAgentSession({
+    // Pi falls back to the person's directory (~/.pi/agent/) wherever a path is left out (NFR-08).
+    agentDir: directory,
     modelRuntime: runtime,
     model: agent.model.model,
     // The allowlist leaves out Pi's built-in tools and filters custom tools too, so it names every scenario tool.
@@ -33,6 +44,8 @@ export async function openSession<State>(
     customTools: tools.map((tool) => definition(world, tool, agent.name)),
     resourceLoader: resources(systemPrompt),
     sessionManager: SessionManager.inMemory(),
+    // Neither the person's nor any project's Pi settings reach the session.
+    settingsManager: SettingsManager.inMemory(),
   });
   forceSystemPrompt(session, systemPrompt);
   return session;

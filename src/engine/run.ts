@@ -1,5 +1,6 @@
 import { type AgentSession, ModelRuntime } from "@earendil-works/pi-coding-agent";
-import { type AgentModel, openSession } from "./adapter.ts";
+import { join } from "node:path";
+import { type AgentModel, labPiDirectory, openSession } from "./adapter.ts";
 import { waitAtLeast } from "./clock.ts";
 import { Random } from "./random.ts";
 import type { Tool } from "./tools.ts";
@@ -31,7 +32,13 @@ export async function run<State>(
   seed: number,
   settings: RunSettings,
 ): Promise<void> {
-  const runtime = await ModelRuntime.create();
+  // The lab's own credentials and model definitions, never the person's (NFR-08).
+  const directory = labPiDirectory();
+  const runtime = await ModelRuntime.create({
+    authPath: join(directory, "auth.json"),
+    modelsPath: join(directory, "models.json"),
+    modelsStorePath: join(directory, "models-store.json"),
+  });
   for (const agent of agents) runtime.registerNativeProvider(agent.model.provider);
   // Each agent's rhythm has its own sequence, from the seed and the agent's name: sharing one would make an agent's
   // intervals depend on when the others' models answer, and deriving by order on which other agents run.
