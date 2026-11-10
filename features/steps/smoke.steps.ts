@@ -70,7 +70,8 @@ Then("each agent's activations began with its rhythm stimulus", function (this: 
   const rhythm = this.loaded?.scenario.channels.find((channel) => channel.name === RHYTHM_CHANNEL);
   assert.ok(rhythm !== undefined, "the loaded scenario declares no rhythm channel");
   for (const agent of this.realModels.keys()) {
-    const messages = this.sessionMessages?.get(agent) ?? [];
+    // The session's system message holds its prompt and tools; it comes before any activation.
+    const messages = (this.sessionMessages?.get(agent) ?? []).filter((message) => message.role !== "system");
     // An activation begins with the session's first message, and again after each model turn that called no tool.
     const starts = messages.flatMap((message, index) => (index === 0 || endsActivation(messages[index - 1]) ? [message] : []));
     assert.equal(starts.length, this.activations.get(agent), `agent "${agent}" made another number of activations`);
