@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { Given, Then } from "@cucumber/cucumber";
+import { slotTools } from "../../tests/fixtures/slots.ts";
 import type { Context } from "../support/context.ts";
 import { modelOf, script } from "./tool.steps.ts";
 
@@ -128,7 +129,11 @@ Then(
       const what = `message ${index + 1} of agent "${agent}"'s session`;
       if (message.role === "assistant" || message.role === "toolResult") continue;
       if (message.role === "system") {
-        assert.equal(message.content, this.systemPrompt, `${what} is a system message other than the system prompt`);
+        // Pi keeps the tools it offers on a system message with no text of its own, and sends the system prompt with it.
+        const text = typeof message.content === "string" ? message.content : message.content.map((block) => block.text).join("");
+        assert.ok([this.systemPrompt, ""].includes(text), `${what} is a system message with other text: ${text}`);
+        const tools = (message.toolsAdded ?? []).map((tool) => tool.name);
+        assert.deepEqual(tools.filter((name) => !slotTools.some((tool) => tool.name === name)), [], `${what} adds tools of its own`);
         continue;
       }
       assert.equal(message.role, "custom", `${what} is a ${message.role} message`);

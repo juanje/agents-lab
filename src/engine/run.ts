@@ -43,6 +43,7 @@ export async function run<State>(
   const runtime = await openRuntime(agents.map((agent) => agent.model.provider));
   const parallelism = new ParallelismLimit(settings.parallelismLimit);
   const turns: ModelTurn[] = [];
+  const messages = new Map<string, AgentSession["messages"]>();
   await Promise.all(
     agents.map(async (agent) => {
       const session = await openSession(world, tools, agent, runtime, settings, parallelism, turns, stimuli);
@@ -51,11 +52,13 @@ export async function run<State>(
         // agent's intervals depend on when the others' models answer, and deriving by order on which other agents run.
         await loop(session, agent, stimuli, Random.derive(seed, `rhythm of ${agent.name}`));
       } finally {
+        // Copied: disposing the session may clear what it holds.
+        messages.set(agent.name, [...session.messages]);
         session.dispose();
       }
     }),
   );
-  return { turns, messages: new Map() };
+  return { turns, messages };
 }
 
 /**
