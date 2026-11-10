@@ -68,6 +68,10 @@ export class Context extends CucumberWorld {
   /** The scenario the engine is given, and the condition it is loaded with. */
   scenario!: Partial<Scenario<Slots>>;
   condition?: Condition;
+  /** The error loading the scenario gave, if it was refused. */
+  loadingError?: Error;
+  /** The loaded world's state and version before the run, if the scenario loaded. */
+  start?: { state: Slots; version: number };
   /** The initial state each replica started with, in the order the scenario starts them. */
   replicaStarts!: Slots[];
   /** The range each agent's waiting interval is drawn from, as the scenario gives it. */

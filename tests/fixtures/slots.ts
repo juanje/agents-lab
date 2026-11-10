@@ -1,4 +1,5 @@
 import type { Scenario } from "../../src/engine/scenario.ts";
+import type { Channel } from "../../src/engine/stimuli.ts";
 import type { EffectorCall, Tool } from "../../src/engine/tools.ts";
 import type { Action } from "../../src/engine/world.ts";
 
@@ -52,6 +53,9 @@ export const slotTools: readonly Tool<Slots>[] = [
   },
 ];
 
+/** The test world's rhythm channel, which wakes each agent. */
+export const rhythmChannel: Channel = { name: "rhythm", source: "rhythm", stimulus: "You wake up." };
+
 /** Who holds the slots a configuration has held at the start. */
 export const START_HOLDER = "start";
 
@@ -65,6 +69,8 @@ export const slotsScenario: Scenario<Slots> = {
     const { count, held } = configuration.slots as { count: number; held: number };
     return Array.from({ length: count }, (_, index) => (index < held ? START_HOLDER : null));
   },
+  tools: slotTools,
+  channels: [rhythmChannel],
   metrics: { held: (slots) => slots.filter((holder) => holder !== null).length },
   systemPrompt: "You are an agent in a world of slots.",
   baseConfiguration: "[slots]\ncount = 3\nheld = 0\n",
@@ -92,6 +98,3 @@ export const placingScenario: Scenario<Slots> = {
   },
   baseConfiguration: "[slots]\ncount = 10\nagents = 3\n",
 };
-
-/** The test world's rhythm channel, which wakes each agent. */
-export const rhythmChannel = { name: "rhythm", source: "rhythm", stimulus: "You wake up." };
