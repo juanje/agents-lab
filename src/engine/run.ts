@@ -1,12 +1,15 @@
 import { type ActionArgs, type DeclaredAction, type Outcome, act } from "./actions.ts";
+import { waitAtLeast } from "./clock.ts";
 import type { ScriptedModel } from "./scripted-model.ts";
 import type { World } from "./world.ts";
 
-/** An agent in a run: its name, the model it decides with, and how many decisions it makes. */
+/** An agent in a run: its name, the model it decides with, how many decisions it makes, and its rhythm. */
 export interface Agent {
   name: string;
   model: ScriptedModel;
   decisions: number;
+  /** Draws the agent's next waiting interval before it observes, in milliseconds. */
+  rhythm: () => number;
 }
 
 /**
@@ -34,7 +37,7 @@ export async function run<State>(
   return new Map(agents.map((agent, index) => [agent.name, made[index]]));
 }
 
-/** One agent's loop: its decisions, one after another. */
+/** One agent's loop: it repeats its cycle of waiting an interval from its rhythm, then deciding. */
 async function loop<State>(
   world: World<State>,
   actions: readonly DeclaredAction<State, ActionArgs>[],
@@ -42,6 +45,7 @@ async function loop<State>(
 ): Promise<Decision[]> {
   const made: Decision[] = [];
   for (let count = 0; count < agent.decisions; count += 1) {
+    await waitAtLeast(agent.rhythm());
     made.push(await decide(world, actions, agent));
   }
   return made;

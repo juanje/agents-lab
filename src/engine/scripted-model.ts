@@ -1,5 +1,5 @@
-import { setTimeout as sleep } from "node:timers/promises";
 import { type FauxProviderHandle, type Model, type Models, createModels, fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai";
+import { waitAtLeast } from "./clock.ts";
 
 /** One answer of a script: its text, and how long the model takes to give it. */
 export interface ScriptedAnswer {
@@ -22,7 +22,7 @@ export class ScriptedModel {
     // Each answer is a response factory, so its delay starts when the call reaches the provider, as a real model's does.
     faux.setResponses(
       script.map(({ text, delayMs }) => async () => {
-        await delay(delayMs);
+        await waitAtLeast(delayMs);
         return fauxAssistantMessage(text);
       }),
     );
@@ -37,13 +37,4 @@ export class ScriptedModel {
   get exhausted(): boolean {
     return this.#faux.getPendingResponseCount() === 0;
   }
-}
-
-/**
- * Waits at least `ms` by the clock latency is measured with. A Node timer can fire before performance.now() has moved
- * its full delay (seen at 6.66 ms for a 7 ms timer), so it waits again for whatever is left.
- */
-async function delay(ms: number): Promise<void> {
-  const end = performance.now() + ms;
-  for (let left = ms; left > 0; left = end - performance.now()) await sleep(left);
 }
