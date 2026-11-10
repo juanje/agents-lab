@@ -542,4 +542,37 @@ describe("run", () => {
     expect(appliedAtMs[0] - startedAtMs).toBeGreaterThanOrEqual(50);
     expect(endedAtMs).toBeGreaterThanOrEqual(appliedAtMs[0]);
   });
+
+  it("records beside an effector call's outcome what the agent last sensed of its target, which never decides it", async () => {
+    const looking = new ScriptedModel([
+      { toolCalls: [{ name: "look", arguments: {} }], delayMs: 0 },
+      { toolCalls: [{ name: "take", arguments: { slot: 1 } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+    const taking = new ScriptedModel([
+      { toolCalls: [{ name: "take", arguments: { slot: 1 } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+    // "a" wakes halfway through "b"'s take: it sees slot 1 free, and "b" takes it while "a"'s take is under way.
+    const agents = [
+      { name: "a", model: looking, activations: 1, rhythm: () => 50 },
+      { name: "b", model: taking, activations: 1, rhythm: noWait },
+    ];
+
+    const { toolCalls } = await run(slots({ tools: withTakeTaking(100) }), agents, seed, settings);
+
+    const take = toolCalls.find((call) => call.agent === "a" && call.tool === "take");
+    expect(take).toMatchObject({ outcome: "slot_taken", targetAsSensed: "free" });
+  });
+
+  it("records an effector call by an agent that has sensed nothing as not_sensed", async () => {
+    const model = new ScriptedModel([
+      { toolCalls: [{ name: "take", arguments: { slot: 1 } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+
+    const { toolCalls } = await run(slots(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+
+    expect(toolCalls).toEqual([{ agent: "a", tool: "take", arguments: { slot: 1 }, outcome: "success", targetAsSensed: "not_sensed", ...timed }]);
+  });
 });

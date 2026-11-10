@@ -3,7 +3,7 @@ import { Given, Then } from "@cucumber/cucumber";
 import { SLOT_TAKEN, type Seen, type Slots, holder } from "../../tests/fixtures/slots.ts";
 import type { Context } from "../support/context.ts";
 import { turnsOf } from "./adapter.steps.ts";
-import { callOf, fixtureTool } from "./tool.steps.ts";
+import { callOf, fixtureTool, script } from "./tool.steps.ts";
 
 Given(
   "the sensor {string} takes no time and returns which slots are empty and which are held",
@@ -46,6 +46,62 @@ Then(
     assert.ok(second !== undefined, `agent "${agent}" made no second model turn`);
     const { endedAtMs } = callOf(this, agent, tool);
     assert.ok(second.startedAtMs >= endedAtMs, `the second turn began ${endedAtMs - second.startedAtMs} ms before the call ended`);
+  },
+);
+
+Given(
+  "agent {string}'s {string} of slot {int} lands while agent {string}'s {string} is under way",
+  function (this: Context, agent: string, tool: string, slot: number, other: string, otherTool: string) {
+    const declared = this.tools.find((candidate) => candidate.name === tool);
+    assert.ok(declared?.kind === "effector" && declared.durationMs > 0, `"${tool}" takes no time for a call to land in`);
+    script(this, agent, [
+      { toolCalls: [{ name: tool, arguments: { slot } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+    // The other agent wakes halfway through this call, so its own call, which takes as long, starts before this one
+    // lands and ends after. The check below makes sure it did.
+    this.rhythms.set(other, () => declared.durationMs / 2);
+    this.setupChecks.push(() => {
+      const landed = callOf(this, agent, tool);
+      const underWay = callOf(this, other, otherTool);
+      assert.equal(landed.outcome, "success", `agent "${agent}"'s "${tool}" did not land`);
+      assert.ok(
+        underWay.startedAtMs < landed.endedAtMs && landed.endedAtMs < underWay.endedAtMs,
+        `agent "${agent}"'s "${tool}" did not land while agent "${other}"'s was under way`,
+      );
+    });
+  },
+);
+
+Given(
+  "agent {string} runs on a scripted model that calls {string}, then calls {string} with slot {int}, then ends without a tool call",
+  function (this: Context, agent: string, sensor: string, effector: string, slot: number) {
+    script(this, agent, [
+      { toolCalls: [{ name: sensor, arguments: {} }], delayMs: 0 },
+      { toolCalls: [{ name: effector, arguments: { slot } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+  },
+);
+
+Given(
+  "agent {string} runs on a scripted model that calls {string} with slot {int} without looking, then ends without a tool call",
+  function (this: Context, agent: string, effector: string, slot: number) {
+    script(this, agent, [
+      { toolCalls: [{ name: effector, arguments: { slot } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+  },
+);
+
+Then("agent {string}'s {string} call failed with {string}", function (this: Context, agent: string, tool: string, reason: string) {
+  assert.equal(callOf(this, agent, tool).outcome, reason);
+});
+
+Then(
+  "agent {string}'s {string} call recorded its target as sensed: {string}",
+  function (this: Context, agent: string, tool: string, sensed: string) {
+    assert.equal(callOf(this, agent, tool).targetAsSensed, sensed);
   },
 );
 

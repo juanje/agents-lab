@@ -16,7 +16,7 @@ import type { ParallelismLimit } from "./parallelism.ts";
 import { SCRIPT_EXHAUSTED_MESSAGE } from "./scripted-model.ts";
 import type { Sensings } from "./sensings.ts";
 import type { Stimuli, Stimulus } from "./stimuli.ts";
-import type { Effector, Sensor, Tool } from "./tools.ts";
+import type { Effector, Sensor, TargetAsSensed, Tool } from "./tools.ts";
 import type { World } from "./world.ts";
 
 /**
@@ -91,6 +91,8 @@ export interface ToolCall {
   /** When the call started and ended, by performance.now(). */
   startedAtMs: number;
   endedAtMs: number;
+  /** For an effector call the tool ran, what the agent last sensed of its target before the call (FR-TOOL-04). */
+  targetAsSensed?: TargetAsSensed;
 }
 
 /** What an agent's session is given besides its tools. */
