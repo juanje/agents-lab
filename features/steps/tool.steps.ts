@@ -3,7 +3,7 @@ import { Given, Then, When } from "@cucumber/cucumber";
 import { getCurrentTools } from "@earendil-works/pi-ai";
 import { run } from "../../src/engine/run.ts";
 import { type ScriptedAnswer, ScriptedModel } from "../../src/engine/scripted-model.ts";
-import { SLOT_TAKEN, slotTools } from "../../tests/fixtures/slots.ts";
+import { SLOT_TAKEN, type Seen, slotTools } from "../../tests/fixtures/slots.ts";
 import type { Context } from "../support/context.ts";
 
 /** The test world's tool of a kind and a name; the tools live in the fixture, and this keeps the words and it in step. */
@@ -62,3 +62,40 @@ Then(
     }
   },
 );
+
+Given(
+  "agent {string} runs on a scripted model that calls {string}, then ends without a tool call",
+  function (this: Context, agent: string, tool: string) {
+    script(this, agent, [
+      { toolCalls: [{ name: tool, arguments: {} }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+  },
+);
+
+/** The text the agent's model received back for its first call of the tool, in a later turn. */
+function returned(context: Context, agent: string, tool: string): string {
+  const messages = modelOf(context, agent).received.flat();
+  const call = messages
+    .flatMap((message) => (message.role === "assistant" ? message.content : []))
+    .find((block) => block.type === "toolCall" && block.name === tool);
+  assert.ok(call !== undefined && call.type === "toolCall", `agent "${agent}"'s model had no call of "${tool}" in its transcript`);
+  const result = messages.find((message) => message.role === "toolResult" && message.toolCallId === call.id);
+  assert.ok(result !== undefined && result.role === "toolResult", `agent "${agent}"'s "${tool}" call returned nothing`);
+  return result.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("");
+}
+
+Then(
+  "agent {string}'s {string} call returned slot {int} held and slots {int} and {int} empty",
+  function (this: Context, agent: string, tool: string, held: number, first: number, second: number) {
+    const expected: Seen[] = [];
+    expected[held - 1] = "held";
+    expected[first - 1] = "empty";
+    expected[second - 1] = "empty";
+    assert.deepEqual(JSON.parse(returned(this, agent, tool)), expected);
+  },
+);
+
+Then("the world's version is the same as before the run", function (this: Context) {
+  assert.equal(this.world.version, this.versionBefore);
+});
