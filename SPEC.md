@@ -186,7 +186,7 @@ It prints, for each agent, its model turns with their latencies and its tool cal
 *Why:* the tests run on a scripted model; only a real model shows whether the harness, the lab's login and the tools work together, and what latencies to expect, before an experiment spends calls.
 
 #### FR-TOOL-03: Sensing takes time and reads the world when it ends
-A sensor call takes its declared duration. Its result is the world as it is when the duration ends, as seen from where the agent is then. The engine keeps, for each agent, what each of its sensor calls returned and when.
+A sensor call takes its declared duration. Its result is the world as it is when the duration ends, as seen from where the agent is then. The engine keeps, for each agent, what its last successful sensor call returned and when; every sensor result is recorded in the log (FR-RECORD-01).
 *Why:* perceiving is an act that takes time, and what an agent knows is what it last perceived, not the world's current state.
 
 #### FR-TOOL-04: Acting takes time, and its effect is checked when it lands
