@@ -14,9 +14,20 @@ export interface Stimulus {
 
 /** The stimuli waiting for each agent, until its session takes them (FR-STIMULUS-01). */
 export class Stimuli {
-  constructor(_channels: readonly Channel[]) {}
+  readonly #channels: readonly Channel[];
 
+  constructor(channels: readonly Channel[]) {
+    this.#channels = channels;
+  }
+
+  /** What an agent receives when its rhythm wakes it. */
   wake(_agent: string): Stimulus[] {
-    return [];
+    return [this.#stimulusOf("rhythm")];
+  }
+
+  #stimulusOf(name: string): Stimulus {
+    const channel = this.#channels.find((declared) => declared.name === name);
+    if (channel === undefined) throw new Error(`no channel named "${name}" is declared`);
+    return { channel: channel.name, source: channel.source, content: channel.stimulus };
   }
 }
