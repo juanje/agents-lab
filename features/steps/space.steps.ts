@@ -86,11 +86,39 @@ Given(
 When("entity {string} moves to {int}, {int}", function (this: Context, entity: string, x: number, y: number) {
   // A move changes the world, so it goes through the arbiter.
   this.gridWorld = new World(this.grid);
-  this.result = this.gridWorld.apply(move, { entity, to: { x, y } });
+  try {
+    this.result = this.gridWorld.apply(move, { entity, to: { x, y } });
+  } catch (error) {
+    // A refused move is kept for the steps that check the refusal; a step that expects a result then finds none.
+    this.moveError = error as Error;
+  }
 });
 
 Then("the move fails with {string}", function (this: Context, reason: string) {
+  assert.equal(this.moveError, undefined, `expected the move to fail with "${reason}", it was refused: ${this.moveError}`);
   assert.deepEqual(this.result, { applied: false, reason });
+});
+
+/** Checks that the move was refused with an error whose message holds the given words, and that nothing was applied. */
+function assertRefused(context: Context, named: string): void {
+  assert.ok(context.moveError, `expected the move to be refused, it gave ${JSON.stringify(context.result)}`);
+  assert.ok(context.moveError.message.includes(named), `expected the error to name ${named}: ${context.moveError.message}`);
+  assert.equal(context.gridWorld.version, 0, "expected a refused move to apply nothing");
+}
+
+Then("the move is refused with an error that names entity {string}", function (this: Context, entity: string) {
+  assertRefused(this, `entity ${entity}`);
+});
+
+Then(
+  "the move is refused with an error that names the cell at {int}, {int}",
+  function (this: Context, x: number, y: number) {
+    assertRefused(this, `cell ${x}, ${y}`);
+  },
+);
+
+Then("the cell at {int}, {int} is empty", function (this: Context, x: number, y: number) {
+  assert.deepEqual(entitiesAt(this.gridWorld.state, { x, y }), []);
 });
 
 Then("entity {string} is still at {int}, {int}", function (this: Context, entity: string, x: number, y: number) {
