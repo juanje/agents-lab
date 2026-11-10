@@ -33,3 +33,15 @@ Feature: A grid space
     When entity "a" moves to 1, 2
     Then the move fails with "cell_full"
     And entity "a" is still at 1, 1
+
+  Scenario: Moving an entity the grid does not hold is refused
+    Given entity "a" is at 1, 1 and entity "b" is at 1, 2
+    When entity "z" moves to 3, 3
+    Then the move is refused with an error that names entity "z"
+    And the cell at 3, 3 is empty
+
+  Scenario: Moving to a cell outside the grid is refused
+    Given entity "a" is at 1, 1 and entity "b" is at 1, 2
+    When entity "a" moves to 5, 1
+    Then the move is refused with an error that names the cell at 5, 1
+    And entity "a" is still at 1, 1

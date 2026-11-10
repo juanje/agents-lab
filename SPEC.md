@@ -147,9 +147,9 @@ The engine provides a grid of a given width and height, with a capacity per cell
 - **neighbours:** the eight neighbouring cells of a position;
 - **window:** the cells within a radius of a position, with the cells outside the grid marked as outside;
 - **random empty cell:** a random empty cell, drawn from the replica's random source, or none when there is none;
-- **move:** moves an entity from one cell to another. It fails with `cell_full` when the destination is at capacity.
+- **move:** moves an entity from its cell to another. It fails with `cell_full` when the destination is at capacity. A move of an entity the grid does not hold, or to a cell outside the grid, is refused with an error that names the entity or the cell, and applies nothing.
 
-*Why:* several of the lab's scenarios are spatial, and a shared grid keeps neighbourhoods and views the same across them.
+*Why:* several of the lab's scenarios are spatial, and a shared grid keeps neighbourhoods and views the same across them. An agent's bad choice is the scenario's to name (for example `invalid_target`); a move that reaches the grid with an unknown entity or a cell outside it is a defect in the scenario, and recording it as a change would put an entity or a position in the log that never existed.
 
 #### FR-ACTION-02: An action can tell a collision from an invalid choice
 When an action is applied, it receives the current state and the state the agent observed. It can therefore fail with a reason saying the target changed after the agent observed it, as distinct from a reason saying the target was never valid.
