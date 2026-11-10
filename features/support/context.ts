@@ -62,7 +62,7 @@ export class Context extends CucumberWorld {
   modelTurnTimeoutMs = 10_000;
   /** How long the run may last, unless the scenario says: longer than any scenario here runs. */
   timeLimitMs = 60_000;
-  /** When the run started and ended, by performance.now(). */
+  /** When the run started, as it gives it: when its agents could start and its time limit began; and when it ended. */
   runStartedAtMs?: number;
   runEndedAtMs?: number;
   /** How many model calls may run at once, unless the scenario says: more than the agents of any scenario here. */

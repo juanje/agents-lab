@@ -633,6 +633,32 @@ describe("run", () => {
 });
 
 describe("run's time limit", () => {
+  it("counts from when the agents can start, once every session is open, and gives that moment as the run's start", async () => {
+    const loaded = slots();
+    const model = new ScriptedModel([
+      { toolCalls: [{ name: "take", arguments: { slot: 1 } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+    let setUpEndedAtMs = 0;
+
+    const { toolCalls, startedAtMs } = await run(loaded, [{ name: "a", model, activations: 1, rhythm: noWait }], seed, {
+      ...settings,
+      timeLimitMs: 100,
+      // Setting the run up, made slower than the time limit here, comes before the agents can start and uses none of it.
+      onStart: () => {
+        const untilMs = performance.now() + 150;
+        while (performance.now() < untilMs) {
+          // Busy: a timer of the run's could not fire during this set-up, only once it ends.
+        }
+        setUpEndedAtMs = performance.now();
+      },
+    });
+
+    expect(toolCalls).toEqual([expect.objectContaining({ outcome: "success" })]);
+    expect(loaded.world.state).toEqual(["a", null, null]);
+    expect(startedAtMs).toBeGreaterThanOrEqual(setUpEndedAtMs);
+  });
+
   it("cuts off an effector call still running at the time limit: it applies nothing, ends then, and the agent is told so", async () => {
     const loaded = slots({ tools: withTakeTaking(1000) });
     const { world } = loaded;

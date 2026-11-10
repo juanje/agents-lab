@@ -96,8 +96,7 @@ async function runScenario<State>(context: Context, loaded: LoadedScenario<State
     activations: context.activations.get(name) ?? 1,
     rhythm: context.rhythms.get(name) ?? (() => context.waitBeforeActivationMs),
   }));
-  context.runStartedAtMs = performance.now();
-  const { turns, messages, toolCalls, sensings } = await run(loaded, agents, context.seed, {
+  const { turns, messages, toolCalls, sensings, startedAtMs } = await run(loaded, agents, context.seed, {
     modelTurnTimeoutMs: context.modelTurnTimeoutMs,
     parallelismLimit: context.parallelismLimit,
     timeLimitMs: context.timeLimitMs,
@@ -112,6 +111,7 @@ async function runScenario<State>(context: Context, loaded: LoadedScenario<State
     },
   });
   context.runEndedAtMs = performance.now();
+  context.runStartedAtMs = startedAtMs;
   context.turns = turns;
   context.sessionMessages = messages;
   context.toolCalls = toolCalls;
