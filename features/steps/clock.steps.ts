@@ -89,3 +89,35 @@ Then("agent {string}'s activation ended after its third model turn", function (t
   const [, , third] = this.scripts.get(agent) ?? [];
   assert.deepEqual(third?.toolCalls ?? [], [], `agent "${agent}"'s third model turn made a tool call`);
 });
+
+Given(
+  "agent {string} makes {int} activations, each ending its first turn without a tool call",
+  function (this: Context, agent: string, activations: number) {
+    this.activations.set(agent, activations);
+    script(this, agent, Array.from({ length: activations }, () => ({ text: "Nothing to do.", delayMs: 0 })));
+  },
+);
+
+Given("agent {string} waits {int} milliseconds between activations", function (this: Context, agent: string, waitMs: number) {
+  const rests: number[] = [];
+  this.restedAtMs.set(agent, rests);
+  // The agent's loop calls its rhythm once the previous activation has ended, as the agent starts to rest.
+  this.rhythms.set(agent, () => (rests.push(performance.now()), waitMs));
+});
+
+Then(
+  "each of agent {string}'s activations began at least {int} milliseconds after the previous one ended",
+  function (this: Context, agent: string, waitMs: number) {
+    const rests = this.restedAtMs.get(agent) ?? [];
+    const wakes = this.wokeAtMs.get(agent) ?? [];
+    const activations = this.activations.get(agent);
+    assert.equal(wakes.length, activations, `agent "${agent}" woke ${wakes.length} times, not ${activations}`);
+    assert.equal(rests.length, activations, `agent "${agent}" rested ${rests.length} times, not ${activations}`);
+    // A rest starts no sooner than the previous activation ended, so the time from it to the next wake is never longer
+    // than the time between the two activations.
+    for (let index = 1; index < wakes.length; index += 1) {
+      const gap = wakes[index] - rests[index];
+      assert.ok(gap >= waitMs, `activation ${index + 1} of agent "${agent}" began ${gap} ms after activation ${index} ended`);
+    }
+  },
+);

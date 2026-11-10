@@ -55,6 +55,10 @@ export class Context extends CucumberWorld {
   waitBeforeActivationMs = 0;
   /** An agent's rhythm, when the scenario gives it one of its own; it is called each time the agent starts to rest. */
   readonly rhythms = new Map<string, () => number>();
+  /** When each agent woke, by performance.now(): when its session took its rhythm's stimulus. */
+  readonly wokeAtMs = new Map<string, number[]>();
+  /** When each agent started each rest, by performance.now(), for an agent whose rhythm the scenario watches. */
+  readonly restedAtMs = new Map<string, number[]>();
   /** The text of the stimulus the scenario checked last, for a step that says "did not". */
   lastStimulusRead?: string;
   /** The scenario the engine is given, and the condition it is loaded with. */

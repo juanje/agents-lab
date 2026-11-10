@@ -51,6 +51,12 @@ When("the run ends", async function (this: Context) {
     return result;
   };
   this.stimuli = new Stimuli(this.channels);
+  // Watched too: an agent wakes when its session takes its rhythm's stimulus.
+  const wake = this.stimuli.wake.bind(this.stimuli);
+  this.stimuli.wake = (agent) => {
+    this.wokeAtMs.set(agent, [...(this.wokeAtMs.get(agent) ?? []), performance.now()]);
+    return wake(agent);
+  };
   const agents = [...this.models].map(([name, model]) => ({
     name,
     model,
