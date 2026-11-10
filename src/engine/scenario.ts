@@ -49,11 +49,16 @@ const requiredParts = [
  * not through the type checker, so any part may be missing; a scenario that lacks one is refused before anything runs.
  */
 export function loadScenario<State>(parts: Partial<Scenario<State>>, condition?: Condition): LoadedScenario<State> {
+  const lacks = (part: string) => new Error(`Scenario "${parts.name}" lacks its ${part}`);
   for (const [property, part] of requiredParts) {
-    if (parts[property] === undefined) throw new Error(`Scenario "${parts.name}" lacks its ${part}`);
+    if (parts[property] === undefined) throw lacks(part);
   }
   const scenario = parts as Scenario<State>;
-  const configuration = applyChange(parse(scenario.baseConfiguration), parse(condition?.change ?? ""));
+  // A text part that holds nothing gives the agents nothing, so it counts as missing.
+  if (scenario.systemPrompt.trim() === "") throw lacks("system prompt");
+  const base = parse(scenario.baseConfiguration);
+  if (Object.keys(base).length === 0) throw lacks("base configuration");
+  const configuration = applyChange(base, parse(condition?.change ?? ""));
   return { scenario, configuration, world: new World(scenario.initialState(configuration)) };
 }
 
