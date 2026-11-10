@@ -692,6 +692,26 @@ describe("run's time limit", () => {
     expect(model.received).toHaveLength(1);
   });
 
+  it("starts no activation once the time limit has passed: an agent resting then does not wake again, nor holds the run", async () => {
+    const model = new ScriptedModel(Array.from({ length: 3 }, () => ({ text: "Nothing to do.", delayMs: 0 })));
+    const wokeAtMs: number[] = [];
+
+    const { startedAtMs } = await run(slots(), [{ name: "a", model, activations: 3, rhythm: () => 80 }], seed, {
+      ...settings,
+      timeLimitMs: 100,
+      onStart: (stimuli) => {
+        const wake = stimuli.wake.bind(stimuli);
+        stimuli.wake = (agent) => (wokeAtMs.push(performance.now()), wake(agent));
+      },
+    });
+
+    // It wakes once, at 80 ms; its next rest would end at 160 ms, past the time limit, and the run ends at the limit.
+    const endedAtMs = performance.now();
+    expect(wokeAtMs).toHaveLength(1);
+    expect(wokeAtMs[0] - startedAtMs).toBeLessThan(100);
+    expect(endedAtMs - startedAtMs).toBeLessThan(150);
+  });
+
   it("cuts off an effector call still running at the time limit: it applies nothing, ends then, and the agent is told so", async () => {
     const loaded = slots({ tools: withTakeTaking(1000) });
     const { world } = loaded;
