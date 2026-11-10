@@ -3,6 +3,7 @@ Feature: Only tool calls act
 
   Background:
     Given a test world with 3 slots, all empty
+    And the sensor "look" returns which slots are empty and which are held
     And the effector "take" puts the agent in a slot, only if that slot is empty, and otherwise fails with "slot_taken"
 
   Scenario: Text the agent writes changes nothing
@@ -23,3 +24,21 @@ Feature: Only tool calls act
       | {"slot": "seven"}  |
       | {}                 |
       | {"slot": 1, "x": 2} |
+
+  Scenario: A call to a tool the session does not offer applies nothing
+    Given agent "a" runs on a scripted model that calls "fly" with slot 1, then ends without a tool call
+    When the run ends
+    Then agent "a"'s "fly" call has the outcome "unknown_tool"
+    And every slot is empty
+    And the run did not stop
+
+  Scenario: A tool acts as the agent that called it, whatever its arguments say
+    Given agent "a" runs on a scripted model that calls "take" with the arguments {"slot": 1, "agent": "b"}, then ends without a tool call
+    When the run ends
+    Then no slot holds agent "b"
+
+  Scenario: A failed call tells the agent it failed, and why
+    Given agent "b" holds slot 1
+    And agent "a" runs on a scripted model that calls "take" with slot 1, then ends without a tool call
+    When the run ends
+    Then the result agent "a"'s model received for its "take" call is marked as an error and says "slot_taken"
