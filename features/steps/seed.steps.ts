@@ -100,6 +100,7 @@ async function runReplica(context: Context, seed: number, condition?: Condition)
   await run(world, [], runningAgents, seed, {
     systemPrompt: context.scenario.systemPrompt ?? "",
     modelTurnTimeoutMs: context.modelTurnTimeoutMs,
+    parallelismLimit: context.parallelismLimit,
   });
   return drawn;
 }

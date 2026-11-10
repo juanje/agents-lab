@@ -206,3 +206,35 @@ Then("agent {string}'s first model turn has the outcome {string}", function (thi
 Then("every slot is empty", function (this: Context) {
   assert.deepEqual(this.world.state, emptySlots(this.world.state.length));
 });
+
+Given("the parallelism limit is {int}", function (this: Context, limit: number) {
+  this.parallelismLimit = limit;
+});
+
+Given(
+  "agents {string} and {string} each run on a scripted model that ends its first turn without a tool call, after {int} milliseconds",
+  function (this: Context, first: string, second: string, delayMs: number) {
+    for (const agent of [first, second]) script(this, agent, [{ text: "Nothing to do.", delayMs }]);
+  },
+);
+
+Given("both agents wait {int} milliseconds before their first activation", function (this: Context, waitMs: number) {
+  this.waitBeforeActivationMs = waitMs;
+});
+
+Then(
+  "agent {string}'s and agent {string}'s model turns did not overlap in time",
+  function (this: Context, first: string, second: string) {
+    for (const one of turnsOf(this, first)) {
+      for (const other of turnsOf(this, second)) {
+        const apart = one.endedAtMs <= other.startedAtMs || other.endedAtMs <= one.startedAtMs;
+        assert.ok(apart, `turns of "${first}" (${one.startedAtMs}–${one.endedAtMs} ms) and "${second}" (${other.startedAtMs}–${other.endedAtMs} ms) overlapped`);
+      }
+    }
+  },
+);
+
+Then("one of them waited at least {int} milliseconds for a model slot", function (this: Context, waitMs: number) {
+  const waits = this.turns?.map((turn) => turn.slotWaitMs) ?? [];
+  assert.ok(waits.some((wait) => wait >= waitMs), `the turns waited ${waits.join(", ")} ms for a model slot`);
+});

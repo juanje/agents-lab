@@ -44,12 +44,13 @@ When("the run ends", async function (this: Context) {
     name,
     model,
     activations: this.activations.get(name) ?? 1,
-    rhythm: () => 0,
+    rhythm: () => this.waitBeforeActivationMs,
   }));
   // Any seed: these rhythms draw nothing from it.
   this.turns = await run(this.world, slotTools, agents, 1, {
     systemPrompt: this.systemPrompt,
     modelTurnTimeoutMs: this.modelTurnTimeoutMs,
+    parallelismLimit: this.parallelismLimit,
   });
 });
 
