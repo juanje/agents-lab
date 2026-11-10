@@ -11,6 +11,18 @@ describe("Stimuli", () => {
     expect(stimuli.wake("a")).toEqual([{ channel: "rhythm", source: "rhythm", content: "You wake up." }]);
   });
 
+  it("wakes an agent with the rhythm's stimulus first, then the stimuli that arrived while it rested, once", () => {
+    const stimuli = new Stimuli([bell, rhythmChannel]);
+
+    stimuli.deliver("a", "bell");
+
+    expect(stimuli.wake("a")).toEqual([
+      { channel: "rhythm", source: "rhythm", content: "You wake up." },
+      { channel: "bell", source: "town bell", content: "The bell rings." },
+    ]);
+    expect(stimuli.take("a")).toEqual([]);
+  });
+
   it("keeps a delivered stimulus for its agent until the agent's session takes it, once", () => {
     const stimuli = new Stimuli([bell, rhythmChannel]);
 

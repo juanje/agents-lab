@@ -75,6 +75,50 @@ Then(
   },
 );
 
+Given(
+  "agent {string} makes {int} activations, each ending its first turn without a tool call, and waits {int} milliseconds between them",
+  function (this: Context, agent: string, activations: number, waitMs: number) {
+    this.activations.set(agent, activations);
+    script(this, agent, Array.from({ length: activations }, () => ({ text: "Nothing to do.", delayMs: 0 })));
+    let rests = 0;
+    // The rhythm is called before each activation; the agent wakes at once the first time.
+    this.rhythms.set(agent, () => (rests++ === 0 ? 0 : waitMs));
+  },
+);
+
+Given("the bell rings while agent {string} rests", function (this: Context, agent: string) {
+  const rhythm = this.rhythms.get(agent);
+  assert.ok(rhythm !== undefined, `agent "${agent}" has no rhythm of its own to rest by`);
+  // Halfway through each rest the agent takes.
+  this.rhythms.set(agent, () => {
+    const restMs = rhythm();
+    if (restMs > 0) setTimeout(() => this.stimuli.deliver(agent, "bell"), restMs / 2);
+    return restMs;
+  });
+});
+
+/** The messages a model turn received after the model's last answer: what reached the agent since it last answered. */
+function sinceLastAnswer(messages: readonly { role: string; content: unknown }[]) {
+  const answered = messages.map((message) => message.role).lastIndexOf("assistant");
+  return messages.slice(answered + 1);
+}
+
+Then(
+  "agent {string}'s second activation received {string} from {string} when it woke",
+  function (this: Context, agent: string, content: string, source: string) {
+    const text = declaredStimulus(this, content, source);
+    const rhythm = this.channels.find((declared) => declared.name === "rhythm");
+    assert.ok(rhythm !== undefined, "the scenario declares no rhythm channel");
+    // An activation's first model turn is the one that received the rhythm's stimulus since the model last answered.
+    const wakings = modelOf(this, agent)
+      .received.map(sinceLastAnswer)
+      .filter((received) => userTexts(received).includes(asRead(rhythm.source, rhythm.stimulus)));
+    const second = wakings[1];
+    assert.ok(second !== undefined, `agent "${agent}" woke ${wakings.length} times, not twice`);
+    assert.ok(userTexts(second).includes(text), `agent "${agent}"'s second activation woke to ${JSON.stringify(userTexts(second))}`);
+  },
+);
+
 Then("its first model turn did not", function (this: Context) {
   assert.ok(this.lastAgent !== undefined && this.lastStimulusRead !== undefined, "no stimulus was checked before");
   const [first] = modelOf(this, this.lastAgent).received;
