@@ -3,9 +3,9 @@ import { Given, Then, When } from "@cucumber/cucumber";
 import { getCurrentTools } from "@earendil-works/pi-ai";
 import { run } from "../../src/engine/run.ts";
 import { type ScriptedAnswer, ScriptedModel } from "../../src/engine/scripted-model.ts";
-import { Stimuli } from "../../src/engine/stimuli.ts";
+import type { LoadedScenario } from "../../src/engine/scenario.ts";
 import type { Action } from "../../src/engine/world.ts";
-import { SLOT_TAKEN, type Seen, type Slots, slotTools } from "../../tests/fixtures/slots.ts";
+import { SLOT_TAKEN, type Seen, type Slots, slotTools, slotsScenario } from "../../tests/fixtures/slots.ts";
 import type { Context } from "../support/context.ts";
 
 /** The test world's tool of a kind and a name; the tools live in the fixture, and this keeps the words and it in step. */
@@ -56,23 +56,31 @@ When("the run ends", async function (this: Context) {
     if (result.applied) this.applied.push({ action: action as Action<Slots, never>, args });
     return result;
   };
-  this.stimuli = new Stimuli(this.channels);
-  // Watched too: an agent wakes when its session takes its rhythm's stimulus.
-  const wake = this.stimuli.wake.bind(this.stimuli);
-  this.stimuli.wake = (agent) => {
-    this.wokeAtMs.set(agent, [...(this.wokeAtMs.get(agent) ?? []), performance.now()]);
-    return wake(agent);
-  };
   const agents = [...this.models].map(([name, model]) => ({
     name,
     model,
     activations: this.activations.get(name) ?? 1,
     rhythm: this.rhythms.get(name) ?? (() => this.waitBeforeActivationMs),
   }));
-  const { turns, messages, toolCalls } = await run(this.world, slotTools, this.stimuli, agents, this.seed, {
-    systemPrompt: this.systemPrompt,
+  // These scenarios set up their world and the scenario's parts step by step rather than from a base configuration,
+  // so the slots scenario is assembled around them as loading would give it.
+  const loaded: LoadedScenario<Slots> = {
+    scenario: { ...slotsScenario, channels: this.channels, systemPrompt: this.systemPrompt },
+    configuration: {},
+    world: this.world,
+  };
+  const { turns, messages, toolCalls } = await run(loaded, agents, this.seed, {
     modelTurnTimeoutMs: this.modelTurnTimeoutMs,
     parallelismLimit: this.parallelismLimit,
+    onStart: (stimuli) => {
+      this.stimuli = stimuli;
+      // Watched too: an agent wakes when its session takes its rhythm's stimulus.
+      const wake = stimuli.wake.bind(stimuli);
+      stimuli.wake = (agent) => {
+        this.wokeAtMs.set(agent, [...(this.wokeAtMs.get(agent) ?? []), performance.now()]);
+        return wake(agent);
+      };
+    },
   });
   this.turns = turns;
   this.sessionMessages = messages;

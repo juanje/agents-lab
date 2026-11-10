@@ -5,8 +5,7 @@ import type { Random } from "../../src/engine/random.ts";
 import { run } from "../../src/engine/run.ts";
 import { type Condition, loadScenario } from "../../src/engine/scenario.ts";
 import { ScriptedModel } from "../../src/engine/scripted-model.ts";
-import { Stimuli } from "../../src/engine/stimuli.ts";
-import { type Slots, placedAgent, placingScenario, rhythmChannel } from "../../tests/fixtures/slots.ts";
+import { type Slots, placedAgent, placingScenario } from "../../tests/fixtures/slots.ts";
 import type { Context } from "../support/context.ts";
 
 /** The placing scenario's [slots] table: how many slots it has and how many agents it places. */
@@ -78,7 +77,8 @@ const ACTIVATIONS = 3;
  * drew, in order.
  */
 async function runReplica(context: Context, seed: number, condition?: Condition): Promise<Map<string, number[]>> {
-  const { world, configuration } = loadScenario(context.scenario, seed, condition);
+  const loaded = loadScenario(context.scenario, seed, condition);
+  const { configuration } = loaded;
   const { minMs, maxMs } = context.rhythmRange;
   const { agents } = configuration.slots as { agents: number };
   const drawn = new Map<string, number[]>();
@@ -97,9 +97,8 @@ async function runReplica(context: Context, seed: number, condition?: Condition)
       },
     };
   });
-  // The placing scenario's agents only rest: their tools play no part in their intervals.
-  await run(world, [], new Stimuli([rhythmChannel]), runningAgents, seed, {
-    systemPrompt: context.scenario.systemPrompt ?? "",
+  // The placing scenario's agents only rest: they call none of its tools.
+  await run(loaded, runningAgents, seed, {
     modelTurnTimeoutMs: context.modelTurnTimeoutMs,
     parallelismLimit: context.parallelismLimit,
   });

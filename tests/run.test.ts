@@ -5,9 +5,9 @@ import { getCurrentSystemPrompt, getCurrentTools } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "vitest";
 import { type RunSettings, run } from "../src/engine/run.ts";
 import { ScriptedModel } from "../src/engine/scripted-model.ts";
-import { Stimuli } from "../src/engine/stimuli.ts";
-import { World } from "../src/engine/world.ts";
-import { type Slots, emptySlots, rhythmChannel, slotTools, take } from "./fixtures/slots.ts";
+import { type Scenario, loadScenario } from "../src/engine/scenario.ts";
+import type { Stimuli } from "../src/engine/stimuli.ts";
+import { type Slots, emptySlots, rhythmChannel, slotTools, slotsScenario, take } from "./fixtures/slots.ts";
 
 /** A rhythm with no waiting: the agent wakes again as soon as its previous activation ends. */
 const noWait = () => 0;
@@ -15,17 +15,20 @@ const noWait = () => 0;
 /** A replica's seed, for a run whose rhythms draw nothing from it. */
 const seed = 1;
 
-/** The stimuli of a run whose only channel is the test world's rhythm. */
-const rhythmOnly = () => new Stimuli([rhythmChannel]);
+/** The slots test scenario as loaded with 3 empty slots, with any of its parts replaced. */
+const slots = (parts: Partial<Scenario<Slots>> = {}) => loadScenario({ ...slotsScenario, ...parts }, seed);
+
+/** A channel besides the rhythm, for stimuli the test delivers. */
+const bell = { name: "bell", source: "town bell", stimulus: "The bell rings." };
 
 /** Settings for a run whose test looks at none of them. */
-const settings: RunSettings = { systemPrompt: "", modelTurnTimeoutMs: 10_000, parallelismLimit: 10 };
+const settings: RunSettings = { modelTurnTimeoutMs: 10_000, parallelismLimit: 10 };
 
 describe("run", () => {
   it("starts an activation with the rhythm channel's stimulus, which the model reads with its source", async () => {
     const model = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
 
-    await run(new World(emptySlots(3)), slotTools, rhythmOnly(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+    await run(slots(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
 
     const [first] = model.received[0]?.filter((message) => message.role !== "system") ?? [];
     expect(first).toMatchObject({ role: "user", content: [{ type: "text", text: "rhythm: You wake up." }] });
@@ -34,7 +37,7 @@ describe("run", () => {
   it("gives what each agent's session held at the end: its stimuli, keeping their channel and source, and its model turns", async () => {
     const model = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
 
-    const { messages } = await run(new World(emptySlots(3)), slotTools, rhythmOnly(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+    const { messages } = await run(slots(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
 
     expect(messages.get("a")?.filter((message) => message.role !== "system")).toMatchObject([
       {
@@ -47,32 +50,53 @@ describe("run", () => {
     ]);
   });
 
+  it("hands the run's stimuli to onStart before any agent wakes, so what it delivers reaches the first activation", async () => {
+    const model = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
+
+    await run(slots({ channels: [rhythmChannel, bell] }), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, {
+      ...settings,
+      onStart: (stimuli) => stimuli.deliver("a", "bell"),
+    });
+
+    const text = (value: string) => ({ role: "user", content: [{ type: "text", text: value }] });
+    expect(model.received[0]?.filter((message) => message.role !== "system")).toMatchObject([
+      text("rhythm: You wake up."),
+      text("town bell: The bell rings."),
+    ]);
+  });
+
   it("delivers a stimulus that arrives while the agent rests when it wakes, after the rhythm's", async () => {
-    const stimuli = new Stimuli([rhythmChannel, { name: "bell", source: "town bell", stimulus: "The bell rings." }]);
+    let stimuli: Stimuli | undefined;
     const model = new ScriptedModel([
       { text: "Nothing to do.", delayMs: 0 },
       { text: "Nothing to do.", delayMs: 0 },
     ]);
     let rests = 0;
     // The agent wakes at once, then rests 100 ms, and the bell rings halfway through that rest.
-    const restsOnceWithBell = () => (rests++ === 0 ? 0 : (setTimeout(() => stimuli.deliver("a", "bell"), 50), 100));
+    const restsOnceWithBell = () => (rests++ === 0 ? 0 : (setTimeout(() => stimuli?.deliver("a", "bell"), 50), 100));
 
-    await run(new World(emptySlots(3)), slotTools, stimuli, [{ name: "a", model, activations: 2, rhythm: restsOnceWithBell }], seed, settings);
+    await run(slots({ channels: [rhythmChannel, bell] }), [{ name: "a", model, activations: 2, rhythm: restsOnceWithBell }], seed, {
+      ...settings,
+      onStart: (started) => (stimuli = started),
+    });
 
     const text = (value: string) => ({ role: "user", content: [{ type: "text", text: value }] });
     expect(model.received[1]?.slice(-2)).toMatchObject([text("rhythm: You wake up."), text("town bell: The bell rings.")]);
   });
 
   it("delivers a stimulus that arrives during a model turn at the agent's next model turn", async () => {
-    const stimuli = new Stimuli([rhythmChannel, { name: "bell", source: "town bell", stimulus: "The bell rings." }]);
+    let stimuli: Stimuli | undefined;
     const model = new ScriptedModel([
       { toolCalls: [{ name: "look", arguments: {} }], delayMs: 100 },
       { text: "Done.", delayMs: 0 },
     ]);
     // The rhythm is called as the agent starts to wait, and with no wait the agent wakes as it returns.
-    const ringsAfter50 = () => (setTimeout(() => stimuli.deliver("a", "bell"), 50), 0);
+    const ringsAfter50 = () => (setTimeout(() => stimuli?.deliver("a", "bell"), 50), 0);
 
-    await run(new World(emptySlots(3)), slotTools, stimuli, [{ name: "a", model, activations: 1, rhythm: ringsAfter50 }], seed, settings);
+    await run(slots({ channels: [rhythmChannel, bell] }), [{ name: "a", model, activations: 1, rhythm: ringsAfter50 }], seed, {
+      ...settings,
+      onStart: (started) => (stimuli = started),
+    });
 
     const [first, second] = model.received;
     const rings = { role: "user", content: [{ type: "text", text: "town bell: The bell rings." }] };
@@ -83,7 +107,7 @@ describe("run", () => {
   it("offers the agent's model exactly the scenario's tools, with their descriptions and arguments", async () => {
     const model = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
 
-    await run(new World(emptySlots(3)), slotTools, rhythmOnly(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+    await run(slots(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
 
     expect(model.received.map(getCurrentTools)).toEqual([
       slotTools.map(({ name, description, parameters }) => ({ name, description, parameters })),
@@ -91,13 +115,15 @@ describe("run", () => {
   });
 
   it("returns what a sensor the model called gave, at the model's next turn, and changes nothing", async () => {
-    const world = new World<Slots>([null, "b", null]);
+    const loaded = slots();
+    const { world } = loaded;
+    world.apply(take, { agent: "b", slot: 2 });
     const model = new ScriptedModel([
       { toolCalls: [{ name: "look", arguments: {} }], delayMs: 0 },
       { text: "Done.", delayMs: 0 },
     ]);
 
-    await run(world, slotTools, rhythmOnly(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+    await run(loaded, [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
 
     const [, next] = model.received;
     const call = next?.find((message) => message.role === "assistant")?.content[0];
@@ -108,17 +134,18 @@ describe("run", () => {
       content: [{ type: "text", text: '["empty","held","empty"]' }],
     });
     expect(world.state).toEqual([null, "b", null]);
-    expect(world.version).toBe(0);
+    expect(world.version).toBe(1);
   });
 
   it("applies an effector the model calls through the arbiter, with the agent and the call's arguments", async () => {
-    const world = new World(emptySlots(3));
+    const loaded = slots();
+    const { world } = loaded;
     const model = new ScriptedModel([
       { toolCalls: [{ name: "take", arguments: { slot: 1 } }], delayMs: 0 },
       { text: "Done.", delayMs: 0 },
     ]);
 
-    await run(world, slotTools, rhythmOnly(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+    await run(loaded, [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
 
     expect(world.state).toEqual(["a", null, null]);
     expect(world.version).toBe(1);
@@ -131,7 +158,7 @@ describe("run", () => {
       { text: "Nothing to do.", delayMs: 0 },
     ]);
 
-    await run(new World(emptySlots(3)), slotTools, rhythmOnly(), [{ name: "a", model, activations: 2, rhythm: noWait }], seed, settings);
+    await run(slots(), [{ name: "a", model, activations: 2, rhythm: noWait }], seed, settings);
 
     expect(model.sessions).toEqual([expect.any(String), model.sessions[0], model.sessions[0]]);
   });
@@ -139,10 +166,7 @@ describe("run", () => {
   it("gives the agent's model the scenario's system prompt and nothing else", async () => {
     const model = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
 
-    await run(new World(emptySlots(3)), slotTools, rhythmOnly(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, {
-      ...settings,
-      systemPrompt: "You live in a row of slots.",
-    });
+    await run(slots({ systemPrompt: "You live in a row of slots." }), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
 
     expect(model.received.map(getCurrentSystemPrompt)).toEqual(["You live in a row of slots."]);
   });
@@ -153,7 +177,7 @@ describe("run", () => {
     writeFileSync(join(persons, "settings.json"), JSON.stringify({ defaultProvider: "openai", defaultModel: "gpt-6-luna" }));
     const model = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
 
-    await run(new World(emptySlots(3)), slotTools, rhythmOnly(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+    await run(slots(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
 
     expect(readdirSync(persons, { recursive: true })).toEqual(["settings.json"]);
     expect(existsSync(join(homedir(), ".agents-lab", "pi"))).toBe(true);
@@ -166,7 +190,7 @@ describe("run", () => {
       { text: "Nothing to do.", delayMs: 0 },
     ]);
 
-    const { turns } = await run(new World(emptySlots(3)), slotTools, rhythmOnly(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+    const { turns } = await run(slots(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
 
     expect(turns).toEqual([expect.objectContaining({ agent: "a", outcome: "model_error", message: "overloaded" })]);
     expect(model.received).toHaveLength(1);
@@ -175,7 +199,7 @@ describe("run", () => {
   it("records the turn past the end of the script as script_exhausted, and ends the activation there", async () => {
     const model = new ScriptedModel([{ toolCalls: [{ name: "look", arguments: {} }], delayMs: 0 }]);
 
-    const { turns, messages } = await run(new World(emptySlots(3)), slotTools, rhythmOnly(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+    const { turns, messages } = await run(slots(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
 
     expect(turns.map(({ outcome, message }) => ({ outcome, message }))).toEqual([
       { outcome: "success", message: undefined },
@@ -185,13 +209,14 @@ describe("run", () => {
   });
 
   it("aborts a model turn longer than the timeout, records it as timeout, and runs none of its tool calls", async () => {
-    const world = new World(emptySlots(3));
+    const loaded = slots();
+    const { world } = loaded;
     const model = new ScriptedModel([
       { toolCalls: [{ name: "take", arguments: { slot: 1 } }], delayMs: 300 },
       { text: "Done.", delayMs: 0 },
     ]);
 
-    const { turns } = await run(world, slotTools, rhythmOnly(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, {
+    const { turns } = await run(loaded, [{ name: "a", model, activations: 1, rhythm: noWait }], seed, {
       ...settings,
       modelTurnTimeoutMs: 50,
     });
@@ -205,7 +230,7 @@ describe("run", () => {
     const model = new ScriptedModel([{ text: "Nothing to do.", delayMs: 50 }]);
     const before = performance.now();
 
-    const { turns } = await run(new World(emptySlots(3)), slotTools, rhythmOnly(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+    const { turns } = await run(slots(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
     const [turn] = turns;
 
     expect(turn?.startedAtMs).toBeGreaterThanOrEqual(before);
@@ -217,9 +242,7 @@ describe("run", () => {
     const answersAfter50 = () => new ScriptedModel([{ text: "Nothing to do.", delayMs: 50 }]);
 
     const { turns } = await run(
-      new World(emptySlots(3)),
-      slotTools,
-      rhythmOnly(),
+      slots(),
       ["a", "b", "c"].map((name) => ({ name, model: answersAfter50(), activations: 1, rhythm: noWait })),
       seed,
       { ...settings, parallelismLimit: 2 },
@@ -234,7 +257,8 @@ describe("run", () => {
   });
 
   it("gives each agent's model turns to that agent's own model", async () => {
-    const world = new World(emptySlots(3));
+    const loaded = slots();
+    const { world } = loaded;
     const takes = (slot: number) =>
       new ScriptedModel([
         { toolCalls: [{ name: "take", arguments: { slot } }], delayMs: 0 },
@@ -242,9 +266,7 @@ describe("run", () => {
       ]);
 
     await run(
-      world,
-      slotTools,
-      rhythmOnly(),
+      loaded,
       [
         { name: "a", model: takes(1), activations: 1, rhythm: noWait },
         { name: "b", model: takes(2), activations: 1, rhythm: noWait },
@@ -262,9 +284,7 @@ describe("run", () => {
       const draws: number[] = [];
       const answers = (delayMs: number) => new ScriptedModel(Array.from({ length: 4 }, () => ({ text: "resting", delayMs })));
       await run(
-        new World(emptySlots(3)),
-        [],
-        rhythmOnly(),
+        slots({ tools: [] }),
         [
           { name: "a", model: answers(0), activations: 4, rhythm: (source) => (draws.push(source.next()), 5) },
           { name: "b", model: answers(bDelayMs), activations: 4, rhythm: (source) => source.next() * 5 },
@@ -286,9 +306,7 @@ describe("run", () => {
     async function drawsOfB(names: readonly string[]): Promise<number[]> {
       const draws: number[] = [];
       await run(
-        new World(emptySlots(3)),
-        [],
-        rhythmOnly(),
+        slots({ tools: [] }),
         names.map((name) => ({
           name,
           model: new ScriptedModel(Array.from({ length: 3 }, () => ({ text: "resting", delayMs: 0 }))),
@@ -308,13 +326,14 @@ describe("run", () => {
     expect(await drawsOfB(["c", "d", "b"])).toEqual(draws);
   });
   it("records the text of each model turn as the agent's reflection, and the text acts on nothing", async () => {
-    const world = new World(emptySlots(3));
+    const loaded = slots();
+    const { world } = loaded;
     const model = new ScriptedModel([
       { text: "I take slot 1.", toolCalls: [{ name: "look", arguments: {} }], delayMs: 0 },
       { text: "Slot 2 is mine.", delayMs: 0 },
     ]);
 
-    const { turns } = await run(world, slotTools, rhythmOnly(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+    const { turns } = await run(loaded, [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
 
     expect(turns.map((turn) => turn.text)).toEqual(["I take slot 1.", "Slot 2 is mine."]);
     expect(world.version).toBe(0);
@@ -322,13 +341,14 @@ describe("run", () => {
   it.each([[{ slot: "seven" }], [{}], [{ slot: 1, x: 2 }]])(
     "records a call with arguments %j, which the tool does not take, as invalid_arguments, and applies nothing",
     async (args) => {
-      const world = new World(emptySlots(3));
+      const loaded = slots();
+      const { world } = loaded;
       const model = new ScriptedModel([
         { toolCalls: [{ name: "take", arguments: args }], delayMs: 0 },
         { text: "Done.", delayMs: 0 },
       ]);
 
-      const { toolCalls } = await run(world, slotTools, rhythmOnly(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+      const { toolCalls } = await run(loaded, [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
 
       expect(toolCalls).toEqual([{ agent: "a", tool: "take", arguments: args, outcome: "invalid_arguments" }]);
       expect(world.version).toBe(0);
@@ -336,32 +356,35 @@ describe("run", () => {
   );
 
   it("records a call with the arguments as the model made them, before Pi coerces them", async () => {
-    const world = new World(emptySlots(3));
+    const loaded = slots();
+    const { world } = loaded;
     const model = new ScriptedModel([
       { toolCalls: [{ name: "take", arguments: { slot: "2" } }], delayMs: 0 },
       { text: "Done.", delayMs: 0 },
     ]);
 
-    const { toolCalls } = await run(world, slotTools, rhythmOnly(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+    const { toolCalls } = await run(loaded, [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
 
     expect(toolCalls).toEqual([{ agent: "a", tool: "take", arguments: { slot: "2" }, outcome: "success" }]);
     expect(world.state).toEqual([null, "a", null]);
   });
   it("records a call to a tool the session does not offer as unknown_tool, applies nothing, and goes on", async () => {
-    const world = new World(emptySlots(3));
+    const loaded = slots();
+    const { world } = loaded;
     const model = new ScriptedModel([
       { toolCalls: [{ name: "fly", arguments: { slot: 1 } }], delayMs: 0 },
       { text: "Done.", delayMs: 0 },
     ]);
 
-    const { toolCalls } = await run(world, slotTools, rhythmOnly(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+    const { toolCalls } = await run(loaded, [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
 
     expect(toolCalls).toEqual([{ agent: "a", tool: "fly", arguments: { slot: 1 }, outcome: "unknown_tool" }]);
     expect(world.version).toBe(0);
     expect(model.received).toHaveLength(2);
   });
   it("applies an effector as the agent that called it, even when it declares an argument that names another agent", async () => {
-    const world = new World(emptySlots(3));
+    const loaded = slots();
+    const { world } = loaded;
     const takeNamingAgent = slotTools.map((tool) =>
       tool.name === "take"
         ? { ...tool, parameters: { type: "object", properties: { slot: { type: "integer" }, agent: { type: "string" } }, required: ["slot"] } }
@@ -372,19 +395,20 @@ describe("run", () => {
       { text: "Done.", delayMs: 0 },
     ]);
 
-    await run(world, takeNamingAgent, rhythmOnly(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+    await run(slots({ tools: takeNamingAgent }), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
 
     expect(world.state).toEqual(["a", null, null]);
   });
   it("tells the agent a failed call failed: its result is marked as an error and gives the outcome", async () => {
-    const world = new World(emptySlots(3));
+    const loaded = slots();
+    const { world } = loaded;
     world.apply(take, { agent: "b", slot: 1 });
     const model = new ScriptedModel([
       { toolCalls: [{ name: "take", arguments: { slot: 1 } }], delayMs: 0 },
       { text: "Done.", delayMs: 0 },
     ]);
 
-    const { toolCalls } = await run(world, slotTools, rhythmOnly(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+    const { toolCalls } = await run(loaded, [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
 
     expect(toolCalls).toEqual([{ agent: "a", tool: "take", arguments: { slot: 1 }, outcome: "slot_taken" }]);
     expect(model.received[1]?.at(-1)).toMatchObject({ role: "toolResult", isError: true, content: [{ type: "text", text: "slot_taken" }] });
@@ -396,18 +420,19 @@ describe("run", () => {
       { text: "Done.", delayMs: 0 },
     ]);
 
-    await run(new World(emptySlots(3)), slotTools, rhythmOnly(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+    await run(slots(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
 
     expect(model.received[1]?.at(-1)).toMatchObject({ role: "toolResult", isError: false, content: [{ type: "text", text: "success" }] });
   });
   it("rejects an argument the tool does not declare, though its schema allows it, telling the agent which", async () => {
-    const world = new World(emptySlots(3));
+    const loaded = slots();
+    const { world } = loaded;
     const model = new ScriptedModel([
       { toolCalls: [{ name: "take", arguments: { slot: 1, x: 2 } }], delayMs: 0 },
       { text: "Done.", delayMs: 0 },
     ]);
 
-    const { toolCalls } = await run(world, slotTools, rhythmOnly(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+    const { toolCalls } = await run(loaded, [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
 
     expect(toolCalls).toEqual([{ agent: "a", tool: "take", arguments: { slot: 1, x: 2 }, outcome: "invalid_arguments" }]);
     expect(world.version).toBe(0);
@@ -423,7 +448,7 @@ describe("run", () => {
       { text: "Done.", delayMs: 0 },
     ]);
 
-    const { toolCalls } = await run(new World(emptySlots(3)), slotTools, rhythmOnly(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+    const { toolCalls } = await run(slots(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
 
     expect(toolCalls).toEqual([{ agent: "a", tool: "look", arguments: { slot: 1 }, outcome: "invalid_arguments" }]);
     expect(model.received[1]?.at(-1)).toMatchObject({ role: "toolResult", isError: true });
