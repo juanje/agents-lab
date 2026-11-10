@@ -55,6 +55,11 @@ export function window(grid: Grid, { x, y }: Position, radius: number): WindowCe
   return cells;
 }
 
+/** Stub: every cell looks empty, so the tests can fail on their assertions first. */
+export function entitiesAt(_grid: Grid, _at: Position): readonly string[] {
+  return [];
+}
+
 /** Stub: places nothing, so the steps can fail on their assertions first. */
 export function place(grid: Grid, _entity: string, _at: Position): Grid {
   return grid;

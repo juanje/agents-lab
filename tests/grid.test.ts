@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { emptyGrid, neighbours, window } from "../src/engine/grid.ts";
+import { type Grid, emptyGrid, entitiesAt, neighbours, place, randomEmptyCell, window } from "../src/engine/grid.ts";
+import type { Random } from "../src/engine/random.ts";
 
 describe("neighbours", () => {
   const grid = emptyGrid(5, 4, 1);
@@ -67,5 +68,75 @@ describe("window", () => {
     ]);
     expect(cells[0]).toEqual({ x: 2, y: -2, outside: true });
     expect(cells[24]).toEqual({ x: 6, y: 2, outside: true });
+  });
+});
+
+describe("place", () => {
+  it("puts an entity in a cell and leaves the other cells as they were", () => {
+    const grid = place(place(emptyGrid(3, 2, 2), "a", { x: 2, y: 1 }), "b", { x: 2, y: 1 });
+
+    expect(entitiesAt(grid, { x: 2, y: 1 })).toEqual(["a", "b"]);
+    expect(entitiesAt(grid, { x: 2, y: 0 })).toEqual([]);
+    expect(entitiesAt(grid, { x: 0, y: 1 })).toEqual([]);
+  });
+
+  it("refuses a cell at capacity, saying which cell and its capacity", () => {
+    const grid = place(emptyGrid(3, 2, 1), "a", { x: 1, y: 1 });
+
+    expect(() => place(grid, "b", { x: 1, y: 1 })).toThrow("cannot place b at 1, 1: the cell is at its capacity of 1");
+  });
+
+  it("refuses a cell outside the grid, saying which cell and the grid's size", () => {
+    expect(() => place(emptyGrid(3, 2, 1), "a", { x: 3, y: 0 })).toThrow(
+      "cannot place a at 3, 0: the cell is outside the 3 by 2 grid",
+    );
+  });
+});
+
+/** A random sequence that gives the same draw every time, and counts its draws. */
+function fixedDraw(draw: number): Random & { draws: number } {
+  const random = {
+    draws: 0,
+    next() {
+      random.draws += 1;
+      return draw;
+    },
+  };
+  return random as unknown as Random & { draws: number };
+}
+
+describe("randomEmptyCell", () => {
+  /** A 3 by 2 grid, capacity 2, whose empty cells, row by row, are 0, 0; 2, 0; 1, 1. */
+  function partlyFull(): Grid {
+    let grid = emptyGrid(3, 2, 2);
+    grid = place(grid, "a", { x: 1, y: 0 });
+    grid = place(grid, "b", { x: 0, y: 1 });
+    grid = place(grid, "c", { x: 2, y: 1 });
+    return grid;
+  }
+
+  it("draws once among the empty cells, taken row by row, so the same draw gives the same cell", () => {
+    expect(randomEmptyCell(partlyFull(), fixedDraw(0))).toEqual({ x: 0, y: 0 });
+    expect(randomEmptyCell(partlyFull(), fixedDraw(0.5))).toEqual({ x: 2, y: 0 });
+    const random = fixedDraw(0.99);
+    expect(randomEmptyCell(partlyFull(), random)).toEqual({ x: 1, y: 1 });
+    expect(random.draws).toBe(1);
+  });
+
+  it("counts a cell that holds any entity as not empty, though it is below its capacity", () => {
+    const grid = place(place(emptyGrid(2, 1, 2), "a", { x: 0, y: 0 }), "b", { x: 0, y: 0 });
+
+    expect(randomEmptyCell(place(emptyGrid(2, 1, 2), "a", { x: 1, y: 0 }), fixedDraw(0.99))).toEqual({ x: 0, y: 0 });
+    expect(randomEmptyCell(grid, fixedDraw(0))).toEqual({ x: 1, y: 0 });
+  });
+
+  it("gives no cell when every cell holds an entity, and draws nothing then", () => {
+    let grid = emptyGrid(2, 1, 2);
+    grid = place(grid, "a", { x: 0, y: 0 });
+    grid = place(grid, "b", { x: 1, y: 0 });
+    const random = fixedDraw(0);
+
+    expect(randomEmptyCell(grid, random)).toBeUndefined();
+    expect(random.draws).toBe(0);
   });
 });
