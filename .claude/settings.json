@@ -1,6 +1,9 @@
 {
   "permissions": {
     "deny": [
+      "Read(./contracts/pending/**)",
+      "Bash(cat contracts/pending/*)",
+      "Bash(ls contracts/pending*)",
       "Read(./.env)",
       "Read(./.env.*)",
       "Read(**/.env)",
