@@ -55,17 +55,38 @@ export function window(grid: Grid, { x, y }: Position, radius: number): WindowCe
   return cells;
 }
 
-/** Stub: every cell looks empty, so the tests can fail on their assertions first. */
-export function entitiesAt(_grid: Grid, _at: Position): readonly string[] {
-  return [];
+function indexOf(grid: Grid, { x, y }: Position): number {
+  return y * grid.width + x;
 }
 
-/** Stub: places nothing, so the steps can fail on their assertions first. */
-export function place(grid: Grid, _entity: string, _at: Position): Grid {
-  return grid;
+/** The entities a cell holds. */
+export function entitiesAt(grid: Grid, at: Position): readonly string[] {
+  return grid.cells[indexOf(grid, at)];
 }
 
-/** Stub: never finds an empty cell, so the steps can fail on their assertions first. */
-export function randomEmptyCell(_grid: Grid, _random: Random): Position | undefined {
-  return undefined;
+/**
+ * The grid with one more entity in a cell, for building a world's initial state. Once the world runs, entities change
+ * cells only through the arbiter, with `move`.
+ */
+export function place(grid: Grid, entity: string, at: Position): Grid {
+  const where = `cannot place ${entity} at ${at.x}, ${at.y}`;
+  if (!inside(grid, at)) throw new Error(`${where}: the cell is outside the ${grid.width} by ${grid.height} grid`);
+  if (entitiesAt(grid, at).length >= grid.capacity) {
+    throw new Error(`${where}: the cell is at its capacity of ${grid.capacity}`);
+  }
+  const index = indexOf(grid, at);
+  return { ...grid, cells: grid.cells.map((cell, current) => (current === index ? [...cell, entity] : cell)) };
+}
+
+/**
+ * A cell that holds no entity, drawn from a random sequence among the empty cells taken row by row, so the same
+ * sequence gives the same cell. Gives none, and draws nothing, when every cell holds an entity.
+ */
+export function randomEmptyCell(grid: Grid, random: Random): Position | undefined {
+  const empty: Position[] = [];
+  grid.cells.forEach((cell, index) => {
+    if (cell.length === 0) empty.push({ x: index % grid.width, y: Math.floor(index / grid.width) });
+  });
+  if (empty.length === 0) return undefined;
+  return empty[Math.floor(random.next() * empty.length)];
 }
