@@ -51,7 +51,8 @@ async function load(context: Context, condition?: Condition): Promise<void> {
   const model = new ScriptedModel([{ text: "wait", delayMs: 0 }]);
   context.models.set("a", model);
   try {
-    context.loaded = loadScenario(context.scenario, condition);
+    // Any seed: the slots test scenario draws nothing from it.
+    context.loaded = loadScenario(context.scenario, 1, condition);
   } catch (error) {
     context.loadingError = error as Error;
     return;

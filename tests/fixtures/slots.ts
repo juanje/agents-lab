@@ -65,3 +65,26 @@ export const slotsScenario: Scenario<Slots> = {
   systemPrompt: "You can take an empty slot or wait.",
   baseConfiguration: "[slots]\ncount = 3\nheld = 0\n",
 };
+
+/** The name the placing scenario gives its n-th agent, from 1. */
+export function placedAgent(n: number): string {
+  return `agent ${n}`;
+}
+
+/**
+ * The test world as a scenario that starts with agents on random empty slots. Its base configuration's [slots] table
+ * gives the number of slots and of agents; each agent in turn takes an empty slot drawn from the replica's source.
+ */
+export const placingScenario: Scenario<Slots> = {
+  ...slotsScenario,
+  initialState: (configuration, random) => {
+    const { count, agents } = configuration.slots as { count: number; agents: number };
+    const slots: (string | null)[] = Array.from({ length: count }, () => null);
+    for (let n = 1; n <= agents; n += 1) {
+      const empty = slots.flatMap((holder, index) => (holder === null ? [index] : []));
+      slots[empty[Math.floor(random.next() * empty.length)]] = placedAgent(n);
+    }
+    return slots;
+  },
+  baseConfiguration: "[slots]\ncount = 10\nagents = 3\n",
+};

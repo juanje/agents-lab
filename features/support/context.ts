@@ -30,6 +30,8 @@ export class Context extends CucumberWorld {
   /** The loaded world's state and version before anything ran on it. */
   start?: { state: Slots; version: number };
   loadingError?: Error;
+  /** The initial state each replica started with, in the order the scenario starts them. */
+  replicaStarts!: Slots[];
 }
 
 setWorldConstructor(Context);

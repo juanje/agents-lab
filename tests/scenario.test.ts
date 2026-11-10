@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 import { loadScenario } from "../src/engine/scenario.ts";
 import { START_HOLDER, slotsScenario } from "./fixtures/slots.ts";
 
+/** Any seed: the slots test scenario draws nothing from it. */
+const seed = 1;
+
 describe("loadScenario", () => {
   it("builds the world's initial state from the scenario's base configuration", () => {
-    const loaded = loadScenario({ ...slotsScenario, baseConfiguration: "[slots]\ncount = 2\nheld = 1\n" });
+    const loaded = loadScenario({ ...slotsScenario, baseConfiguration: "[slots]\ncount = 2\nheld = 1\n" }, seed);
 
     expect(loaded.configuration).toEqual({ slots: { count: 2, held: 1 } });
     expect(loaded.world.state).toEqual([START_HOLDER, null]);
@@ -15,6 +18,7 @@ describe("loadScenario", () => {
   it("applies the condition's change over the base configuration, keeping what the change does not set", () => {
     const loaded = loadScenario(
       { ...slotsScenario, baseConfiguration: "label = 'base'\nmode = 'plain'\n[slots]\ncount = 2\nheld = 0\n" },
+      seed,
       { name: "new-label", change: "label = 'changed'\n" },
     );
 
@@ -28,6 +32,7 @@ describe("loadScenario", () => {
         baseConfiguration:
           "[slots]\ncount = 2\nheld = 0\n[view]\nnames = ['a', 'b', 'c']\n[view.style]\nmark = 'x'\nwidth = 1\n",
       },
+      seed,
       { name: "deep", change: "[slots]\nheld = 1\n[view]\nnames = ['z']\n[view.style]\nwidth = 3\n" },
     );
 
@@ -43,7 +48,7 @@ describe("loadScenario", () => {
     ["inside a table", "[slots]\ncuont = 5\n", "slots.cuont"],
     ["as a table", "[view]\nwidth = 3\n", "view"],
   ])("refuses a condition that sets a key the base configuration lacks %s, naming its full path", (_case, change, path) => {
-    expect(() => loadScenario(slotsScenario, { name: "typo", change })).toThrow(
+    expect(() => loadScenario(slotsScenario, seed, { name: "typo", change })).toThrow(
       `Condition "typo" sets ${path}, which the base configuration of scenario "slots" does not have`,
     );
   });
@@ -58,7 +63,7 @@ describe("loadScenario", () => {
   ] as const)("refuses a scenario without its %s, with an error that names the %s", (property, part) => {
     const { [property]: _left, ...rest } = slotsScenario;
 
-    expect(() => loadScenario(rest)).toThrow(`Scenario "slots" lacks its ${part}`);
+    expect(() => loadScenario(rest, seed)).toThrow(`Scenario "slots" lacks its ${part}`);
   });
 
   /** A base configuration with a value of each kind TOML has. */
@@ -85,13 +90,13 @@ describe("loadScenario", () => {
     ["slots = 3", "slots", "a number", "a table"],
     ["[names]\nfirst = 'a'", "names", "a table", "an array"],
   ])("refuses the condition %j, naming the key and both kinds", (change, path, given, kind) => {
-    expect(() => loadScenario({ ...slotsScenario, baseConfiguration: everyKind }, { name: "kind", change })).toThrow(
+    expect(() => loadScenario({ ...slotsScenario, baseConfiguration: everyKind }, seed, { name: "kind", change })).toThrow(
       `Condition "kind" gives ${path} ${given}, where the base configuration of scenario "slots" has ${kind}`,
     );
   });
 
   it("accepts a whole number where the base configuration has a fraction, as both are numbers", () => {
-    const loaded = loadScenario({ ...slotsScenario, baseConfiguration: everyKind }, { name: "whole", change: "ratio = 1" });
+    const loaded = loadScenario({ ...slotsScenario, baseConfiguration: everyKind }, seed, { name: "whole", change: "ratio = 1" });
 
     expect(loaded.configuration.ratio).toBe(1);
   });
@@ -102,6 +107,6 @@ describe("loadScenario", () => {
     ["an empty base configuration", { baseConfiguration: "" }, "base configuration"],
     ["a base configuration that sets no key", { baseConfiguration: "# no key\n\n" }, "base configuration"],
   ] as const)("refuses a scenario with %s, as lacking that part", (_case, empty, part) => {
-    expect(() => loadScenario({ ...slotsScenario, ...empty })).toThrow(`Scenario "slots" lacks its ${part}`);
+    expect(() => loadScenario({ ...slotsScenario, ...empty }, seed)).toThrow(`Scenario "slots" lacks its ${part}`);
   });
 });

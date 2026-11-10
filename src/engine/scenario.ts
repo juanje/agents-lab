@@ -1,5 +1,6 @@
 import { type TomlTable, type TomlValue, parse } from "smol-toml";
 import type { ActionArgs, DeclaredAction } from "./actions.ts";
+import { Random } from "./random.ts";
 import { World } from "./world.ts";
 
 /** A resolved configuration: the scenario's base configuration with the condition's change over it. */
@@ -8,8 +9,8 @@ export type Configuration = TomlTable;
 /** What a scenario provides to the engine. */
 export interface Scenario<State> {
   name: string;
-  /** Builds the world's initial state from the resolved configuration. */
-  initialState: (configuration: Configuration) => State;
+  /** Builds the world's initial state from the resolved configuration, drawing any chance from the replica's source. */
+  initialState: (configuration: Configuration, random: Random) => State;
   /** What an agent observes of the state. */
   perception: (state: State, agent: string) => string;
   actions: readonly DeclaredAction<State, ActionArgs>[];
@@ -27,11 +28,15 @@ export interface Condition {
   change: string;
 }
 
-/** A scenario ready to run: its parts, its resolved configuration and its world in its initial state. */
+/**
+ * A scenario ready to run as one replica: its parts, its resolved configuration, its world in its initial state, and
+ * the replica's random source, which the run goes on drawing from.
+ */
 export interface LoadedScenario<State> {
   scenario: Scenario<State>;
   configuration: Configuration;
   world: World<State>;
+  random: Random;
 }
 
 /** Each part a scenario must provide, and how an error names it. */
@@ -45,10 +50,15 @@ const requiredParts = [
 ] as const satisfies readonly (readonly [keyof Scenario<unknown>, string])[];
 
 /**
- * Loads a scenario under a condition, or under its base configuration alone. Scenarios reach the engine as modules,
- * not through the type checker, so any part may be missing; a scenario that lacks one is refused before anything runs.
+ * Loads a scenario as one replica, with its seed, under a condition or under its base configuration alone. Scenarios
+ * reach the engine as modules, not through the type checker, so any part may be missing; a scenario that lacks one is
+ * refused before anything runs.
  */
-export function loadScenario<State>(parts: Partial<Scenario<State>>, condition?: Condition): LoadedScenario<State> {
+export function loadScenario<State>(
+  parts: Partial<Scenario<State>>,
+  seed: number,
+  condition?: Condition,
+): LoadedScenario<State> {
   const lacks = (part: string) => new Error(`Scenario "${parts.name}" lacks its ${part}`);
   for (const [property, part] of requiredParts) {
     if (parts[property] === undefined) throw lacks(part);
@@ -62,7 +72,8 @@ export function loadScenario<State>(parts: Partial<Scenario<State>>, condition?:
     condition === undefined
       ? base
       : applyChange(base, parse(condition.change), [], { condition: condition.name, scenario: scenario.name });
-  return { scenario, configuration, world: new World(scenario.initialState(configuration)) };
+  const random = new Random(seed);
+  return { scenario, configuration, world: new World(scenario.initialState(configuration, random)), random };
 }
 
 /** The names of the condition being applied and of the scenario whose base configuration it changes, for errors. */
