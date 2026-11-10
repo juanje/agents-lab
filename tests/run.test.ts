@@ -31,6 +31,23 @@ describe("run", () => {
     expect(first).toMatchObject({ role: "user", content: [{ type: "text", text: "rhythm: You wake up." }] });
   });
 
+  it("delivers a stimulus that arrives during a model turn at the agent's next model turn", async () => {
+    const stimuli = new Stimuli([rhythmChannel, { name: "bell", source: "town bell", stimulus: "The bell rings." }]);
+    const model = new ScriptedModel([
+      { toolCalls: [{ name: "look", arguments: {} }], delayMs: 100 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+    // The rhythm is called as the agent starts to wait, and with no wait the agent wakes as it returns.
+    const ringsAfter50 = () => (setTimeout(() => stimuli.deliver("a", "bell"), 50), 0);
+
+    await run(new World(emptySlots(3)), slotTools, stimuli, [{ name: "a", model, activations: 1, rhythm: ringsAfter50 }], seed, settings);
+
+    const [first, second] = model.received;
+    const rings = { role: "user", content: [{ type: "text", text: "town bell: The bell rings." }] };
+    expect(first).not.toContainEqual(expect.objectContaining(rings));
+    expect(second?.at(-1)).toMatchObject(rings);
+  });
+
   it("offers the agent's model exactly the scenario's tools, with their descriptions and arguments", async () => {
     const model = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
 
