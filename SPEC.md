@@ -190,11 +190,11 @@ A sensor call takes its declared duration. Its result is the world as it is when
 *Why:* perceiving is an act that takes time, and what an agent knows is what it last perceived, not the world's current state.
 
 #### FR-TOOL-04: Acting takes time, and its effect is checked when it lands
-An effector call takes its declared duration, which may depend on its arguments and the state (for example, distance). The agent is busy until it ends; its effect is checked and applied then, against the world as it is at that moment, and it fails only for a reason of the world (for example, the cell is held), whatever the agent perceived. Each effector call records, beside its outcome, what the agent last sensed of its target: `free`, `held` or `not_sensed`. The scenario declares, for each effector, how to read its target in the agent's last sensing.
+An effector call takes its declared duration, which may depend on its arguments, the agent that calls it and the state (for example, distance or the agent's own speed). The agent is busy until it ends; its effect is checked and applied then, against the world as it is at that moment, and it fails only for a reason of the world (for example, the cell is held), whatever the agent perceived. Each effector call records, beside its outcome, what the agent last sensed of its target: `free`, `held` or `not_sensed`. The scenario declares, for each effector, how to read its target in the agent's last sensing.
 *Why:* doing things takes time, and the world goes on changing meanwhile. A collision is a physical event that happens whether or not the agent looked (NFR-11); what the agent knew is what tells stale information from a misjudgement or from acting without perceiving, and it belongs in the record, not in the outcome.
 
 #### FR-SPACE-02: Moving across the grid takes time in proportion to distance
-A move on the grid takes the scenario's time per cell multiplied by the distance, counted in steps between neighbouring cells. The entity stays in its cell until the move ends; the destination is checked when it arrives.
+The grid gives the distance between two cells, counted in steps between neighbouring cells (a diagonal step counts as one). A scenario's effector that moves an agent across the grid takes, as its duration (FR-TOOL-04), the scenario's time per cell multiplied by that distance. The agent stays in its cell until the move ends; the destination is checked when it arrives.
 *Why:* if moving costs nothing, space and distance stop shaping who meets whom and who arrives first, and the grid becomes decoration.
 
 #### FR-PROCESS-01: The environment changes on its own
