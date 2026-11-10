@@ -11,6 +11,7 @@ import {
   createExtensionRuntime,
 } from "@earendil-works/pi-coding-agent";
 import { type Api, type AssistantMessage, type Model, type Provider, getCurrentSystemMessage } from "@earendil-works/pi-ai";
+import type { ParallelismLimit } from "./parallelism.ts";
 import type { Effector, Tool } from "./tools.ts";
 import type { World } from "./world.ts";
 
@@ -32,9 +33,19 @@ export interface ModelTurn {
   outcome: "success" | "model_error" | "timeout";
   /** The provider's message, for a model error. */
   message?: string;
+  /** How long the turn waited for a free slot under the parallelism limit before its call started. */
+  slotWaitMs: number;
   /** When the call to the model started and when its answer ended, by performance.now(). */
   startedAtMs: number;
   endedAtMs: number;
+}
+
+/** What an agent's session is given besides its tools. */
+export interface SessionSettings {
+  /** The scenario's system prompt, which takes the place of Pi's own. */
+  systemPrompt: string;
+  /** How long a model turn may run before it is aborted. */
+  modelTurnTimeoutMs: number;
 }
 
 /** Opens the Pi session an agent keeps for the whole run (FR-ADAPTER-02). */
@@ -43,7 +54,8 @@ export async function openSession<State>(
   tools: readonly Tool<State>[],
   agent: { name: string; model: AgentModel },
   runtime: ModelRuntime,
-  settings: { systemPrompt: string; modelTurnTimeoutMs: number },
+  settings: SessionSettings,
+  parallelism: ParallelismLimit,
   turns: ModelTurn[],
 ): Promise<AgentSession> {
   const directory = labPiDirectory();
@@ -62,17 +74,20 @@ export async function openSession<State>(
     settingsManager: SettingsManager.inMemory({ retry: { enabled: false } }),
   });
   forceSystemPrompt(session, settings.systemPrompt);
-  runTurns(session, agent.name, settings.modelTurnTimeoutMs, turns);
+  runTurns(session, agent.name, settings.modelTurnTimeoutMs, parallelism, turns);
   return session;
 }
 
 /**
- * Wraps the session's call to the model, so each model turn is aborted when it runs longer than the timeout, and
- * recorded when its answer ends. An aborted answer carries no tool calls Pi would run, and ends the activation.
+ * Wraps the session's call to the model, so each model turn waits for a free slot under the parallelism limit, is
+ * aborted when it runs longer than the timeout, and is recorded when its answer ends. An aborted answer carries no tool
+ * calls Pi would run, and ends the activation.
  */
-function runTurns(session: AgentSession, agent: string, timeoutMs: number, turns: ModelTurn[]): void {
+function runTurns(session: AgentSession, agent: string, timeoutMs: number, parallelism: ParallelismLimit, turns: ModelTurn[]): void {
   const call = session.agent.streamFunction;
   session.agent.streamFunction = async (model, context, options) => {
+    const requestedAtMs = performance.now();
+    const free = await parallelism.acquire();
     const startedAtMs = performance.now();
     const timeout = new AbortController();
     const timer = setTimeout(() => timeout.abort(), timeoutMs);
@@ -81,8 +96,9 @@ function runTurns(session: AgentSession, agent: string, timeoutMs: number, turns
     void answer.result().then((message) => {
       const endedAtMs = performance.now();
       clearTimeout(timer);
+      free();
       const outcome = timeout.signal.aborted ? { outcome: "timeout" as const } : outcomeOf(message);
-      turns.push({ agent, ...outcome, startedAtMs, endedAtMs });
+      turns.push({ agent, ...outcome, slotWaitMs: startedAtMs - requestedAtMs, startedAtMs, endedAtMs });
     });
     return answer;
   };
