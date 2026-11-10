@@ -24,6 +24,8 @@ export class Context extends CucumberWorld {
   readonly modelIds = new Map<string, string>();
   /** The agent the scenario spoke of last, for a step that says "its model". */
   lastAgent?: string;
+  /** Every file in the person's Pi directory and its content, as the scenario left it before the run. */
+  personsPiFiles?: Map<string, string>;
   /** The system prompt the scenario declares. */
   systemPrompt = "";
   /** The scenario the engine is given, and the condition it is loaded with. */

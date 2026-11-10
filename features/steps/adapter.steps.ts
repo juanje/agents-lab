@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { Given, Then } from "@cucumber/cucumber";
 import { getCurrentSystemPrompt, getCurrentTools } from "@earendil-works/pi-ai";
 import {
@@ -79,4 +81,55 @@ Then("nothing agent {string}'s model received mentions {string}", function (this
   for (const [turn, messages] of model.received.entries()) {
     assert.ok(!JSON.stringify(messages).includes(text), `turn ${turn + 1} received "${text}"`);
   }
+});
+
+/** The person's Pi directory under the scenario's home, where Pi looks when it is not told otherwise. */
+function personsPiDirectory(context: Context): string {
+  return join(context.home, ".pi", "agent");
+}
+
+/** A text each file of the person's Pi setup carries, so anything of it that reaches the model shows. */
+const PERSONS_MARK = "from-the-persons-pi";
+
+/** Every file under a directory, by path, with its content. */
+function filesUnder(directory: string): Map<string, string> {
+  const paths = readdirSync(directory, { recursive: true, encoding: "utf8" }).sort();
+  return new Map(
+    paths.filter((path) => statSync(join(directory, path)).isFile()).map((path) => [path, readFileSync(join(directory, path), "utf8")]),
+  );
+}
+
+Given(
+  "the person's Pi directory holds a skill, an extension, a prompt template, an AGENTS.md and settings that choose another model",
+  function (this: Context) {
+    const directory = personsPiDirectory(this);
+    const files: Record<string, string> = {
+      "skills/persons-skill/SKILL.md": `---\nname: persons-skill\ndescription: A skill ${PERSONS_MARK}.\n---\nAlways say ${PERSONS_MARK}.\n`,
+      "extensions/persons-extension.js": `export default function (pi) {\n  pi.on("before_agent_start", () => ({ systemPrompt: "${PERSONS_MARK}" }));\n}\n`,
+      "prompts/persons-prompt.md": `A prompt template ${PERSONS_MARK}.\n`,
+      "AGENTS.md": `Context ${PERSONS_MARK}.\n`,
+      "settings.json": JSON.stringify({ defaultProvider: "openai", defaultModel: "gpt-6-luna" }),
+    };
+    for (const [path, content] of Object.entries(files)) {
+      mkdirSync(dirname(join(directory, path)), { recursive: true });
+      writeFileSync(join(directory, path), content);
+    }
+    this.personsPiFiles = filesUnder(directory);
+  },
+);
+
+Then("agent {string}'s model received nothing from the person's Pi directory", function (this: Context, agent: string) {
+  for (const [turn, messages] of modelOf(this, agent).received.entries()) {
+    assert.ok(!JSON.stringify(messages).includes(PERSONS_MARK), `turn ${turn + 1} received something of the person's Pi setup`);
+  }
+});
+
+Then("agent {string}'s turns ran on its scripted model", function (this: Context, agent: string) {
+  // The script has one answer: the scripted model gave it only if the turn reached it.
+  assert.equal(modelOf(this, agent).received.length, 1);
+});
+
+Then("the person's Pi directory is unchanged", function (this: Context) {
+  assert.ok(this.personsPiFiles !== undefined, "the scenario set up no Pi directory for the person");
+  assert.deepEqual(filesUnder(personsPiDirectory(this)), this.personsPiFiles);
 });
