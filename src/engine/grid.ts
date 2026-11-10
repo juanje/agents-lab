@@ -38,7 +38,17 @@ export interface WindowCell extends Position {
   outside: boolean;
 }
 
-/** Stub: an empty window, so the steps can fail on their assertions first. */
-export function window(_grid: Grid, _position: Position, _radius: number): WindowCell[] {
-  return [];
+/**
+ * The square of cells within a radius of a position, row by row, the position included. Cells beyond the grid's edges
+ * stay in the window, marked as outside, so every window of one radius has the same shape.
+ */
+export function window(grid: Grid, { x, y }: Position, radius: number): WindowCell[] {
+  const cells: WindowCell[] = [];
+  for (let dy = -radius; dy <= radius; dy += 1) {
+    for (let dx = -radius; dx <= radius; dx += 1) {
+      const cell = { x: x + dx, y: y + dy };
+      cells.push({ ...cell, outside: !inside(grid, cell) });
+    }
+  }
+  return cells;
 }
