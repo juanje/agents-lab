@@ -123,21 +123,24 @@ Given("the test scenario {string} with an empty {}", function (this: Context, na
   this.scenario = { ...slotsScenario, ...empty };
 });
 
-Then("loading fails with an error that names {string}", function (this: Context, part: string) {
-  if (this.loadingError === undefined) assert.fail("expected loading to fail, but it loaded");
-  if (!this.loadingError.message.includes(part)) {
-    assert.fail(`expected the error to name "${part}", got: ${this.loadingError.message}`);
+/** Checks that loading failed with an error whose message names each of the given names. */
+function assertRefusedNaming(context: Context, names: readonly string[]): void {
+  const error = context.loadingError;
+  if (error === undefined) assert.fail("expected loading to fail, but it loaded");
+  const unnamed = names.filter((name) => !error.message.includes(name));
+  if (unnamed.length > 0) {
+    assert.fail(`expected the error to name ${unnamed.map((name) => `"${name}"`).join(", ")}, got: ${error.message}`);
   }
+}
+
+Then("loading fails with an error that names {string}", function (this: Context, name: string) {
+  assertRefusedNaming(this, [name]);
 });
 
 Then(
   "loading fails with an error that names {string}, {string} and {string}",
   function (this: Context, first: string, second: string, third: string) {
-    if (this.loadingError === undefined) assert.fail("expected loading to fail, but it loaded");
-    const unnamed = [first, second, third].filter((name) => !this.loadingError?.message.includes(name));
-    if (unnamed.length > 0) {
-      assert.fail(`expected the error to name ${unnamed.map((name) => `"${name}"`).join(", ")}, got: ${this.loadingError.message}`);
-    }
+    assertRefusedNaming(this, [first, second, third]);
   },
 );
 
