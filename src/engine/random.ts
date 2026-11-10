@@ -1,5 +1,6 @@
 /**
- * A replica's random source: the same seed gives the same draws. It is mulberry32, a small generator with 32 bits of
+ * A random sequence: the same seed gives the same draws. The engine derives one per purpose from a replica's seed
+ * (`derive`), so no two purposes share a sequence. It is mulberry32, a small generator with 32 bits of
  * state, written here so that no dependency decides what a seed means.
  */
 export class Random {

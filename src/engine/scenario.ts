@@ -9,7 +9,7 @@ export type Configuration = TomlTable;
 /** What a scenario provides to the engine. */
 export interface Scenario<State> {
   name: string;
-  /** Builds the world's initial state from the resolved configuration, drawing any chance from the replica's source. */
+  /** Builds the world's initial state from the resolved configuration, drawing any chance from its own sequence. */
   initialState: (configuration: Configuration, random: Random) => State;
   /** What an agent observes of the state. */
   perception: (state: State, agent: string) => string;
@@ -28,15 +28,11 @@ export interface Condition {
   change: string;
 }
 
-/**
- * A scenario ready to run as one replica: its parts, its resolved configuration, its world in its initial state, and
- * the replica's random source, which the run goes on drawing from.
- */
+/** A scenario ready to run as one replica: its parts, its resolved configuration and its world in its initial state. */
 export interface LoadedScenario<State> {
   scenario: Scenario<State>;
   configuration: Configuration;
   world: World<State>;
-  random: Random;
 }
 
 /** Each part a scenario must provide, and how an error names it. */
@@ -72,8 +68,8 @@ export function loadScenario<State>(
     condition === undefined
       ? base
       : applyChange(base, parse(condition.change), [], { condition: condition.name, scenario: scenario.name });
-  const random = new Random(seed);
-  return { scenario, configuration, world: new World(scenario.initialState(configuration, random)), random };
+  const initial = scenario.initialState(configuration, Random.derive(seed, "initial state"));
+  return { scenario, configuration, world: new World(initial) };
 }
 
 /** The names of the condition being applied and of the scenario whose base configuration it changes, for errors. */
