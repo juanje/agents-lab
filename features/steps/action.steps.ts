@@ -21,6 +21,20 @@ When("agent {string} answers:", function (this: Context, agent: string, answer: 
   this.outcome = act(this.world, this.actions, agent, answer);
 });
 
+When(
+  "agent {string} answers {string}, followed by a line that holds only spaces and a tab",
+  function (this: Context, agent: string, answer: string) {
+    this.outcome = act(this.world, this.actions, agent, `${answer}\n  \t`);
+  },
+);
+
+When(
+  "agent {string} answers {string}, ending with a Windows line break",
+  function (this: Context, agent: string, answer: string) {
+    this.outcome = act(this.world, this.actions, agent, `${answer}\r\n`);
+  },
+);
+
 Then("the decision's outcome is {string}", function (this: Context, outcome: string) {
   assert.equal(this.outcome, outcome);
 });
