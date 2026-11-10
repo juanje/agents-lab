@@ -21,6 +21,23 @@ describe("loadScenario", () => {
     expect(loaded.configuration).toEqual({ label: "changed", mode: "plain", slots: { count: 2, held: 0 } });
   });
 
+  it("applies a table in the change inside the base configuration's table, at any depth, and replaces arrays whole", () => {
+    const loaded = loadScenario(
+      {
+        ...slotsScenario,
+        baseConfiguration:
+          "[slots]\ncount = 2\nheld = 0\n[view]\nnames = ['a', 'b', 'c']\n[view.style]\nmark = 'x'\nwidth = 1\n",
+      },
+      { name: "deep", change: "[slots]\nheld = 1\n[view]\nnames = ['z']\n[view.style]\nwidth = 3\n" },
+    );
+
+    expect(loaded.configuration).toEqual({
+      slots: { count: 2, held: 1 },
+      view: { names: ["z"], style: { mark: "x", width: 3 } },
+    });
+    expect(loaded.world.state).toEqual([START_HOLDER, null]);
+  });
+
   it.each([
     ["initialState", "initial state"],
     ["perception", "perception"],
