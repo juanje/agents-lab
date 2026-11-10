@@ -1,6 +1,16 @@
 import assert from "node:assert/strict";
 import { Given, Then } from "@cucumber/cucumber";
-import { getCurrentSystemPrompt } from "@earendil-works/pi-ai";
+import { getCurrentSystemPrompt, getCurrentTools } from "@earendil-works/pi-ai";
+import {
+  createBashToolDefinition,
+  createEditToolDefinition,
+  createFindToolDefinition,
+  createGrepToolDefinition,
+  createLsToolDefinition,
+  createPowerShellToolDefinition,
+  createReadToolDefinition,
+  createWriteToolDefinition,
+} from "@earendil-works/pi-coding-agent";
 import type { Context } from "../support/context.ts";
 import { modelOf, script } from "./tool.steps.ts";
 
@@ -31,5 +41,24 @@ Then("all of agent {string}'s model turns ran in the same Pi session", function 
 Then("the system prompt agent {string}'s model received is exactly {string}", function (this: Context, agent: string, prompt: string) {
   for (const [turn, messages] of modelOf(this, agent).received.entries()) {
     assert.equal(getCurrentSystemPrompt(messages), prompt, `turn ${turn + 1} received another system prompt`);
+  }
+});
+
+/** The names of Pi's built-in tools, as Pi itself defines them. */
+const builtInTools = [
+  createReadToolDefinition,
+  createBashToolDefinition,
+  createEditToolDefinition,
+  createWriteToolDefinition,
+  createGrepToolDefinition,
+  createFindToolDefinition,
+  createLsToolDefinition,
+  createPowerShellToolDefinition,
+].map((define) => define(process.cwd()).name);
+
+Then("agent {string}'s model was offered none of Pi's built-in tools", function (this: Context, agent: string) {
+  for (const [turn, messages] of modelOf(this, agent).received.entries()) {
+    const offered = getCurrentTools(messages).filter((tool) => builtInTools.includes(tool.name));
+    assert.deepEqual(offered.map((tool) => tool.name), [], `turn ${turn + 1} was offered Pi's built-in tools`);
   }
 });
