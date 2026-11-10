@@ -4,10 +4,14 @@ import { waitAtLeast } from "./clock.ts";
 /** How many scripted models have been made, so each gets a provider id of its own. */
 let made = 0;
 
-/** One answer of a script: its text, the tools it calls, and how long the model takes to give it. */
+/**
+ * One answer of a script: its text and the tools it calls, or the provider's error message in their place, and how
+ * long the model takes to give it.
+ */
 export interface ScriptedAnswer {
   text?: string;
   toolCalls?: readonly { name: string; arguments: JsonObject }[];
+  error?: string;
   delayMs: number;
 }
 
@@ -33,11 +37,12 @@ export class ScriptedModel {
     const faux = fauxProvider({ provider: `scripted-${made}`, ...(id === undefined ? {} : { models: [{ id }] }) });
     // Each answer is a response factory, so its delay starts when the call reaches the provider, as a real model's does.
     faux.setResponses(
-      script.map(({ text, toolCalls = [], delayMs }) => async (context, options) => {
+      script.map(({ text, toolCalls = [], error, delayMs }) => async (context, options) => {
         this.sessions.push(options?.sessionId);
         // Copied: the caller may go on adding to the same transcript after this turn.
         this.received.push([...context.messages]);
         await waitAtLeast(delayMs);
+        if (error !== undefined) return fauxAssistantMessage([], { stopReason: "error", errorMessage: error });
         return fauxAssistantMessage([
           ...(text === undefined ? [] : [fauxText(text)]),
           ...toolCalls.map((call) => fauxToolCall(call.name, call.arguments)),
