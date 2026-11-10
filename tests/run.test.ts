@@ -1,3 +1,6 @@
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { getCurrentSystemPrompt, getCurrentTools } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "vitest";
 import { type RunSettings, run } from "../src/engine/run.ts";
@@ -79,6 +82,19 @@ describe("run", () => {
     });
 
     expect(model.received.map(getCurrentSystemPrompt)).toEqual(["You live in a row of slots."]);
+  });
+
+  it("opens its sessions in the lab's Pi directory, and leaves the person's as it was", async () => {
+    const persons = join(homedir(), ".pi", "agent");
+    mkdirSync(persons, { recursive: true });
+    writeFileSync(join(persons, "settings.json"), JSON.stringify({ defaultProvider: "openai", defaultModel: "gpt-6-luna" }));
+    const model = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
+
+    await run(new World(emptySlots(3)), slotTools, [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+
+    expect(readdirSync(persons, { recursive: true })).toEqual(["settings.json"]);
+    expect(existsSync(join(homedir(), ".agents-lab", "pi"))).toBe(true);
+    expect(model.received).toHaveLength(1);
   });
 
   it("gives each agent's model turns to that agent's own model", async () => {
