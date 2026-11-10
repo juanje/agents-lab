@@ -383,19 +383,19 @@ describe("run", () => {
     expect(model.received).toHaveLength(2);
   });
   it("applies an effector as the agent that called it, even when it declares an argument that names another agent", async () => {
-    const loaded = slots();
-    const { world } = loaded;
     const takeNamingAgent = slotTools.map((tool) =>
       tool.name === "take"
         ? { ...tool, parameters: { type: "object", properties: { slot: { type: "integer" }, agent: { type: "string" } }, required: ["slot"] } }
         : tool,
     );
+    const loaded = slots({ tools: takeNamingAgent });
+    const { world } = loaded;
     const model = new ScriptedModel([
       { toolCalls: [{ name: "take", arguments: { slot: 1, agent: "b" } }], delayMs: 0 },
       { text: "Done.", delayMs: 0 },
     ]);
 
-    await run(slots({ tools: takeNamingAgent }), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+    await run(loaded, [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
 
     expect(world.state).toEqual(["a", null, null]);
   });
