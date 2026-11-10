@@ -1,14 +1,14 @@
-import type { Message, ToolCall, ToolResultMessage } from "@earendil-works/pi-ai";
+import { type AgentSession, ModelRuntime } from "@earendil-works/pi-coding-agent";
+import { type AgentModel, openSession } from "./adapter.ts";
 import { waitAtLeast } from "./clock.ts";
 import { Random } from "./random.ts";
-import type { ScriptedModel } from "./scripted-model.ts";
-import type { Effector, Tool } from "./tools.ts";
+import type { Tool } from "./tools.ts";
 import type { World } from "./world.ts";
 
 /** An agent in a run: its name, the model it works with, how many activations it has, and its rhythm. */
 export interface Agent {
   name: string;
-  model: ScriptedModel;
+  model: AgentModel;
   activations: number;
   /** Draws the agent's next waiting interval before it wakes, in milliseconds, from the agent's random source. */
   rhythm: (random: Random) => number;
@@ -24,52 +24,29 @@ export async function run<State>(
   agents: readonly Agent[],
   seed: number,
 ): Promise<void> {
+  const runtime = await ModelRuntime.create();
+  for (const agent of agents) runtime.registerNativeProvider(agent.model.provider);
   // Each agent's rhythm has its own sequence, from the seed and the agent's name: sharing one would make an agent's
   // intervals depend on when the others' models answer, and deriving by order on which other agents run.
-  await Promise.all(agents.map((agent) => loop(world, tools, agent, Random.derive(seed, `rhythm of ${agent.name}`))));
+  await Promise.all(
+    agents.map(async (agent) => {
+      const session = await openSession(world, tools, agent, runtime);
+      try {
+        await loop(session, agent, Random.derive(seed, `rhythm of ${agent.name}`));
+      } finally {
+        session.dispose();
+      }
+    }),
+  );
 }
 
-/** One agent's loop: it repeats its cycle of waiting an interval from its rhythm, then an activation. */
-async function loop<State>(world: World<State>, tools: readonly Tool<State>[], agent: Agent, random: Random): Promise<void> {
+/**
+ * One agent's loop: it repeats its cycle of waiting an interval from its rhythm, then an activation, in which the
+ * agent's session runs model turns and tool calls until a turn makes no tool call.
+ */
+async function loop(session: AgentSession, agent: Agent, random: Random): Promise<void> {
   for (let count = 0; count < agent.activations; count += 1) {
     await waitAtLeast(agent.rhythm(random));
-    await activate(world, tools, agent);
+    await session.prompt("");
   }
-}
-
-/** One activation: the agent's model works through its tools until a turn makes no tool call. */
-async function activate<State>(world: World<State>, tools: readonly Tool<State>[], agent: Agent): Promise<void> {
-  // The agent sees what each tool is for and what it takes; how the tool works stays in the world.
-  const offered = tools.map(({ name, description, parameters }) => ({ name, description, parameters }));
-  const messages: Message[] = [];
-  for (;;) {
-    const answer = await agent.model.models.complete(agent.model.model, { messages, tools: offered });
-    messages.push(answer);
-    // Text the model writes acts on nothing (FR-TOOL-02); only its tool calls do.
-    const calls = answer.content.filter((block) => block.type === "toolCall");
-    if (calls.length === 0) return;
-    for (const call of calls) messages.push(use(world, tools, agent.name, call));
-  }
-}
-
-/** Uses the tool an agent's call names, and gives what returns to the agent. */
-function use<State>(world: World<State>, tools: readonly Tool<State>[], agent: string, call: ToolCall): ToolResultMessage {
-  const tool = tools.find((declared) => declared.name === call.name);
-  if (tool === undefined) throw new Error(`Agent "${agent}" called "${call.name}", which the scenario does not declare`);
-  const text = tool.kind === "sensor" ? tool.sense(world.state, agent) : effect(world, tool, agent, call);
-  return {
-    role: "toolResult",
-    toolCallId: call.id,
-    toolName: call.name,
-    content: [{ type: "text", text }],
-    isError: false,
-    timestamp: Date.now(),
-  };
-}
-
-/** Applies an effector's call through the arbiter, and gives its outcome: "success" or the failure's reason. */
-function effect<State>(world: World<State>, effector: Effector<State>, agent: string, call: ToolCall): string {
-  // The agent comes last, so a call cannot act in another agent's name.
-  const result = world.apply(effector.action, { ...call.arguments, agent });
-  return result.applied ? "success" : result.reason;
 }
