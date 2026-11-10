@@ -1,4 +1,4 @@
-import { type TomlTable, parse } from "smol-toml";
+import { type TomlTable, type TomlValue, parse } from "smol-toml";
 import type { ActionArgs, DeclaredAction } from "./actions.ts";
 import { World } from "./world.ts";
 
@@ -53,6 +53,24 @@ export function loadScenario<State>(parts: Partial<Scenario<State>>, condition?:
     if (parts[property] === undefined) throw new Error(`Scenario "${parts.name}" lacks its ${part}`);
   }
   const scenario = parts as Scenario<State>;
-  const configuration = { ...parse(scenario.baseConfiguration), ...parse(condition?.change ?? "") };
+  const configuration = applyChange(parse(scenario.baseConfiguration), parse(condition?.change ?? ""));
   return { scenario, configuration, world: new World(scenario.initialState(configuration)) };
+}
+
+/** Whether a TOML value is a table: an object that is neither an array nor a date and time. */
+function isTable(value: TomlValue): value is TomlTable {
+  return typeof value === "object" && !Array.isArray(value) && !(value instanceof Date);
+}
+
+/**
+ * Applies a condition's change over a configuration: a value replaces the one under the same key, and a table is
+ * applied the same way inside the configuration's table, so the keys it does not name keep their values.
+ */
+function applyChange(configuration: TomlTable, change: TomlTable): TomlTable {
+  const changed: TomlTable = { ...configuration };
+  for (const [key, value] of Object.entries(change)) {
+    const current = configuration[key];
+    changed[key] = isTable(value) && isTable(current) ? applyChange(current, value) : value;
+  }
+  return changed;
 }
