@@ -328,3 +328,4 @@ Every Pi session the engine opens uses the lab's own Pi directory (`~/.agents-la
   - votes with a deadline.
 - v0.3 will need persistent Pi sessions per agent, a workspace for its memory files, and lab actions as custom tools. `@earendil-works/pi-durable` (experimental in Pi 1.5.0) may help with long runs.
 - Open: whether real time is enough for E16's vote deadlines to be repeatable, or simulated time is needed.
+- FR-RECORD-01: a decision that ends before its agent observes (`script_exhausted`) has no observation time; its contract must say what is recorded for it.
