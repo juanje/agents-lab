@@ -49,6 +49,33 @@ Given(
   },
 );
 
+Given(
+  "agent {string} runs on a scripted model that answers {string} with no delay, and makes {int} decision(s)",
+  function (this: Context, agent: string, text: string, decisions: number) {
+    scriptEachDecision(this, agent, text, 0, decisions);
+  },
+);
+
+Given("agent {string} waits {int} milliseconds between decisions", function (this: Context, agent: string, intervalMs: number) {
+  this.intervals.set(agent, intervalMs);
+});
+
+Then(
+  "each of agent {string}'s decisions was observed at least {int} milliseconds after the previous one was applied",
+  function (this: Context, agent: string, intervalMs: number) {
+    const decisions = this.decisions.get(agent) ?? [];
+    assert.ok(decisions.length > 1, `expected several decisions of "${agent}", got ${decisions.length}`);
+    for (const [index, decision] of decisions.slice(1).entries()) {
+      const previous = decisions[index];
+      const gapMs = (decision.observedAtMs ?? -Infinity) - (previous.actedAtMs ?? Infinity);
+      assert.ok(
+        gapMs >= intervalMs,
+        `expected decision ${index + 2} observed at least ${intervalMs} ms after decision ${index + 1} was applied, got ${gapMs} ms`,
+      );
+    }
+  },
+);
+
 Given("both agents wait {int} milliseconds between decisions", function (this: Context, intervalMs: number) {
   assert.equal(this.models.size, 2, "the scenario names two agents before their interval");
   for (const agent of this.models.keys()) this.intervals.set(agent, intervalMs);
@@ -74,7 +101,13 @@ Then(
 );
 
 When("the run ends", async function (this: Context) {
-  const agents = [...this.models].map(([name, model]) => ({ name, model, decisions: this.budgets.get(name) ?? 0 }));
+  // An agent the scenario gives no interval decides again as soon as its previous decision ends.
+  const agents = [...this.models].map(([name, model]) => ({
+    name,
+    model,
+    decisions: this.budgets.get(name) ?? 0,
+    rhythm: () => this.intervals.get(name) ?? 0,
+  }));
   this.decisions = await run(this.world, this.actions, agents);
 });
 
