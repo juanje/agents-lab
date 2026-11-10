@@ -1,6 +1,9 @@
 import { type JsonObject, type Message, type Model, type Models, type Provider, createModels, fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall } from "@earendil-works/pi-ai";
 import { waitAtLeast } from "./clock.ts";
 
+/** How many scripted models have been made, so each gets a provider id of its own. */
+let made = 0;
+
 /** One answer of a script: its text, the tools it calls, and how long the model takes to give it. */
 export interface ScriptedAnswer {
   text?: string;
@@ -24,7 +27,9 @@ export class ScriptedModel {
   readonly sessions: (string | undefined)[] = [];
 
   constructor(script: readonly ScriptedAnswer[]) {
-    const faux = fauxProvider();
+    // Pi's model runtime keeps one provider per id: a shared id would hand one agent's turns to another's script.
+    made += 1;
+    const faux = fauxProvider({ provider: `scripted-${made}` });
     // Each answer is a response factory, so its delay starts when the call reaches the provider, as a real model's does.
     faux.setResponses(
       script.map(({ text, toolCalls = [], delayMs }) => async (context, options) => {
