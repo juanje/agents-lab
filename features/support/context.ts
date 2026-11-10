@@ -3,7 +3,7 @@ import type { Grid, Position, WindowCell } from "../../src/engine/grid.ts";
 import type { Condition, Scenario } from "../../src/engine/scenario.ts";
 import type { ModelTurn } from "../../src/engine/adapter.ts";
 import type { RunResult } from "../../src/engine/run.ts";
-import type { ScriptedModel } from "../../src/engine/scripted-model.ts";
+import type { ScriptedAnswer, ScriptedModel } from "../../src/engine/scripted-model.ts";
 import type { Channel, Stimuli } from "../../src/engine/stimuli.ts";
 import type { ActionResult, World } from "../../src/engine/world.ts";
 import { type Slots, rhythmChannel } from "../../tests/fixtures/slots.ts";
@@ -21,8 +21,8 @@ export class Context extends CucumberWorld {
   results!: ActionResult[];
   /** Each agent's scripted model, as the scenario gives it before the run. */
   readonly models = new Map<string, ScriptedModel>();
-  /** How many answers each agent's script holds. */
-  readonly scriptLengths = new Map<string, number>();
+  /** The answers each agent's script holds, in order. */
+  readonly scripts = new Map<string, readonly ScriptedAnswer[]>();
   /** How many activations each agent makes, when the scenario gives it; otherwise one. */
   readonly activations = new Map<string, number>();
   /** The model id an agent's scripted model has, when the scenario names one. */

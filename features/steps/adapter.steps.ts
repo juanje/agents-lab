@@ -181,7 +181,7 @@ Then("agent {string}'s activation ended after it", function (this: Context, agen
 Then("the run did not stop", function (this: Context) {
   // Every agent's model was asked for every answer its script holds: a run that stopped would have left some unasked.
   for (const [agent, model] of this.models) {
-    assert.equal(model.received.length, this.scriptLengths.get(agent), `agent "${agent}"'s model was not asked for all its scripted answers`);
+    assert.equal(model.received.length, this.scripts.get(agent)?.length, `agent "${agent}"'s model was not asked for all its scripted answers`);
   }
 });
 
@@ -237,4 +237,52 @@ Then(
 Then("one of them waited at least {int} milliseconds for a model slot", function (this: Context, waitMs: number) {
   const waits = this.turns?.map((turn) => turn.slotWaitMs) ?? [];
   assert.ok(waits.some((wait) => wait >= waitMs), `the turns waited ${waits.join(", ")} ms for a model slot`);
+});
+
+Given(
+  "agent {string} runs on a scripted model whose turns are: a call to {string}; a call to {string} with slot {int}; the text {string} with no tool call",
+  function (this: Context, agent: string, sensor: string, effector: string, slot: number, text: string) {
+    script(this, agent, [
+      { toolCalls: [{ name: sensor, arguments: {} }], delayMs: 0 },
+      { toolCalls: [{ name: effector, arguments: { slot } }], delayMs: 0 },
+      { text, delayMs: 0 },
+    ]);
+  },
+);
+
+/** What each of an agent's model turns answered, as its session kept them: its text and the tools it called. */
+function answersOf(context: Context, agent: string) {
+  const messages = context.sessionMessages?.get(agent);
+  assert.ok(messages !== undefined, `the run gave no session for agent "${agent}"`);
+  return messages.flatMap((message) =>
+    message.role === "assistant"
+      ? [
+          {
+            text: message.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join(""),
+            toolCalls: message.content.flatMap((block) => (block.type === "toolCall" ? [{ name: block.name, arguments: block.arguments }] : [])),
+          },
+        ]
+      : [],
+  );
+}
+
+Then("agent {string}'s activation had {int} model turns, in that order", function (this: Context, agent: string, count: number) {
+  const turns = turnsOf(this, agent);
+  assert.deepEqual(turns.map((turn) => turn.outcome), Array.from({ length: count }, () => "success"));
+  const scripted = (this.scripts.get(agent) ?? []).map(({ text, toolCalls }) => ({ text: text ?? "", toolCalls: toolCalls ?? [] }));
+  assert.deepEqual(answersOf(this, agent), scripted);
+});
+
+Given(
+  "agent {string} runs on a scripted model whose first turn is the text {string} with no tool call, after {int} milliseconds",
+  function (this: Context, agent: string, text: string, delayMs: number) {
+    script(this, agent, [{ text, delayMs }]);
+  },
+);
+
+Then("agent {string}'s first model turn had a latency of at least {int} milliseconds", function (this: Context, agent: string, latencyMs: number) {
+  const first = turnsOf(this, agent)[0];
+  assert.ok(first !== undefined, `agent "${agent}" made no model turn`);
+  const latency = first.endedAtMs - first.startedAtMs;
+  assert.ok(latency >= latencyMs, `agent "${agent}"'s first model turn took ${latency} ms`);
 });
