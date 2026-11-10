@@ -11,6 +11,8 @@ import type { Slots } from "../../tests/fixtures/slots.ts";
  */
 export class Context extends CucumberWorld {
   world!: World<Slots>;
+  /** The home directory the scenario runs with, in place of the person's. */
+  home!: string;
   versionBefore!: number;
   result!: ActionResult;
   results!: ActionResult[];

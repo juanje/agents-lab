@@ -56,6 +56,18 @@ describe("run", () => {
     expect(world.version).toBe(1);
   });
 
+  it("runs all of an agent's model turns in one Pi session, across its activations", async () => {
+    const model = new ScriptedModel([
+      { toolCalls: [{ name: "look", arguments: {} }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+      { text: "Nothing to do.", delayMs: 0 },
+    ]);
+
+    await run(new World(emptySlots(3)), slotTools, [{ name: "a", model, activations: 2, rhythm: noWait }], seed);
+
+    expect(model.sessions).toEqual([expect.any(String), model.sessions[0], model.sessions[0]]);
+  });
+
   it("gives each agent's rhythm the same draws for the same seed, however long the other agents' models take", async () => {
     /** Runs agents "a" and "b" with seed 42, "b" answering after its delay, and gives the draws of "a"'s rhythm. */
     async function drawsOfA(bDelayMs: number): Promise<number[]> {
