@@ -61,6 +61,41 @@ describe("loadScenario", () => {
     expect(() => loadScenario(rest)).toThrow(`Scenario "slots" lacks its ${part}`);
   });
 
+  /** A base configuration with a value of each kind TOML has. */
+  const everyKind = [
+    "text = 'a'",
+    "count = 2",
+    "ratio = 0.5",
+    "on = true",
+    "since = 2026-01-01T00:00:00Z",
+    "names = ['a']",
+    "[slots]",
+    "count = 2",
+    "held = 0",
+    "",
+  ].join("\n");
+
+  it.each([
+    ["text = 1", "text", "a number", "a string"],
+    ["[slots]\ncount = 'five'", "slots.count", "a string", "a number"],
+    ["ratio = false", "ratio", "a boolean", "a number"],
+    ["on = 'yes'", "on", "a string", "a boolean"],
+    ["since = 'today'", "since", "a string", "a date and time"],
+    ["names = 'a'", "names", "a string", "an array"],
+    ["slots = 3", "slots", "a number", "a table"],
+    ["[names]\nfirst = 'a'", "names", "a table", "an array"],
+  ])("refuses the condition %j, naming the key and both kinds", (change, path, given, kind) => {
+    expect(() => loadScenario({ ...slotsScenario, baseConfiguration: everyKind }, { name: "kind", change })).toThrow(
+      `Condition "kind" gives ${path} ${given}, where the base configuration of scenario "slots" has ${kind}`,
+    );
+  });
+
+  it("accepts a whole number where the base configuration has a fraction, as both are numbers", () => {
+    const loaded = loadScenario({ ...slotsScenario, baseConfiguration: everyKind }, { name: "whole", change: "ratio = 1" });
+
+    expect(loaded.configuration.ratio).toBe(1);
+  });
+
   it.each([
     ["an empty system prompt", { systemPrompt: "" }, "system prompt"],
     ["a system prompt of whitespace only", { systemPrompt: " \n\t\r\n" }, "system prompt"],
