@@ -93,7 +93,14 @@ The world applies one action at a time. When an action's precondition holds at t
 
 #### FR-ACTION-01: Actions are declared, and unknown answers apply nothing
 A scenario declares each action with its name, the description the agent sees, its arguments and its failure reasons. An agent's answer that matches no declared action applies nothing and is recorded with the outcome `unparsed`. An answer that names a declared action with arguments that action does not take applies nothing and is recorded with the outcome `invalid_arguments`.
-*Why:* a guessed action would put the platform's reading in place of the agent's behaviour; malformed answers must be counted, not repaired, and an answer that picks a real action badly is a different behaviour from one that picks none.
+
+An answer is read by one rule, the same for every scenario:
+- the action is the answer's last non-empty line;
+- spaces at the start and end of that line are dropped, and repeated spaces count as one;
+- the action's name is matched without regard to case.
+
+Nothing else is repaired. The raw answer is always recorded.
+*Why:* a guessed action would put the platform's reading in place of the agent's behaviour; malformed answers must be counted, not repaired, and an answer that picks a real action badly is a different behaviour from one that picks none. The reading rule ignores only layout (reasoning before the action, spacing, case), so `unparsed` measures behaviour in the world rather than formatting.
 
 #### FR-ADAPTER-01: A scripted model answers in tests
 In tests, each agent's model is Pi's faux provider. It returns, in order, the answers listed in the agent's script, each after the delay the script gives. When the script runs out, the agent's decision is recorded with the outcome `script_exhausted` and nothing is applied.
@@ -176,7 +183,7 @@ The first line of each run's log holds:
 #### FR-INVENTORY-01: The environment inventory is generated, not written by hand
 For a scenario and a condition, the core writes `inventory.md`, listing:
 - the system prompt;
-- the actions with the descriptions the agent sees;
+- the actions with the descriptions the agent sees, and the rule that reads an answer;
 - the information switches and their values;
 - the limits (view radius, decision budget, time limit, parallelism limit);
 - what the agent is told about itself;
