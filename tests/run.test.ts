@@ -30,6 +30,18 @@ describe("run", () => {
     expect(decisions.get("a")?.[0]?.latencyMs).toBeGreaterThanOrEqual(50);
   });
 
+  it("records when each decision's action went to the arbiter, after the model answered", async () => {
+    const world = new World(emptySlots(3));
+    const model = new ScriptedModel([{ text: "wait", delayMs: 50 }]);
+    const start = performance.now();
+
+    const decisions = await run(world, declaredActions, [{ name: "a", model, decisions: 1 }]);
+
+    const actedAtMs = decisions.get("a")?.[0]?.actedAtMs;
+    expect(actedAtMs).toBeGreaterThanOrEqual(start + 50);
+    expect(actedAtMs).toBeLessThanOrEqual(performance.now());
+  });
+
   it("gives a decision after the script runs out the outcome script_exhausted, with no answer, and applies nothing", async () => {
     const world = new World(emptySlots(3));
     const model = new ScriptedModel([{ text: "take 1", delayMs: 0 }]);
