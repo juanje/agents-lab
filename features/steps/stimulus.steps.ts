@@ -12,7 +12,7 @@ Given(
 );
 
 /** The text the agent reads for a stimulus: its source, then what it says (agreed with the person). */
-function asRead(source: string, content: string): string {
+export function asRead(source: string, content: string): string {
   return `${source}: ${content}`;
 }
 
@@ -53,7 +53,7 @@ Given("the bell rings {int} milliseconds after agent {string} wakes", function (
 });
 
 /** The texts of the user messages a model turn received. */
-function userTexts(messages: readonly { role: string; content: unknown }[]): string[] {
+export function userTexts(messages: readonly { role: string; content: unknown }[]): string[] {
   return messages.flatMap((message) => userText(message) ?? []);
 }
 

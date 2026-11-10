@@ -1,6 +1,6 @@
 import { World as CucumberWorld, setWorldConstructor } from "@cucumber/cucumber";
 import type { Grid, Position, WindowCell } from "../../src/engine/grid.ts";
-import type { Condition, Scenario } from "../../src/engine/scenario.ts";
+import type { Condition, LoadedScenario, Scenario } from "../../src/engine/scenario.ts";
 import type { ModelTurn } from "../../src/engine/adapter.ts";
 import type { Agent, RunResult } from "../../src/engine/run.ts";
 import type { ScriptedAnswer, ScriptedModel } from "../../src/engine/scripted-model.ts";
@@ -70,8 +70,8 @@ export class Context extends CucumberWorld {
   condition?: Condition;
   /** The error loading the scenario gave, if it was refused. */
   loadingError?: Error;
-  /** The loaded world's state and version before the run, if the scenario loaded. */
-  start?: { state: Slots; version: number };
+  /** The scenario as the engine loaded it, if it loaded. */
+  loaded?: LoadedScenario<Slots>;
   /** The initial state each replica started with, in the order the scenario starts them. */
   replicaStarts!: Slots[];
   /** The range each agent's waiting interval is drawn from, as the scenario gives it. */

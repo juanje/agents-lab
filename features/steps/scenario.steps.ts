@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import { Given, Then, When } from "@cucumber/cucumber";
 import { type TomlTable, type TomlValue, parse, stringify } from "smol-toml";
+import { getCurrentSystemPrompt, getCurrentTools } from "@earendil-works/pi-ai";
 import { run } from "../../src/engine/run.ts";
-import { type Condition, type Scenario, loadScenario } from "../../src/engine/scenario.ts";
-import { ScriptedModel } from "../../src/engine/scripted-model.ts";
-import { Stimuli } from "../../src/engine/stimuli.ts";
+import { type Condition, type LoadedScenario, type Scenario, loadScenario } from "../../src/engine/scenario.ts";
+import { RHYTHM_CHANNEL } from "../../src/engine/stimuli.ts";
 import { type Slots, slotsScenario } from "../../tests/fixtures/slots.ts";
 import type { Context } from "../support/context.ts";
+import { asRead, userTexts } from "./stimulus.steps.ts";
+import { modelOf } from "./tool.steps.ts";
 
 Given(
   "the test scenario {string}, whose base configuration has {int} slots, none held",
@@ -86,59 +88,46 @@ Given(
   },
 );
 
-/**
- * Loads the scenario as the engine does before a run: an agent waits on a scripted model, and the run starts only when
- * loading succeeds. A refusal that came after the run would show as a call to that model.
- */
-async function load(context: Context, condition?: Condition): Promise<void> {
-  const model = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
-  context.models.set("a", model);
-  let loaded: ReturnType<typeof loadScenario<Slots>>;
+/** Loads the scenario as the engine does before a run, keeping what loading gave: the loaded scenario or its error. */
+function load(context: Context, condition?: Condition): void {
   try {
     // Any seed: the slots test scenario draws nothing from it.
-    loaded = loadScenario(context.scenario, 1, condition);
+    context.loaded = loadScenario(context.scenario, 1, condition);
   } catch (error) {
     context.loadingError = error as Error;
-    return;
-  }
-  const { world, scenario } = loaded;
-  context.start = { state: world.state, version: world.version };
-  // A run on a scenario that should have been refused can break on its missing part; the model may still have been
-  // called, which "no model was called" reports, so the break is not what this step reports.
-  try {
-    await run(world, scenario.tools, new Stimuli(scenario.channels), [{ name: "a", model, activations: 1, rhythm: () => 0 }], 1, {
-      systemPrompt: scenario.systemPrompt,
-      modelTurnTimeoutMs: context.modelTurnTimeoutMs,
-      parallelismLimit: context.parallelismLimit,
-    });
-  } catch {
-    return;
   }
 }
 
-When("the engine loads it", async function (this: Context) {
-  await load(this);
+When("the engine loads it", function (this: Context) {
+  load(this);
 });
 
-When("the engine loads it with the condition {string}", async function (this: Context, name: string) {
+When("the engine loads it with the condition {string}", function (this: Context, name: string) {
   assert.equal(this.condition?.name, name, "the scenario gives the condition before loading with it");
-  await load(this, this.condition);
+  load(this, this.condition);
 });
+
+/** The scenario as the engine loaded it, which no run has used yet. */
+function loadedOf(context: Context): LoadedScenario<Slots> {
+  const { loaded } = context;
+  assert.ok(loaded !== undefined, `expected a loaded scenario, but loading failed: ${context.loadingError?.message}`);
+  return loaded;
+}
 
 Then("it loads", function (this: Context) {
   assert.equal(this.loadingError, undefined, `expected the scenario to load, but it failed: ${this.loadingError?.message}`);
 });
 
 Then("its world starts with {int} empty slots", function (this: Context, slots: number) {
-  assert.ok(this.start !== undefined, `expected a loaded scenario, but loading failed: ${this.loadingError?.message}`);
-  assert.deepEqual(this.start, { state: Array.from({ length: slots }, () => null), version: 0 });
+  const { world } = loadedOf(this);
+  assert.deepEqual({ state: world.state, version: world.version }, { state: Array.from({ length: slots }, () => null), version: 0 });
 });
 
 Then("its world starts with {int} slots, {int} of them held", function (this: Context, count: number, held: number) {
-  assert.ok(this.start !== undefined, `expected a loaded scenario, but loading failed: ${this.loadingError?.message}`);
-  assert.equal(this.start.state.length, count, `expected ${count} slots, got ${this.start.state.length}`);
-  assert.equal(this.start.state.filter((holder) => holder !== null).length, held);
-  assert.equal(this.start.version, 0);
+  const { world } = loadedOf(this);
+  assert.equal(world.state.length, count, `expected ${count} slots, got ${world.state.length}`);
+  assert.equal(world.state.filter((holder) => holder !== null).length, held);
+  assert.equal(world.version, 0);
 });
 
 /** Checks that loading failed with an error whose message names each of the given names. */
@@ -163,7 +152,38 @@ Then(
 );
 
 Then("no model was called", function (this: Context) {
+  // A run takes only a loaded scenario: a refused one leaves nothing a run could start from.
+  assert.equal(this.loaded, undefined, "expected no loaded scenario a run could start from");
   for (const [agent, model] of this.models) {
     assert.equal(model.received.length, 0, `expected no call to agent "${agent}"'s model, but it made ${model.received.length}`);
   }
+});
+
+When("the loaded scenario runs", async function (this: Context) {
+  const agents = [...this.models].map(([name, model]) => ({ name, model, activations: 1, rhythm: () => 0 }));
+  await run(loadedOf(this), agents, this.seed, {
+    modelTurnTimeoutMs: this.modelTurnTimeoutMs,
+    parallelismLimit: this.parallelismLimit,
+  });
+});
+
+Then("agent {string}'s model was offered exactly the scenario's tools", function (this: Context, agent: string) {
+  const declared = loadedOf(this).scenario.tools.map(({ name, description, parameters }) => ({ name, description, parameters }));
+  for (const [turn, messages] of modelOf(this, agent).received.entries()) {
+    assert.deepEqual(getCurrentTools(messages), declared, `turn ${turn + 1} was offered other tools`);
+  }
+});
+
+Then("the system prompt agent {string}'s model received is exactly the scenario's", function (this: Context, agent: string) {
+  const { systemPrompt } = loadedOf(this).scenario;
+  for (const [turn, messages] of modelOf(this, agent).received.entries()) {
+    assert.equal(getCurrentSystemPrompt(messages), systemPrompt, `turn ${turn + 1} received another system prompt`);
+  }
+});
+
+Then("agent {string}'s activation began with the scenario's rhythm stimulus", function (this: Context, agent: string) {
+  const rhythm = loadedOf(this).scenario.channels.find((channel) => channel.name === RHYTHM_CHANNEL);
+  assert.ok(rhythm !== undefined, "the loaded scenario declares no rhythm channel");
+  const [first] = userTexts(modelOf(this, agent).received[0] ?? []);
+  assert.equal(first, asRead(rhythm.source, rhythm.stimulus), `agent "${agent}"'s activation began with another message`);
 });
