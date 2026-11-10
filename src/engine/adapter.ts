@@ -49,6 +49,8 @@ export interface ModelTurn {
   outcome: "success" | "model_error" | "timeout";
   /** The provider's message, for a model error. */
   message?: string;
+  /** The text the model wrote: the agent's reflection, which acts on nothing and reaches no one (FR-TOOL-02). */
+  text: string;
   /** How long the turn waited for a free slot under the parallelism limit before its call started. */
   slotWaitMs: number;
   /** When the call to the model started and when its answer ended, by performance.now(). */
@@ -145,7 +147,8 @@ function runTurns(session: AgentSession, agent: string, timeoutMs: number, paral
       clearTimeout(timer);
       free();
       const outcome = timeout.signal.aborted ? { outcome: "timeout" as const } : outcomeOf(message);
-      turns.push({ agent, ...outcome, slotWaitMs: startedAtMs - requestedAtMs, startedAtMs, endedAtMs });
+      const text = message.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("");
+      turns.push({ agent, ...outcome, text, slotWaitMs: startedAtMs - requestedAtMs, startedAtMs, endedAtMs });
     });
     return answer;
   };
