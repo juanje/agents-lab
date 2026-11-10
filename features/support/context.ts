@@ -20,6 +20,10 @@ export class Context extends CucumberWorld {
   readonly models = new Map<string, ScriptedModel>();
   /** How many activations each agent makes, when the scenario gives it; otherwise one. */
   readonly activations = new Map<string, number>();
+  /** The model id an agent's scripted model has, when the scenario names one. */
+  readonly modelIds = new Map<string, string>();
+  /** The agent the scenario spoke of last, for a step that says "its model". */
+  lastAgent?: string;
   /** The system prompt the scenario declares. */
   systemPrompt = "";
   /** The scenario the engine is given, and the condition it is loaded with. */

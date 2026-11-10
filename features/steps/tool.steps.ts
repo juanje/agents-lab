@@ -28,7 +28,7 @@ Given(
 
 /** Gives an agent a scripted model with these answers. */
 export function script(context: Context, agent: string, answers: readonly ScriptedAnswer[]): void {
-  context.models.set(agent, new ScriptedModel(answers));
+  context.models.set(agent, new ScriptedModel(answers, context.modelIds.get(agent)));
 }
 
 Given(

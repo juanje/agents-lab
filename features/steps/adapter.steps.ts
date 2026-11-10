@@ -62,3 +62,21 @@ Then("agent {string}'s model was offered none of Pi's built-in tools", function 
     assert.deepEqual(offered.map((tool) => tool.name), [], `turn ${turn + 1} was offered Pi's built-in tools`);
   }
 });
+
+Given("agent {string} runs on a scripted model whose id is {string}", function (this: Context, agent: string, id: string) {
+  this.modelIds.set(agent, id);
+  this.lastAgent = agent;
+});
+
+Given("its model ends its first turn without a tool call", function (this: Context) {
+  assert.ok(this.lastAgent !== undefined, "no agent was named before");
+  script(this, this.lastAgent, [{ text: "Nothing to do.", delayMs: 0 }]);
+});
+
+Then("nothing agent {string}'s model received mentions {string}", function (this: Context, agent: string, text: string) {
+  const model = modelOf(this, agent);
+  assert.equal(model.model.id, text, `agent "${agent}"'s model is not "${text}"`);
+  for (const [turn, messages] of model.received.entries()) {
+    assert.ok(!JSON.stringify(messages).includes(text), `turn ${turn + 1} received "${text}"`);
+  }
+});
