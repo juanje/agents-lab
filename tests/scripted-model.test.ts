@@ -45,4 +45,13 @@ describe("ScriptedModel", () => {
 
     expect(scripted.sessions).toEqual(["session 1", undefined]);
   });
+
+  it("answers as a model with the id it is given", async () => {
+    const scripted = new ScriptedModel([{ text: "first", delayMs: 0 }], "scripted-model-x");
+
+    const answer = await scripted.models.complete(scripted.model, { messages: [] });
+
+    expect(scripted.model.id).toBe("scripted-model-x");
+    expect(answer.model).toBe("scripted-model-x");
+  });
 });
