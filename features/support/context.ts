@@ -27,6 +27,8 @@ export class Context extends CucumberWorld {
   scenario!: Partial<Scenario<Slots>>;
   condition?: Condition;
   loaded?: LoadedScenario<Slots>;
+  /** The loaded world's state and version before anything ran on it. */
+  start?: { state: Slots; version: number };
   loadingError?: Error;
 }
 

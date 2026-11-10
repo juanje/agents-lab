@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import { Given, Then, When } from "@cucumber/cucumber";
 import { parse } from "smol-toml";
-import { type Condition, loadScenario } from "../../src/engine/scenario.ts";
-import { slotsScenario } from "../../tests/fixtures/slots.ts";
+import { run } from "../../src/engine/run.ts";
+import { type Condition, type Scenario, loadScenario } from "../../src/engine/scenario.ts";
+import { ScriptedModel } from "../../src/engine/scripted-model.ts";
+import { type Slots, slotsScenario } from "../../tests/fixtures/slots.ts";
 import type { Context } from "../support/context.ts";
 
 Given(
@@ -22,22 +24,37 @@ Given(
   },
 );
 
-/** Loads the scenario, keeping what loading gave: the loaded scenario or the error that refused it. */
-function load(context: Context, condition?: Condition): void {
+/**
+ * Loads the scenario as the engine does before a run: an agent waits on a scripted model, and the run starts only
+ * when loading succeeds. A refusal that came after the run would show as a call to that model.
+ */
+async function load(context: Context, condition?: Condition): Promise<void> {
+  const model = new ScriptedModel([{ text: "wait", delayMs: 0 }]);
+  context.models.set("a", model);
   try {
     context.loaded = loadScenario(context.scenario, condition);
   } catch (error) {
     context.loadingError = error as Error;
+    return;
+  }
+  const { world, scenario } = context.loaded;
+  context.start = { state: world.state, version: world.version };
+  // A run on a scenario that should have been refused can break on its missing part; the model was still called,
+  // which the scenario's own checks report, so the break is not what this step reports.
+  try {
+    context.decisions = await run(world, scenario.actions, [{ name: "a", model, decisions: 1, rhythm: () => 0 }]);
+  } catch {
+    return;
   }
 }
 
-When("the engine loads it", function (this: Context) {
-  load(this);
+When("the engine loads it", async function (this: Context) {
+  await load(this);
 });
 
-When("the engine loads it with the condition {string}", function (this: Context, name: string) {
+When("the engine loads it with the condition {string}", async function (this: Context, name: string) {
   assert.equal(this.condition?.name, name, "the scenario gives the condition before loading with it");
-  load(this, this.condition);
+  await load(this, this.condition);
 });
 
 Then("it loads", function (this: Context) {
@@ -45,7 +62,37 @@ Then("it loads", function (this: Context) {
 });
 
 Then("its world starts with {int} empty slots", function (this: Context, slots: number) {
-  assert.ok(this.loaded !== undefined, `expected a loaded scenario, but loading failed: ${this.loadingError?.message}`);
-  assert.deepEqual(this.loaded.world.state, Array.from({ length: slots }, () => null));
-  assert.equal(this.loaded.world.version, 0);
+  assert.ok(this.start !== undefined, `expected a loaded scenario, but loading failed: ${this.loadingError?.message}`);
+  assert.deepEqual(this.start, { state: Array.from({ length: slots }, () => null), version: 0 });
+});
+
+/** The scenario's words for each part, and the scenario's property that holds it. */
+const parts: Readonly<Record<string, keyof Scenario<Slots>>> = {
+  "initial state": "initialState",
+  perception: "perception",
+  actions: "actions",
+  metrics: "metrics",
+  "system prompt": "systemPrompt",
+  "base configuration": "baseConfiguration",
+};
+
+Given("the test scenario {string} without its {}", function (this: Context, name: string, part: string) {
+  assert.equal(slotsScenario.name, name);
+  const property = parts[part];
+  assert.ok(property !== undefined, `no scenario part is called "${part}"`);
+  const { [property]: _left, ...rest } = slotsScenario;
+  this.scenario = rest;
+});
+
+Then("loading fails with an error that names {string}", function (this: Context, part: string) {
+  if (this.loadingError === undefined) assert.fail("expected loading to fail, but it loaded");
+  if (!this.loadingError.message.includes(part)) {
+    assert.fail(`expected the error to name "${part}", got: ${this.loadingError.message}`);
+  }
+});
+
+Then("no model was called", function (this: Context) {
+  for (const [agent, model] of this.models) {
+    assert.equal(model.exhausted, false, `expected no call to agent "${agent}"'s model, but its script was used`);
+  }
 });
