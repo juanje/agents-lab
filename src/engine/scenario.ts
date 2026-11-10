@@ -58,8 +58,17 @@ export function loadScenario<State>(parts: Partial<Scenario<State>>, condition?:
   if (scenario.systemPrompt.trim() === "") throw lacks("system prompt");
   const base = parse(scenario.baseConfiguration);
   if (Object.keys(base).length === 0) throw lacks("base configuration");
-  const configuration = applyChange(base, parse(condition?.change ?? ""));
+  const configuration =
+    condition === undefined
+      ? base
+      : applyChange(base, parse(condition.change), [], { condition: condition.name, scenario: scenario.name });
   return { scenario, configuration, world: new World(scenario.initialState(configuration)) };
+}
+
+/** The names of the condition being applied and of the scenario whose base configuration it changes, for errors. */
+interface Applying {
+  condition: string;
+  scenario: string;
 }
 
 /** Whether a TOML value is a table: an object that is neither an array nor a date and time. */
@@ -69,13 +78,20 @@ function isTable(value: TomlValue): value is TomlTable {
 
 /**
  * Applies a condition's change over a configuration: a value replaces the one under the same key, and a table is
- * applied the same way inside the configuration's table, so the keys it does not name keep their values.
+ * applied the same way inside the configuration's table, so the keys it does not name keep their values. A key the
+ * configuration lacks is refused: a misspelled key would otherwise leave the condition the same as the baseline.
  */
-function applyChange(configuration: TomlTable, change: TomlTable): TomlTable {
+function applyChange(configuration: TomlTable, change: TomlTable, path: readonly string[], applying: Applying): TomlTable {
   const changed: TomlTable = { ...configuration };
   for (const [key, value] of Object.entries(change)) {
+    const keyPath = [...path, key];
+    if (!Object.hasOwn(configuration, key)) {
+      throw new Error(
+        `Condition "${applying.condition}" sets ${keyPath.join(".")}, which the base configuration of scenario "${applying.scenario}" does not have`,
+      );
+    }
     const current = configuration[key];
-    changed[key] = isTable(value) && isTable(current) ? applyChange(current, value) : value;
+    changed[key] = isTable(value) && isTable(current) ? applyChange(current, value, keyPath, applying) : value;
   }
   return changed;
 }
