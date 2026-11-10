@@ -28,3 +28,11 @@ Feature: Each agent has its own activations
     Given agent "a" makes 2 activations: in the first its model calls "look", then ends; in the second it ends its first turn without a tool call
     When the run ends
     Then the model turn of agent "a"'s second activation received the "look" result of its first activation
+
+  Scenario: Agents do not all wake at the same moment
+    Given agents "a" and "b" each make 1 activation, ending its first turn without a tool call
+    And each agent waits a random interval between 10 and 100 milliseconds before each activation
+    And the run's seed is 42
+    When the run ends
+    Then each agent's first activation began at least the first interval of its rhythm after the run started
+    And agent "a"'s and agent "b"'s first activations began at different moments
