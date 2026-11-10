@@ -127,6 +127,17 @@ describe("run", () => {
     expect(model.received).toHaveLength(1);
   });
 
+  it("records when each model turn started and ended, by the run's clock", async () => {
+    const model = new ScriptedModel([{ text: "Nothing to do.", delayMs: 50 }]);
+    const before = performance.now();
+
+    const [turn] = await run(new World(emptySlots(3)), slotTools, [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+
+    expect(turn?.startedAtMs).toBeGreaterThanOrEqual(before);
+    expect((turn?.endedAtMs ?? 0) - (turn?.startedAtMs ?? 0)).toBeGreaterThanOrEqual(50);
+    expect(turn?.endedAtMs).toBeLessThanOrEqual(performance.now());
+  });
+
   it("gives each agent's model turns to that agent's own model", async () => {
     const world = new World(emptySlots(3));
     const takes = (slot: number) =>
