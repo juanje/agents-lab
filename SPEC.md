@@ -199,11 +199,12 @@ For each decision, the core opens a Pi session in memory, using the model from t
 - no built-in tools;
 - the observation as the prompt.
 
-The session's answer is the decision's answer. The prompt never names the model unless the condition says so.
+The session's answer is the decision's answer. The prompt never names the model unless the condition says so. The scripted model of FR-ADAPTER-01 runs through this same session, registered with Pi's model runtime like any other model.
+- **Model errors:** when the provider answers with an error instead of an answer, the decision is recorded with the outcome `model_error` and the provider's message, and nothing is applied.
 - **Parallelism limit:** a decision waits for a free slot when the configured number of calls is already running.
 - **Timeout:** a session that runs longer than the timeout is aborted and recorded with the outcome `timeout`, and nothing is applied.
 
-*Why:* agents are compared across models through one harness the core controls, and a hung call must not block a run.
+*Why:* agents are compared across models through one harness the core controls; a hung call must not block a run; and a provider's failure is not the agent's behaviour, so it must not be counted as an `unparsed` answer.
 
 #### FR-EXPERIMENT-01: An experiment file names its scenario, conditions, models and replicas
 An experiment file (TOML) gives:
