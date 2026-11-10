@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { Given, Then, When } from "@cucumber/cucumber";
-import { getCurrentTools } from "@earendil-works/pi-ai";
+import { type JsonObject, getCurrentTools } from "@earendil-works/pi-ai";
 import { run } from "../../src/engine/run.ts";
 import { type ScriptedAnswer, ScriptedModel } from "../../src/engine/scripted-model.ts";
 import type { LoadedScenario } from "../../src/engine/scenario.ts";
@@ -35,12 +35,17 @@ export function script(context: Context, agent: string, answers: readonly Script
   context.scripts.set(agent, answers);
 }
 
-/** An activation whose model calls a tool with a slot after a delay, then ends its next turn without a tool call. */
-export function callThenEnd(tool: string, slot: number, delayMs: number): ScriptedAnswer[] {
+/** An activation whose model calls a tool with these arguments after a delay, then ends its next turn without a tool call. */
+export function callWithThenEnd(tool: string, args: JsonObject, delayMs: number): ScriptedAnswer[] {
   return [
-    { toolCalls: [{ name: tool, arguments: { slot } }], delayMs },
+    { toolCalls: [{ name: tool, arguments: args }], delayMs },
     { text: "Done.", delayMs: 0 },
   ];
+}
+
+/** An activation whose model calls a tool with a slot after a delay, then ends its next turn without a tool call. */
+export function callThenEnd(tool: string, slot: number, delayMs: number): ScriptedAnswer[] {
+  return callWithThenEnd(tool, { slot }, delayMs);
 }
 
 /** Gives an agent a number of activations, each scripted by its index from 0, all in one scripted model. */
@@ -132,10 +137,7 @@ Then(
 Given(
   "agent {string} runs on a scripted model that calls {string}, then ends without a tool call",
   function (this: Context, agent: string, tool: string) {
-    script(this, agent, [
-      { toolCalls: [{ name: tool, arguments: {} }], delayMs: 0 },
-      { text: "Done.", delayMs: 0 },
-    ]);
+    script(this, agent, callWithThenEnd(tool, {}, 0));
   },
 );
 
@@ -196,10 +198,7 @@ Then("agent {string}'s reflection {string} was recorded", function (this: Contex
 Given(
   /^agent "([^"]*)" runs on a scripted model that calls "([^"]*)" with the arguments (\{.*\}), then ends without a tool call$/,
   function (this: Context, agent: string, tool: string, json: string) {
-    script(this, agent, [
-      { toolCalls: [{ name: tool, arguments: JSON.parse(json) }], delayMs: 0 },
-      { text: "Done.", delayMs: 0 },
-    ]);
+    script(this, agent, callWithThenEnd(tool, JSON.parse(json), 0));
   },
 );
 

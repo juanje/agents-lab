@@ -5,7 +5,7 @@ import type { Effector } from "../../src/engine/tools.ts";
 import { cellOf, walkTool } from "../../tests/fixtures/grid-world.ts";
 import type { Context } from "../support/context.ts";
 import { stateAt } from "./acting.steps.ts";
-import { callOf, script } from "./tool.steps.ts";
+import { callOf, callWithThenEnd, script } from "./tool.steps.ts";
 
 Given(
   "a test grid world {int} cells wide and {int} cells high, with a capacity of {int} per cell",
@@ -46,18 +46,10 @@ Then("agent {string} is still at {int}, {int}", function (this: Context, agent: 
   assertAt(this.gridWorld.state, agent, { x, y });
 });
 
-/** An activation whose model calls a tool with a cell after a delay, then ends its next turn without a tool call. */
-function callToThenEnd(tool: string, x: number, y: number, delayMs: number) {
-  return [
-    { toolCalls: [{ name: tool, arguments: { x, y } }], delayMs },
-    { text: "Done.", delayMs: 0 },
-  ];
-}
-
 Given(
   "agent {string} runs on a scripted model that calls {string} to {int}, {int}, then ends without a tool call",
   function (this: Context, agent: string, tool: string, x: number, y: number) {
-    script(this, agent, callToThenEnd(tool, x, y, 0));
+    script(this, agent, callWithThenEnd(tool, { x, y }, 0));
   },
 );
 
@@ -73,7 +65,7 @@ Given(
     assert.ok(otherCall !== undefined, `agent "${other}" calls nothing for this call to land during`);
     const theirsMs = theirs.durationMs(this.grid, { agent: other, arguments: otherCall.arguments });
     assert.ok(mineMs < theirsMs, `agent "${agent}"'s "${tool}" takes ${mineMs} ms, no less than agent "${other}"'s ${theirsMs} ms`);
-    script(this, agent, callToThenEnd(tool, x, y, 0));
+    script(this, agent, callWithThenEnd(tool, { x, y }, 0));
     this.rhythms.set(agent, () => (theirsMs - mineMs) / 2);
     this.setupChecks.push(() => {
       const landed = callOf(this, agent, tool);
