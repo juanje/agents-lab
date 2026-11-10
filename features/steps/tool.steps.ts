@@ -69,7 +69,7 @@ When("the run ends", async function (this: Context) {
     configuration: {},
     world: this.world,
   };
-  const { turns, messages, toolCalls } = await run(loaded, agents, this.seed, {
+  const { turns, messages, toolCalls, sensings } = await run(loaded, agents, this.seed, {
     modelTurnTimeoutMs: this.modelTurnTimeoutMs,
     parallelismLimit: this.parallelismLimit,
     onStart: (stimuli) => {
@@ -85,6 +85,7 @@ When("the run ends", async function (this: Context) {
   this.turns = turns;
   this.sessionMessages = messages;
   this.toolCalls = toolCalls;
+  this.sensings = sensings;
 });
 
 /** The scripted model agent runs on, which has made at least one turn. */

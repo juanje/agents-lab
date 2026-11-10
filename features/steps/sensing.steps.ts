@@ -67,3 +67,11 @@ Then(
     assert.equal(this.world.state[slot - 1], holder);
   },
 );
+
+Then(
+  "the engine's last sensing for agent {string} is the result of its {string} call, at the moment that call ended",
+  function (this: Context, agent: string, tool: string) {
+    assert.ok(this.sensings !== undefined, "the run gave no sensings");
+    assert.deepEqual(this.sensings.last(agent), { tool, result: returned(this, agent, tool), atMs: callOf(this, agent, tool).endedAtMs });
+  },
+);

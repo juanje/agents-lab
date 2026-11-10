@@ -40,6 +40,8 @@ export class Context extends CucumberWorld {
   readonly applied: { action: Action<Slots, never>; args: unknown }[] = [];
   /** The tool calls the run gave. */
   toolCalls?: RunResult["toolCalls"];
+  /** What the engine kept of each agent's sensing, as the run gave it. */
+  sensings?: RunResult["sensings"];
   /** The tool call the scenario checked last, for a step that says "the call". */
   lastToolCall?: RunResult["toolCalls"][number];
   /** What each agent's session held when the run ended. */

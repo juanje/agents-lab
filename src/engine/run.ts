@@ -4,6 +4,7 @@ import { waitAtLeast } from "./clock.ts";
 import { ParallelismLimit } from "./parallelism.ts";
 import { Random } from "./random.ts";
 import type { LoadedScenario } from "./scenario.ts";
+import type { Sensings } from "./sensings.ts";
 import { Stimuli } from "./stimuli.ts";
 
 /** An agent in a run: its name, the model it works with, how many activations it has, and its rhythm. */
@@ -36,6 +37,8 @@ export interface RunResult {
   turns: ModelTurn[];
   toolCalls: ToolCall[];
   messages: ReadonlyMap<string, AgentSession["messages"]>;
+  /** What each agent sensed. */
+  sensings: Sensings;
 }
 
 /**

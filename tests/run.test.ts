@@ -494,4 +494,14 @@ describe("run", () => {
     expect(take?.endedAtMs).toBeLessThan(look?.endedAtMs ?? -Infinity);
     expect(looking.received[1]?.at(-1)).toMatchObject({ role: "toolResult", content: [{ type: "text", text: '["held","empty","empty"]' }] });
   });
-});
+
+  it("keeps what each agent's sensor call returned, at the moment the call ended", async () => {
+    const model = new ScriptedModel([
+      { toolCalls: [{ name: "look", arguments: {} }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+
+    const { toolCalls, sensings } = await run(slots(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+
+    expect(sensings?.last("a")).toEqual({ tool: "look", result: '["empty","empty","empty"]', atMs: toolCalls[0]?.endedAtMs });
+  });});
