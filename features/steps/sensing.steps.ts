@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { Given, Then } from "@cucumber/cucumber";
 import { SLOT_TAKEN, type Seen } from "../../tests/fixtures/slots.ts";
 import type { Context } from "../support/context.ts";
-import { callOf, fixtureTool, returned, script } from "./tool.steps.ts";
+import { callOf, callThenEnd, fixtureTool, returned, script } from "./tool.steps.ts";
 
 Given(
   "the sensor {string} takes {int} milliseconds and returns which slots are empty and which are held",
@@ -36,10 +36,7 @@ Given(
     assert.ok(declared?.kind === "sensor" && declared.durationMs > 0, `"${sensor}" takes no time for a call to land in`);
     // Both agents wake at once, and the other agent's call starts as its first turn ends at once: this call lands halfway
     // through it. The step that checks the result checks that it did.
-    script(this, agent, [
-      { toolCalls: [{ name: tool, arguments: { slot } }], delayMs: declared.durationMs / 2 },
-      { text: "Done.", delayMs: 0 },
-    ]);
+    script(this, agent, callThenEnd(tool, slot, declared.durationMs / 2));
   },
 );
 

@@ -3,7 +3,7 @@ import { Given, Then } from "@cucumber/cucumber";
 import { SLOT_TAKEN, type Seen, type Slots, holder } from "../../tests/fixtures/slots.ts";
 import type { Context } from "../support/context.ts";
 import { turnsOf } from "./adapter.steps.ts";
-import { callOf, fixtureTool, script } from "./tool.steps.ts";
+import { callOf, callThenEnd, fixtureTool, script } from "./tool.steps.ts";
 
 Given(
   "the sensor {string} takes no time and returns which slots are empty and which are held",
@@ -54,10 +54,7 @@ Given(
   function (this: Context, agent: string, tool: string, slot: number, other: string, otherTool: string) {
     const declared = this.tools.find((candidate) => candidate.name === tool);
     assert.ok(declared?.kind === "effector" && declared.durationMs > 0, `"${tool}" takes no time for a call to land in`);
-    script(this, agent, [
-      { toolCalls: [{ name: tool, arguments: { slot } }], delayMs: 0 },
-      { text: "Done.", delayMs: 0 },
-    ]);
+    script(this, agent, callThenEnd(tool, slot, 0));
     // The other agent wakes halfway through this call, so its own call, which takes as long, starts before this one
     // lands and ends after. The check below makes sure it did.
     this.rhythms.set(other, () => declared.durationMs / 2);
@@ -87,10 +84,7 @@ Given(
 Given(
   "agent {string} runs on a scripted model that calls {string} with slot {int} without looking, then ends without a tool call",
   function (this: Context, agent: string, effector: string, slot: number) {
-    script(this, agent, [
-      { toolCalls: [{ name: effector, arguments: { slot } }], delayMs: 0 },
-      { text: "Done.", delayMs: 0 },
-    ]);
+    script(this, agent, callThenEnd(effector, slot, 0));
   },
 );
 

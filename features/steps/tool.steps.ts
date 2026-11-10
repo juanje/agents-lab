@@ -34,6 +34,14 @@ export function script(context: Context, agent: string, answers: readonly Script
   context.scripts.set(agent, answers);
 }
 
+/** An activation whose model calls a tool with a slot after a delay, then ends its next turn without a tool call. */
+export function callThenEnd(tool: string, slot: number, delayMs: number): ScriptedAnswer[] {
+  return [
+    { toolCalls: [{ name: tool, arguments: { slot } }], delayMs },
+    { text: "Done.", delayMs: 0 },
+  ];
+}
+
 /** Gives an agent a number of activations, each scripted by its index from 0, all in one scripted model. */
 export function scriptActivations(context: Context, agent: string, count: number, activation: (index: number) => readonly ScriptedAnswer[]): void {
   context.activations.set(agent, count);
@@ -121,10 +129,7 @@ Given(
 Given(
   "agent {string} runs on a scripted model that calls {string} with slot {int}, then ends without a tool call",
   function (this: Context, agent: string, tool: string, slot: number) {
-    script(this, agent, [
-      { toolCalls: [{ name: tool, arguments: { slot } }], delayMs: 0 },
-      { text: "Done.", delayMs: 0 },
-    ]);
+    script(this, agent, callThenEnd(tool, slot, 0));
   },
 );
 

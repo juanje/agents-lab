@@ -1,19 +1,10 @@
 import assert from "node:assert/strict";
 import { Given, Then } from "@cucumber/cucumber";
-import type { ScriptedAnswer } from "../../src/engine/scripted-model.ts";
 import type { EffectorCall } from "../../src/engine/tools.ts";
 import { slotTools } from "../../tests/fixtures/slots.ts";
 import type { Context } from "../support/context.ts";
 import { turnsOf } from "./adapter.steps.ts";
-import { modelOf, scriptActivations } from "./tool.steps.ts";
-
-/** An activation whose model calls a tool with a slot after a delay, then ends its next turn without a tool call. */
-function callThenEnd(tool: string, slot: number, delayMs: number): ScriptedAnswer[] {
-  return [
-    { toolCalls: [{ name: tool, arguments: { slot } }], delayMs },
-    { text: "Done.", delayMs: 0 },
-  ];
-}
+import { callThenEnd, modelOf, scriptActivations } from "./tool.steps.ts";
 
 /** Every slot some agent's script already names, so a "free slot" is one no other call can take first. */
 function namedSlots(context: Context): Set<number> {
