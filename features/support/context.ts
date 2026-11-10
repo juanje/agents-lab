@@ -5,7 +5,7 @@ import type { ModelTurn } from "../../src/engine/adapter.ts";
 import type { RunResult } from "../../src/engine/run.ts";
 import type { ScriptedAnswer, ScriptedModel } from "../../src/engine/scripted-model.ts";
 import type { Channel, Stimuli } from "../../src/engine/stimuli.ts";
-import type { ActionResult, World } from "../../src/engine/world.ts";
+import type { Action, ActionResult, World } from "../../src/engine/world.ts";
 import { type Slots, rhythmChannel } from "../../tests/fixtures/slots.ts";
 
 /**
@@ -33,6 +33,8 @@ export class Context extends CucumberWorld {
   personsPiFiles?: Map<string, string>;
   /** The model turns the run gave, in the order they ended. */
   turns?: readonly ModelTurn[];
+  /** Every effect the arbiter applied during the run, in order: the action and what it was applied for. */
+  readonly applied: { action: Action<Slots, never>; args: unknown }[] = [];
   /** The tool calls the run gave. */
   toolCalls?: RunResult["toolCalls"];
   /** The tool call the scenario checked last, for a step that says "the call". */

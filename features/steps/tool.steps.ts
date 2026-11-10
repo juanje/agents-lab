@@ -4,7 +4,8 @@ import { getCurrentTools } from "@earendil-works/pi-ai";
 import { run } from "../../src/engine/run.ts";
 import { type ScriptedAnswer, ScriptedModel } from "../../src/engine/scripted-model.ts";
 import { Stimuli } from "../../src/engine/stimuli.ts";
-import { SLOT_TAKEN, type Seen, slotTools } from "../../tests/fixtures/slots.ts";
+import type { Action } from "../../src/engine/world.ts";
+import { SLOT_TAKEN, type Seen, type Slots, slotTools } from "../../tests/fixtures/slots.ts";
 import type { Context } from "../support/context.ts";
 
 /** The test world's tool of a kind and a name; the tools live in the fixture, and this keeps the words and it in step. */
@@ -42,6 +43,13 @@ Given(
 
 When("the run ends", async function (this: Context) {
   this.versionBefore = this.world.version;
+  // Watched, not changed: the arbiter still decides, and the scenario sees the order it applied effects in.
+  const apply = this.world.apply.bind(this.world);
+  this.world.apply = (action, args) => {
+    const result = apply(action, args);
+    if (result.applied) this.applied.push({ action: action as Action<Slots, never>, args });
+    return result;
+  };
   this.stimuli = new Stimuli(this.channels);
   const agents = [...this.models].map(([name, model]) => ({
     name,
