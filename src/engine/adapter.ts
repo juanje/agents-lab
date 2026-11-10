@@ -13,7 +13,7 @@ import {
 import { type Api, type AssistantMessage, type Model, type Provider, getCurrentSystemMessage } from "@earendil-works/pi-ai";
 import type { ParallelismLimit } from "./parallelism.ts";
 import type { Stimuli, Stimulus } from "./stimuli.ts";
-import type { Effector, Tool } from "./tools.ts";
+import type { Effector, Sensor, Tool } from "./tools.ts";
 import type { World } from "./world.ts";
 
 /** The model an agent works with, and the provider that serves it, which the run registers with Pi's model runtime. */
@@ -248,21 +248,29 @@ function definition<State>(world: World<State>, tool: Tool<State>, agent: string
     description: tool.description,
     parameters: tool.parameters as ToolDefinition["parameters"],
     execute: async (id, args: Record<string, unknown>) => {
-      if (tool.kind === "sensor") {
-        executed.set(id, "success");
-        return { content: [{ type: "text", text: tool.sense(world.state, agent) }], details: undefined };
-      }
-      const outcome = effect(world, tool, agent, args);
+      const { outcome, text } = tool.kind === "sensor" ? sense(world, tool, agent) : effect(world, tool, agent, args);
       executed.set(id, outcome);
       // A failure is marked as one: an agent told that a failure succeeded would act on a world it misreads.
-      return { content: [{ type: "text", text: outcome }], details: undefined, isError: outcome !== "success" };
+      return { content: [{ type: "text", text }], details: undefined, isError: outcome !== "success" };
     },
   };
 }
 
-/** Applies an effector's call through the arbiter, and gives its outcome: "success" or the failure's reason. */
-function effect<State>(world: World<State>, effector: Effector<State>, agent: string, args: Record<string, unknown>): string {
+/** What a call gives: its outcome, and the text the agent receives. */
+interface CallResult {
+  outcome: string;
+  text: string;
+}
+
+/** Reads the world for a sensor's call, which always succeeds. */
+function sense<State>(world: World<State>, sensor: Sensor<State>, agent: string): CallResult {
+  return { outcome: "success", text: sensor.sense(world.state, agent) };
+}
+
+/** Applies an effector's call through the arbiter; the agent receives its outcome: "success" or the failure's reason. */
+function effect<State>(world: World<State>, effector: Effector<State>, agent: string, args: Record<string, unknown>): CallResult {
   // The agent comes last, so a call cannot act in another agent's name.
   const result = world.apply(effector.action, { ...args, agent });
-  return result.applied ? "success" : result.reason;
+  const outcome = result.applied ? "success" : result.reason;
+  return { outcome, text: outcome };
 }
