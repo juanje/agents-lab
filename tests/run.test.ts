@@ -15,7 +15,7 @@ const noWait = () => 0;
 const seed = 1;
 
 /** Settings for a run whose test looks at none of them. */
-const settings: RunSettings = { systemPrompt: "" };
+const settings: RunSettings = { systemPrompt: "", modelTurnTimeoutMs: 10_000 };
 
 describe("run", () => {
   it("offers the agent's model exactly the scenario's tools, with their descriptions and arguments", async () => {
@@ -106,6 +106,23 @@ describe("run", () => {
     const turns = await run(new World(emptySlots(3)), slotTools, [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
 
     expect(turns).toEqual([expect.objectContaining({ agent: "a", outcome: "model_error", message: "overloaded" })]);
+    expect(model.received).toHaveLength(1);
+  });
+
+  it("aborts a model turn longer than the timeout, records it as timeout, and runs none of its tool calls", async () => {
+    const world = new World(emptySlots(3));
+    const model = new ScriptedModel([
+      { toolCalls: [{ name: "take", arguments: { slot: 1 } }], delayMs: 300 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+
+    const turns = await run(world, slotTools, [{ name: "a", model, activations: 1, rhythm: noWait }], seed, {
+      ...settings,
+      modelTurnTimeoutMs: 50,
+    });
+
+    expect(turns).toEqual([expect.objectContaining({ agent: "a", outcome: "timeout" })]);
+    expect(world.state).toEqual(emptySlots(3));
     expect(model.received).toHaveLength(1);
   });
 
