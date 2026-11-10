@@ -49,3 +49,28 @@ describe("act", () => {
     expect(world.version).toBe(1);
   });
 });
+
+describe("act reads an answer by one rule", () => {
+  it.each([
+    ["from its last non-empty line", "Slot 2 looks free.\n\ntake 2\n\n"],
+    ["dropping spaces at the start and end of that line, and counting repeated spaces as one", "  take   2  "],
+    ["matching the action's name without regard to case", "TaKe 2"],
+  ])("reads the action %s", (_, answer) => {
+    const world = new World(emptySlots(3));
+
+    const outcome = act(world, declaredActions, "a", answer);
+
+    expect(outcome).toBe("success");
+    expect(world.state).toEqual([null, "a", null]);
+  });
+
+  it("does not read an action written before the last non-empty line, and its outcome is unparsed", () => {
+    const world = new World(emptySlots(3));
+
+    const outcome = act(world, declaredActions, "a", "take 2\nThat is my choice.");
+
+    expect(outcome).toBe("unparsed");
+    expect(world.state).toEqual([null, null, null]);
+    expect(world.version).toBe(0);
+  });
+});
