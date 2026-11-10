@@ -164,6 +164,7 @@ When("the loaded scenario runs", async function (this: Context) {
   await run(loadedOf(this), agents, this.seed, {
     modelTurnTimeoutMs: this.modelTurnTimeoutMs,
     parallelismLimit: this.parallelismLimit,
+    timeLimitMs: this.timeLimitMs,
   });
 });
 

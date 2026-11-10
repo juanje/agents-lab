@@ -22,6 +22,8 @@ export interface RunSettings {
   modelTurnTimeoutMs: number;
   /** The maximum number of model calls running at once, across all agents. */
   parallelismLimit: number;
+  /** How long the run may last, from its start; a tool call still running when it passes is cut off (FR-CLOCK-02). */
+  timeLimitMs: number;
   /**
    * Called with the run's stimuli before any agent wakes, so a caller can deliver stimuli while the run goes on. A seam
    * until the world's processes deliver them (FR-PROCESS-01).
@@ -53,10 +55,28 @@ export async function run<State>(
   seed: number,
   settings: RunSettings,
 ): Promise<RunResult> {
+  const timeLimit = new AbortController();
+  const timer = setTimeout(() => timeLimit.abort(), settings.timeLimitMs);
+  try {
+    return await runUntil(loaded, agents, seed, settings, timeLimit.signal);
+  } finally {
+    // A run that ends at its budget must not leave its time limit pending.
+    clearTimeout(timer);
+  }
+}
+
+/** Runs the agents until each has used its activation budget, with the signal that aborts at the run's time limit. */
+async function runUntil<State>(
+  loaded: LoadedScenario<State>,
+  agents: readonly Agent[],
+  seed: number,
+  settings: RunSettings,
+  timeLimit: AbortSignal,
+): Promise<RunResult> {
   const { world, scenario } = loaded;
   const stimuli = new Stimuli(scenario.channels);
   settings.onStart?.(stimuli);
-  const sessionSettings = { systemPrompt: scenario.systemPrompt, modelTurnTimeoutMs: settings.modelTurnTimeoutMs };
+  const sessionSettings = { systemPrompt: scenario.systemPrompt, modelTurnTimeoutMs: settings.modelTurnTimeoutMs, timeLimit };
   const runtime = await openRuntime(agents.map((agent) => agent.model.provider));
   const parallelism = new ParallelismLimit(settings.parallelismLimit);
   const turns: ModelTurn[] = [];

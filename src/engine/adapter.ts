@@ -86,7 +86,10 @@ export interface ToolCall {
   tool: string;
   /** The arguments exactly as the model made them, before Pi coerces them. */
   arguments: unknown;
-  /** "success", "invalid_arguments", "unknown_tool", or the reason the scenario gives for a failed effect. */
+  /**
+   * "success", "invalid_arguments", "unknown_tool", "cut_off" for a call the run's time limit cut short, or the reason
+   * the scenario gives for a failed effect.
+   */
   outcome: string;
   /** When the call started and ended, by performance.now(). */
   startedAtMs: number;
@@ -101,6 +104,8 @@ export interface SessionSettings {
   systemPrompt: string;
   /** How long a model turn may run before it is aborted. */
   modelTurnTimeoutMs: number;
+  /** Aborts when the run's time limit passes, which cuts off the tool calls still running (FR-CLOCK-02). */
+  timeLimit: AbortSignal;
 }
 
 /** Opens the Pi session an agent keeps for the whole run (FR-ADAPTER-02). */
@@ -124,7 +129,7 @@ export async function openSession<State>(
     model: agent.model.model,
     // The allowlist leaves out Pi's built-in tools and filters custom tools too, so it names every scenario tool.
     tools: tools.map((tool) => tool.name),
-    customTools: tools.map((tool) => definition(world, tool, agent.name, executed, sensings)),
+    customTools: tools.map((tool) => definition(world, tool, agent.name, executed, sensings, settings.timeLimit)),
     resourceLoader: resources(settings.systemPrompt),
     sessionManager: SessionManager.inMemory(),
     // Neither the person's nor any project's Pi settings reach the session. A provider's error ends the activation
@@ -282,6 +287,7 @@ function definition<State>(
   agent: string,
   executed: Map<string, Executed>,
   sensings: Sensings,
+  timeLimit: AbortSignal,
 ): ToolDefinition {
   return {
     name: tool.name,
@@ -294,7 +300,7 @@ function definition<State>(
         undeclared(tool, args) ??
         (tool.kind === "sensor"
           ? await sense(world, tool, { agent, arguments: args })
-          : await effect(world, tool, { agent, arguments: args }, sensings.last(agent)));
+          : await effect(world, tool, { agent, arguments: args }, sensings.last(agent), timeLimit));
       const endedAtMs = performance.now();
       executed.set(id, { outcome, startedAtMs, endedAtMs, ...(targetAsSensed === undefined ? {} : { targetAsSensed }) });
       if (tool.kind === "sensor" && outcome === "success") sensings.record(agent, { tool: tool.name, result: text, atMs: endedAtMs });
@@ -303,6 +309,9 @@ function definition<State>(
     },
   };
 }
+
+/** The outcome of a tool call still running when the run's time limit passes (FR-CLOCK-02). */
+const CUT_OFF = "cut_off";
 
 /** A call the tool ran: its outcome, when it started and ended, and for an effector, its target as sensed. */
 type Executed = Pick<ToolCall, "outcome" | "startedAtMs" | "endedAtMs" | "targetAsSensed">;
@@ -336,11 +345,19 @@ async function sense<State>(world: World<State>, sensor: Sensor<State>, call: Ag
 /**
  * Applies an effector's call through the arbiter once its duration has passed, against the world as it is then
  * (FR-TOOL-04); the agent receives its outcome: "success" or the failure's reason. What the agent last sensed of the
- * call's target, before the call, is read beside it and never reaches the arbiter (NFR-11).
+ * call's target, before the call, is read beside it and never reaches the arbiter (NFR-11). A call whose duration the
+ * run's time limit cuts short applies nothing: its effect would change a world that was already measured (FR-CLOCK-02).
  */
-async function effect<State>(world: World<State>, effector: Effector<State>, call: AgentCall, sensing: Sensing | undefined): Promise<CallResult> {
+async function effect<State>(
+  world: World<State>,
+  effector: Effector<State>,
+  call: AgentCall,
+  sensing: Sensing | undefined,
+  timeLimit: AbortSignal,
+): Promise<CallResult> {
   const targetAsSensed = sensing === undefined ? "not_sensed" : effector.readTarget(sensing, call);
-  await waitAtLeast(effector.durationMs(world.state, call));
+  await waitAtLeast(effector.durationMs(world.state, call), timeLimit);
+  if (timeLimit.aborted) return { outcome: CUT_OFF, text: CUT_OFF, targetAsSensed };
   const result = world.apply(effector.action, call);
   const outcome = result.applied ? "success" : result.reason;
   return { outcome, text: outcome, targetAsSensed };

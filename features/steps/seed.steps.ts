@@ -101,6 +101,7 @@ async function runReplica(context: Context, seed: number, condition?: Condition)
   await run(loaded, runningAgents, seed, {
     modelTurnTimeoutMs: context.modelTurnTimeoutMs,
     parallelismLimit: context.parallelismLimit,
+    timeLimitMs: context.timeLimitMs,
   });
   return drawn;
 }
