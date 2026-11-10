@@ -64,7 +64,7 @@ export interface ToolCall {
   tool: string;
   /** The arguments exactly as the model made them, before Pi coerces them. */
   arguments: unknown;
-  /** "success", "invalid_arguments", or the reason the scenario gives for a failed effect. */
+  /** "success", "invalid_arguments", "unknown_tool", or the reason the scenario gives for a failed effect. */
   outcome: string;
 }
 
@@ -106,21 +106,28 @@ export async function openSession<State>(
   forceSystemPrompt(session, settings.systemPrompt);
   runTurns(session, agent.name, settings.modelTurnTimeoutMs, parallelism, turns);
   deliverBetweenTurns(session, agent.name, stimuli);
-  recordToolCalls(session, agent.name, executed, toolCalls);
+  recordToolCalls(session, agent.name, new Set(tools.map((tool) => tool.name)), executed, toolCalls);
   return session;
 }
 
 /**
  * Records each of the agent's tool calls with the arguments its model made, which Pi passes on before it coerces them,
- * and its outcome. Pi runs a tool only once its arguments pass the tool's schema, so a call that did not run had
- * arguments the tool does not take.
+ * and its outcome. Pi answers a call to a tool the session does not offer with an error, and runs an offered tool only
+ * once its arguments pass the tool's schema, so a call to an offered tool that did not run had arguments the tool does
+ * not take.
  */
-function recordToolCalls(session: AgentSession, agent: string, executed: ReadonlyMap<string, string>, toolCalls: ToolCall[]): void {
+function recordToolCalls(
+  session: AgentSession,
+  agent: string,
+  offered: ReadonlySet<string>,
+  executed: ReadonlyMap<string, string>,
+  toolCalls: ToolCall[],
+): void {
   const made = new Map<string, unknown>();
   session.subscribe((event) => {
     if (event.type === "tool_execution_start") made.set(event.toolCallId, event.args);
     if (event.type === "tool_execution_end") {
-      const outcome = executed.get(event.toolCallId) ?? "invalid_arguments";
+      const outcome = !offered.has(event.toolName) ? "unknown_tool" : (executed.get(event.toolCallId) ?? "invalid_arguments");
       toolCalls.push({ agent, tool: event.toolName, arguments: made.get(event.toolCallId), outcome });
     }
   });
