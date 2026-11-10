@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { Given, Then } from "@cucumber/cucumber";
+import { getCurrentSystemPrompt } from "@earendil-works/pi-ai";
 import type { Context } from "../support/context.ts";
 import { modelOf, script } from "./tool.steps.ts";
 
@@ -25,4 +26,10 @@ Then("all of agent {string}'s model turns ran in the same Pi session", function 
   const sessions = new Set(model.sessions);
   assert.equal(sessions.size, 1, `agent "${agent}"'s turns ran in the sessions ${[...sessions].join(", ")}`);
   assert.ok(!sessions.has(undefined), `agent "${agent}"'s turns ran in no Pi session`);
+});
+
+Then("the system prompt agent {string}'s model received is exactly {string}", function (this: Context, agent: string, prompt: string) {
+  for (const [turn, messages] of modelOf(this, agent).received.entries()) {
+    assert.equal(getCurrentSystemPrompt(messages), prompt, `turn ${turn + 1} received another system prompt`);
+  }
 });
