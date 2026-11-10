@@ -8,10 +8,14 @@ export interface Sensing {
 
 /** What each agent has sensed: what an agent knows is what it last perceived, not the world's state (FR-TOOL-03). */
 export class Sensings {
-  record(_agent: string, _sensing: Sensing): void {}
+  readonly #last = new Map<string, Sensing>();
+
+  record(agent: string, sensing: Sensing): void {
+    this.#last.set(agent, sensing);
+  }
 
   /** The agent's last sensing, or undefined if it has sensed nothing. */
-  last(_agent: string): Sensing | undefined {
-    return undefined;
+  last(agent: string): Sensing | undefined {
+    return this.#last.get(agent);
   }
 }

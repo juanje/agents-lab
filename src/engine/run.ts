@@ -4,7 +4,7 @@ import { waitAtLeast } from "./clock.ts";
 import { ParallelismLimit } from "./parallelism.ts";
 import { Random } from "./random.ts";
 import type { LoadedScenario } from "./scenario.ts";
-import type { Sensings } from "./sensings.ts";
+import { Sensings } from "./sensings.ts";
 import { Stimuli } from "./stimuli.ts";
 
 /** An agent in a run: its name, the model it works with, how many activations it has, and its rhythm. */
@@ -31,7 +31,7 @@ export interface RunSettings {
 
 /**
  * What a run gives: every agent's model turns and tool calls, each in the order they ended, and what each agent's
- * session held at its end.
+ * session held at its end, and what each agent last sensed.
  */
 export interface RunResult {
   turns: ModelTurn[];
@@ -61,10 +61,11 @@ export async function run<State>(
   const parallelism = new ParallelismLimit(settings.parallelismLimit);
   const turns: ModelTurn[] = [];
   const toolCalls: ToolCall[] = [];
+  const sensings = new Sensings();
   const messages = new Map<string, AgentSession["messages"]>();
   await Promise.all(
     agents.map(async (agent) => {
-      const session = await openSession(world, scenario.tools, agent, runtime, sessionSettings, parallelism, turns, stimuli, toolCalls);
+      const session = await openSession(world, scenario.tools, agent, runtime, sessionSettings, parallelism, turns, stimuli, toolCalls, sensings);
       try {
         // Each agent's rhythm has its own sequence, from the seed and the agent's name: sharing one would make an
         // agent's intervals depend on when the others' models answer, and deriving by order on which other agents run.
@@ -76,7 +77,7 @@ export async function run<State>(
       }
     }),
   );
-  return { turns, toolCalls, messages };
+  return { turns, toolCalls, messages, sensings };
 }
 
 /**

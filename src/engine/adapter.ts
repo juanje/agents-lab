@@ -14,6 +14,7 @@ import { type Api, type AssistantMessage, type Model, type Provider, getCurrentS
 import { waitAtLeast } from "./clock.ts";
 import type { ParallelismLimit } from "./parallelism.ts";
 import { SCRIPT_EXHAUSTED_MESSAGE } from "./scripted-model.ts";
+import type { Sensings } from "./sensings.ts";
 import type { Stimuli, Stimulus } from "./stimuli.ts";
 import type { Effector, Sensor, Tool } from "./tools.ts";
 import type { World } from "./world.ts";
@@ -111,6 +112,7 @@ export async function openSession<State>(
   turns: ModelTurn[],
   stimuli: Stimuli,
   toolCalls: ToolCall[],
+  sensings: Sensings,
 ): Promise<AgentSession> {
   const executed = new Map<string, Executed>();
   const { session } = await createAgentSession({
@@ -120,7 +122,7 @@ export async function openSession<State>(
     model: agent.model.model,
     // The allowlist leaves out Pi's built-in tools and filters custom tools too, so it names every scenario tool.
     tools: tools.map((tool) => tool.name),
-    customTools: tools.map((tool) => definition(world, tool, agent.name, executed)),
+    customTools: tools.map((tool) => definition(world, tool, agent.name, executed, sensings)),
     resourceLoader: resources(settings.systemPrompt),
     sessionManager: SessionManager.inMemory(),
     // Neither the person's nor any project's Pi settings reach the session. A provider's error ends the activation
@@ -269,9 +271,16 @@ function resources(systemPrompt: string): ResourceLoader {
 
 /**
  * A scenario's tool as Pi runs it for one agent: the agent sees what it is for and what it takes; how it works stays in
- * the world. Each call it runs leaves its outcome and times under the call's id.
+ * the world. Each call it runs leaves its outcome and times under the call's id, and a sensor's call that succeeded
+ * leaves what it returned as the agent's last sensing.
  */
-function definition<State>(world: World<State>, tool: Tool<State>, agent: string, executed: Map<string, Executed>): ToolDefinition {
+function definition<State>(
+  world: World<State>,
+  tool: Tool<State>,
+  agent: string,
+  executed: Map<string, Executed>,
+  sensings: Sensings,
+): ToolDefinition {
   return {
     name: tool.name,
     label: tool.name,
@@ -281,7 +290,9 @@ function definition<State>(world: World<State>, tool: Tool<State>, agent: string
       const startedAtMs = performance.now();
       const { outcome, text } =
         undeclared(tool, args) ?? (tool.kind === "sensor" ? await sense(world, tool, agent) : effect(world, tool, agent, args));
-      executed.set(id, { outcome, startedAtMs, endedAtMs: performance.now() });
+      const endedAtMs = performance.now();
+      executed.set(id, { outcome, startedAtMs, endedAtMs });
+      if (tool.kind === "sensor" && outcome === "success") sensings.record(agent, { tool: tool.name, result: text, atMs: endedAtMs });
       // A failure is marked as one: an agent told that a failure succeeded would act on a world it misreads.
       return { content: [{ type: "text", text }], details: undefined, isError: outcome !== "success" };
     },
