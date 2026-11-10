@@ -38,7 +38,14 @@ export const slotTools: readonly Tool<Slots>[] = [
     kind: "effector",
     name: "take",
     description: "Take an empty slot.",
-    parameters: { type: "object", properties: { slot: { type: "integer", minimum: 1 } }, required: ["slot"] },
+    // It takes a slot and nothing else: Pi checks a call against this schema, and an argument it does not allow makes
+    // the call invalid_arguments.
+    parameters: {
+      type: "object",
+      properties: { slot: { type: "integer", minimum: 1 } },
+      required: ["slot"],
+      additionalProperties: false,
+    },
     action: take,
   },
 ];
