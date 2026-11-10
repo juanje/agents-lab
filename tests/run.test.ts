@@ -79,6 +79,29 @@ describe("run", () => {
     expect((second?.observedAtMs ?? -Infinity) - (first?.actedAtMs ?? Infinity)).toBeGreaterThanOrEqual(80);
   });
 
+  it("gives each agent's rhythm the same draws for the same seed, however long the other agents' models take", async () => {
+    /** Runs agents "a" and "b" with seed 42, "b" answering after its delay, and gives the draws of "a"'s rhythm. */
+    async function drawsOfA(bDelayMs: number): Promise<number[]> {
+      const draws: number[] = [];
+      const answers = (delayMs: number) => new ScriptedModel(Array.from({ length: 4 }, () => ({ text: "wait", delayMs })));
+      await run(
+        new World(emptySlots(3)),
+        declaredActions,
+        [
+          { name: "a", model: answers(0), decisions: 4, rhythm: (source) => (draws.push(source.next()), 5) },
+          { name: "b", model: answers(bDelayMs), decisions: 4, rhythm: (source) => source.next() * 5 },
+        ],
+        new Random(42),
+      );
+      return draws;
+    }
+
+    const draws = await drawsOfA(0);
+
+    expect(draws).toHaveLength(4);
+    expect(await drawsOfA(30)).toEqual(draws);
+  });
+
   it("runs each agent's decisions in its own loop, so a slow agent does not hold back a fast one", async () => {
     const world = new World(emptySlots(3));
     const slow = new ScriptedModel([{ text: "wait", delayMs: 200 }]);
