@@ -49,10 +49,10 @@ Experiments are written outside this repository, in the experiment language (FR-
 **v0.1 build order.** The first slice is the thinnest end-to-end run. Each later FR deepens one piece. FRs marked *built* are done; FRs marked *rebuild* were built against an earlier version of this SPEC and must be rebuilt against their new contract.
 1. FR-WORLD-01 (built)
 2. FR-TOOL-01 (built)
-3. FR-ADAPTER-02
-4. FR-TOOL-02 (rebuild, was FR-ACTION-01)
-5. FR-ADAPTER-01 (rebuild)
-6. FR-STIMULUS-01
+3. FR-ADAPTER-02 (built)
+4. FR-STIMULUS-01
+5. FR-TOOL-02 (rebuild, was FR-ACTION-01)
+6. FR-ADAPTER-01 (rebuild)
 7. FR-CLOCK-01 (rebuild)
 8. FR-SCENARIO-01 (rebuild: its parts change)
 9. FR-SEED-01 (built)
@@ -249,6 +249,7 @@ Each agent runs in one Pi session that lasts the whole run, using the model from
 - the agent's stimuli as its messages.
 
 The prompt never names the model unless the condition says so. The scripted model of FR-ADAPTER-01 runs through this same session, registered with Pi's model runtime like any other model.
+- **Outcomes:** a model turn ends with `success`, `model_error`, `timeout` or, in tests, `script_exhausted`.
 - **Model errors:** when the provider answers with an error, the model turn is recorded with the outcome `model_error` and the provider's message, and the activation ends.
 - **Parallelism limit:** a model turn waits for a free slot when the configured number of calls is already running.
 - **Timeout:** a model turn that runs longer than the timeout is aborted and recorded with the outcome `timeout`, and the activation ends.
