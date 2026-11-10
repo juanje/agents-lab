@@ -57,7 +57,7 @@ What the words mean here, how the pieces fit together, and how the tools behave 
 - **Not used yet:** `@earendil-works/pi-agent-core`, a lower-level stateful agent, if the coding agent's session adds behaviour we do not want; and `@earendil-works/pi-durable`, experimental persistence and resumption.
 
 ### Node
-- A timer can fire before `performance.now()` has moved its full delay (6.66 ms seen for a 7 ms timer, Node 26). Code that must wait at least a delay, as measured, waits again for what is left (`src/engine/scripted-model.ts`).
+- A timer can fire before `performance.now()` has moved its full delay (6.66 ms seen for a 7 ms timer, Node 26). Code that must wait at least a delay, as measured, waits again for what is left (`waitAtLeast` in `src/engine/clock.ts`).
 - An aborted session must also free its parallelism slot; otherwise later decisions wait for a call that will never end.
 
 ## Testing agents-lab itself
