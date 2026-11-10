@@ -656,4 +656,24 @@ describe("run's time limit", () => {
     const result = messages.get("a")?.find((message) => message.role === "toolResult");
     expect(result).toMatchObject({ isError: true, content: [{ type: "text", text: "cut_off" }] });
   });
+
+  it("cuts off a sensor call still running at the time limit: it ends then, returns nothing of the world, and is no sensing", async () => {
+    const model = new ScriptedModel([
+      { toolCalls: [{ name: "look", arguments: {} }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+
+    const runStartedAtMs = performance.now();
+    const { toolCalls, messages, sensings } = await run(slots({ tools: withLookTaking(1000) }), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, {
+      ...settings,
+      timeLimitMs: 100,
+    });
+
+    const [{ outcome, endedAtMs }] = toolCalls;
+    expect(outcome).toBe("cut_off");
+    expect(endedAtMs - runStartedAtMs).toBeLessThan(500);
+    const result = messages.get("a")?.find((message) => message.role === "toolResult");
+    expect(result).toMatchObject({ isError: true, content: [{ type: "text", text: "cut_off" }] });
+    expect(sensings.last("a")).toBeUndefined();
+  });
 });
