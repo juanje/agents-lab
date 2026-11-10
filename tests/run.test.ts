@@ -68,6 +68,27 @@ describe("run", () => {
     expect(model.sessions).toEqual([expect.any(String), model.sessions[0], model.sessions[0]]);
   });
 
+  it("gives each agent's model turns to that agent's own model", async () => {
+    const world = new World(emptySlots(3));
+    const takes = (slot: number) =>
+      new ScriptedModel([
+        { toolCalls: [{ name: "take", arguments: { slot } }], delayMs: 0 },
+        { text: "Done.", delayMs: 0 },
+      ]);
+
+    await run(
+      world,
+      slotTools,
+      [
+        { name: "a", model: takes(1), activations: 1, rhythm: noWait },
+        { name: "b", model: takes(2), activations: 1, rhythm: noWait },
+      ],
+      seed,
+    );
+
+    expect(world.state).toEqual(["a", "b", null]);
+  });
+
   it("gives each agent's rhythm the same draws for the same seed, however long the other agents' models take", async () => {
     /** Runs agents "a" and "b" with seed 42, "b" answering after its delay, and gives the draws of "a"'s rhythm. */
     async function drawsOfA(bDelayMs: number): Promise<number[]> {
