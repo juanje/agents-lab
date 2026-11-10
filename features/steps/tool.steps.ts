@@ -56,15 +56,15 @@ When("the run ends", async function (this: Context) {
     if (result.applied) this.applied.push({ action: action as Action<Slots, never>, args });
     return result;
   };
-  const agents = [...this.models].map(([name, model]) => ({
+  const agents = [...this.models, ...this.realModels].map(([name, model]) => ({
     name,
     model,
     activations: this.activations.get(name) ?? 1,
     rhythm: this.rhythms.get(name) ?? (() => this.waitBeforeActivationMs),
   }));
-  // These scenarios set up their world and the scenario's parts step by step rather than from a base configuration,
-  // so the slots scenario is assembled around them as loading would give it.
-  const loaded: LoadedScenario<Slots> = {
+  // Most of these scenarios set up their world and the scenario's parts step by step rather than from a base
+  // configuration, so the slots scenario is assembled around them as loading would give it.
+  const loaded: LoadedScenario<Slots> = this.loaded ?? {
     scenario: { ...slotsScenario, channels: this.channels, systemPrompt: this.systemPrompt },
     configuration: {},
     world: this.world,

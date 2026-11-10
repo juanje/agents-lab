@@ -1,7 +1,7 @@
 import { World as CucumberWorld, setWorldConstructor } from "@cucumber/cucumber";
 import type { Grid, Position, WindowCell } from "../../src/engine/grid.ts";
 import type { Condition, LoadedScenario, Scenario } from "../../src/engine/scenario.ts";
-import type { ModelTurn } from "../../src/engine/adapter.ts";
+import type { AgentModel, ModelTurn } from "../../src/engine/adapter.ts";
 import type { Agent, RunResult } from "../../src/engine/run.ts";
 import type { ScriptedAnswer, ScriptedModel } from "../../src/engine/scripted-model.ts";
 import type { Channel, Stimuli } from "../../src/engine/stimuli.ts";
@@ -21,6 +21,8 @@ export class Context extends CucumberWorld {
   results!: ActionResult[];
   /** Each agent's scripted model, as the scenario gives it before the run. */
   readonly models = new Map<string, ScriptedModel>();
+  /** Each agent's real model, for the smoke run, which runs outside the gate. */
+  readonly realModels = new Map<string, AgentModel>();
   /** The answers each agent's script holds, in order. */
   readonly scripts = new Map<string, readonly ScriptedAnswer[]>();
   /** How many activations each agent makes, when the scenario gives it; otherwise one. */
@@ -29,7 +31,7 @@ export class Context extends CucumberWorld {
   readonly modelIds = new Map<string, string>();
   /** The agent the scenario spoke of last, for a step that says "its model". */
   lastAgent?: string;
-  /** Every file in the person's Pi directory and its content, as the scenario left it before the run. */
+  /** Every file in the person's Pi directory, with its size and when it last changed, as it was before the run. */
   personsPiFiles?: Map<string, string>;
   /** The model turns the run gave, in the order they ended. */
   turns?: readonly ModelTurn[];

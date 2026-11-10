@@ -10,4 +10,4 @@ export default {
 };
 
 /** The real-model smoke scenario: `NODE_OPTIONS="--import tsx" npx cucumber-js -p smoke`. */
-export const smoke = { ...common, tags: "@smoke" };
+export const smoke = { ...common, import: [...common.import, "features/smoke/**/*.ts"], tags: "@smoke" };

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { Given, Then } from "@cucumber/cucumber";
 import { getCurrentSystemPrompt, getCurrentTools } from "@earendil-works/pi-ai";
@@ -85,18 +85,24 @@ Then("nothing agent {string}'s model received mentions {string}", function (this
 });
 
 /** The person's Pi directory under the scenario's home, where Pi looks when it is not told otherwise. */
-function personsPiDirectory(context: Context): string {
+export function personsPiDirectory(context: Context): string {
   return join(context.home, ".pi", "agent");
 }
 
 /** A text each file of the person's Pi setup carries, so anything of it that reaches the model shows. */
 const PERSONS_MARK = "from-the-persons-pi";
 
-/** Every file under a directory, by path, with its content. */
-function filesUnder(directory: string): Map<string, string> {
+/**
+ * Every file under a directory, by path, with its size and when it last changed. Never its content: the person's real
+ * Pi directory, which the smoke run checks, holds their credentials.
+ */
+export function filesUnder(directory: string): Map<string, string> {
   const paths = readdirSync(directory, { recursive: true, encoding: "utf8" }).sort();
   return new Map(
-    paths.filter((path) => statSync(join(directory, path)).isFile()).map((path) => [path, readFileSync(join(directory, path), "utf8")]),
+    paths.flatMap((path) => {
+      const stats = statSync(join(directory, path));
+      return stats.isFile() ? [[path, `${stats.size} bytes, changed at ${stats.mtimeMs}`] as const] : [];
+    }),
   );
 }
 
@@ -182,6 +188,10 @@ Then("the run did not stop", function (this: Context) {
   // Every agent's model was asked for every answer its script holds: a run that stopped would have left some unasked.
   for (const [agent, model] of this.models) {
     assert.equal(model.received.length, this.scripts.get(agent)?.length, `agent "${agent}"'s model was not asked for all its scripted answers`);
+  }
+  // A real model has no script: a run that went on woke each agent for every activation it has.
+  for (const agent of this.realModels.keys()) {
+    assert.equal(this.wokeAtMs.get(agent)?.length ?? 0, this.activations.get(agent) ?? 1, `agent "${agent}" did not make all its activations`);
   }
 });
 
