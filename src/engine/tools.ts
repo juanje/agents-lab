@@ -32,8 +32,11 @@ export type TargetAsSensed = "free" | "held" | "not_sensed";
 /** A tool that changes the world through the arbiter. */
 export interface Effector<State> extends Declared {
   kind: "effector";
-  /** How long a call takes, in milliseconds, before its effect is checked and applied (FR-TOOL-04). */
-  durationMs: number;
+  /**
+   * How long a call takes, in milliseconds, before its effect is checked and applied, from the call's arguments, the
+   * agent that makes it and the state as the call starts (FR-TOOL-04).
+   */
+  durationMs(state: State, call: EffectorCall): number;
   action: Action<State, EffectorCall>;
   /** What the agent's last sensing says of the call's target; "not_sensed" when that sensing does not show it. */
   readTarget(sensing: Sensing, call: EffectorCall): TargetAsSensed;

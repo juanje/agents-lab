@@ -4,7 +4,8 @@ import { getCurrentTools } from "@earendil-works/pi-ai";
 import { run } from "../../src/engine/run.ts";
 import { type ScriptedAnswer, ScriptedModel } from "../../src/engine/scripted-model.ts";
 import type { LoadedScenario } from "../../src/engine/scenario.ts";
-import type { Action } from "../../src/engine/world.ts";
+import { type Action, World } from "../../src/engine/world.ts";
+import { gridScenario } from "../../tests/fixtures/grid-world.ts";
 import { SLOT_TAKEN, type Seen, type Slots, slotTools, slotsScenario } from "../../tests/fixtures/slots.ts";
 import type { Context } from "../support/context.ts";
 
@@ -56,47 +57,59 @@ Given(
 );
 
 When("the run ends", async function (this: Context) {
-  this.versionBefore = this.world.version;
-  this.stateBefore = this.world.state;
-  // Watched, not changed: the arbiter still decides, and the scenario sees the order it applied effects in.
-  const apply = this.world.apply.bind(this.world);
-  this.world.apply = (action, args) => {
-    const result = apply(action, args);
-    if (result.applied) this.applied.push({ action: action as Action<Slots, never>, args, atMs: performance.now() });
-    return result;
-  };
-  const agents = [...this.models, ...this.realModels].map(([name, model]) => ({
-    name,
-    model,
-    activations: this.activations.get(name) ?? 1,
-    rhythm: this.rhythms.get(name) ?? (() => this.waitBeforeActivationMs),
-  }));
   // Most of these scenarios set up their world and the scenario's parts step by step rather than from a base
-  // configuration, so the slots scenario is assembled around them as loading would give it.
+  // configuration, so the scenario is assembled around them as loading would give it: the test grid world when the
+  // scenario declared its tools, the slots world otherwise.
+  if (this.gridTools !== undefined) {
+    this.gridWorld = new World(this.grid);
+    await runScenario(this, { scenario: gridScenario(this.grid, this.gridTools), configuration: {}, world: this.gridWorld });
+    return;
+  }
+  this.versionBefore = this.world.version;
   const loaded: LoadedScenario<Slots> = this.loaded ?? {
     scenario: { ...slotsScenario, tools: this.tools, channels: this.channels, systemPrompt: this.systemPrompt },
     configuration: {},
     world: this.world,
   };
-  const { turns, messages, toolCalls, sensings } = await run(loaded, agents, this.seed, {
-    modelTurnTimeoutMs: this.modelTurnTimeoutMs,
-    parallelismLimit: this.parallelismLimit,
+  await runScenario(this, loaded);
+});
+
+/** Runs the scenario's agents in a loaded scenario, watching its arbiter, and keeps what the run gave. */
+async function runScenario<State>(context: Context, loaded: LoadedScenario<State>): Promise<void> {
+  const { world } = loaded;
+  context.stateBefore = world.state;
+  // Watched, not changed: the arbiter still decides, and the scenario sees the order it applied effects in.
+  const apply = world.apply.bind(world);
+  world.apply = (action, args) => {
+    const result = apply(action, args);
+    if (result.applied) context.applied.push({ action: action as Action<unknown, never>, args, atMs: performance.now() });
+    return result;
+  };
+  const agents = [...context.models, ...context.realModels].map(([name, model]) => ({
+    name,
+    model,
+    activations: context.activations.get(name) ?? 1,
+    rhythm: context.rhythms.get(name) ?? (() => context.waitBeforeActivationMs),
+  }));
+  const { turns, messages, toolCalls, sensings } = await run(loaded, agents, context.seed, {
+    modelTurnTimeoutMs: context.modelTurnTimeoutMs,
+    parallelismLimit: context.parallelismLimit,
     onStart: (stimuli) => {
-      this.stimuli = stimuli;
+      context.stimuli = stimuli;
       // Watched too: an agent wakes when its session takes its rhythm's stimulus.
       const wake = stimuli.wake.bind(stimuli);
       stimuli.wake = (agent) => {
-        this.wokeAtMs.set(agent, [...(this.wokeAtMs.get(agent) ?? []), performance.now()]);
+        context.wokeAtMs.set(agent, [...(context.wokeAtMs.get(agent) ?? []), performance.now()]);
         return wake(agent);
       };
     },
   });
-  this.turns = turns;
-  this.sessionMessages = messages;
-  this.toolCalls = toolCalls;
-  this.sensings = sensings;
-  for (const check of this.setupChecks) check();
-});
+  context.turns = turns;
+  context.sessionMessages = messages;
+  context.toolCalls = toolCalls;
+  context.sensings = sensings;
+  for (const check of context.setupChecks) check();
+}
 
 /** The scripted model agent runs on, which has made at least one turn. */
 export function modelOf(context: Context, agent: string): ScriptedModel {

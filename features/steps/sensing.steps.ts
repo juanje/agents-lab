@@ -8,6 +8,7 @@ Given(
   "the sensor {string} takes {int} milliseconds and returns which slots are empty and which are held",
   function (this: Context, name: string, durationMs: number) {
     const sensor = fixtureTool("sensor", name);
+    assert.ok(sensor.kind === "sensor");
     this.tools = this.tools.map((tool) => (tool.name === name ? { ...sensor, durationMs } : tool));
   },
 );
@@ -16,7 +17,8 @@ Given(
   "the effector {string} takes no time and puts the agent in a slot, only if that slot is empty, and otherwise fails with {string}",
   function (this: Context, name: string, reason: string) {
     const effector = fixtureTool("effector", name);
-    assert.ok(effector.kind === "effector" && effector.durationMs === 0, `the test world's "${name}" takes time`);
+    // It takes no time for any call, in any state: the test world's "take" gives its duration from neither.
+    assert.ok(effector.kind === "effector" && effector.durationMs([null], { agent: "a", arguments: { slot: 1 } }) === 0, `the test world's "${name}" takes time`);
     assert.equal(reason, SLOT_TAKEN);
   },
 );

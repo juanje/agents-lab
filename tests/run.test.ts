@@ -7,6 +7,7 @@ import { type RunSettings, run } from "../src/engine/run.ts";
 import { ScriptedModel } from "../src/engine/scripted-model.ts";
 import { type Scenario, loadScenario } from "../src/engine/scenario.ts";
 import type { Stimuli } from "../src/engine/stimuli.ts";
+import type { EffectorCall } from "../src/engine/tools.ts";
 import { type Slots, emptySlots, rhythmChannel, slotTools, slotsScenario, take } from "./fixtures/slots.ts";
 
 /** A rhythm with no waiting: the agent wakes again as soon as its previous activation ends. */
@@ -28,7 +29,8 @@ const timed = { startedAtMs: expect.any(Number), endedAtMs: expect.any(Number) }
 const withLookTaking = (durationMs: number) => slotTools.map((tool) => (tool.kind === "sensor" ? { ...tool, durationMs } : tool));
 
 /** The test world's tools, with its effector "take" taking this long. */
-const withTakeTaking = (durationMs: number) => slotTools.map((tool) => (tool.kind === "effector" ? { ...tool, durationMs } : tool));
+const withTakeTaking = (durationMs: number) =>
+  slotTools.map((tool) => (tool.kind === "effector" ? { ...tool, durationMs: () => durationMs } : tool));
 
 /** Settings for a run whose test looks at none of them. */
 const settings: RunSettings = { modelTurnTimeoutMs: 10_000, parallelismLimit: 10 };
@@ -541,6 +543,32 @@ describe("run", () => {
     expect(appliedAtMs).toHaveLength(1);
     expect(appliedAtMs[0] - startedAtMs).toBeGreaterThanOrEqual(50);
     expect(endedAtMs).toBeGreaterThanOrEqual(appliedAtMs[0]);
+  });
+
+  it("takes the duration the effector gives for the call's arguments, the calling agent and the state as the call starts", async () => {
+    const model = new ScriptedModel([
+      { toolCalls: [{ name: "take", arguments: { slot: 2 } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+    const asked: unknown[] = [];
+    const tools = slotTools.map((tool) =>
+      tool.kind === "effector"
+        ? {
+            ...tool,
+            durationMs: (state: Slots, call: EffectorCall) => {
+              asked.push({ state, call });
+              return 40;
+            },
+          }
+        : tool,
+    );
+
+    const { toolCalls } = await run(slots({ tools }), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+
+    expect(asked).toEqual([{ state: emptySlots(3), call: { agent: "a", arguments: { slot: 2 } } }]);
+    const [{ outcome, startedAtMs, endedAtMs }] = toolCalls;
+    expect(outcome).toBe("success");
+    expect(endedAtMs - startedAtMs).toBeGreaterThanOrEqual(40);
   });
 
   it("records beside an effector call's outcome what the agent last sensed of its target, which never decides it", async () => {

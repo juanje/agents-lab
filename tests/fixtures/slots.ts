@@ -47,7 +47,7 @@ export const slotTools: readonly Tool<Slots>[] = [
     description: "Take an empty slot.",
     // Its schema does not forbid other arguments, so a call with one passes Pi's check and only the engine rejects it.
     parameters: { type: "object", properties: { slot: { type: "integer", minimum: 1 } }, required: ["slot"] },
-    durationMs: 0,
+    durationMs: () => 0,
     action: {
       precondition: (slots, call) => take.precondition(slots, takeCall(call)),
       effect: (slots, call) => take.effect(slots, takeCall(call)),

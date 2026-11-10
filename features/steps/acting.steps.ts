@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { Given, Then } from "@cucumber/cucumber";
+import type { Action } from "../../src/engine/world.ts";
 import { SLOT_TAKEN, type Seen, type Slots, holder } from "../../tests/fixtures/slots.ts";
 import type { Context } from "../support/context.ts";
 import { turnsOf } from "./adapter.steps.ts";
@@ -17,8 +18,9 @@ Given(
   "the effector {string} takes {int} milliseconds, puts the agent in a slot when it lands, and fails with {string} when the slot is held when it lands",
   function (this: Context, name: string, durationMs: number, reason: string) {
     const effector = fixtureTool("effector", name);
+    assert.ok(effector.kind === "effector");
     assert.equal(reason, SLOT_TAKEN);
-    this.tools = this.tools.map((tool) => (tool.name === name ? { ...effector, durationMs } : tool));
+    this.tools = this.tools.map((tool) => (tool.name === name ? { ...effector, durationMs: () => durationMs } : tool));
   },
 );
 
@@ -53,11 +55,13 @@ Given(
   "agent {string}'s {string} of slot {int} lands while agent {string}'s {string} is under way",
   function (this: Context, agent: string, tool: string, slot: number, other: string, otherTool: string) {
     const declared = this.tools.find((candidate) => candidate.name === tool);
-    assert.ok(declared?.kind === "effector" && declared.durationMs > 0, `"${tool}" takes no time for a call to land in`);
+    assert.ok(declared?.kind === "effector", `the test world declares no effector "${tool}"`);
+    const durationMs = declared.durationMs(this.world.state, { agent, arguments: { slot } });
+    assert.ok(durationMs > 0, `"${tool}" takes no time for a call to land in`);
     script(this, agent, callThenEnd(tool, slot, 0));
     // The other agent wakes halfway through this call, so its own call, which takes as long, starts before this one
     // lands and ends after. The check below makes sure it did.
-    this.rhythms.set(other, () => declared.durationMs / 2);
+    this.rhythms.set(other, () => durationMs / 2);
     this.setupChecks.push(() => {
       const landed = callOf(this, agent, tool);
       const underWay = callOf(this, other, otherTool);
@@ -99,17 +103,20 @@ Then(
   },
 );
 
-/** The world's state at a moment of the run: its state as the run started, with every effect applied before then. */
-function stateAt(context: Context, atMs: number): Slots {
+/**
+ * The world's state at a moment of the run: its state as the run started, with every effect applied before then. The
+ * caller names the state the scenario's world holds.
+ */
+export function stateAt<State>(context: Context, atMs: number): State {
   return context.applied
     .filter((applied) => applied.atMs <= atMs)
-    .reduce((state, { action, args }) => action.effect(state, args as never), context.stateBefore);
+    .reduce((state, { action, args }) => (action as Action<State, never>).effect(state, args as never), context.stateBefore as State);
 }
 
 Then(
   "slot {int} was still empty {int} milliseconds after agent {string}'s {string} call started",
   function (this: Context, slot: number, afterMs: number, agent: string, tool: string) {
     const { startedAtMs } = callOf(this, agent, tool);
-    assert.equal(holder(stateAt(this, startedAtMs + afterMs), slot), null);
+    assert.equal(holder(stateAt<Slots>(this, startedAtMs + afterMs), slot), null);
   },
 );

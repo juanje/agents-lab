@@ -1,0 +1,58 @@
+import { type Grid, type Position, distance, move } from "../../src/engine/grid.ts";
+import type { Scenario } from "../../src/engine/scenario.ts";
+import type { Effector, EffectorCall, Tool } from "../../src/engine/tools.ts";
+import { rhythmChannel } from "./slots.ts";
+
+/** The cell an entity is in, or none when the grid does not hold it. */
+export function cellOf(grid: Grid, entity: string): Position | undefined {
+  const index = grid.cells.findIndex((cell) => cell.includes(entity));
+  return index === -1 ? undefined : { x: index % grid.width, y: Math.floor(index / grid.width) };
+}
+
+/** A call of the effector "walk" as the grid's move reads it: the calling agent moves to the cell its arguments give. */
+function walkCall({ agent, arguments: args }: EffectorCall) {
+  return { entity: agent, to: { x: args.x as number, y: args.y as number } };
+}
+
+/**
+ * The test grid world's effector "walk x y": it moves the calling agent to a cell, taking `msPerCell` for each cell of
+ * the distance from where the agent is when the call starts, and fails with `cell_full` when the cell is held when the
+ * agent arrives.
+ */
+export function walkTool(msPerCell: number): Effector<Grid> {
+  return {
+    kind: "effector",
+    name: "walk",
+    description: "Walk to a cell of the grid.",
+    parameters: {
+      type: "object",
+      properties: { x: { type: "integer", minimum: 0 }, y: { type: "integer", minimum: 0 } },
+      required: ["x", "y"],
+    },
+    durationMs: (grid, call) => {
+      const { entity, to } = walkCall(call);
+      const from = cellOf(grid, entity);
+      if (from === undefined) throw new Error(`the test grid world holds no agent ${entity} to walk`);
+      return msPerCell * distance(from, to);
+    },
+    action: {
+      precondition: (grid, call) => move.precondition(grid, walkCall(call)),
+      effect: (grid, call) => move.effect(grid, walkCall(call)),
+    },
+    // The test grid world has no sensor, so an agent never has a sensing to read the target in.
+    readTarget: () => "not_sensed",
+  };
+}
+
+/** The test grid world as a scenario, with the grid it starts from and its tools. */
+export function gridScenario(start: Grid, tools: readonly Tool<Grid>[]): Scenario<Grid> {
+  return {
+    name: "grid",
+    initialState: () => start,
+    tools,
+    channels: [rhythmChannel],
+    metrics: {},
+    systemPrompt: "You are an agent on a grid.",
+    baseConfiguration: "",
+  };
+}

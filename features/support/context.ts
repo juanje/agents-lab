@@ -37,9 +37,9 @@ export class Context extends CucumberWorld {
   /** The model turns the run gave, in the order they ended. */
   turns?: readonly ModelTurn[];
   /** Every effect the arbiter applied during the run, in order: the action, what it was applied for, and when. */
-  readonly applied: { action: Action<Slots, never>; args: unknown; atMs: number }[] = [];
+  readonly applied: { action: Action<unknown, never>; args: unknown; atMs: number }[] = [];
   /** The world's state as the run started, from which the applied effects replay what it was at any moment. */
-  stateBefore!: Slots;
+  stateBefore: unknown;
   /** Checks that what the scenario set up happened as it said, run once the run ends. */
   readonly setupChecks: (() => void)[] = [];
   /** The tool calls the run gave. */
@@ -99,6 +99,8 @@ export class Context extends CucumberWorld {
   gridWorld!: World<Grid>;
   /** The error a refused move gave, if it was refused. */
   moveError?: Error;
+  /** The test grid world's tools, when the scenario runs its agents on the grid rather than in the slots world. */
+  gridTools?: readonly Tool<Grid>[];
 }
 
 setWorldConstructor(Context);
