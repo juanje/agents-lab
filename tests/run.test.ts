@@ -659,6 +659,24 @@ describe("run's time limit", () => {
     expect(startedAtMs).toBeGreaterThanOrEqual(setUpEndedAtMs);
   });
 
+  it("aborts a model turn still running at the time limit, records it as cut_off, and runs none of its tool calls", async () => {
+    const loaded = slots();
+    const model = new ScriptedModel([
+      { toolCalls: [{ name: "take", arguments: { slot: 1 } }], delayMs: 1000 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+
+    const { turns, toolCalls, startedAtMs } = await run(loaded, [{ name: "a", model, activations: 1, rhythm: noWait }], seed, {
+      ...settings,
+      timeLimitMs: 100,
+    });
+
+    expect(turns).toEqual([expect.objectContaining({ agent: "a", outcome: "cut_off" })]);
+    expect(turns[0].endedAtMs - startedAtMs).toBeLessThan(500);
+    expect(toolCalls).toEqual([]);
+    expect(loaded.world.state).toEqual(emptySlots(3));
+  });
+
   it("cuts off an effector call still running at the time limit: it applies nothing, ends then, and the agent is told so", async () => {
     const loaded = slots({ tools: withTakeTaking(1000) });
     const { world } = loaded;
