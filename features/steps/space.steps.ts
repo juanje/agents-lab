@@ -1,7 +1,17 @@
 import assert from "node:assert/strict";
 import { Given, Then, When } from "@cucumber/cucumber";
-import { type Grid, emptyGrid, neighbours, place, randomEmptyCell, window } from "../../src/engine/grid.ts";
+import {
+  type Grid,
+  emptyGrid,
+  entitiesAt,
+  move,
+  neighbours,
+  place,
+  randomEmptyCell,
+  window,
+} from "../../src/engine/grid.ts";
 import { Random } from "../../src/engine/random.ts";
+import { World } from "../../src/engine/world.ts";
 import type { Context } from "../support/context.ts";
 
 Given(
@@ -64,4 +74,25 @@ Then("I get the cell at {int}, {int}", function (this: Context, x: number, y: nu
 
 Then("I get no cell", function (this: Context) {
   assert.equal(this.drawnCell, undefined, `expected no cell, got ${JSON.stringify(this.drawnCell)}`);
+});
+
+Given(
+  "entity {string} is at {int}, {int} and entity {string} is at {int}, {int}",
+  function (this: Context, first: string, x1: number, y1: number, second: string, x2: number, y2: number) {
+    this.grid = place(place(this.grid, first, { x: x1, y: y1 }), second, { x: x2, y: y2 });
+  },
+);
+
+When("entity {string} moves to {int}, {int}", function (this: Context, entity: string, x: number, y: number) {
+  // A move changes the world, so it goes through the arbiter.
+  this.gridWorld = new World(this.grid);
+  this.result = this.gridWorld.apply(move, { entity, to: { x, y } });
+});
+
+Then("the move fails with {string}", function (this: Context, reason: string) {
+  assert.deepEqual(this.result, { applied: false, reason });
+});
+
+Then("entity {string} is still at {int}, {int}", function (this: Context, entity: string, x: number, y: number) {
+  assert.deepEqual(entitiesAt(this.gridWorld.state, { x, y }), [entity]);
 });

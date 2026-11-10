@@ -43,6 +43,8 @@ export class Context extends CucumberWorld {
   window!: WindowCell[];
   /** The cell a random draw gave, or undefined when it gave none. */
   drawnCell?: Position;
+  /** A world whose state is the grid, for what goes through its arbiter. */
+  gridWorld!: World<Grid>;
 }
 
 setWorldConstructor(Context);

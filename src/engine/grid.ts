@@ -1,4 +1,5 @@
 import type { Random } from "./random.ts";
+import type { Action } from "./world.ts";
 
 /** A cell's place on a grid: x from 0 at the left, y from 0 at the top. */
 export interface Position {
@@ -90,3 +91,9 @@ export function randomEmptyCell(grid: Grid, random: Random): Position | undefine
   if (empty.length === 0) return undefined;
   return empty[Math.floor(random.next() * empty.length)];
 }
+
+/** Stub: always applies and moves nothing, so the steps can fail on their assertions first. */
+export const move: Action<Grid, { entity: string; to: Position }> = {
+  precondition: () => ({ holds: true }),
+  effect: (grid) => grid,
+};
