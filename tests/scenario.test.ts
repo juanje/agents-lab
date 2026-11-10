@@ -50,4 +50,13 @@ describe("loadScenario", () => {
 
     expect(() => loadScenario(rest)).toThrow(`Scenario "slots" lacks its ${part}`);
   });
+
+  it.each([
+    ["an empty system prompt", { systemPrompt: "" }, "system prompt"],
+    ["a system prompt of whitespace only", { systemPrompt: " \n\t\r\n" }, "system prompt"],
+    ["an empty base configuration", { baseConfiguration: "" }, "base configuration"],
+    ["a base configuration that sets no key", { baseConfiguration: "# no key\n\n" }, "base configuration"],
+  ] as const)("refuses a scenario with %s, as lacking that part", (_case, empty, part) => {
+    expect(() => loadScenario({ ...slotsScenario, ...empty })).toThrow(`Scenario "slots" lacks its ${part}`);
+  });
 });
