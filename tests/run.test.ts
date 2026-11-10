@@ -307,7 +307,7 @@ describe("run", () => {
     expect(turns.map((turn) => turn.text)).toEqual(["I take slot 1.", "Slot 2 is mine."]);
     expect(world.version).toBe(0);
   });
-  it.each([[{ slot: "seven" }], [{}]])(
+  it.each([[{ slot: "seven" }], [{}], [{ slot: 1, x: 2 }]])(
     "records a call with arguments %j, which the tool does not take, as invalid_arguments, and applies nothing",
     async (args) => {
       const world = new World(emptySlots(3));
