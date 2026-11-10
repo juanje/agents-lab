@@ -254,7 +254,8 @@ function definition<State>(world: World<State>, tool: Tool<State>, agent: string
       }
       const outcome = effect(world, tool, agent, args);
       executed.set(id, outcome);
-      return { content: [{ type: "text", text: outcome }], details: undefined };
+      // A failure is marked as one: an agent told that a failure succeeded would act on a world it misreads.
+      return { content: [{ type: "text", text: outcome }], details: undefined, isError: outcome !== "success" };
     },
   };
 }
