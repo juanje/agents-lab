@@ -39,7 +39,9 @@ async function decide<State>(
   actions: readonly DeclaredAction<State, ActionArgs>[],
   agent: Agent,
 ): Promise<Decision> {
+  const start = performance.now();
   const message = await agent.model.models.complete(agent.model.model, { messages: [] });
+  const latencyMs = performance.now() - start;
   const answer = message.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("");
-  return { answer, outcome: act(world, actions, agent.name, answer) };
+  return { answer, latencyMs, outcome: act(world, actions, agent.name, answer) };
 }
