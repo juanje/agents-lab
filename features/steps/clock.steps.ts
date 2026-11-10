@@ -272,3 +272,9 @@ Then("agent {string} made only the activations that began before the time limit"
     assert.ok(wokeAtMs < limitAtMs, `agent "${agent}"'s activation ${index + 1} began ${wokeAtMs - limitAtMs} ms after the time limit`);
   }
 });
+
+Then("agent {string}'s scripted model was never called", function (this: Context, agent: string) {
+  const model = this.models.get(agent);
+  assert.ok(model !== undefined, `agent "${agent}" runs on no scripted model`);
+  assert.equal(model.received.length, 0, `agent "${agent}"'s scripted model was called ${model.received.length} times`);
+});

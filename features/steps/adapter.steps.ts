@@ -325,8 +325,9 @@ Given(
   "agent {string} runs on a scripted model whose first turn is the text {string} with no tool call, and wakes {int} milliseconds after agent {string}",
   function (this: Context, agent: string, text: string, laterMs: number, other: string) {
     script(this, agent, [{ text, delayMs: 0 }]);
-    const wakes = this.rhythms.get(other);
-    assert.ok(wakes !== undefined, `agent "${other}" was not given a time to wake`);
+    assert.ok(this.models.has(other), `the scenario has no agent "${other}"`);
+    // The other agent wakes when its own rhythm says, or as every agent does when the scenario gives it none.
+    const wakes = this.rhythms.get(other) ?? (() => this.waitBeforeActivationMs);
     this.rhythms.set(agent, (random) => wakes(random) + laterMs);
   },
 );
