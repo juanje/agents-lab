@@ -1,4 +1,5 @@
 import type { ActionArgs, DeclaredAction } from "../../src/engine/actions.ts";
+import type { Scenario } from "../../src/engine/scenario.ts";
 import type { Action } from "../../src/engine/world.ts";
 
 /** A test world of numbered slots, from 1; each is empty (null) or held by one agent. */
@@ -44,3 +45,14 @@ export const declaredActions: readonly DeclaredAction<Slots, ActionArgs>[] = [
     effect: (slots) => slots,
   },
 ];
+
+/** The test world as a scenario: its base configuration gives the number of slots, all empty at the start. */
+export const slotsScenario: Scenario<Slots> = {
+  name: "slots",
+  initialState: (configuration) => emptySlots(configuration.slots as number),
+  perception: (slots) => slots.map((holder, index) => `slot ${index + 1}: ${holder ?? "empty"}`).join("\n"),
+  actions: declaredActions,
+  metrics: { held: (slots) => slots.filter((holder) => holder !== null).length },
+  systemPrompt: "You can take an empty slot or wait.",
+  baseConfiguration: "slots = 3\n",
+};
