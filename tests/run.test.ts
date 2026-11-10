@@ -15,7 +15,7 @@ const noWait = () => 0;
 const seed = 1;
 
 /** Settings for a run whose test looks at none of them. */
-const settings: RunSettings = { systemPrompt: "", modelTurnTimeoutMs: 10_000 };
+const settings: RunSettings = { systemPrompt: "", modelTurnTimeoutMs: 10_000, parallelismLimit: 10 };
 
 describe("run", () => {
   it("offers the agent's model exactly the scenario's tools, with their descriptions and arguments", async () => {
@@ -136,6 +136,25 @@ describe("run", () => {
     expect(turn?.startedAtMs).toBeGreaterThanOrEqual(before);
     expect((turn?.endedAtMs ?? 0) - (turn?.startedAtMs ?? 0)).toBeGreaterThanOrEqual(50);
     expect(turn?.endedAtMs).toBeLessThanOrEqual(performance.now());
+  });
+
+  it("makes a model turn wait for a free slot when the parallelism limit is reached, and records the wait", async () => {
+    const answersAfter50 = () => new ScriptedModel([{ text: "Nothing to do.", delayMs: 50 }]);
+
+    const turns = await run(
+      new World(emptySlots(3)),
+      slotTools,
+      ["a", "b", "c"].map((name) => ({ name, model: answersAfter50(), activations: 1, rhythm: noWait })),
+      seed,
+      { ...settings, parallelismLimit: 2 },
+    );
+
+    const waits = turns.map((turn) => turn.slotWaitMs).sort((one, other) => one - other);
+    expect(waits[0]).toBeLessThan(50);
+    expect(waits[1]).toBeLessThan(50);
+    expect(waits[2]).toBeGreaterThanOrEqual(50);
+    const [first, second, third] = [...turns].sort((one, other) => one.startedAtMs - other.startedAtMs);
+    expect(third?.startedAtMs).toBeGreaterThanOrEqual(Math.min(first?.endedAtMs ?? Infinity, second?.endedAtMs ?? Infinity));
   });
 
   it("gives each agent's model turns to that agent's own model", async () => {
