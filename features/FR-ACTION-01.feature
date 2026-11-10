@@ -20,3 +20,33 @@ Feature: Actions are declared, and unknown answers apply nothing
     When agent "a" answers "take seven"
     Then the decision's outcome is "invalid_arguments"
     And every slot is empty
+
+  Scenario Outline: An answer with too many or too few arguments applies nothing
+    When agent "a" answers "<answer>"
+    Then the decision's outcome is "invalid_arguments"
+    And every slot is empty
+
+    Examples:
+      | answer   |
+      | take 1 2 |
+      | take     |
+
+  Scenario: The action is read from the answer's last non-empty line, ignoring spacing and case
+    When agent "a" answers:
+      """
+      Slot 1 looks free, so I will take it.
+
+        Take   1
+
+      """
+    Then the decision's outcome is "success"
+    And slot 1 holds agent "a"
+
+  Scenario: An action written before the last non-empty line is not read
+    When agent "a" answers:
+      """
+      take 1
+      That is my choice.
+      """
+    Then the decision's outcome is "unparsed"
+    And every slot is empty
