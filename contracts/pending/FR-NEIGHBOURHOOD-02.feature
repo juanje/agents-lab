@@ -1,0 +1,38 @@
+@FR-NEIGHBOURHOOD-02
+Feature: Residents look and move
+
+  Background:
+    Given the neighbourhood scenario with a grid 5 cells wide and 5 cells high, a look radius of 1, and moving taking 100 milliseconds per cell
+    And resident "r1" of kind "teal" is at 0, 0
+    And resident "r2" of kind "amber" is at 1, 0
+    And resident "r3" of kind "teal" is at 0, 1
+
+  Scenario: Looking shows the resident's window, with kinds, empty cells and the grid's edge marked distinctly
+    Given resident "r1" runs on a scripted model that calls "look", then ends without a tool call
+    When the run ends
+    Then "r1"'s "look" result marks its own cell, the cell at 0, 1 as its own kind, the cell at 1, 0 as the other kind, the cell at 1, 1 as empty, and the cells to the left and above as outside the grid
+
+  Scenario: Moving to an empty cell anywhere in the grid takes the time for the distance
+    Given resident "r1" runs on a scripted model that calls "move" with dx 3 and dy 3, then ends without a tool call
+    When the run ends
+    Then resident "r1" is at 3, 3
+    And "r1"'s "move" call ended at least 300 milliseconds after it started
+
+  Scenario: Moving to a held cell fails when the resident arrives
+    Given resident "r1" runs on a scripted model that calls "look", then calls "move" with dx 1 and dy 0, then ends without a tool call
+    When the run ends
+    Then "r1"'s "move" call failed with "cell_full"
+    And resident "r1" is still at 0, 0
+    And the call recorded its target as sensed: the other kind
+
+  Scenario: Moving outside the grid is an invalid target
+    Given resident "r1" runs on a scripted model that calls "move" with dx -1 and dy 0, then ends without a tool call
+    When the run ends
+    Then "r1"'s "move" call failed with "invalid_target"
+    And resident "r1" is still at 0, 0
+
+  Scenario: A resident that does not want to move ends its activation
+    Given resident "r1" runs on a scripted model that calls "look", then ends without a tool call
+    When the run ends
+    Then resident "r1" is still at 0, 0
+    And "r1" made no "move" call
