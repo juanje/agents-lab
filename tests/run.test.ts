@@ -43,6 +43,19 @@ describe("run", () => {
     expect(world.version).toBe(0);
   });
 
+  it("applies an effector the model calls through the arbiter, with the agent and the call's arguments", async () => {
+    const world = new World(emptySlots(3));
+    const model = new ScriptedModel([
+      { toolCalls: [{ name: "take", arguments: { slot: 1 } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+
+    await run(world, slotTools, [{ name: "a", model, activations: 1, rhythm: noWait }], seed);
+
+    expect(world.state).toEqual(["a", null, null]);
+    expect(world.version).toBe(1);
+  });
+
   it("gives each agent's rhythm the same draws for the same seed, however long the other agents' models take", async () => {
     /** Runs agents "a" and "b" with seed 42, "b" answering after its delay, and gives the draws of "a"'s rhythm. */
     async function drawsOfA(bDelayMs: number): Promise<number[]> {
