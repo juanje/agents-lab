@@ -1,3 +1,4 @@
+import type { Sensing } from "./sensings.ts";
 import type { Action } from "./world.ts";
 
 /** What a tool shares with the agent: its name, the description the agent sees, and its arguments as a JSON Schema. */
@@ -25,10 +26,17 @@ export interface EffectorCall {
   arguments: Record<string, unknown>;
 }
 
+/** What an agent last sensed of an effector's target, recorded beside the call's outcome and never deciding it (NFR-11). */
+export type TargetAsSensed = "free" | "held" | "not_sensed";
+
 /** A tool that changes the world through the arbiter. */
 export interface Effector<State> extends Declared {
   kind: "effector";
+  /** How long a call takes, in milliseconds, before its effect is checked and applied (FR-TOOL-04). */
+  durationMs: number;
   action: Action<State, EffectorCall>;
+  /** What the agent's last sensing says of the call's target; "not_sensed" when that sensing does not show it. */
+  readTarget(sensing: Sensing, call: EffectorCall): TargetAsSensed;
 }
 
 /** An agent's only interface with the world (FR-TOOL-01). */

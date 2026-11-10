@@ -49,11 +49,12 @@ Given(
 
 When("the run ends", async function (this: Context) {
   this.versionBefore = this.world.version;
+  this.stateBefore = this.world.state;
   // Watched, not changed: the arbiter still decides, and the scenario sees the order it applied effects in.
   const apply = this.world.apply.bind(this.world);
   this.world.apply = (action, args) => {
     const result = apply(action, args);
-    if (result.applied) this.applied.push({ action: action as Action<Slots, never>, args });
+    if (result.applied) this.applied.push({ action: action as Action<Slots, never>, args, atMs: performance.now() });
     return result;
   };
   const agents = [...this.models, ...this.realModels].map(([name, model]) => ({
@@ -86,6 +87,7 @@ When("the run ends", async function (this: Context) {
   this.sessionMessages = messages;
   this.toolCalls = toolCalls;
   this.sensings = sensings;
+  for (const check of this.setupChecks) check();
 });
 
 /** The scripted model agent runs on, which has made at least one turn. */

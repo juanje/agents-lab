@@ -47,9 +47,16 @@ export const slotTools: readonly Tool<Slots>[] = [
     description: "Take an empty slot.",
     // Its schema does not forbid other arguments, so a call with one passes Pi's check and only the engine rejects it.
     parameters: { type: "object", properties: { slot: { type: "integer", minimum: 1 } }, required: ["slot"] },
+    durationMs: 0,
     action: {
       precondition: (slots, call) => take.precondition(slots, takeCall(call)),
       effect: (slots, call) => take.effect(slots, takeCall(call)),
+    },
+    // Its target is the slot it names, as "look" last showed it.
+    readTarget: (sensing, call) => {
+      if (sensing.tool !== "look") return "not_sensed";
+      const seen = (JSON.parse(sensing.result) as Seen[])[takeCall(call).slot - 1];
+      return seen === undefined ? "not_sensed" : seen === "held" ? "held" : "free";
     },
   },
 ];

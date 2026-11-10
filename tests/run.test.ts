@@ -27,6 +27,9 @@ const timed = { startedAtMs: expect.any(Number), endedAtMs: expect.any(Number) }
 /** The test world's tools, with its sensor "look" taking this long. */
 const withLookTaking = (durationMs: number) => slotTools.map((tool) => (tool.kind === "sensor" ? { ...tool, durationMs } : tool));
 
+/** The test world's tools, with its effector "take" taking this long. */
+const withTakeTaking = (durationMs: number) => slotTools.map((tool) => (tool.kind === "effector" ? { ...tool, durationMs } : tool));
+
 /** Settings for a run whose test looks at none of them. */
 const settings: RunSettings = { modelTurnTimeoutMs: 10_000, parallelismLimit: 10 };
 
@@ -516,4 +519,27 @@ describe("run", () => {
     const { sensings } = await run(slots(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
 
     expect(sensings.last("a")).toBeUndefined();
-  });});
+  });
+
+  it("applies an effector's effect when its declared duration ends, and the call ends then", async () => {
+    const model = new ScriptedModel([
+      { toolCalls: [{ name: "take", arguments: { slot: 1 } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+    const loaded = slots({ tools: withTakeTaking(50) });
+    const appliedAtMs: number[] = [];
+    const apply = loaded.world.apply.bind(loaded.world);
+    loaded.world.apply = (action, args) => {
+      appliedAtMs.push(performance.now());
+      return apply(action, args);
+    };
+
+    const { toolCalls } = await run(loaded, [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+
+    const [{ outcome, startedAtMs, endedAtMs }] = toolCalls;
+    expect(outcome).toBe("success");
+    expect(appliedAtMs).toHaveLength(1);
+    expect(appliedAtMs[0] - startedAtMs).toBeGreaterThanOrEqual(50);
+    expect(endedAtMs).toBeGreaterThanOrEqual(appliedAtMs[0]);
+  });
+});

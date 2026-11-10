@@ -36,8 +36,12 @@ export class Context extends CucumberWorld {
   personsPiFiles?: Map<string, string>;
   /** The model turns the run gave, in the order they ended. */
   turns?: readonly ModelTurn[];
-  /** Every effect the arbiter applied during the run, in order: the action and what it was applied for. */
-  readonly applied: { action: Action<Slots, never>; args: unknown }[] = [];
+  /** Every effect the arbiter applied during the run, in order: the action, what it was applied for, and when. */
+  readonly applied: { action: Action<Slots, never>; args: unknown; atMs: number }[] = [];
+  /** The world's state as the run started, from which the applied effects replay what it was at any moment. */
+  stateBefore!: Slots;
+  /** Checks that what the scenario set up happened as it said, run once the run ends. */
+  readonly setupChecks: (() => void)[] = [];
   /** The tool calls the run gave. */
   toolCalls?: RunResult["toolCalls"];
   /** What the engine kept of each agent's sensing, as the run gave it. */
