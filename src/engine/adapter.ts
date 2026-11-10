@@ -299,7 +299,7 @@ function definition<State>(
       const { outcome, text, targetAsSensed } =
         undeclared(tool, args) ??
         (tool.kind === "sensor"
-          ? await sense(world, tool, { agent, arguments: args })
+          ? await sense(world, tool, { agent, arguments: args }, timeLimit)
           : await effect(world, tool, { agent, arguments: args }, sensings.last(agent), timeLimit));
       const endedAtMs = performance.now();
       executed.set(id, { outcome, startedAtMs, endedAtMs, ...(targetAsSensed === undefined ? {} : { targetAsSensed }) });
@@ -336,9 +336,13 @@ function undeclared<State>(tool: Tool<State>, args: Record<string, unknown>): Ca
   return { outcome: "invalid_arguments", text: `invalid_arguments: "${tool.name}" takes no argument ${names}` };
 }
 
-/** Reads the world for a sensor's call, which always succeeds, once the sensor's duration has passed (FR-TOOL-03). */
-async function sense<State>(world: World<State>, sensor: Sensor<State>, call: AgentCall): Promise<CallResult> {
-  await waitAtLeast(sensor.durationMs(world.state, call));
+/**
+ * Reads the world for a sensor's call once the sensor's duration has passed (FR-TOOL-03). It succeeds unless the run's
+ * time limit cuts the duration short, and then reads nothing: the run has ended (FR-CLOCK-02).
+ */
+async function sense<State>(world: World<State>, sensor: Sensor<State>, call: AgentCall, timeLimit: AbortSignal): Promise<CallResult> {
+  await waitAtLeast(sensor.durationMs(world.state, call), timeLimit);
+  if (timeLimit.aborted) return { outcome: CUT_OFF, text: CUT_OFF };
   return { outcome: "success", text: sensor.sense(world.state, call.agent) };
 }
 
