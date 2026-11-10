@@ -73,6 +73,16 @@ Given(
   },
 );
 
+Given(
+  "agent {string} runs on a scripted model that calls {string} with slot {int}, then ends without a tool call",
+  function (this: Context, agent: string, tool: string, slot: number) {
+    script(this, agent, [
+      { toolCalls: [{ name: tool, arguments: { slot } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+  },
+);
+
 /** The text the agent's model received back for its first call of the tool, in a later turn. */
 function returned(context: Context, agent: string, tool: string): string {
   const messages = modelOf(context, agent).received.flat();
