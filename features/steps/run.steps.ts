@@ -11,6 +11,13 @@ Given(
   },
 );
 
+Given(
+  "agent {string} runs on a scripted model that answers {string} after {int} milliseconds",
+  function (this: Context, agent: string, text: string, delayMs: number) {
+    this.models.set(agent, new ScriptedModel([{ text, delayMs }]));
+  },
+);
+
 Given("agent {string} makes {int} decision(s)", function (this: Context, agent: string, decisions: number) {
   this.budgets.set(agent, decisions);
 });
@@ -26,6 +33,17 @@ Then(
     assert.deepEqual(
       this.decisions.get(agent)?.map((decision) => decision.answer),
       [first, second],
+    );
+  },
+);
+
+Then(
+  "agent {string}'s decision had a model latency of at least {int} milliseconds",
+  function (this: Context, agent: string, latencyMs: number) {
+    const [decision] = this.decisions.get(agent) ?? [];
+    assert.ok(
+      decision?.latencyMs !== undefined && decision.latencyMs >= latencyMs,
+      `expected a latency of at least ${latencyMs} ms, got ${decision?.latencyMs}`,
     );
   },
 );
