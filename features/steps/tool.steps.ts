@@ -47,7 +47,10 @@ When("the run ends", async function (this: Context) {
     rhythm: () => 0,
   }));
   // Any seed: these rhythms draw nothing from it.
-  this.turns = await run(this.world, slotTools, agents, 1, { systemPrompt: this.systemPrompt });
+  this.turns = await run(this.world, slotTools, agents, 1, {
+    systemPrompt: this.systemPrompt,
+    modelTurnTimeoutMs: this.modelTurnTimeoutMs,
+  });
 });
 
 /** The scripted model agent runs on, which has made at least one turn. */

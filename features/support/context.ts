@@ -31,6 +31,8 @@ export class Context extends CucumberWorld {
   turns?: readonly ModelTurn[];
   /** The system prompt the scenario declares. */
   systemPrompt = "";
+  /** How long a model turn may run, unless the scenario says: long enough for any scripted turn here. */
+  modelTurnTimeoutMs = 10_000;
   /** The scenario the engine is given, and the condition it is loaded with. */
   scenario!: Partial<Scenario<Slots>>;
   condition?: Condition;

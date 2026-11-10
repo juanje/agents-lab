@@ -13,6 +13,7 @@ import {
   createReadToolDefinition,
   createWriteToolDefinition,
 } from "@earendil-works/pi-coding-agent";
+import { emptySlots } from "../../tests/fixtures/slots.ts";
 import type { Context } from "../support/context.ts";
 import { modelOf, script } from "./tool.steps.ts";
 
@@ -182,4 +183,26 @@ Then("the run did not stop", function (this: Context) {
   for (const [agent, model] of this.models) {
     assert.equal(model.received.length, this.activations.get(agent) ?? 1, `agent "${agent}" did not make all its activations`);
   }
+});
+
+Given("the timeout for a model turn is {int} milliseconds", function (this: Context, timeoutMs: number) {
+  this.modelTurnTimeoutMs = timeoutMs;
+});
+
+Given(
+  "agent {string} runs on a scripted model whose first turn is a call to {string} with slot {int}, after {int} milliseconds",
+  function (this: Context, agent: string, tool: string, slot: number, delayMs: number) {
+    script(this, agent, [
+      { toolCalls: [{ name: tool, arguments: { slot } }], delayMs },
+      { text: "Done.", delayMs: 0 },
+    ]);
+  },
+);
+
+Then("agent {string}'s first model turn has the outcome {string}", function (this: Context, agent: string, outcome: string) {
+  assert.equal(turnsOf(this, agent)[0]?.outcome, outcome);
+});
+
+Then("every slot is empty", function (this: Context) {
+  assert.deepEqual(this.world.state, emptySlots(this.world.state.length));
 });
