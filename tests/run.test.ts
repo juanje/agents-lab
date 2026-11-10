@@ -20,4 +20,13 @@ describe("run", () => {
     ]);
     expect(world.state).toEqual([null, "a", null]);
   });
+
+  it("records each decision's model latency, from the call's start to the answer the script delays", async () => {
+    const world = new World(emptySlots(3));
+    const model = new ScriptedModel([{ text: "wait", delayMs: 50 }]);
+
+    const decisions = await run(world, declaredActions, [{ name: "a", model, decisions: 1 }]);
+
+    expect(decisions.get("a")?.[0]?.latencyMs).toBeGreaterThanOrEqual(50);
+  });
 });
