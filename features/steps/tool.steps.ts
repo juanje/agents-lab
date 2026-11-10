@@ -179,3 +179,23 @@ Then(
     assert.equal(returned(this, agent, tool), text);
   },
 );
+
+Given(
+  "the effector {string} declares only the argument {string}, and its schema does not forbid others",
+  function (this: Context, name: string, argument: string) {
+    const parameters = fixtureTool("effector", name).parameters as { properties: object; additionalProperties?: unknown };
+    assert.deepEqual(Object.keys(parameters.properties), [argument]);
+    assert.notEqual(parameters.additionalProperties, false);
+  },
+);
+
+Then(
+  "agent {string}'s model was offered {string} with the schema the scenario declares, unchanged",
+  function (this: Context, agent: string, name: string) {
+    const declared = fixtureTool("effector", name).parameters;
+    for (const [turn, messages] of modelOf(this, agent).received.entries()) {
+      const offered = getCurrentTools(messages).find((tool) => tool.name === name);
+      assert.deepEqual(offered?.parameters, declared, `turn ${turn + 1} was offered another schema for "${name}"`);
+    }
+  },
+);

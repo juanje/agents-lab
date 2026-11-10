@@ -348,17 +348,19 @@ describe("run", () => {
     expect(world.version).toBe(0);
     expect(model.received).toHaveLength(2);
   });
-  it("applies an effector as the agent that called it, even when its schema lets a call name another agent", async () => {
+  it("applies an effector as the agent that called it, even when it declares an argument that names another agent", async () => {
     const world = new World(emptySlots(3));
-    const takeAnyArguments = slotTools.map((tool) =>
-      tool.name === "take" ? { ...tool, parameters: { ...tool.parameters, additionalProperties: true } } : tool,
+    const takeNamingAgent = slotTools.map((tool) =>
+      tool.name === "take"
+        ? { ...tool, parameters: { type: "object", properties: { slot: { type: "integer" }, agent: { type: "string" } }, required: ["slot"] } }
+        : tool,
     );
     const model = new ScriptedModel([
       { toolCalls: [{ name: "take", arguments: { slot: 1, agent: "b" } }], delayMs: 0 },
       { text: "Done.", delayMs: 0 },
     ]);
 
-    await run(world, takeAnyArguments, rhythmOnly(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+    await run(world, takeNamingAgent, rhythmOnly(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
 
     expect(world.state).toEqual(["a", null, null]);
   });
@@ -385,5 +387,22 @@ describe("run", () => {
     await run(new World(emptySlots(3)), slotTools, rhythmOnly(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
 
     expect(model.received[1]?.at(-1)).toMatchObject({ role: "toolResult", isError: false, content: [{ type: "text", text: "success" }] });
+  });
+  it("rejects an argument the tool does not declare, though its schema allows it, telling the agent which", async () => {
+    const world = new World(emptySlots(3));
+    const model = new ScriptedModel([
+      { toolCalls: [{ name: "take", arguments: { slot: 1, x: 2 } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+
+    const { toolCalls } = await run(world, slotTools, rhythmOnly(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+
+    expect(toolCalls).toEqual([{ agent: "a", tool: "take", arguments: { slot: 1, x: 2 }, outcome: "invalid_arguments" }]);
+    expect(world.version).toBe(0);
+    expect(model.received[1]?.at(-1)).toMatchObject({
+      role: "toolResult",
+      isError: true,
+      content: [{ type: "text", text: 'invalid_arguments: "take" takes no argument "x"' }],
+    });
   });
 });
