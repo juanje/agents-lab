@@ -39,6 +39,16 @@ describe("loadScenario", () => {
   });
 
   it.each([
+    ["at the top level", "colour = 'red'\n", "colour"],
+    ["inside a table", "[slots]\ncuont = 5\n", "slots.cuont"],
+    ["as a table", "[view]\nwidth = 3\n", "view"],
+  ])("refuses a condition that sets a key the base configuration lacks %s, naming its full path", (_case, change, path) => {
+    expect(() => loadScenario(slotsScenario, { name: "typo", change })).toThrow(
+      `Condition "typo" sets ${path}, which the base configuration of scenario "slots" does not have`,
+    );
+  });
+
+  it.each([
     ["initialState", "initial state"],
     ["perception", "perception"],
     ["actions", "actions"],
