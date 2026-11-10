@@ -11,6 +11,7 @@ import {
   createExtensionRuntime,
 } from "@earendil-works/pi-coding-agent";
 import { type Api, type AssistantMessage, type Model, type Provider, getCurrentSystemMessage } from "@earendil-works/pi-ai";
+import { waitAtLeast } from "./clock.ts";
 import type { ParallelismLimit } from "./parallelism.ts";
 import { SCRIPT_EXHAUSTED_MESSAGE } from "./scripted-model.ts";
 import type { Stimuli, Stimulus } from "./stimuli.ts";
@@ -111,7 +112,7 @@ export async function openSession<State>(
   stimuli: Stimuli,
   toolCalls: ToolCall[],
 ): Promise<AgentSession> {
-  const executed = new Map<string, string>();
+  const executed = new Map<string, Executed>();
   const { session } = await createAgentSession({
     // Pi falls back to the person's directory (~/.pi/agent/) wherever a path is left out (NFR-08).
     agentDir: labPiDirectory(),
@@ -135,24 +136,29 @@ export async function openSession<State>(
 
 /**
  * Records each of the agent's tool calls with the arguments its model made, which Pi passes on before it coerces them,
- * and its outcome. Pi answers a call to a tool the session does not offer with an error, and runs an offered tool only
- * once its arguments pass the tool's schema, so a call to an offered tool that did not run had arguments the tool does
- * not take. A call that ran gives its own outcome, invalid_arguments included when the engine rejected an argument the
- * tool does not declare.
+ * its outcome, and when it started and ended. Pi answers a call to a tool the session does not offer with an error, and
+ * runs an offered tool only once its arguments pass the tool's schema, so a call to an offered tool that did not run had
+ * arguments the tool does not take. A call that ran gives its own outcome and times, invalid_arguments included when the
+ * engine rejected an argument the tool does not declare; one that did not run is timed by Pi's events around it.
  */
 function recordToolCalls(
   session: AgentSession,
   agent: string,
   offered: ReadonlySet<string>,
-  executed: ReadonlyMap<string, string>,
+  executed: ReadonlyMap<string, Executed>,
   toolCalls: ToolCall[],
 ): void {
-  const made = new Map<string, unknown>();
+  const made = new Map<string, { args: unknown; startedAtMs: number }>();
   session.subscribe((event) => {
-    if (event.type === "tool_execution_start") made.set(event.toolCallId, event.args);
+    if (event.type === "tool_execution_start") made.set(event.toolCallId, { args: event.args, startedAtMs: performance.now() });
     if (event.type === "tool_execution_end") {
-      const outcome = !offered.has(event.toolName) ? "unknown_tool" : (executed.get(event.toolCallId) ?? "invalid_arguments");
-      toolCalls.push({ agent, tool: event.toolName, arguments: made.get(event.toolCallId), outcome });
+      const call = made.get(event.toolCallId);
+      const ran = executed.get(event.toolCallId) ?? {
+        outcome: offered.has(event.toolName) ? "invalid_arguments" : "unknown_tool",
+        startedAtMs: call?.startedAtMs ?? performance.now(),
+        endedAtMs: performance.now(),
+      };
+      toolCalls.push({ agent, tool: event.toolName, arguments: call?.args, ...ran });
     }
   });
 }
@@ -263,23 +269,27 @@ function resources(systemPrompt: string): ResourceLoader {
 
 /**
  * A scenario's tool as Pi runs it for one agent: the agent sees what it is for and what it takes; how it works stays in
- * the world. Each call it runs leaves its outcome under the call's id.
+ * the world. Each call it runs leaves its outcome and times under the call's id.
  */
-function definition<State>(world: World<State>, tool: Tool<State>, agent: string, executed: Map<string, string>): ToolDefinition {
+function definition<State>(world: World<State>, tool: Tool<State>, agent: string, executed: Map<string, Executed>): ToolDefinition {
   return {
     name: tool.name,
     label: tool.name,
     description: tool.description,
     parameters: tool.parameters as ToolDefinition["parameters"],
     execute: async (id, args: Record<string, unknown>) => {
+      const startedAtMs = performance.now();
       const { outcome, text } =
-        undeclared(tool, args) ?? (tool.kind === "sensor" ? sense(world, tool, agent) : effect(world, tool, agent, args));
-      executed.set(id, outcome);
+        undeclared(tool, args) ?? (tool.kind === "sensor" ? await sense(world, tool, agent) : effect(world, tool, agent, args));
+      executed.set(id, { outcome, startedAtMs, endedAtMs: performance.now() });
       // A failure is marked as one: an agent told that a failure succeeded would act on a world it misreads.
       return { content: [{ type: "text", text }], details: undefined, isError: outcome !== "success" };
     },
   };
 }
+
+/** A call the tool ran: its outcome, and when it started and ended. */
+type Executed = Pick<ToolCall, "outcome" | "startedAtMs" | "endedAtMs">;
 
 /** What a call gives: its outcome, and the text the agent receives. */
 interface CallResult {
@@ -300,8 +310,9 @@ function undeclared<State>(tool: Tool<State>, args: Record<string, unknown>): Ca
   return { outcome: "invalid_arguments", text: `invalid_arguments: "${tool.name}" takes no argument ${names}` };
 }
 
-/** Reads the world for a sensor's call, which always succeeds. */
-function sense<State>(world: World<State>, sensor: Sensor<State>, agent: string): CallResult {
+/** Reads the world for a sensor's call, which always succeeds, once the sensor's duration has passed (FR-TOOL-03). */
+async function sense<State>(world: World<State>, sensor: Sensor<State>, agent: string): Promise<CallResult> {
+  await waitAtLeast(sensor.durationMs);
   return { outcome: "success", text: sensor.sense(world.state, agent) };
 }
 

@@ -10,8 +10,8 @@ describe("summarize", () => {
         { agent: "a", outcome: "success", text: "", slotWaitMs: 0, startedAtMs: 5000, endedAtMs: 6000 },
       ],
       toolCalls: [
-        { agent: "a", tool: "look", arguments: {}, outcome: "success" },
-        { agent: "b", tool: "take", arguments: { slot: 1 }, outcome: "slot_taken" },
+        { agent: "a", tool: "look", arguments: {}, outcome: "success", startedAtMs: 3812.4, endedAtMs: 3812.5 },
+        { agent: "b", tool: "take", arguments: { slot: 1 }, outcome: "slot_taken", startedAtMs: 250, endedAtMs: 250.1 },
       ],
     });
 
