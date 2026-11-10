@@ -39,6 +39,9 @@ async function decide<State>(
   actions: readonly DeclaredAction<State, ActionArgs>[],
   agent: Agent,
 ): Promise<Decision> {
+  // Checked before the call: past its script the faux provider answers with an error and no text, which would be
+  // read as an unparsed answer instead of the end of the script.
+  if (agent.model.exhausted) return { outcome: "script_exhausted" };
   const start = performance.now();
   const message = await agent.model.models.complete(agent.model.model, { messages: [] });
   const latencyMs = performance.now() - start;

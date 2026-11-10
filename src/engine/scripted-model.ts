@@ -1,5 +1,5 @@
 import { setTimeout as sleep } from "node:timers/promises";
-import { type Model, type Models, createModels, fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai";
+import { type FauxProviderHandle, type Model, type Models, createModels, fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai";
 
 /** One answer of a script: its text, and how long the model takes to give it. */
 export interface ScriptedAnswer {
@@ -15,6 +15,7 @@ export class ScriptedModel {
   /** Pi's models, holding only this model's faux provider; their credentials are kept in memory, never read from disk. */
   readonly models: Models;
   readonly model: Model<string>;
+  readonly #faux: FauxProviderHandle;
 
   constructor(script: readonly ScriptedAnswer[]) {
     const faux = fauxProvider();
@@ -29,6 +30,12 @@ export class ScriptedModel {
     models.setProvider(faux.provider);
     this.models = models;
     this.model = faux.getModel();
+    this.#faux = faux;
+  }
+
+  /** Whether every scripted answer has been given. */
+  get exhausted(): boolean {
+    return this.#faux.getPendingResponseCount() === 0;
   }
 }
 
