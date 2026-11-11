@@ -30,6 +30,8 @@ export interface RunSettings {
   parallelismLimit: number;
   /** How long the run may last, from its start; a tool call still running when it passes is cut off (FR-CLOCK-02). */
   timeLimitMs: number;
+  /** How long the run waits between metric samples; without it, the metrics are sampled only at the start and the end (FR-METRIC-02). */
+  metricIntervalMs?: number;
   /**
    * Called with the run's stimuli before any agent wakes, so a caller can deliver stimuli while the run goes on. A seam
    * until the world's processes deliver them (FR-PROCESS-01).
@@ -162,8 +164,11 @@ async function runAgents<State>(
   }
   const sessions = opening.map((opened) => (opened as PromiseFulfilledResult<AgentSession>).value);
   const startedAtMs = performance.now();
+  const sample = () => sampleMetrics(world, scenario.metrics, recorder, performance.now());
   sampleMetrics(world, scenario.metrics, recorder, startedAtMs);
   const timer = setTimeout(() => runEnd.abort(), settings.timeLimitMs);
+  const samplingEnd = new AbortController();
+  const sampling = settings.metricIntervalMs === undefined ? Promise.resolve() : sampleEvery(settings.metricIntervalMs, sample, samplingEnd.signal);
   try {
     await Promise.all(
       agents.map(async (agent, index) => {
@@ -181,10 +186,12 @@ async function runAgents<State>(
       }),
     );
   } finally {
-    // A run that ends at its budget must not leave its time limit pending.
+    // A run that ends at its budget must not leave its time limit pending, nor a sample to write once its log is closed.
     clearTimeout(timer);
+    samplingEnd.abort();
+    await sampling;
   }
-  sampleMetrics(world, scenario.metrics, recorder, performance.now());
+  sample();
   return { turns, toolCalls, messages, sensings, startedAtMs };
 }
 
@@ -195,6 +202,18 @@ async function runAgents<State>(
 function sampleMetrics<State>(world: World<State>, metrics: Scenario<State>["metrics"], recorder: Recorder, atMs: number): void {
   const values = Object.fromEntries(Object.entries(metrics).map(([name, metric]) => [name, metric(world.state)]));
   recorder.record({ type: "metric_sample", atMs, version: world.version, metrics: values });
+}
+
+/**
+ * Takes a sample each time at least the interval has passed since the last one, by performance.now(), until the signal
+ * aborts.
+ */
+async function sampleEvery(intervalMs: number, sample: () => void, signal: AbortSignal): Promise<void> {
+  for (;;) {
+    await waitAtLeast(intervalMs, signal);
+    if (signal.aborted) return;
+    sample();
+  }
 }
 
 /** The rhythm the loaded scenario gives an agent. */
