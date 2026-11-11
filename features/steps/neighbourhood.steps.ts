@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { Given, Then, When } from "@cucumber/cucumber";
-import { type TomlTable, parse, stringify } from "smol-toml";
+import { type TomlTable, type TomlValue, parse, stringify } from "smol-toml";
 import { entitiesAt } from "../../src/engine/grid.ts";
 import { Random } from "../../src/engine/random.ts";
 import { type Condition, type LoadedScenario, isTable, loadScenario } from "../../src/engine/scenario.ts";
@@ -81,7 +81,7 @@ Given(
 );
 
 /** Values at paths of the form "table.key", as the tables that hold them. */
-export function inTables(values: readonly (readonly [string, number])[]): TomlTable {
+export function inTables(values: readonly (readonly [string, TomlValue])[]): TomlTable {
   const tables: TomlTable = {};
   for (const [path, value] of values) {
     const [table, key, ...rest] = path.split(".");

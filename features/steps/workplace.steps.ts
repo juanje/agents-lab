@@ -278,7 +278,8 @@ Given("{string} is [{}]", function (this: Context, key: string, items: string) {
 });
 
 Given("{string} is {string}", function (this: Context, key: string, text: string) {
-  this.libraryScenario = withBase(this.libraryScenario, { [key]: text });
+  // A key inside a table of the configuration, such as "placement.task", is set inside it.
+  this.libraryScenario = withBase(this.libraryScenario, key.includes(".") ? inTables([[key, text]]) : { [key]: text });
 });
 
 Given("the situation {string} can be in {string} instead", function (this: Context, id: string, place: string) {

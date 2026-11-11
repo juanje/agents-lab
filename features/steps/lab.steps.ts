@@ -394,7 +394,7 @@ Then("no run started after it", function (this: Context) {
 });
 
 /** The first line of the log of the experiment's only run, once "lab run" completed. */
-function firstLine(context: Context): LogLine {
+export function firstLine(context: Context): LogLine {
   const index = completedIndex(context);
   assert.equal(index.length, 1, `the index lists ${index.length} runs`);
   const first = logOf(context, index[0].runId)[0];

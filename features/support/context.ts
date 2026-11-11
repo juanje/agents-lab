@@ -158,6 +158,8 @@ export class Context extends CucumberWorld {
    * the scenario runs a world other than the test worlds.
    */
   assembleRun?: (agents: readonly string[]) => LoadedScenario<unknown>;
+  /** How "the run ends" runs the scenario, when it runs other than through the engine's run, such as through "lab run". */
+  runInstead?: () => Promise<void>;
   /** The experiment file the scenario writes, as a table the engine is given in TOML. */
   experimentFile!: TomlTable;
   /** The experiment as the engine read it, if it read it. */
@@ -188,6 +190,8 @@ export class Context extends CucumberWorld {
   readonly workerCalls: { tool: string; arguments: JsonObject }[] = [];
   /** The workplace's world the worker ran in, once it has run. */
   workplaceWorld?: World<Workplace>;
+  /** The state the last effect applied gave, in a workplace "lab run" runs: the world as the run left it. */
+  workplaceLastState?: Workplace;
   /** The tool and the milliseconds the scenario last found its duration described with, for a step that says "does not". */
   lastDurationRead?: { tool: string; ms: number };
 }

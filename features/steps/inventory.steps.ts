@@ -108,7 +108,7 @@ export function itemOf(part: string, label: string): string {
 }
 
 /** The content of the fenced block that follows a "Label:" line of a part. */
-function fencedAfter(part: string, label: string): string {
+export function fencedAfter(part: string, label: string): string {
   const lines = part.split("\n");
   const at = lines.indexOf(`${label}:`);
   assert.ok(at !== -1, `expected a line "${label}:" in:\n${part}`);
