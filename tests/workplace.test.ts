@@ -6,6 +6,7 @@ import { leave, put, where } from "../src/engine/places.ts";
 import type { Effector, Sensor } from "../src/engine/tools.ts";
 import { World } from "../src/engine/world.ts";
 import type { ToolCall } from "../src/engine/adapter.ts";
+import type { Component, ComponentLanding } from "../src/engine/components.ts";
 import { onlySensing } from "./fixtures/sensing.ts";
 import { type Workplace, workplaceScenario } from "../src/scenarios/workplace.ts";
 
@@ -874,5 +875,188 @@ describe("the depot's day", () => {
 
     expect(look.sense(state, "worker", {}, 150)).not.toMatch(/\d\d:\d\d/);
     expect(scenario.systemPrompt(configuration({ world: withDay("09:00") }), "worker")).not.toMatch(/\d\d:\d\d/);
+  });
+
+  /** One action of a component's cycle, as `drive` ran it: when it started and landed, its outcome, and the state then. */
+  interface Driven {
+    name: string;
+    startedAtMs: number;
+    endedAtMs: number;
+    outcome: string;
+    started: Workplace;
+    landed: Workplace;
+  }
+
+  /**
+   * Runs a component's cycle against a world in the run's time as the cycle counts it, without waiting: each wait and
+   * each action moves the time on by its length. An action's start is applied as it starts, its action as it lands.
+   */
+  function drive(component: Component<Workplace>, state: Workplace, random = new Random(1)): { actions: Driven[]; state: Workplace } {
+    const world = new World(state);
+    const cycle = component.cycle(random);
+    const actions: Driven[] = [];
+    let sinceStartMs = 0;
+    let outcome: string | undefined;
+    for (let steps = 0; steps < 10_000; steps += 1) {
+      const step = cycle.next(world.state, outcome, sinceStartMs);
+      outcome = undefined;
+      if (step.kind === "end") return { actions, state: world.state };
+      if (step.kind === "wait") {
+        sinceStartMs += step.ms;
+        continue;
+      }
+      const startedAtMs = sinceStartMs;
+      const landing = (atMs: number): ComponentLanding => ({ component: component.name, atMs });
+      if (step.start !== undefined) expect(world.apply(step.start, landing(startedAtMs))).toEqual({ applied: true });
+      const started = world.state;
+      sinceStartMs += step.durationMs;
+      const result = world.apply(step.action, landing(sinceStartMs));
+      outcome = result.applied ? "success" : result.reason;
+      actions.push({ name: step.name, startedAtMs, endedAtMs: sinceStartMs, outcome, started, landed: world.state });
+    }
+    throw new Error(`the cycle of "${component.name}" never ended`);
+  }
+
+  /** The scenario's component of this name, as the configuration declares it. */
+  const componentOf = (values: Configuration, name: string): Component<Workplace> => {
+    const found = scenario.components?.(values).find((component) => component.name === name);
+    if (found === undefined) throw new Error(`no component "${name}"`);
+    return found;
+  };
+
+  const PORTER = `
+[porter]
+id = "piet"
+name = "Piet"
+description = "The porter."
+enters = "hall"
+drops_in = "office"
+rounds = ["09:10", "09:30"]
+`;
+  const ARRIVING = `
+[[things]]
+id = "crate"
+name = "a crate"
+arrives = "09:10"
+
+[[things]]
+id = "parcel"
+name = "a parcel"
+place = "office"
+arrives = "09:30"
+`;
+  const LATE = `
+[situations.late]
+places = ["hall", "office"]
+[[situations.late.things]]
+id = "box"
+name = "a box"
+container = true
+[[situations.late.things]]
+id = "slip"
+name = "a slip"
+in = "box"
+`;
+  // A depot minute is 10 ms of the run; walking a unit of length takes 20 ms, and putting something down 10 ms.
+  const porterDay = (values: Configuration = {}): Configuration =>
+    configuration({
+      world: `${withDay("09:00")}${PORTER}${ARRIVING}`,
+      time_scale: 6000,
+      situations: LATE,
+      chosen_situations: ["late"],
+      arrivals: '"09:30" = ["late"]',
+      durations: { ...(parse(scenario.baseConfiguration).durations as Configuration), ms_per_length: 20, put_ms: 10 },
+      ...values,
+    });
+
+  it("keeps each round's arrivals in no place until they arrive, and the porter as a person in no place", () => {
+    const state = scenario.initialState(porterDay(), new Random(1));
+
+    for (const thing of ["crate", "parcel", "box"]) {
+      expect(where(state.space, thing)).toBeUndefined();
+      expect(state.inside[thing]).toBeUndefined();
+      expect(state.held[thing]).toBeUndefined();
+    }
+    expect(state.inside.slip).toBe("box");
+    expect(where(state.space, "piet")).toBeUndefined();
+    expect(state.people.piet).toEqual({ name: "Piet", description: "The porter." });
+    // An arriving situation is where the porter puts it down, whatever the seed draws.
+    expect(state.situations.late.place).toBe("office");
+    // A thing in no place is in no location a predicate names, and given to no one.
+    const keyed = { ...state, situations: { late: { ...state.situations.late, keys: { where: { box: ["office"] }, not_given: ["box"] } } } };
+    expect(scenario.metrics.predicates(keyed, [])).toEqual({ "late.where.box": 0, "late.not_given.box": 1 });
+  });
+
+  it("brings each round's arrivals: the porter appears with them, walks to where he drops them, puts them down, walks back and leaves", () => {
+    const configured = porterDay();
+    const { actions, state } = drive(componentOf(configured, "piet"), scenario.initialState(configured, new Random(1)));
+
+    expect(actions.map(({ name, startedAtMs, endedAtMs, outcome }) => ({ name, startedAtMs, endedAtMs, outcome }))).toEqual([
+      { name: 'appear in "hall" carrying "crate"', startedAtMs: 100, endedAtMs: 100, outcome: "success" },
+      { name: 'walk to "office"', startedAtMs: 100, endedAtMs: 160, outcome: "success" },
+      { name: 'put down "crate" in "office"', startedAtMs: 160, endedAtMs: 170, outcome: "success" },
+      { name: 'walk to "hall"', startedAtMs: 170, endedAtMs: 230, outcome: "success" },
+      { name: "leave", startedAtMs: 230, endedAtMs: 230, outcome: "success" },
+      { name: 'appear in "hall" carrying "parcel", "box"', startedAtMs: 300, endedAtMs: 300, outcome: "success" },
+      { name: 'walk to "office"', startedAtMs: 300, endedAtMs: 360, outcome: "success" },
+      { name: 'put down "parcel", "box" in "office"', startedAtMs: 360, endedAtMs: 370, outcome: "success" },
+      { name: 'walk to "hall"', startedAtMs: 370, endedAtMs: 430, outcome: "success" },
+      { name: "leave", startedAtMs: 430, endedAtMs: 430, outcome: "success" },
+    ]);
+    const [appear, walk] = actions;
+    expect(where(appear.landed.space, "piet")).toEqual({ place: "hall" });
+    expect(appear.landed.held).toEqual({ crate: "piet" });
+    // While he walks he is in the passage, carrying what he brings.
+    expect(where(walk.started.space, "piet")).toEqual({ passage: ["hall", "office"], towards: "office" });
+    expect(walk.started.held).toEqual({ crate: "piet" });
+    expect(where(state.space, "piet")).toBeUndefined();
+    expect(where(state.space, "crate")).toEqual({ place: "office" });
+    expect(where(state.space, "box")).toEqual({ place: "office" });
+    expect(state.inside.slip).toBe("box");
+    expect(state.held).toEqual({});
+  });
+
+  it("walks by the shortest way through the passages", () => {
+    const world = `
+[day]
+start = "09:00"
+[worker]
+place = "a"
+[[places]]
+name = "a"
+[[places]]
+name = "b"
+[[places]]
+name = "c"
+[[places]]
+name = "d"
+[[passages]]
+between = ["a", "c"]
+length = 1
+[[passages]]
+between = ["c", "d"]
+length = 5
+[[passages]]
+between = ["a", "b"]
+length = 2
+[[passages]]
+between = ["b", "d"]
+length = 2
+[[things]]
+id = "sign"
+name = "a sign"
+place = "a"
+[porter]
+id = "piet"
+name = "Piet"
+description = "The porter."
+enters = "a"
+drops_in = "d"
+rounds = ["09:00"]
+`;
+    const configured = configuration({ world, time_scale: 6000 });
+    const { actions } = drive(componentOf(configured, "piet"), scenario.initialState(configured, new Random(1)));
+
+    expect(actions.map(({ name }) => name)).toEqual(['appear in "a" carrying nothing', 'walk to "b"', 'walk to "d"', "put down nothing in \"d\"", 'walk to "b"', 'walk to "a"', "leave"]);
   });
 });
