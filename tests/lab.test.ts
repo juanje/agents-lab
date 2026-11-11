@@ -38,6 +38,7 @@ function setUp(file: string) {
   ]);
   const environment: LabEnvironment = {
     directory,
+    print: () => {},
     scenarios: new Map([["slots", slotsScenario]]),
     model: async (name) => {
       const model = models.get(name);
@@ -86,9 +87,28 @@ describe("lab run", () => {
     ["another command", ["walk", "e-test.toml"]],
     ["no experiment file", ["run"]],
     ["more than one experiment file", ["run", "e-test.toml", "e-other.toml"]],
+    ["no experiment file to list", ["inventory"]],
   ])("refuses %s, saying how the command is used", async (_case, args) => {
     const { environment } = setUp(experimentFile());
 
-    await expect(lab(args, environment)).rejects.toThrow("Usage: lab run <experiment.toml>");
+    await expect(lab(args, environment)).rejects.toThrow("Usage: lab run <experiment.toml> or lab inventory <experiment.toml>");
+  });
+});
+
+describe("lab inventory", () => {
+  it("prints a section for each condition, in the file's order, without resolving any model or writing any run", async () => {
+    const { directory, path, environment } = setUp(experimentFile());
+    const resolved: string[] = [];
+    let printed = "";
+
+    await lab(["inventory", path], {
+      ...environment,
+      model: (name) => (resolved.push(name), environment.model(name)),
+      print: (text) => (printed += text),
+    });
+
+    expect(printed.split("\n").filter((line) => line.startsWith("## "))).toEqual(['## Condition "baseline"', '## Condition "five-slots"']);
+    expect(resolved).toEqual([]);
+    expect(existsSync(join(directory, "runs"))).toBe(false);
   });
 });

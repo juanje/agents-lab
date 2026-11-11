@@ -153,8 +153,10 @@ export class Context extends CucumberWorld {
   library?: ReadonlyMap<string, LibraryScenario>;
   /** The model each name gives "lab run", as the scenario sets them up. */
   readonly labModels = new Map<string, AgentModel>();
-  /** The error "lab run" failed with, if it failed. */
+  /** The error "lab run" or "lab inventory" failed with, if it failed. */
   labError?: Error;
+  /** What "lab inventory" printed, if it ran. */
+  labOutput?: string;
 }
 
 setWorldConstructor(Context);
