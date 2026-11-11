@@ -744,6 +744,31 @@ describe("run", () => {
 
     expect(model.received[1]?.at(-1)).toMatchObject({ role: "toolResult", isError: false, content: [{ type: "text", text: "success" }] });
   });
+  it("gives the agent the text the effector declares for the outcome, success included, or the outcome when it declares none", async () => {
+    const texts = { slot_taken: "Someone holds that slot.", success: "You took it." };
+    const loaded = slots({ tools: slotTools.map((tool) => (tool.kind === "effector" ? { ...tool, texts } : tool)), baseConfiguration: slotsScenario.baseConfiguration.replace("held = 0", "held = 1") });
+    const model = new ScriptedModel([
+      { toolCalls: [{ name: "take", arguments: { slot: 1 } }], delayMs: 0 },
+      { toolCalls: [{ name: "take", arguments: { slot: 2 } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+
+    await run(loaded, [{ name: "a", model, activations: 1 }], seed, settings);
+
+    expect(model.received[1]?.at(-1)).toMatchObject({ role: "toolResult", isError: true, content: [{ type: "text", text: "Someone holds that slot." }] });
+    expect(model.received[2]?.at(-1)).toMatchObject({ role: "toolResult", isError: false, content: [{ type: "text", text: "You took it." }] });
+  });
+  it("gives the agent the outcome itself for an outcome the effector declares no text for", async () => {
+    const loaded = slots({ tools: slotTools.map((tool) => (tool.kind === "effector" ? { ...tool, texts: { slot_taken: "Someone holds that slot." } } : tool)) });
+    const model = new ScriptedModel([
+      { toolCalls: [{ name: "take", arguments: { slot: 1 } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+
+    await run(loaded, [{ name: "a", model, activations: 1 }], seed, settings);
+
+    expect(model.received[1]?.at(-1)).toMatchObject({ role: "toolResult", isError: false, content: [{ type: "text", text: "success" }] });
+  });
   it("rejects an argument the tool does not declare, though its schema allows it, telling the agent which", async () => {
     const loaded = slots();
     const { world } = loaded;
