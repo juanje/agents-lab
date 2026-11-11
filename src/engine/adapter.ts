@@ -22,6 +22,7 @@ import {
 } from "@earendil-works/pi-ai";
 import type { ChangesSinceSensing } from "./changes.ts";
 import { waitAtLeast } from "./clock.ts";
+import type { ThinkingLevel } from "./experiment.ts";
 import { failure } from "./failure.ts";
 import type { Position } from "./grid.ts";
 import type { ParallelismLimit } from "./parallelism.ts";
@@ -139,6 +140,8 @@ export interface Records {
 export interface SessionSettings {
   /** The scenario's system prompt, which takes the place of Pi's own. */
   systemPrompt: string;
+  /** The thinking level the session uses (FR-EXPERIMENT-05). */
+  thinkingLevel: ThinkingLevel;
   /** How long a model turn may run before it is aborted. */
   modelTurnTimeoutMs: number;
   /**
@@ -169,6 +172,7 @@ export async function openSession<State>(
     agentDir: labPiDirectory(),
     modelRuntime: runtime,
     model: agent.model.model,
+    thinkingLevel: settings.thinkingLevel,
     // The allowlist leaves out Pi's built-in tools and filters custom tools too, so it names every scenario tool.
     tools: tools.map((tool) => tool.name),
     customTools: tools.map((tool) => definition(world, tool, agent.name, executed, sensings, changes, settings)),

@@ -66,6 +66,7 @@ export async function runExperiment<State>(
                 inventory: inventories[at],
               },
               modelTurnTimeoutMs: experiment.limits.modelTurnTimeoutMs,
+              thinkingLevel: experiment.thinkingLevel,
               parallelismLimit: experiment.limits.parallelismLimit,
               timeLimitMs: experiment.limits.timeLimitMs,
               metricIntervalMs: experiment.metricIntervalMs,

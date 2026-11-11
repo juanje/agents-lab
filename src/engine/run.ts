@@ -2,6 +2,7 @@ import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import { type AgentModel, type ModelTurn, type Records, type ToolCall, openRuntime, openSession, wake } from "./adapter.ts";
 import { ChangesSinceSensing } from "./changes.ts";
 import { waitAtLeast } from "./clock.ts";
+import type { ThinkingLevel } from "./experiment.ts";
 import { failure } from "./failure.ts";
 import { ParallelismLimit } from "./parallelism.ts";
 import { Random } from "./random.ts";
@@ -31,6 +32,8 @@ export interface RunSettings {
   setup?: RunSetup;
   /** How long a model turn may run before it is aborted. */
   modelTurnTimeoutMs: number;
+  /** The thinking level every session of the run uses (FR-EXPERIMENT-05). */
+  thinkingLevel: ThinkingLevel;
   /** The maximum number of model calls running at once, across all agents. */
   parallelismLimit: number;
   /** How long the run may last, from its start; a tool call still running when it passes is cut off (FR-CLOCK-02). */
@@ -143,6 +146,7 @@ async function runAgents<State>(
 ): Promise<Omit<RunResult, "runId">> {
   const sessionSettings = {
     modelTurnTimeoutMs: settings.modelTurnTimeoutMs,
+    thinkingLevel: settings.thinkingLevel,
     runEnd: runEnd.signal,
     stop,
   };

@@ -170,6 +170,8 @@ async function runLoaded(context: Context): Promise<void> {
   const { runId, startedAtMs } = await run(loadedOf(context), agents, context.seed, {
     logDirectory: context.logDirectory,
     modelTurnTimeoutMs: context.modelTurnTimeoutMs,
+    // The scripted models cannot reason.
+    thinkingLevel: "off",
     parallelismLimit: context.parallelismLimit,
     timeLimitMs: context.timeLimitMs,
   });
