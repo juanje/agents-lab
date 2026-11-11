@@ -1178,5 +1178,29 @@ brought_by = "ana"
     it("an arrives_between whose first time is after its second", () => {
       expect(refused(visitorDay({ arrivesBetween: ["10:00", "09:00"] }))).toThrow('"ana"');
     });
+
+    it("a thing whose arrives is not one of the porter's rounds", () => {
+      const world = `${withDay("09:00")}${PORTER}${ARRIVING.replace('arrives = "09:10"', 'arrives = "11:00"')}`;
+      expect(refused(porterDay({ world }))).toThrow(/"crate".*"11:00"|"11:00".*"crate"/);
+    });
+
+    it("a thing that arrives in a world with no porter", () => {
+      expect(refused(porterDay({ world: `${withDay("09:00")}${ARRIVING}`, arrivals: "" }))).toThrow('"crate"');
+    });
+
+    it("a porter whose enters and drops_in no passages join", () => {
+      const world = `${withDay("09:00")}\n[[places]]\nname = "cellar"\n${PORTER.replace('enters = "hall"', 'enters = "cellar"')}${ARRIVING}`;
+      expect(refused(porterDay({ world }))).toThrow(/"cellar".*"office"|"office".*"cellar"/);
+    });
+
+    it("a porter's id that a thing already has", () => {
+      expect(refused(porterDay({ world: `${withDay("09:00")}${PORTER.replace('id = "piet"', 'id = "key"')}${ARRIVING}` }))).toThrow('"key"');
+    });
+
+    it("a visitor's id that a person already has", () => {
+      const configured = visitorDay();
+      const withAna = (configured.world as string).replace("[[visitors]]", '[[people]]\nid = "ana"\nname = "Ana"\ndescription = "A neighbour."\nplace = "office"\n\n[[visitors]]');
+      expect(refused({ ...configured, world: withAna })).toThrow('"ana"');
+    });
   });
 });
