@@ -1,3 +1,4 @@
+import type { Component } from "./components.ts";
 import type { Experiment, Limits, ThinkingLevel } from "./experiment.ts";
 import { type LoadedScenario, type Scenario, loadScenario } from "./scenario.ts";
 import { Stimuli, type Stimulus } from "./stimuli.ts";
@@ -38,6 +39,8 @@ export interface ConditionInventory {
   materials: { path: string; hash?: string }[];
   /** The situations the condition chooses, by id only, for a scenario that has situations (FR-WORKPLACE-01). */
   situations?: string[];
+  /** Each component the condition declares, with its kind and its cycle as the scenario describes it, for a scenario that has components (FR-PROCESS-01). */
+  components?: { name: string; kind: Component<unknown>["kind"]; cycle: string }[];
 }
 
 /** A tool as its agents see it, with its duration as the scenario describes it and the text for each of its outcomes. */
@@ -92,7 +95,7 @@ export function inventory<State>(experiment: Experiment, scenario: Partial<Scena
 function conditionInventory<State>(
   { models, thinkingLevel, limits }: Experiment,
   condition: string,
-  { scenario, configuration, systemPrompts, channels, firstStimuli, materials }: LoadedScenario<State>,
+  { scenario, configuration, systemPrompts, channels, firstStimuli, materials, components }: LoadedScenario<State>,
 ): ConditionInventory {
   // Each agent's first wake, as a run's stimuli give it, without the rhythm's stimulus, which every wake starts with.
   const stimuli = new Stimuli(channels, undefined, firstStimuli);
@@ -124,6 +127,7 @@ function conditionInventory<State>(
     limits: { ...limits },
     materials: materials.map(({ path, hash, heldOut }) => (heldOut ? { path } : { path, hash })),
     ...(scenario.situations === undefined ? {} : { situations: [...scenario.situations(configuration)] }),
+    ...(scenario.components === undefined ? {} : { components: components.map(({ name, kind, description }) => ({ name, kind, cycle: description })) }),
   };
 }
 
@@ -151,6 +155,7 @@ export function inventoryMarkdown({ experiment, scenario, conditions }: Inventor
       modelsAndLimitsMarkdown(condition),
       materialsMarkdown(condition),
       ...(condition.situations === undefined ? [] : [situationsMarkdown(condition.situations)]),
+      ...(condition.components === undefined ? [] : [componentsMarkdown(condition.components)]),
     ].join("\n"),
   );
   return [`# Environment inventory of experiment "${experiment}", scenario "${scenario}"\n`, ...sections].join("\n");
@@ -222,6 +227,15 @@ function materialsMarkdown({ materials }: ConditionInventory): string {
 function situationsMarkdown(situations: readonly string[]): string {
   if (situations.length === 0) return `### Situations\n\n${NONE}\n`;
   return ["### Situations\n", ...situations.map((id) => `- ${id}`), ""].join("\n");
+}
+
+/** How the inventory names each kind of component. */
+const COMPONENT_KINDS: Record<Component<unknown>["kind"], string> = { world: "part of the world", perturbation: "external perturbation" };
+
+function componentsMarkdown(components: NonNullable<ConditionInventory["components"]>): string {
+  if (components.length === 0) return `### Components\n\n${NONE}\n`;
+  const listed = components.map(({ name, kind, cycle }) => [`#### Component "${name}"\n`, `- Kind: ${COMPONENT_KINDS[kind]}`, `- Cycle: ${cycle}`, ""].join("\n"));
+  return ["### Components\n", ...listed].join("\n");
 }
 
 /** A text as a fenced block, with a fence longer than any run of backticks in it, so the text is given whole. */
