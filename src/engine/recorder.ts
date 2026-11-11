@@ -21,10 +21,18 @@ export class Recorder {
     this.#file = file;
   }
 
-  /** Opens a new log for a run, in the directory, under an id of its own. */
-  static open(directory: string): Recorder {
-    const runId = randomUUID();
-    return new Recorder(runId, openSync(join(directory, `${runId}.jsonl`), "w"));
+  /**
+   * Opens a new log for a run, in the directory, under an id of its own unless one is given. It refuses a file that is
+   * already there: a run never writes to an existing file.
+   */
+  static open(directory: string, runId: string = randomUUID()): Recorder {
+    const path = join(directory, `${runId}.jsonl`);
+    try {
+      return new Recorder(runId, openSync(path, "wx"));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      throw new Error(`A run never writes to an existing file, and ${path} is already there`, { cause: error });
+    }
   }
 
   /**
