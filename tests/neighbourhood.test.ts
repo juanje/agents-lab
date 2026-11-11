@@ -147,6 +147,19 @@ describe("the neighbourhood scenario", () => {
     expect(world.version).toBe(1);
   });
 
+  it("fails a move to a cell outside the grid with invalid_target, changing nothing", () => {
+    const move = toolNamed("move");
+    if (move.kind !== "effector") throw new Error("move is not an effector");
+    const world = new World(residentsAt(5, 5, { lookRadius: 1, msPerCell: 100 }));
+    const before = world.state;
+
+    expect(world.apply(move.action, { agent: "r1", arguments: { dx: -1, dy: 0 } })).toEqual({ applied: false, reason: "invalid_target" });
+    expect(world.apply(move.action, { agent: "r2", arguments: { dx: 4, dy: 0 } })).toEqual({ applied: false, reason: "invalid_target" });
+    expect(world.apply(move.action, { agent: "r3", arguments: { dx: 0, dy: 4 } })).toEqual({ applied: false, reason: "invalid_target" });
+    expect(world.state).toBe(before);
+    expect(world.version).toBe(0);
+  });
+
   it("takes the configured time per cell for the distance from where the resident is to its target", () => {
     const move = toolNamed("move");
     const state = residentsAt(5, 5, { lookRadius: 1, msPerCell: 40 });
