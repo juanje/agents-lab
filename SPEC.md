@@ -388,8 +388,10 @@ When `lab run` is interrupted (Ctrl-C, or a termination signal), it ends the run
 *Why:* a run stopped by hand is still a run of the experiment; without a trace, its partial log reads as a run that crashed or never existed.
 
 #### FR-ADAPTER-03: Context compaction is declared and recorded
-An experiment file says whether an agent's context is compacted and, if it is, when (the share of the context window that triggers it). Every session uses that setting; each compaction is recorded in the log with the agent, when it happened, and the context's size before and after it.
-*Why:* long tasks fill the context on purpose; what the agent still has in view after a compaction changes its behaviour, so compaction is part of the setup, not a harness default.
+An experiment file gives its `[compaction]`: `enabled` (true or false), and, when enabled, `trigger_at` (the share of the model's context window, above 0 and below 1, whose filling starts a compaction) and `keep_recent_tokens` (how much of the most recent context the compaction keeps as it is). The table is required, like the thinking level (FR-EXPERIMENT-05). Every session of every run uses it; the engine turns `trigger_at` into Pi's reserve for each model's window, so models with different windows compact at the same share. With compaction off, a context that overflows ends the model turn with `model_error` (FR-ADAPTER-02).
+
+Each compaction is a line of its own in the log: the agent, why it started (`threshold` or `overflow`), when it started and ended, the context's size in tokens before and after it, the summary the agent's context holds from then on, and the tokens and cost of the model call that wrote it. The setup line (FR-RECORD-02) and the inventory (FR-INVENTORY-01) give the setting, and the inventory gives the instructions Pi gives the model to write the summary, since the summary is what the agent has in view afterwards.
+*Why:* long tasks fill the context on purpose; what the agent still has in view after a compaction changes its behaviour, so compaction is part of the setup, not a harness default, and the text that replaces the agent's memory must be in the record.
 
 ### Scenario library
 
