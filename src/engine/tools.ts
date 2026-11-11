@@ -37,8 +37,11 @@ export interface Sensor<State> extends Declared<State> {
   takenFrom?(state: State, agent: string): Position;
 }
 
-/** What an agent last sensed of an effector's target, recorded beside the call's outcome and never deciding it (NFR-11). */
-export type TargetAsSensed = "free" | "held" | "not_sensed";
+/**
+ * What an agent last sensed of an effector's target, recorded beside the call's outcome and never deciding it (NFR-11):
+ * "outside" when that sensing showed the target is no place the agent can go.
+ */
+export type TargetAsSensed = "free" | "held" | "outside" | "not_sensed";
 
 /** A tool that changes the world through the arbiter. */
 export interface Effector<State> extends Declared<State> {

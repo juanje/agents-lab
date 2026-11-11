@@ -115,8 +115,8 @@ const move: Effector<Neighbourhood> = {
     const rows = JSON.parse(sensing.result) as Mark[][];
     const middle = (rows.length - 1) / 2;
     const mark = rows[middle + to.y - sensing.takenFrom.y]?.[middle + to.x - sensing.takenFrom.x];
-    // A cell beyond the grid's edge is neither free nor held.
-    if (mark === undefined || mark === "outside") return "not_sensed";
+    if (mark === undefined) return "not_sensed";
+    if (mark === "outside") return "outside";
     return mark === "empty" ? "free" : "held";
   },
 };
