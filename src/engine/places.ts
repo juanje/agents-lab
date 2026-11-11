@@ -86,6 +86,18 @@ function moved(space: Places, entity: string, to: Where): Places {
  * The entities an entity can see, besides itself: from a place, those in that place and in the passages that leave it;
  * from a passage, those in that passage and in the two places it joins.
  */
-export function inSight(_space: Places, _entity: string): string[] {
-  return [];
+export function inSight(space: Places, entity: string): string[] {
+  const from = where(space, entity);
+  if (from === undefined) throw new Error(`cannot tell what entity "${entity}" sees: the space holds no entity "${entity}"`);
+  const seen = (at: Where) =>
+    "place" in from
+      ? "place" in at
+        ? at.place === from.place
+        : at.passage.includes(from.place)
+      : "place" in at
+        ? from.passage.includes(at.place)
+        : at.passage[0] === from.passage[0] && at.passage[1] === from.passage[1];
+  return Object.entries(space.whereabouts)
+    .filter(([other, at]) => other !== entity && seen(at))
+    .map(([other]) => other);
 }
