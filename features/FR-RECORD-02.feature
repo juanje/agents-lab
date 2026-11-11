@@ -18,4 +18,4 @@ Feature: A run records what it ran
 
   Scenario: The first line holds the inventory of the run's condition
     When "lab run" runs the experiment file
-    Then the first line of the run's log holds the inventory "lab inventory" gives for the condition "five-slots"
+    Then the first line of the run's log holds, as data, the inventory "lab inventory" prints for the condition "five-slots"
