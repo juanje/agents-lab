@@ -112,6 +112,24 @@ describe("lab run", () => {
     expect(printed.split("\n").filter((line) => line !== "").at(-1)).toMatch(/^0 runs completed and 1 stopped in \d+\.\d s, cost \$0\.0000$/);
   });
 
+  it("ends the run in progress when it is interrupted, lists it as stopped, starts no run after it, prints the totals, and fails", async () => {
+    const { directory, path, environment } = setUp(experimentFile({ models: 'models = ["scripted/one"]' }));
+    const slow = new ScriptedModel(Array.from({ length: 10 }, () => ({ text: "Nothing to do.", delayMs: 500 })));
+    const interruption = new AbortController();
+    let printed = "";
+    const print = (text: string) => {
+      printed += text;
+      // Interrupted while the first run's first model turn is running.
+      if (text.startsWith("Run 1 of 4 started")) setTimeout(() => interruption.abort(), 100);
+    };
+
+    await expect(lab(["run", path], { ...environment, model: async () => slow, print, interruption: interruption.signal })).rejects.toThrow("interrupted");
+
+    const index = readFileSync(join(directory, "runs", "e-test", "index.jsonl"), "utf8").trimEnd().split("\n").map((line) => JSON.parse(line));
+    expect(index.map(({ status }) => status)).toEqual(["stopped"]);
+    expect(printed.split("\n").filter((line) => line !== "").at(-1)).toMatch(/^0 runs completed and 1 stopped in /);
+  });
+
   it("prints each run's progress at the interval it is given", async () => {
     const { path, environment } = setUp(experimentFile({ models: 'models = ["scripted/one"]' }));
     // Turns long enough for two reports at the interval in each run.
