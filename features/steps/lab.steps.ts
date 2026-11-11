@@ -347,7 +347,9 @@ Then(
     assert.equal(first.replica, replica);
     assert.equal(first.seed, replicaSeed(this.experimentFile.seed as number, replica));
     assert.equal(first.model, model);
-    assert.ok(first.sampling !== undefined, "the first line gives no sampling settings");
+    // The scripted model cannot reason, so Pi gives each session the thinking level "off"; the engine sends no other
+    // sampling parameter.
+    assert.deepEqual(first.sampling, { thinkingLevels: { a: "off", b: "off" }, otherParameters: "the provider's defaults" });
   },
 );
 

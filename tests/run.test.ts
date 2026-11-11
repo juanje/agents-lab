@@ -48,6 +48,18 @@ const newLogDirectory = () => mkdtempSync(join(tmpdir(), "agents-lab-logs-"));
 /** Settings for a run whose test looks at none of them. */
 const settings: RunSettings = { logDirectory: newLogDirectory(), modelTurnTimeoutMs: 10_000, parallelismLimit: 10, timeLimitMs: 60_000 };
 
+/** What a run of an experiment runs, for a test that gives one and checks only where it is written. */
+const setup = {
+  experiment: "e-test",
+  condition: "baseline",
+  configuration: { agents: ["a"] },
+  replica: 1,
+  seed,
+  model: "scripted/one",
+  code: { commit: "0000000", uncommittedChanges: false },
+  inventory: {} as never,
+};
+
 /** The lines of the only log in a directory, which must be the run's, parsed. */
 function logOf(directory: string, runId: string): unknown[] {
   expect(readdirSync(directory)).toEqual([`${runId}.jsonl`]);
@@ -207,6 +219,49 @@ describe("run", () => {
     const lines = readFileSync(join(logDirectory, file), "utf8").trimEnd().split("\n").map((line) => JSON.parse(line));
     expect(lines.at(-1)).toEqual({ type: "run_stopped", error: 'agent "a"\'s "jam" call failed: the jam broke' });
     expect(b.received).toEqual([]);
+  });
+
+  it("writes the setup it is given first, once the sessions are open, with each session's thinking level and the provider's defaults for every other sampling parameter, before any stimulus onStart delivers", async () => {
+    const plain = new ScriptedModel([]);
+    const thinking = new ScriptedModel([]);
+    // A model that can reason, so Pi gives its session its default thinking level rather than "off".
+    const reasoning = { model: { ...thinking.model, reasoning: true }, provider: thinking.provider };
+    const logDirectory = newLogDirectory();
+
+    const { runId } = await run(
+      slots({ ...agentsNamed("a", "b"), channels: () => [rhythmChannel, bell] }),
+      [
+        { name: "a", model: plain, activations: 0 },
+        { name: "b", model: reasoning, activations: 0 },
+      ],
+      seed,
+      { ...settings, logDirectory, setup, onStart: (stimuli) => stimuli.deliver("a", "bell") },
+    );
+
+    const [first, second] = logOf(logDirectory, runId) as { type: string }[];
+    expect(first).toEqual({
+      type: "run_setup",
+      runId,
+      ...setup,
+      sampling: { thinkingLevels: { a: "off", b: "medium" }, otherParameters: "the provider's defaults" },
+    });
+    expect(second.type).toBe("stimulus");
+  });
+
+  it("writes the setup it is given first, with no sampling settings, when a session fails to open", async () => {
+    const unopenable = {
+      get model(): never {
+        throw new Error("no model to give");
+      },
+    };
+    const logDirectory = newLogDirectory();
+
+    await expect(run(slots(), [{ name: "a", model: unopenable, activations: 1 }], seed, { ...settings, logDirectory, setup })).rejects.toThrow("no model to give");
+
+    const [file] = readdirSync(logDirectory);
+    const lines = readFileSync(join(logDirectory, file), "utf8").trimEnd().split("\n").map((line) => JSON.parse(line));
+    expect(lines.map((line) => line.type)).toEqual(["run_setup", "run_stopped"]);
+    expect(lines[0]).toEqual({ type: "run_setup", runId: file.replace(".jsonl", ""), ...setup, sampling: null });
   });
 
   it("stops when a session fails to open: it says so in its log, closes the sessions already open, and fails naming the agent", async () => {
