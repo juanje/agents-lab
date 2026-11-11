@@ -135,6 +135,10 @@ describe("the neighbourhood scenario", () => {
     expect(neighbourhoodScenario.describeDuration(changed, "move")).toBe("40 ms for each cell of distance to the target.");
   });
 
+  it("refuses to describe the duration of a tool it does not have, naming it", () => {
+    expect(() => neighbourhoodScenario.describeDuration(configuration(3, 2, 2), "fly")).toThrow('The neighbourhood has no tool "fly"');
+  });
+
   it("keeps the configured look radius and time per cell of distance in its state, for its tools to read", () => {
     const base = parse(neighbourhoodScenario.baseConfiguration);
     const state = neighbourhoodScenario.initialState({ ...configuration(3, 2, 2), look_radius: 2, ms_per_cell: 40 }, new Random(1));

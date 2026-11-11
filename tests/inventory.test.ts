@@ -135,6 +135,16 @@ describe("inventory", () => {
     expect(listed.slice(listed.indexOf('## Condition "crowded"'))).toContain(engine);
   });
 
+  it.each([
+    ["describeRhythm", "rhythm description"],
+    ["describeDuration", "description of its tools' durations"],
+  ] as const)("refuses a scenario without its %s, naming what it lacks", (part, named) => {
+    const scenario: Partial<Scenario<Slots>> = slotsWith();
+    delete scenario[part];
+
+    expect(() => inventory(experimentOf(["[conditions.baseline]"]), scenario)).toThrow(`Scenario "slots" lacks its ${named}`);
+  });
+
   it("fences a system prompt that holds a fence with a longer one, so the prompt is given whole", () => {
     const experiment = experimentOf(["[conditions.baseline]"]);
     const scenario = slotsWith({ systemPrompt: () => "Answer like this:\n```\ndone\n```" });
