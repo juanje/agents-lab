@@ -81,3 +81,11 @@ export const arrive: Action<Places, { entity: string }> = {
 function moved(space: Places, entity: string, to: Where): Places {
   return { ...space, whereabouts: { ...space.whereabouts, [entity]: to } };
 }
+
+/**
+ * The entities an entity can see, besides itself: from a place, those in that place and in the passages that leave it;
+ * from a passage, those in that passage and in the two places it joins.
+ */
+export function inSight(_space: Places, _entity: string): string[] {
+  return [];
+}

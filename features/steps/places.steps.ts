@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { BeforeStep, Given, Then, When } from "@cucumber/cucumber";
-import { type Places, arrive, entitiesIn, exits, layout, leave, put, where } from "../../src/engine/places.ts";
+import { type Places, arrive, entitiesIn, exits, inSight, layout, leave, put, where } from "../../src/engine/places.ts";
 import { type Action, World } from "../../src/engine/world.ts";
 import type { Context } from "../support/context.ts";
 
@@ -120,4 +120,43 @@ Then("neither {string} nor {string} holds entity {string}", function (this: Cont
   for (const place of [one, other]) {
     assert.ok(!entitiesIn(current(this), place).includes(entity), `"${place}" holds entity "${entity}"`);
   }
+});
+
+Given("entity {string} has left {string} towards {string}", function (this: Context, entity: string, from: string, towards: string) {
+  // Set up as the space's own leave would leave it, before the arbiter holds the space.
+  const space = put(this.places, entity, from);
+  const args = { entity, towards };
+  assert.deepEqual(leave.precondition(space, args), { holds: true });
+  this.places = leave.effect(space, args);
+});
+
+/** Checks that an entity has exactly these entities in sight, in any order. */
+function assertInSight(context: Context, entity: string, seen: readonly string[]): void {
+  const sight = inSight(current(context), entity);
+  assert.deepEqual([...sight].sort(), [...seen].sort(), `entity "${entity}" has in sight ${JSON.stringify(sight)}`);
+}
+
+/** Checks that an entity has none of these entities in sight. */
+function assertNotInSight(context: Context, entity: string, unseen: readonly string[]): void {
+  const sight = inSight(current(context), entity);
+  for (const other of unseen) assert.ok(!sight.includes(other), `entity "${entity}" has "${other}" in sight: ${JSON.stringify(sight)}`);
+}
+
+Then("entity {string} has in sight {string} and {string}", function (this: Context, entity: string, first: string, second: string) {
+  assertInSight(this, entity, [first, second]);
+});
+
+Then(
+  "entity {string} has in sight {string}, {string} and {string}",
+  function (this: Context, entity: string, first: string, second: string, third: string) {
+    assertInSight(this, entity, [first, second, third]);
+  },
+);
+
+Then("entity {string} does not have in sight {string} or {string}", function (this: Context, entity: string, first: string, second: string) {
+  assertNotInSight(this, entity, [first, second]);
+});
+
+Then("entity {string} does not have in sight {string}", function (this: Context, entity: string, other: string) {
+  assertNotInSight(this, entity, [other]);
 });
