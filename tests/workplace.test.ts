@@ -415,6 +415,25 @@ class = "control"
     expect(acted([made("read", { thing: "mug" }, 30, "success", "Nothing is written on it.")])).toEqual({});
   });
 
+  it("gives when each situation's predicates last changed value, from the moves the world keeps; none while they have not", () => {
+    const initial = start();
+    const move = (thing: string, from: string, to: string, atMs: number) => ({ thing, from, to, atMs });
+    const settled = (state: Workplace) => metric("settled_at_ms")(state, []);
+    const intoCupboard = [move("label", "parcel", "held", 5), move("label", "held", "cupboard", 7)];
+
+    expect(settled(initial)).toEqual({});
+    // Taking the label changes no predicate; putting it in the cupboard makes "where" hold.
+    expect(settled({ ...moved(initial, "label", { inside: { label: "cupboard" } }), moves: intoCupboard })).toEqual({ parcel: 7 });
+    // Taking it back makes "where" fail again; putting it back in the parcel changes nothing more.
+    expect(settled({ ...initial, moves: [...intoCupboard, move("label", "cupboard", "held", 8), move("label", "held", "parcel", 9)] })).toEqual({ parcel: 8 });
+    // The mug leaves the hall as the worker takes it; giving the parcel to Ana, not taking it, makes "not_given" fail.
+    const elsewhere = moved(moved(initial, "mug", { place: "office" }), "parcel", { held: { parcel: "ana" } });
+    const moves = [move("mug", "hall", "held", 3), move("mug", "held", "office", 4), move("parcel", "office", "held", 5), move("parcel", "held", "person:ana", 6)];
+    expect(settled({ ...elsewhere, moves })).toEqual({ mug: 3, parcel: 6 });
+    // A move of a thing no predicate names settles nothing.
+    expect(settled({ ...moved(initial, "key", { held: { key: "worker" } }), moves: [move("key", "cupboard", "held", 2)] })).toEqual({});
+  });
+
   it("refuses a predicate that names a thing, place, container or person the world does not have, naming it", () => {
     const refusal = (keys: string) => () => start(keys);
 
