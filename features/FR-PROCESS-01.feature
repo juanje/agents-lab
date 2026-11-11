@@ -5,7 +5,7 @@ Feature: Components with their own life cycles change the world
     Given a test world with 3 slots, slot 1 held by "parcel"
     And the sensor "look" takes no time and returns which slots are empty and which are held
     And the effector "take" takes 300 milliseconds, puts the agent in a slot when it lands, and fails with "slot_taken" when the slot is held when it lands
-    And the component "porter", whose cycle waits a number of milliseconds drawn from 100 to 200 from its own random sequence, then fills slot 2 with "crate", an action that takes 100 milliseconds and fails with "slot_taken" when the slot is held when it lands, then ends
+    And the component "porter", whose cycle waits a number of milliseconds drawn from 100 to 200 from its own random sequence, then fills slot 2 with "crate", an action that takes 400 milliseconds and fails with "slot_taken" when the slot is held when it lands, then ends
 
   Scenario: A component changes the world while no agent acts
     Given agent "a" runs on a scripted model that ends every turn without a tool call
