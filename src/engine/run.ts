@@ -5,7 +5,7 @@ import { waitAtLeast } from "./clock.ts";
 import { failure } from "./failure.ts";
 import { ParallelismLimit } from "./parallelism.ts";
 import { Random } from "./random.ts";
-import { Recorder, type RunSetup } from "./recorder.ts";
+import { Recorder, type RunSetup, type Sampling } from "./recorder.ts";
 import type { LoadedScenario, Rhythm, Scenario } from "./scenario.ts";
 import { Sensings } from "./sensings.ts";
 import { Stimuli } from "./stimuli.ts";
@@ -24,7 +24,10 @@ export interface RunSettings {
   logDirectory: string;
   /** The run's id, when its caller must know it before the run starts or stops; a new one otherwise. */
   runId?: string;
-  /** For a run of an experiment, what it runs, which its log gives first (FR-RECORD-02). */
+  /**
+   * For a run of an experiment, what it runs, which its log gives first, with the sampling settings its sessions use
+   * once they are open (FR-RECORD-02).
+   */
   setup?: RunSetup;
   /** How long a model turn may run before it is aborted. */
   modelTurnTimeoutMs: number;
@@ -35,7 +38,7 @@ export interface RunSettings {
   /** How long the run waits between metric samples; without it, the metrics are sampled only at the start and the end (FR-METRIC-02). */
   metricIntervalMs?: number;
   /**
-   * Called with the run's stimuli before any agent wakes, so a caller can deliver stimuli while the run goes on. A seam
+   * Called with the run's stimuli once every session is open, before any agent wakes, so a caller can deliver stimuli while the run goes on. A seam
    * until the world's processes deliver them (FR-PROCESS-01).
    */
   onStart?: (stimuli: Stimuli) => void;
@@ -72,7 +75,6 @@ export async function run<State>(
   // Refused before its log opens, as a scenario that fails to load is: nothing has run.
   assertScenarioAgents(loaded, agents);
   const recorder = Recorder.open(settings.logDirectory, settings.runId);
-  if (settings.setup !== undefined) recorder.record({ type: "run_setup", runId: recorder.runId, ...settings.setup });
   // Aborts when the run ends before its agents are done: its time limit passes (FR-CLOCK-02) or it stops on an error.
   const runEnd = new AbortController();
   let stoppedOn: Error | undefined;
@@ -87,8 +89,11 @@ export async function run<State>(
     const stimuli = new Stimuli(loaded.channels, (agent, stimulus) =>
       recorder.record({ type: "stimulus", agent, ...stimulus, deliveredAtMs: performance.now() }),
     );
-    settings.onStart?.(stimuli);
-    const result = await runAgents(loaded, agents, seed, settings, stimuli, recorder, runEnd, stop);
+    // The setup goes first: nothing is recorded before the sessions are open and onStart is called.
+    const opened = (sampling: Sampling | null) => {
+      if (settings.setup !== undefined) recorder.record({ type: "run_setup", runId: recorder.runId, ...settings.setup, sampling });
+    };
+    const result = await runAgents(loaded, agents, seed, settings, stimuli, recorder, runEnd, stop, opened);
     if (stoppedOn !== undefined) throw stoppedOn;
     return { runId: recorder.runId, ...result };
   } catch (error) {
@@ -118,7 +123,13 @@ function assertScenarioAgents<State>({ scenario, systemPrompts }: LoadedScenario
   throw new Error(`The run's agents are not those of scenario "${scenario.name}": ${differences.join("; ")}`);
 }
 
-/** Runs the agents of a run whose log is open. */
+/** Every sampling parameter but the thinking level, which the engine never sends, so the provider's defaults apply. */
+const PROVIDER_DEFAULTS = "the provider's defaults";
+
+/**
+ * Runs the agents of a run whose log is open. Once every session is open, or one failed to, it says so with the
+ * sampling settings the sessions use, or null.
+ */
 async function runAgents<State>(
   { world, scenario, systemPrompts, rhythms }: LoadedScenario<State>,
   agents: readonly Agent[],
@@ -128,6 +139,7 @@ async function runAgents<State>(
   recorder: Recorder,
   runEnd: AbortController,
   stop: (error: Error) => void,
+  opened: (sampling: Sampling | null) => void,
 ): Promise<Omit<RunResult, "runId">> {
   const sessionSettings = {
     modelTurnTimeoutMs: settings.modelTurnTimeoutMs,
@@ -162,10 +174,16 @@ async function runAgents<State>(
   );
   const failed = opening.find((opened) => opened.status === "rejected");
   if (failed !== undefined) {
-    for (const opened of opening) if (opened.status === "fulfilled") opened.value.dispose();
+    for (const each of opening) if (each.status === "fulfilled") each.value.dispose();
+    opened(null);
     throw failed.reason;
   }
-  const sessions = opening.map((opened) => (opened as PromiseFulfilledResult<AgentSession>).value);
+  const sessions = opening.map((each) => (each as PromiseFulfilledResult<AgentSession>).value);
+  opened({
+    thinkingLevels: Object.fromEntries(agents.map((agent, index) => [agent.name, sessions[index].thinkingLevel])),
+    otherParameters: PROVIDER_DEFAULTS,
+  });
+  settings.onStart?.(stimuli);
   const startedAtMs = performance.now();
   const sample = () => sampleMetrics(world, scenario.metrics, recorder, performance.now());
   sampleMetrics(world, scenario.metrics, recorder, startedAtMs);

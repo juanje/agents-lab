@@ -9,7 +9,8 @@ import type { Stimulus } from "./stimuli.ts";
 
 /**
  * What a run of an experiment ran, which its log's first line gives (FR-RECORD-02): the experiment, the condition and
- * its resolved configuration, the replica and its seed, the model, the code, and the condition's inventory.
+ * its resolved configuration, the replica and its seed, the model, the code, and the condition's inventory; the run adds
+ * the sampling settings its sessions use, or null when they failed to open.
  */
 export interface RunSetup {
   experiment: string;
@@ -24,10 +25,19 @@ export interface RunSetup {
 }
 
 /**
+ * The sampling settings a run's sessions use: each agent's thinking level, as Pi gives its session, and that every
+ * other parameter is the provider's default, since the engine sends none.
+ */
+export interface Sampling {
+  thinkingLevels: Record<string, string>;
+  otherParameters: string;
+}
+
+/**
  * A line of a run's log: what the run ran, first, then one event of the run. Every time in it is by performance.now().
  */
 export type LogLine =
-  | ({ type: "run_setup"; runId: string } & RunSetup)
+  | ({ type: "run_setup"; runId: string; sampling: Sampling | null } & RunSetup)
   | { type: "activation"; agent: string; wokeAtMs: number; endedAtMs: number }
   | ({ type: "stimulus"; agent: string; deliveredAtMs: number } & Stimulus)
   | ({ type: "model_turn" } & ModelTurn)
