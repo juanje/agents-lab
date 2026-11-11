@@ -117,6 +117,7 @@ describe("loadScenario", () => {
     ["channels", "stimulus channels"],
     ["metrics", "metrics"],
     ["systemPrompt", "system prompt"],
+    ["rhythm", "rhythm"],
     ["baseConfiguration", "base configuration"],
   ] as const)("refuses a scenario without its %s, with an error that names the %s", (property, part) => {
     const { [property]: _left, ...rest } = slotsScenario;
