@@ -10,7 +10,16 @@ import {
   createAgentSession,
   createExtensionRuntime,
 } from "@earendil-works/pi-coding-agent";
-import { type Api, type AssistantMessage, type Model, type Provider, type Usage, getCurrentSystemMessage } from "@earendil-works/pi-ai";
+import {
+  type Api,
+  type AssistantMessage,
+  type JsonObject,
+  type Model,
+  type Provider,
+  type Usage,
+  getCurrentSystemMessage,
+  validateToolArguments,
+} from "@earendil-works/pi-ai";
 import type { ChangesSinceSensing } from "./changes.ts";
 import { waitAtLeast } from "./clock.ts";
 import { failure } from "./failure.ts";
@@ -168,35 +177,45 @@ export async function openSession<State>(
   runTurns(session, agent.name, settings, parallelism, records);
   deliverBetweenTurns(session, agent.name, stimuli);
   endAtRunEnd(session, settings.runEnd);
-  recordToolCalls(session, agent.name, new Set(tools.map((tool) => tool.name)), executed, records);
+  recordToolCalls(session, agent.name, tools, executed, records, settings);
   return session;
 }
 
 /**
  * Records each of the agent's tool calls with the arguments its model made, which Pi passes on before it coerces them,
- * its outcome, and when it started and ended. Pi answers a call to a tool the session does not offer with an error, and
- * runs an offered tool only once its arguments pass the tool's schema, so a call to an offered tool that did not run had
- * arguments the tool does not take. A call that ran gives its own outcome and times, invalid_arguments included when the
- * engine rejected an argument the tool does not declare; one that did not run is timed by Pi's events around it.
+ * its outcome, and when it started and ended. A call that ran gives its own outcome and times, invalid_arguments
+ * included when the engine rejected an argument the tool does not declare. One Pi answered without running its tool is
+ * recognised by why (unrunOutcome) and timed by Pi's events around it; one it cannot recognise stops the run, since a
+ * guessed outcome would misread the agent.
  */
-function recordToolCalls(
+function recordToolCalls<State>(
   session: AgentSession,
   agent: string,
-  offered: ReadonlySet<string>,
+  tools: readonly Tool<State>[],
   executed: ReadonlyMap<string, Executed>,
   records: Records,
+  { runEnd, stop }: SessionSettings,
 ): void {
   const made = new Map<string, { args: unknown; startedAtMs: number }>();
   session.subscribe((event) => {
     if (event.type === "tool_execution_start") made.set(event.toolCallId, { args: event.args, startedAtMs: performance.now() });
     if (event.type === "tool_execution_end") {
-      const call = made.get(event.toolCallId);
-      const ran = executed.get(event.toolCallId) ?? {
-        outcome: offered.has(event.toolName) ? "invalid_arguments" : "unknown_tool",
-        startedAtMs: call?.startedAtMs ?? performance.now(),
-        endedAtMs: performance.now(),
-      };
-      records.toolCall({ agent, tool: event.toolName, arguments: call?.args, ...ran });
+      const call = { tool: event.toolName, arguments: made.get(event.toolCallId)?.args };
+      let ran = executed.get(event.toolCallId);
+      if (ran === undefined) {
+        const answer = (event.result as { content?: { type: string; text?: string }[] }).content
+          ?.flatMap((block) => (block.type === "text" ? [block.text ?? ""] : []))
+          .join("") ?? "";
+        const offered = tools.find((tool) => tool.name === event.toolName);
+        try {
+          const outcome = unrunOutcome(offered, call, answer, runEnd.aborted);
+          ran = { outcome, startedAtMs: made.get(event.toolCallId)?.startedAtMs ?? performance.now(), endedAtMs: performance.now() };
+        } catch (error) {
+          stop(failure(`agent "${agent}"'s "${event.toolName}" call could not be recorded`, error));
+          return;
+        }
+      }
+      records.toolCall({ agent, ...call, ...ran });
     }
   });
 }
@@ -391,8 +410,34 @@ function definition<State>(
   };
 }
 
-export function unrunOutcome<State>(_offered: Tool<State> | undefined, _call: { tool: string; arguments: unknown }, _answer: string, _runEnded: boolean): string {
-  return _offered === undefined ? "unknown_tool" : "invalid_arguments";
+/**
+ * The outcome of a call Pi answered without running its tool, recognised from why it did: the session does not offer
+ * the tool; Pi's validation rejected the arguments, which re-validating them gives back as Pi's very answer; or the run
+ * had ended, so Pi left it unrun (FR-CLOCK-02). Any other reason is not recognised, and is an error that says so.
+ */
+export function unrunOutcome<State>(
+  offered: Tool<State> | undefined,
+  call: { tool: string; arguments: unknown },
+  answer: string,
+  runEnded: boolean,
+): string {
+  if (offered === undefined) return "unknown_tool";
+  if (rejection(offered, call) === answer) return "invalid_arguments";
+  if (runEnded) return CUT_OFF;
+  throw new Error(`Pi answered a call of "${call.tool}" without running it, for no reason the engine recognises: ${answer}`);
+}
+
+/** Pi's own rejection of a call's arguments by the tool's schema, or undefined when they pass. */
+function rejection<State>(tool: Tool<State>, call: { tool: string; arguments: unknown }): string | undefined {
+  try {
+    validateToolArguments(
+      { name: tool.name, description: tool.description, parameters: tool.parameters as never },
+      { type: "toolCall", id: "", name: call.tool, arguments: call.arguments as JsonObject },
+    );
+    return undefined;
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
 }
 
 /** The outcome of a tool call or a model turn still running when the run's time limit passes (FR-CLOCK-02). */

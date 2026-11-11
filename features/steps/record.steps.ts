@@ -268,3 +268,14 @@ Then(
     assert.equal(call.changesSinceSensing, null);
   },
 );
+
+Given(
+  "agent {string} runs on a scripted model that calls {string} with slot {string}, then ends without a tool call",
+  function (this: Context, agent: string, tool: string, slot: string) {
+    script(this, agent, callWithThenEnd(tool, { slot }, 0));
+  },
+);
+
+Then("the log's tool call line for agent {string}'s {string} call gives the outcome {string}", function (this: Context, agent: string, tool: string, outcome: string) {
+  assert.equal(lineOf(this, "tool_call", agent, { tool }).outcome, outcome);
+});
