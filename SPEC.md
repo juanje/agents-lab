@@ -74,13 +74,14 @@ Experiments are written outside this repository, in the experiment language (FR-
 25. FR-METRIC-02
 26. FR-RECORD-02
 27. FR-EXPERIMENT-05
-28. FR-INVENTORY-01
-29. FR-EXPERIMENT-02
-30. FR-EXPERIMENT-03
-31. FR-EXPERIMENT-04
-32. FR-RUN-02
-33. FR-RUN-03
-34. FR-ANALYSIS-01
+28. FR-RUN-04
+29. FR-INVENTORY-01
+30. FR-EXPERIMENT-02
+31. FR-EXPERIMENT-03
+32. FR-EXPERIMENT-04
+33. FR-RUN-02
+34. FR-RUN-03
+35. FR-ANALYSIS-01
 
 ## Invariants
 
@@ -339,6 +340,16 @@ It writes each run's log into `runs/<experiment id>/` under the current director
 #### FR-RUN-03: One experiment at a time
 `lab run` refuses to start, with an error that says another run is active, while another `lab run` on the same machine holds the lock.
 *Why:* two experiments on one machine would share its parallelism limit and its Pi login without recording it.
+
+#### FR-RUN-04: `lab run` shows its progress
+While it runs, `lab run` prints to the terminal:
+- when a run starts: its number out of the experiment's total, its condition, model, replica and seed;
+- during a run, every 30 seconds unless the command is given another interval: the time since it started, the activations done out of its budget, the model turns, and the cost so far;
+- when a run ends: whether it completed or stopped, its duration, its activations, model turns and cost;
+- when the experiment ends: how many runs completed, the total duration and the total cost.
+
+What it prints is read from what the run records, and nothing it prints goes to the log.
+*Why:* a run of an experiment the size of E13 takes many minutes, and a silent terminal cannot tell a working run from a stuck one.
 
 ### Scenario library
 
