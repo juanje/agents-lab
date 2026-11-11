@@ -27,6 +27,9 @@ function experimentFile(lines: { scenario?: string; models?: string } = {}): str
   ].join("\n");
 }
 
+/** How the command is used, as an error for other arguments says. */
+const USAGE = "Usage: lab run <experiment.toml> [--progress-interval-ms <ms>] or lab inventory <experiment.toml>";
+
 /** A directory to run "lab" in, holding the experiment file, and the environment it runs with. */
 function setUp(file: string) {
   const directory = mkdtempSync(join(tmpdir(), "agents-lab-cwd-"));
@@ -98,15 +101,43 @@ describe("lab run", () => {
     expect(lines.at(-1)).toMatch(/^8 runs completed in \d+\.\d s, cost \$\d+\.\d{4}$/);
   });
 
+  it("prints each run's progress at the interval it is given", async () => {
+    const { path, environment } = setUp(experimentFile({ models: 'models = ["scripted/one"]' }));
+    // Turns long enough for two reports at the interval in each run.
+    const slow = new ScriptedModel(Array.from({ length: 10 }, () => ({ text: "Nothing to do.", delayMs: 250 })));
+    let printed = "";
+
+    await lab(["run", path, "--progress-interval-ms", "100"], { ...environment, model: async () => slow, print: (text) => (printed += text) });
+
+    const lines = printed.split("\n").filter((line) => line !== "");
+    for (let number = 1; number <= 4; number += 1) {
+      const running = lines.filter((line) => line.startsWith(`Run ${number} of 4 running: `));
+      expect(running.length).toBeGreaterThanOrEqual(2);
+    }
+  });
+
+  it.each([
+    ["no interval", ["--progress-interval-ms"]],
+    ["an interval of 0", ["--progress-interval-ms", "0"]],
+    ["an interval that is not a whole number of milliseconds", ["--progress-interval-ms", "1.5"]],
+    ["another option", ["--quiet", "100"]],
+  ])("refuses %s, saying how the command is used, before any run", async (_case, options) => {
+    const { directory, path, environment } = setUp(experimentFile());
+
+    await expect(lab(["run", path, ...options], environment)).rejects.toThrow(USAGE);
+    expect(existsSync(join(directory, "runs"))).toBe(false);
+  });
+
   it.each([
     ["another command", ["walk", "e-test.toml"]],
     ["no experiment file", ["run"]],
     ["more than one experiment file", ["run", "e-test.toml", "e-other.toml"]],
     ["no experiment file to list", ["inventory"]],
+    ["a progress interval for the inventory", ["inventory", "e-test.toml", "--progress-interval-ms", "100"]],
   ])("refuses %s, saying how the command is used", async (_case, args) => {
     const { environment } = setUp(experimentFile());
 
-    await expect(lab(args, environment)).rejects.toThrow("Usage: lab run <experiment.toml> or lab inventory <experiment.toml>");
+    await expect(lab(args, environment)).rejects.toThrow(USAGE);
   });
 });
 
