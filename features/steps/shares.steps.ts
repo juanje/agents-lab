@@ -35,7 +35,7 @@ function stateOf(context: Context): Neighbourhood {
 function metric(context: Context, name: string): ReturnType<(typeof neighbourhoodScenario.metrics)[string]> {
   const compute = neighbourhoodScenario.metrics[name];
   assert.ok(compute !== undefined, `the neighbourhood declares no metric "${name}"`);
-  return compute(stateOf(context));
+  return compute(stateOf(context), []);
 }
 
 /** Each resident's share, by its name, as the "shares" metric gives them. */

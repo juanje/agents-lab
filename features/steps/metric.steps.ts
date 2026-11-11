@@ -41,7 +41,7 @@ Given(
     // The metric lives in the fixture; this keeps the scenario's words and it in step.
     const held = slotsScenario.metrics[metric];
     assert.ok(held !== undefined, `the test world declares no metric "${metric}"`);
-    assert.equal(held(["a", null, "b"]), 2);
+    assert.equal(held(["a", null, "b"], []), 2);
   },
 );
 

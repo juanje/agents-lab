@@ -1,4 +1,5 @@
 import { type TomlTable, type TomlValue, parse } from "smol-toml";
+import type { ToolCall } from "./adapter.ts";
 import { type Material, type MaterialReference, type Materials, materialReference } from "./materials.ts";
 import { Random } from "./random.ts";
 import { type Channel, RHYTHM_CHANNEL } from "./stimuli.ts";
@@ -9,8 +10,8 @@ import { World } from "./world.ts";
 export type Configuration = TomlTable;
 
 /**
- * A metric's value: one number for the world, null when the state gives it no value, or a number for each agent it
- * applies to, by the agent's name.
+ * A metric's value: one number for the world, null when the state gives it no value, or a number for each agent or
+ * other part it applies to, by its name (an agent's, a situation's id).
  */
 export type MetricValue = number | null | Readonly<Record<string, number>>;
 
@@ -28,8 +29,8 @@ export interface Scenario<State> {
   tools: readonly Tool<State>[];
   /** The declared paths by which stimuli reach agents, from the resolved configuration. */
   channels: (configuration: Configuration) => readonly Channel[];
-  /** Each metric by its name, computed from the world's state. */
-  metrics: Readonly<Record<string, (state: State) => MetricValue>>;
+  /** Each metric by its name, computed from the world's state and the agents' tool calls so far, in the order they ended. */
+  metrics: Readonly<Record<string, (state: State, toolCalls: readonly ToolCall[]) => MetricValue>>;
   /**
    * The channels whose stimuli an agent receives once, as it first wakes, right after its rhythm's, from the resolved
    * configuration and the agent's name; none when the scenario does not give this.

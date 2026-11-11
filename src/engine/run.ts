@@ -200,8 +200,8 @@ async function runAgents<State>(
   });
   settings.onStart?.(stimuli);
   const startedAtMs = performance.now();
-  const sample = () => sampleMetrics(world, scenario.metrics, recorder, performance.now());
-  sampleMetrics(world, scenario.metrics, recorder, startedAtMs);
+  const sample = () => sampleMetrics(world, toolCalls, scenario.metrics, recorder, performance.now());
+  sampleMetrics(world, toolCalls, scenario.metrics, recorder, startedAtMs);
   const timer = setTimeout(() => runEnd.abort(), settings.timeLimitMs);
   const samplingEnd = new AbortController();
   const sampling = settings.metricIntervalMs === undefined ? Promise.resolve() : sampleEvery(settings.metricIntervalMs, sample, samplingEnd.signal);
@@ -232,11 +232,11 @@ async function runAgents<State>(
 }
 
 /**
- * Writes one metric sample to the log: each of the scenario's metrics computed from the world's state, never by a
- * model, with the version it was computed from and when (FR-METRIC-02).
+ * Writes one metric sample to the log: each of the scenario's metrics computed from the world's state and the tool
+ * calls recorded so far, never by a model, with the version it was computed from and when (FR-METRIC-02).
  */
-function sampleMetrics<State>(world: World<State>, metrics: Scenario<State>["metrics"], recorder: Recorder, atMs: number): void {
-  const values = Object.fromEntries(Object.entries(metrics).map(([name, metric]) => [name, metric(world.state)]));
+function sampleMetrics<State>(world: World<State>, toolCalls: readonly ToolCall[], metrics: Scenario<State>["metrics"], recorder: Recorder, atMs: number): void {
+  const values = Object.fromEntries(Object.entries(metrics).map(([name, metric]) => [name, metric(world.state, toolCalls)]));
   recorder.record({ type: "metric_sample", atMs, version: world.version, metrics: values });
 }
 

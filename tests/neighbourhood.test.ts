@@ -295,7 +295,7 @@ describe("the neighbourhood scenario", () => {
     // "r4" (amber), alone in a corner, has no neighbour and so no share.
     const withLoner = { ...state, grid: place(state.grid, "r4", { x: 4, y: 4 }), kinds: { ...state.kinds, r4: "amber" as const } };
 
-    expect(neighbourhoodScenario.metrics.shares(withLoner)).toEqual({ r1: 0.5, r2: 0, r3: 0.5 });
+    expect(neighbourhoodScenario.metrics.shares(withLoner, [])).toEqual({ r1: 0.5, r2: 0, r3: 0.5 });
   });
 
   it("gives as the segregation the mean of the residents' shares, leaving out a resident with no share", () => {
@@ -304,8 +304,8 @@ describe("the neighbourhood scenario", () => {
     const grid = place(place(state.grid, "r4", { x: 2, y: 0 }), "r5", { x: 4, y: 4 });
     const crowded = { ...state, grid, kinds: { ...state.kinds, r4: "amber" as const, r5: "amber" as const } };
 
-    expect(neighbourhoodScenario.metrics.shares(crowded)).toEqual({ r1: 0.5, r2: 1 / 3, r3: 0.5, r4: 1 });
-    expect(neighbourhoodScenario.metrics.segregation(crowded)).toBeCloseTo((0.5 + 1 / 3 + 0.5 + 1) / 4, 12);
+    expect(neighbourhoodScenario.metrics.shares(crowded, [])).toEqual({ r1: 0.5, r2: 1 / 3, r3: 0.5, r4: 1 });
+    expect(neighbourhoodScenario.metrics.segregation(crowded, [])).toBeCloseTo((0.5 + 1 / 3 + 0.5 + 1) / 4, 12);
   });
 
   it("gives no segregation when no resident has a share", () => {
@@ -316,9 +316,9 @@ describe("the neighbourhood scenario", () => {
     };
     const empty = { ...apart, grid: emptyGrid(5, 5, 1), kinds: {} };
 
-    expect(neighbourhoodScenario.metrics.shares(apart)).toEqual({});
-    expect(neighbourhoodScenario.metrics.segregation(apart)).toBeNull();
-    expect(neighbourhoodScenario.metrics.segregation(empty)).toBeNull();
+    expect(neighbourhoodScenario.metrics.shares(apart, [])).toEqual({});
+    expect(neighbourhoodScenario.metrics.segregation(apart, [])).toBeNull();
+    expect(neighbourhoodScenario.metrics.segregation(empty, [])).toBeNull();
   });
 
   it("counts as its moves only the moves the arbiter applied, from none in its initial state", () => {
@@ -327,12 +327,12 @@ describe("the neighbourhood scenario", () => {
     const initial = neighbourhoodScenario.initialState(configuration(3, 2, 2), new Random(1));
     const world = new World(residentsAt(5, 5, { lookRadius: 1, msPerCell: 100 }));
 
-    expect(neighbourhoodScenario.metrics.moves(initial)).toBe(0);
+    expect(neighbourhoodScenario.metrics.moves(initial, [])).toBe(0);
     expect(world.apply(move.action, { agent: "r1", arguments: { dx: 1, dy: 0 }, atMs: 0 })).toEqual({ applied: false, reason: "cell_full" });
     expect(world.apply(move.action, { agent: "r1", arguments: { dx: -1, dy: 0 }, atMs: 0 })).toEqual({ applied: false, reason: "invalid_target" });
     expect(world.apply(move.action, { agent: "r1", arguments: { dx: 2, dy: 2 }, atMs: 0 })).toEqual({ applied: true });
     expect(world.apply(move.action, { agent: "r1", arguments: { dx: 1, dy: 1 }, atMs: 0 })).toEqual({ applied: true });
-    expect(neighbourhoodScenario.metrics.moves(world.state)).toBe(2);
+    expect(neighbourhoodScenario.metrics.moves(world.state, [])).toBe(2);
   });
 
   it("draws the cells from the random sequence it is given", () => {
