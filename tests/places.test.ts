@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { exits, layout, put, where } from "../src/engine/places.ts";
+import { entitiesIn, exits, layout, put, where } from "../src/engine/places.ts";
 
 /** Three places: a passage of length 2 joins "hall" and "store", and one of length 5 "hall" and "yard". */
 const building = () =>
@@ -37,5 +37,14 @@ describe("exits", () => {
     ]);
     expect(exits(building(), "store")).toEqual([{ place: "hall", length: 2 }]);
     expect(exits(building(), "yard")).toEqual([{ place: "hall", length: 5 }]);
+  });
+});
+
+describe("entitiesIn", () => {
+  it("gives every entity in a place, however many, in the order the space first held them, and none for a place that holds none", () => {
+    const space = put(put(put(building(), "a", "hall"), "b", "store"), "c", "hall");
+    expect(entitiesIn(space, "hall")).toEqual(["a", "c"]);
+    expect(entitiesIn(space, "store")).toEqual(["b"]);
+    expect(entitiesIn(space, "yard")).toEqual([]);
   });
 });
