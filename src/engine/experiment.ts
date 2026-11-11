@@ -26,37 +26,26 @@ export interface Experiment {
 
 /** Reads an experiment file, in TOML, and validates it against the experiment schema before anything runs. */
 export function readExperiment(toml: string): Experiment {
-  const file = parse(toml);
-  onlyKnown(file, [], ["id", "scenario", "models", "replicas", "seed", "limits", "conditions"]);
-  const limits = field(file, ["limits"], table);
-  onlyKnown(limits, ["limits"], ["time_limit_ms", "activations_per_agent", "parallelism_limit", "model_turn_timeout_ms"]);
-  const conditions = field(file, ["conditions"], namedConditions);
+  const file = readTable(parse(toml), [], fileSchema);
+  const limits = readTable(file.limits, ["limits"], limitsSchema);
   return {
-    id: field(file, ["id"], text),
-    scenario: field(file, ["scenario"], text),
-    models: field(file, ["models"], modelIds),
-    replicas: field(file, ["replicas"], atLeastOne),
-    seed: field(file, ["seed"], seed),
+    id: file.id,
+    scenario: file.scenario,
+    models: file.models,
+    replicas: file.replicas,
+    seed: file.seed,
     limits: {
-      timeLimitMs: field(limits, ["limits", "time_limit_ms"], atLeastOne),
-      activationsPerAgent: field(limits, ["limits", "activations_per_agent"], atLeastOne),
-      parallelismLimit: field(limits, ["limits", "parallelism_limit"], atLeastOne),
-      modelTurnTimeoutMs: field(limits, ["limits", "model_turn_timeout_ms"], atLeastOne),
+      timeLimitMs: limits.time_limit_ms,
+      activationsPerAgent: limits.activations_per_agent,
+      parallelismLimit: limits.parallelism_limit,
+      modelTurnTimeoutMs: limits.model_turn_timeout_ms,
     },
-    conditions: Object.keys(conditions).map((name) => ({
+    // A change's keys are checked when the scenario is loaded with it, against the scenario's base configuration.
+    conditions: Object.keys(file.conditions).map((name) => ({
       name,
-      change: stringify(field(conditions, ["conditions", name], table)),
+      change: stringify(field(file.conditions, ["conditions", name], table)),
     })),
   };
-}
-
-/** Refuses a key of a table, at its path from the file, that the schema does not give it. */
-function onlyKnown(holder: TomlTable, at: readonly string[], known: readonly string[]): void {
-  for (const key of Object.keys(holder)) {
-    if (!known.includes(key)) {
-      throw new Error(`The experiment file has the field "${[...at, key].join(".")}", which the experiment schema does not know`);
-    }
-  }
 }
 
 /** What a field must hold, as an error names it, and the check that its value holds it. */
@@ -87,6 +76,42 @@ function wholeNumber(expected: string, min: number, max = Number.MAX_SAFE_INTEGE
 const atLeastOne = wholeNumber("a whole number of at least 1", 1);
 
 const seed = wholeNumber("a whole number from 0 to 4294967295", 0, 4294967295);
+
+/** Each field a table of the file has, by its key, with the kind of value it holds; every field is required. */
+type Schema = Readonly<Record<string, Kind<TomlValue>>>;
+
+/** A table read against its schema: each field's value, of its kind. */
+type Read<S extends Schema> = { [Key in keyof S]: S[Key] extends Kind<infer T> ? T : never };
+
+const fileSchema = {
+  id: text,
+  scenario: text,
+  models: modelIds,
+  replicas: atLeastOne,
+  seed,
+  limits: table,
+  conditions: namedConditions,
+} satisfies Schema;
+
+const limitsSchema = {
+  time_limit_ms: atLeastOne,
+  activations_per_agent: atLeastOne,
+  parallelism_limit: atLeastOne,
+  model_turn_timeout_ms: atLeastOne,
+} satisfies Schema;
+
+/**
+ * Reads a table of the file, at its path from the file, against its schema: a key the schema does not know is refused,
+ * since a misspelled key would otherwise be left unread, and so is a field that is missing or of another kind.
+ */
+function readTable<S extends Schema>(holder: TomlTable, at: readonly string[], schema: S): Read<S> {
+  for (const key of Object.keys(holder)) {
+    if (!Object.hasOwn(schema, key)) {
+      throw new Error(`The experiment file has the field "${[...at, key].join(".")}", which the experiment schema does not know`);
+    }
+  }
+  return Object.fromEntries(Object.entries(schema).map(([key, kind]) => [key, field(holder, [...at, key], kind)])) as Read<S>;
+}
 
 /**
  * The value of a required field, from the table that holds it: the file itself or a table in it. The field's path,
