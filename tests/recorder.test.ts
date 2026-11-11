@@ -38,4 +38,19 @@ describe("Recorder", () => {
     expect(() => Recorder.open(directory, "taken")).toThrow(/taken\.jsonl/);
     expect(readFileSync(join(directory, "taken.jsonl"), "utf8")).toBe("an earlier run's line\n");
   });
+
+  it("ends the log with a line that says the run stopped and gives the error, and writes nothing after it", () => {
+    const directory = logDirectory();
+    const recorder = Recorder.open(directory);
+
+    recorder.record({ type: "activation", agent: "a", wokeAtMs: 1, endedAtMs: 2 });
+    recorder.stop(new Error("the world broke"));
+    recorder.record({ type: "activation", agent: "b", wokeAtMs: 3, endedAtMs: 4 });
+    recorder.stop(new Error("a later error"));
+    recorder.close();
+
+    expect(readFileSync(join(directory, `${recorder.runId}.jsonl`), "utf8")).toBe(
+      '{"type":"activation","agent":"a","wokeAtMs":1,"endedAtMs":2}\n{"type":"run_stopped","error":"the world broke"}\n',
+    );
+  });
 });

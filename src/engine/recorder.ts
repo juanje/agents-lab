@@ -43,6 +43,8 @@ export class Recorder {
     writeSync(this.#file, `${JSON.stringify(line)}\n`);
   }
 
+  stop(_error: Error): void {}
+
   close(): void {
     closeSync(this.#file);
   }
