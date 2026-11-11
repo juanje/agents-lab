@@ -31,6 +31,8 @@ export interface RunSetup {
   materials: readonly Material[];
   /** The context compaction every session of the run uses (FR-ADAPTER-03). */
   compaction: Compaction;
+  /** How many runs of the experiment may be in progress at once (FR-RUN-06). */
+  parallelRuns: number;
   /** The level of each factor, by the factor's name, when the condition is a combination of levels; otherwise none (FR-EXPERIMENT-02). */
   levels?: Readonly<Record<string, string>>;
 }

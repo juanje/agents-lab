@@ -71,6 +71,7 @@ const setup = {
   inventory: {} as never,
   materials: [{ path: "materials/wake.md", key: "rhythm.text", hash: "sha256:0", heldOut: false }],
   compaction: { enabled: false } as const,
+  parallelRuns: 1,
 };
 
 /** The lines of the only log in a directory, which must be the run's, parsed. */

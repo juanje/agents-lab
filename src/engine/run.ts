@@ -45,7 +45,10 @@ export interface RunSettings {
   metricIntervalMs?: number;
   /** Called with each line of the run's log as it is written, so a caller follows the run from what it records (FR-RUN-04). */
   onRecord?: (line: LogLine) => void;
-  /** Stops the run when it aborts, as an error would, with a log that says it was interrupted (FR-RUN-05). */
+  /**
+   * Stops the run when it aborts, as an error would: with the error its reason gives, such as that the experiment
+   * stopped (FR-RUN-06), or else with a log that says it was interrupted (FR-RUN-05).
+   */
   interruption?: AbortSignal;
   /**
    * Called with the run's stimuli once every session is open, before any agent wakes, so a caller can deliver stimuli while the run goes on. A seam
@@ -96,7 +99,11 @@ export async function run<State>(
     recorder.stop(error);
     runEnd.abort();
   };
-  const interrupt = () => stop(new Error("the run was interrupted"));
+  const interrupt = () => {
+    // Aborted without a reason, a signal's reason is Node's own AbortError, a DOMException, which says nothing of why.
+    const reason: unknown = settings.interruption?.reason;
+    stop(reason instanceof Error && !(reason instanceof DOMException) ? reason : new Error("the run was interrupted"));
+  };
   if (settings.interruption?.aborted) interrupt();
   settings.interruption?.addEventListener("abort", interrupt, { once: true });
   try {

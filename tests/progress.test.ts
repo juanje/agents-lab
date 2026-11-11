@@ -32,16 +32,16 @@ describe("Progress", () => {
     const progress = new Progress((text) => printed.push(text), { intervalMs: 30_000, now: () => nowMs });
 
     progress.runStarted(starting(1));
-    progress.recorded(activation);
-    progress.recorded(turnCosting(0.0012));
-    progress.recorded(activation);
+    progress.recorded(1, activation);
+    progress.recorded(1, turnCosting(0.0012));
+    progress.recorded(1, activation);
     nowMs = 1_500;
-    progress.runEnded("completed");
+    progress.runEnded(1, "completed");
     progress.runStarted(starting(2));
-    progress.recorded(turnCosting(0.0002));
-    progress.recorded(turnCosting(0.0001));
+    progress.recorded(2, turnCosting(0.0002));
+    progress.recorded(2, turnCosting(0.0001));
     nowMs = 4_000;
-    progress.runEnded("completed");
+    progress.runEnded(2, "completed");
     progress.experimentEnded();
 
     expect(printed).toEqual([
@@ -61,7 +61,7 @@ describe("Progress", () => {
       const progress = new Progress((line) => (text += line), { intervalMs: 30_000, now: () => nowMs });
       progress.runStarted(starting(1));
       nowMs = ms;
-      progress.runEnded("completed");
+      progress.runEnded(1, "completed");
       return text.split("completed in ")[1].split(":")[0];
     });
 
@@ -74,13 +74,13 @@ describe("Progress", () => {
     const progress = new Progress((text) => printed.push(text), { intervalMs: 30_000, now: () => nowMs });
 
     progress.runStarted(starting(1));
-    progress.recorded(turnCosting(0.0012));
+    progress.recorded(1, turnCosting(0.0012));
     nowMs = 1_000;
-    progress.runEnded("completed");
+    progress.runEnded(1, "completed");
     progress.runStarted(starting(2));
-    progress.recorded(turnCosting(0.0002));
+    progress.recorded(2, turnCosting(0.0002));
     nowMs = 1_500;
-    progress.runEnded("stopped");
+    progress.runEnded(2, "stopped");
     progress.experimentEnded();
 
     expect(printed.at(-1)).toBe("1 run completed and 1 stopped in 1.5 s, cost $0.0014\n");
@@ -94,10 +94,10 @@ describe("Progress", () => {
 
       progress.runStarted(starting(1));
       vi.advanceTimersByTime(100);
-      progress.recorded(activation);
-      progress.recorded(turnCosting(0.0012));
+      progress.recorded(1, activation);
+      progress.recorded(1, turnCosting(0.0012));
       vi.advanceTimersByTime(100);
-      progress.runEnded("completed");
+      progress.runEnded(1, "completed");
       vi.advanceTimersByTime(300);
 
       expect(printed.slice(1, -1)).toEqual([

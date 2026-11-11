@@ -225,7 +225,7 @@ Then("a duration of {int} milliseconds is printed as {string}", function (this: 
   const progress = new Progress((text) => (printed += text), { intervalMs: 30_000, now: () => nowMs });
   progress.runStarted({ number: 1, total: 1, condition: "baseline", model: "scripted/one", replica: 1, seed: 1, activations: 2 });
   nowMs = ms;
-  progress.runEnded("completed");
+  progress.runEnded(1, "completed");
   const prefix = "Run 1 of 1 completed in ";
   const ended = printed.split("\n").find((line) => line.startsWith(prefix));
   assert.ok(ended !== undefined, `it printed no end of the run:\n${printed}`);

@@ -47,7 +47,7 @@ export class Progress implements ExperimentObserver {
     this.#print(`${runName(tally.run)} running: ${duration(this.#now() - tally.startedAtMs)}, ${done}, ${counted(tally.turns, "model turn")}, ${cost(tally.cost)}\n`);
   }
 
-  recorded(line: LogLine): void {
+  recorded(_number: number, line: LogLine): void {
     const tally = this.#current();
     if (line.type === "activation") tally.activations += 1;
     if (line.type === "model_turn") {
@@ -56,7 +56,7 @@ export class Progress implements ExperimentObserver {
     }
   }
 
-  runEnded(status: IndexLine["status"]): void {
+  runEnded(_number: number, status: IndexLine["status"]): void {
     const tally = this.#current();
     clearInterval(tally.timer);
     this.#tally = undefined;
