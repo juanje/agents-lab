@@ -73,4 +73,12 @@ describe("lab run", () => {
     expect(existsSync(join(directory, "runs"))).toBe(false);
     for (const model of models.values()) expect(model.received).toHaveLength(0);
   });
+
+  it("refuses a file that names a model it cannot resolve, with the error that names it, before any run", async () => {
+    const { directory, path, models, environment } = setUp(experimentFile({ models: 'models = ["scripted/one", "scripted/none"]' }));
+
+    await expect(lab(["run", path], environment)).rejects.toThrow('No model is named "scripted/none"');
+    expect(existsSync(join(directory, "runs"))).toBe(false);
+    for (const model of models.values()) expect(model.received).toHaveLength(0);
+  });
 });
