@@ -167,12 +167,13 @@ export const neighbourhoodScenario: Scenario<Neighbourhood> = {
     return [{ name: RHYTHM_CHANNEL, source, stimulus: text }];
   },
   metrics: { shares, segregation, moves: (state) => state.moves },
-  // It describes the resident and its kind; a preference or rule comes only from the configuration, which a condition
-  // sets (FR-NEIGHBOURHOOD-01).
+  // It describes the resident and its kind, then the world's rules; a preference or rule comes only from the
+  // configuration, which a condition sets (FR-NEIGHBOURHOOD-01).
   systemPrompt: (configuration, resident) => {
     const description = `You are "${resident}", a resident of a neighbourhood. Your kind is "${kindOf(configuration, resident)}".`;
     const rule = configuration.rule as string;
-    return rule === "" ? description : `${description}\n\n${rule}`;
+    const parts = [description, configuration.world_rules as string, ...(rule === "" ? [] : [rule])];
+    return parts.join("\n\n");
   },
   // Every resident waits an interval drawn uniformly between the configured bounds; a condition may change them.
   rhythm: (configuration) => {
@@ -183,6 +184,7 @@ export const neighbourhoodScenario: Scenario<Neighbourhood> = {
     "width = 6",
     "height = 6",
     "residents = 10",
+    'world_rules = "Each cell holds one resident. Doing nothing leaves you where you are."',
     'rule = ""',
     "look_radius = 1",
     "ms_per_look = 100",

@@ -77,6 +77,10 @@ Given(
   },
 );
 
+Given("the configuration sets {string} to {string}", function (this: Context, key: string, value: string) {
+  this.neighbourhood = withBase(this.neighbourhood, { [key]: value });
+});
+
 /** The neighbourhood as the engine loaded it last. */
 function lastLoaded(context: Context): LoadedScenario<Neighbourhood> {
   const loaded = context.neighbourhoodLoads.at(-1);
@@ -132,6 +136,14 @@ Then("each resident's system prompt names its kind", function (this: Context) {
     for (const other of KINDS.filter((named) => named !== kind)) {
       if (prompt.includes(`"${other}"`)) assert.fail(`expected resident "${resident}"'s system prompt not to name "${other}", got: ${prompt}`);
     }
+  }
+});
+
+Then("each resident's system prompt says {string}", function (this: Context, text: string) {
+  const { systemPrompts } = lastLoaded(this);
+  assert.ok(systemPrompts.size > 0, "the neighbourhood has no residents");
+  for (const [resident, prompt] of systemPrompts) {
+    if (!prompt.includes(text)) assert.fail(`expected resident "${resident}"'s system prompt to say "${text}", got: ${prompt}`);
   }
 });
 
