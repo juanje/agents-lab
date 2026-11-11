@@ -3,7 +3,7 @@ import { type Passage, type Places, arrive, entitiesIn, entitiesInPassage, exits
 import type { ToolCall } from "../engine/adapter.ts";
 import type { Configuration, Scenario } from "../engine/scenario.ts";
 import { Random } from "../engine/random.ts";
-import type { AgentCall, Effector, LastBy, Sensor, TargetAsSensed, Tool } from "../engine/tools.ts";
+import type { AgentCall, Effector, LandingCall, LastBy, Sensor, TargetAsSensed, Tool } from "../engine/tools.ts";
 import type { Check } from "../engine/world.ts";
 import { describeUniformRhythm, rhythmChannels, uniformRhythm } from "./rhythm.ts";
 
@@ -72,7 +72,16 @@ export interface Workplace {
   situations: Readonly<Record<string, Situation>>;
   book: readonly (Written & { entry: string })[];
   notes: readonly (Written & { text: string; to: string })[];
+  /** Each move of a thing, in the order they landed: from where it directly was to where it is (as `locationOf` gives them). */
+  moves: readonly Move[];
   settings: Settings;
+}
+
+/** A thing moved from one location to another, with the moment it landed. */
+export interface Move extends Written {
+  thing: string;
+  from: string;
+  to: string;
 }
 
 /** The worker, the workplace's one agent. */
@@ -238,7 +247,7 @@ function initialState(configuration: Configuration, random: Random): Workplace {
     durations: configuration.durations as unknown as Durations,
     taskGiver: configuration.task_giver as string,
   };
-  const state: Workplace = { space, things, inside, held: {}, people, situations, book: [], notes: [], settings };
+  const state: Workplace = { space, things, inside, held: {}, people, situations, book: [], notes: [], moves: [], settings };
   for (const [id, { keys: reserved }] of Object.entries(situations)) assertPredicates(state, id, predicatesOf(reserved));
   return state;
 }
@@ -281,18 +290,19 @@ function assertPredicates(state: Workplace, situation: string, predicates: reado
 }
 
 /** Where a thing directly is: the worker's hands ("held"), a person who holds it, the container it is in, or its place. */
-function locationOf(state: Workplace, thing: string): string | undefined {
+function locationOf(state: Workplace, thing: string): string {
   const holder = state.held[thing];
   if (holder !== undefined) return holder === WORKER ? HELD : `${PERSON}${holder}`;
   if (Object.hasOwn(state.inside, thing)) return state.inside[thing];
   const at = where(state.space, thing);
-  return at !== undefined && "place" in at ? at.place : undefined;
+  if (at === undefined || !("place" in at)) throw new Error(`the workplace holds the thing "${thing}" nowhere: ${JSON.stringify(at)}`);
+  return at.place;
 }
 
 /** Whether a predicate holds in a state; the worker is no person, so a thing it holds is given to no one. */
 function holdsIn(state: Workplace, { key, thing, locations }: Predicate): boolean {
   if (key === "not_given") return state.held[thing] === undefined || state.held[thing] === WORKER;
-  const located = locations.includes(locationOf(state, thing) ?? "");
+  const located = locations.includes(locationOf(state, thing));
   return key === "where" ? located : !located;
 }
 
@@ -567,6 +577,15 @@ function outOfHands(state: Workplace, thing: string): Workplace {
   return { ...state, held };
 }
 
+/** An effect that moves the thing its call names, keeping the move with the moment it lands. */
+function moving(effect: (state: Workplace, call: LandingCall) => Workplace): (state: Workplace, call: LandingCall) => Workplace {
+  return (state, call) => {
+    const thing = thingOf(call.arguments);
+    const moved = effect(state, call);
+    return { ...moved, moves: [...moved.moves, { thing, from: locationOf(state, thing), to: locationOf(moved, thing), atMs: call.atMs }] };
+  };
+}
+
 /** Effector durations that do not depend on the call. */
 const fixed = (key: "take_ms" | "put_ms" | "give_ms") => (state: Workplace) => state.settings.durations[key];
 
@@ -587,7 +606,7 @@ const take: Effector<Workplace> = {
         [() => heldBy(state, call.agent).length >= state.settings.carryLimit, HANDS_FULL],
       ]);
     },
-    effect: (state, call) => intoHands(state, thingOf(call.arguments), call.agent),
+    effect: moving((state, call) => intoHands(state, thingOf(call.arguments), call.agent)),
   },
   texts: {
     success: "You are holding it.",
@@ -622,13 +641,13 @@ const putDown: Effector<Workplace> = {
         [() => into !== undefined && !state.things[into].container, NOT_A_CONTAINER],
       ]);
     },
-    effect: (state, call) => {
+    effect: moving((state, call) => {
       const thing = thingOf(call.arguments);
       const into = intoOf(call);
       const released = outOfHands(state, thing);
       if (into !== undefined) return { ...released, inside: { ...released.inside, [thing]: into } };
       return { ...released, space: put(released.space, thing, hereOf(state, call.agent)) };
-    },
+    }),
   },
   texts: {
     success: "You have put it there.",
@@ -658,7 +677,7 @@ const give: Effector<Workplace> = {
         [() => !(Object.hasOwn(state.people, person) && besideWorker(state, call.agent, person)), NOT_HERE],
       ]);
     },
-    effect: (state, call) => ({ ...state, held: { ...state.held, [thingOf(call.arguments)]: call.arguments.person as string } }),
+    effect: moving((state, call) => ({ ...state, held: { ...state.held, [thingOf(call.arguments)]: call.arguments.person as string } })),
   },
   texts: {
     success: "You have given it.",
