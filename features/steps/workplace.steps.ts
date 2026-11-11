@@ -229,7 +229,7 @@ Then("the inventory lists the chosen situation {string} by its id only", functio
 });
 
 /** Changes the TOML text the workplace's configuration gives under a key, as a table. */
-function editText(context: Context, key: string, edit: (text: TomlTable) => void): void {
+export function editText(context: Context, key: string, edit: (text: TomlTable) => void): void {
   const text = parse(parse(context.libraryScenario.baseConfiguration ?? "")[key] as string);
   edit(text);
   context.libraryScenario = withBase(context.libraryScenario, { [key]: stringify(text) });

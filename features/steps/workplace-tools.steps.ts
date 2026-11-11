@@ -21,7 +21,7 @@ const WORKER = "worker";
 const SEED = 42;
 
 // The world, situations and keys of FR-WORKPLACE-01's background, as its contract gives them.
-const WORLD = `
+export const WORLD = `
 [worker]
 place = "counter"
 
@@ -67,7 +67,7 @@ place = "counter"
 `;
 
 /** FR-WORKPLACE-01's situations, with the places "open-box" can be in given by the step. */
-const situations = (openBoxPlaces: string) => `
+export const situations = (openBoxPlaces: string) => `
 [situations.open-box]
 places = ${openBoxPlaces}
 [[situations.open-box.things]]

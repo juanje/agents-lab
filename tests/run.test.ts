@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { getCurrentSystemPrompt, getCurrentTools } from "@earendil-works/pi-ai";
 import { AgentSession } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it, vi } from "vitest";
+import type { ToolCall } from "../src/engine/adapter.ts";
 import { type RunSettings, run } from "../src/engine/run.ts";
 import { ScriptedModel } from "../src/engine/scripted-model.ts";
 import { type Rhythm, type Scenario, loadScenario } from "../src/engine/scenario.ts";
@@ -1545,6 +1546,23 @@ describe("run's metric samples of a metric with a value per agent", () => {
 
     const samples = logOf(logDirectory, runId).filter((line) => (line as { type: string }).type === "metric_sample");
     expect(samples).toMatchObject([{ metrics: { "slot of": {} } }, { metrics: { "slot of": { a: 2 } } }]);
+  });
+});
+
+describe("run's metric samples of a metric that reads the tool calls", () => {
+  it("gives each metric the tool calls so far, besides the world's state", async () => {
+    const model = new ScriptedModel([
+      { toolCalls: [{ name: "take", arguments: { slot: 2 } }], delayMs: 0 },
+      { toolCalls: [{ name: "take", arguments: { slot: 2 } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+    const logDirectory = newLogDirectory();
+    const calls = (_state: Slots, toolCalls: readonly ToolCall[]) => Object.fromEntries(toolCalls.map(({ agent, outcome }, index) => [`${index} ${agent}`, outcome === "success" ? 1 : 0]));
+
+    const { runId } = await run(slots({ metrics: { calls } }), [{ name: "a", model, activations: 1 }], seed, { ...settings, logDirectory });
+
+    const samples = logOf(logDirectory, runId).filter((line) => (line as { type: string }).type === "metric_sample");
+    expect(samples).toMatchObject([{ metrics: { calls: {} } }, { metrics: { calls: { "0 a": 1, "1 a": 0 } } }]);
   });
 });
 
