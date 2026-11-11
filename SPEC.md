@@ -264,7 +264,7 @@ For each condition of an experiment, the core lists:
 - the stimulus channels, with their sources and what they deliver;
 - the energy model and the environment processes;
 - how fast information travels (NFR-12): until a medium exists, that every sensor and channel is instant;
-- the model and the limits (activation budget, time limit, parallelism limit, timeout).
+- the model, its thinking level and the limits (activation budget, time limit, parallelism limit, timeout).
 
 A scenario describes, as text from its configuration, how each tool's duration and each agent's rhythm are computed. What the engine does not provide yet is listed as "none". The inventory is data: `lab inventory <experiment.toml>` prints it as Markdown without running and without any model call, and each run's log holds the same data as JSON (FR-RECORD-02).
 *Why:* the lab reviews what each environment pushes agents to do before running, and a hand-written list drifts from the code.

@@ -2,7 +2,7 @@
 Feature: The environment inventory is generated, not written by hand
 
   Background:
-    Given an experiment file "e-test" for the test scenario "slots", with agents "a" and "b", the model "scripted/one", 3 activations per agent, a time limit of 1000 milliseconds, a parallelism limit of 2, a model turn timeout of 500 milliseconds, and the conditions "baseline", with no change, and "five-slots", which sets "slots.count" to 5
+    Given an experiment file "e-test" for the test scenario "slots", with agents "a" and "b", the model "scripted/one", 3 activations per agent, a time limit of 1000 milliseconds, a parallelism limit of 2, a model turn timeout of 500 milliseconds, and the conditions "baseline", with no change, and "five-slots", which sets "slots.count" to 5, with the thinking level "off"
 
   Scenario: The inventory lists, for each condition, what the agents meet
     When "lab inventory" runs on the experiment file
@@ -10,7 +10,7 @@ Feature: The environment inventory is generated, not written by hand
     And each section gives agent "a"'s and agent "b"'s system prompts and rhythms, as the scenario gives them in that condition
     And each section lists the tools "look" and "take", each with its kind, the description and parameters its agents see, its duration as the scenario describes it, and the text its agents receive for each outcome
     And each section lists the channel "rhythm" with its source and text
-    And each section gives the model "scripted/one" and the limits
+    And each section gives the model "scripted/one", the thinking level "off" and the limits
 
   Scenario: The inventory follows the condition
     Given the test scenario "slots" describes the duration of "take" from "slots.take_ms" in its configuration
