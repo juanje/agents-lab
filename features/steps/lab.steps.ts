@@ -83,6 +83,7 @@ export function experimentFileOf({ id, scenario, models, replicas, seed, activat
     replicas,
     seed,
     limits: { time_limit_ms: 60_000, activations_per_agent: activationsPerAgent, parallelism_limit: 10, model_turn_timeout_ms: 10_000 },
+    compaction: { enabled: false },
     conditions,
   };
 }

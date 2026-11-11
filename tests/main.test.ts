@@ -43,6 +43,8 @@ describe("the lab command's process", () => {
       "activations_per_agent = 1",
       "parallelism_limit = 1",
       "model_turn_timeout_ms = 1000",
+      "[compaction]",
+      "enabled = false",
       "[conditions.baseline]",
       "",
     ].join("\n");

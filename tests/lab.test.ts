@@ -20,6 +20,8 @@ function experimentFile(lines: { scenario?: string; models?: string } = {}): str
     "activations_per_agent = 1",
     "parallelism_limit = 10",
     "model_turn_timeout_ms = 10000",
+    "[compaction]",
+    "enabled = false",
     "[conditions.baseline]",
     "[conditions.five-slots]",
     "slots.count = 5",

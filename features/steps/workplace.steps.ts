@@ -211,6 +211,7 @@ export async function listInventory(context: Context, library: Context["library"
     replicas: 1,
     seed: 42,
     limits: { time_limit_ms: 1_000, activations_per_agent: 1, parallelism_limit: 1, model_turn_timeout_ms: 1_000 },
+    compaction: { enabled: false },
     conditions: { base: {} },
   };
   await runLab(context, "inventory");

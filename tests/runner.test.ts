@@ -17,6 +17,7 @@ const experiment: Experiment = {
   scenario: "slots",
   models: ["scripted/one", "scripted/two"],
   thinkingLevel: "off",
+  compaction: { enabled: false },
   replicas: 2,
   seed: 7,
   limits: { timeLimitMs: 60_000, activationsPerAgent: 1, parallelismLimit: 10, modelTurnTimeoutMs: 10_000 },

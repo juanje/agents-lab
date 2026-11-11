@@ -20,6 +20,8 @@ export interface Experiment {
   models: readonly string[];
   /** The thinking level every session of every run uses (FR-EXPERIMENT-05). */
   thinkingLevel: ThinkingLevel;
+  /** The context compaction every session of every run uses (FR-ADAPTER-03). */
+  compaction: Compaction;
   replicas: number;
   /** The base seed, from which each replica's seed comes. */
   seed: number;
@@ -29,6 +31,12 @@ export interface Experiment {
   /** Its conditions, each a named change over the scenario's base configuration, in the order the file gives them. */
   conditions: readonly Condition[];
 }
+
+/**
+ * The context compaction a session uses (FR-ADAPTER-03): off, or on, starting once the context fills the share
+ * `triggerAt` of the model's context window, and keeping about `keepRecentTokens` of the most recent context as it is.
+ */
+export type Compaction = { enabled: false } | { enabled: true; triggerAt: number; keepRecentTokens: number };
 
 /**
  * Reads an experiment file, in TOML, and validates it against the experiment schema before anything runs. Its
@@ -43,6 +51,7 @@ export function readExperiment(toml: string, directory?: string): Experiment {
     scenario: file.scenario,
     models: file.models,
     thinkingLevel: file.thinking_level,
+    compaction: compactionOf(file.compaction),
     replicas: file.replicas,
     seed: file.seed,
     limits: {
@@ -54,6 +63,17 @@ export function readExperiment(toml: string, directory?: string): Experiment {
     ...(file.metric_interval_ms === undefined ? {} : { metricIntervalMs: file.metric_interval_ms }),
     conditions: conditionsOf(file).map((condition) => ({ ...condition, ...materials })),
   };
+}
+
+/** The file's compaction table: whether it is on, and only when it is, its trigger and what it keeps. */
+function compactionOf(holder: TomlTable): Compaction {
+  const at = ["compaction"];
+  if (!field(holder, [...at, "enabled"], trueOrFalse)) {
+    readTable(holder, at, compactionOffSchema);
+    return { enabled: false };
+  }
+  const on = readTable(holder, at, compactionOnSchema);
+  return { enabled: true, triggerAt: on.trigger_at, keepRecentTokens: on.keep_recent_tokens };
 }
 
 /** A condition as the file gives it, before its materials: its name, its change as a table, and its levels, if it is a combination. */
@@ -207,6 +227,11 @@ function wholeNumber(expected: string, min: number, max = Number.MAX_SAFE_INTEGE
 
 const atLeastOne = wholeNumber("a whole number of at least 1", 1);
 
+const share: Kind<number> = {
+  expected: "a number above 0 and below 1",
+  holds: (value): value is number => typeof value === "number" && value > 0 && value < 1,
+};
+
 const seed = wholeNumber("a whole number from 0 to 4294967295", 0, 4294967295);
 
 /** Each field a table of the file has, by its key, with the kind of value it holds. */
@@ -223,6 +248,7 @@ const fileSchema = {
   replicas: atLeastOne,
   seed,
   limits: table,
+  compaction: table,
 } satisfies Schema;
 
 /** The fields the file may leave out. */
@@ -232,6 +258,14 @@ const optionalFileSchema = {
   factors: namedFactors,
   baseline: trueOrFalse,
   common: table,
+} satisfies Schema;
+
+const compactionOffSchema = { enabled: trueOrFalse } satisfies Schema;
+
+const compactionOnSchema = {
+  enabled: trueOrFalse,
+  trigger_at: share,
+  keep_recent_tokens: atLeastOne,
 } satisfies Schema;
 
 const limitsSchema = {

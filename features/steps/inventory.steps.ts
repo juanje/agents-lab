@@ -57,6 +57,7 @@ Given(
         parallelism_limit: parallelismLimit,
         model_turn_timeout_ms: modelTurnTimeoutMs,
       },
+      compaction: { enabled: false },
       conditions: { [unchanged]: {}, [changed]: tableAt(path, value) },
     };
   },

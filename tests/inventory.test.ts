@@ -19,6 +19,8 @@ function experimentOf(conditions: readonly string[]) {
       "activations_per_agent = 3",
       "parallelism_limit = 2",
       "model_turn_timeout_ms = 500",
+      "[compaction]",
+      "enabled = false",
       ...conditions,
       "",
     ].join("\n"),

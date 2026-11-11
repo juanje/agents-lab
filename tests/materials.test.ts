@@ -42,6 +42,8 @@ function experimentFile(change: string): string {
     "activations_per_agent = 1",
     "parallelism_limit = 1",
     "model_turn_timeout_ms = 500",
+    "[compaction]",
+    "enabled = false",
     "[conditions.baseline]",
     change,
     "",
