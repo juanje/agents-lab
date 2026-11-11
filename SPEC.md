@@ -87,9 +87,10 @@ Experiments are written outside this repository, in the experiment language (FR-
 9. FR-WORKPLACE-04
 10. FR-PROCESS-01 (components with their own life cycles, in the engine)
 11. FR-WORKPLACE-05 (the depot's porter and visitors, as components)
-12. FR-ADAPTER-03
-13. FR-RUN-02
-14. FR-ANALYSIS-02
+12. FR-WORKPLACE-06 (the depot's day: time of day, opening hours, light, doors, weather as a perturbation)
+13. FR-ADAPTER-03
+14. FR-RUN-02
+15. FR-ANALYSIS-02
 
 **Not yet ordered:** FR-EFFORT-01, FR-METRIC-01, FR-EXPERIMENT-03, FR-RUN-03, FR-ANALYSIS-01.
 
@@ -494,6 +495,10 @@ The metrics read the world's state and the worker's tool calls so far; the engin
 #### FR-WORKPLACE-05: The depot's porter and visitors are components
 The workplace can declare, in its world, a porter who brings the day's arrivals to the intake room on his rounds, and visitors who come to the counter on their own errands and leave, as components (FR-PROCESS-01) under the space's physics (FR-SPACE-03). Their cycles, errands and arrivals come from the world's text.
 *Why:* E4's drift and A19's load need a working day that fills the context; it should come from the work arriving, not from padding, and the people in it should come and go for their own reasons.
+
+#### FR-WORKPLACE-06: The depot's day
+The workplace maps the run's time to a time of day, by a start time and a scale the configuration gives. Rooms and passages can be open or closed, and rooms lit or dark; `go` through a closed passage fails, and `look` shows the time as the depot's clocks show it, the light, and which exits are closed. Periodic changes (the depot's opening hours, the light through the day, a transport's timetable) come from components with their own cycles (FR-PROCESS-01). Random events that come from outside the depot (weather, a delay on the road, an accident) are external perturbations, declared by an experiment's configuration and absent by default.
+*Why:* a working day has its own rhythm, which shapes what the worker can do and when; and what changes in the world must be something the worker can perceive, or it changes nothing for the worker.
 
 ### Analysis
 
