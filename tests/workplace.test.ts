@@ -526,6 +526,18 @@ describe("the workplace's tools", () => {
       expect(effector("give").readTarget(sensing, call({ thing: "key", person: "bob" }), office, onlySensing(sensing))).toBe("not_sensed");
     });
 
+    it("a read or examine after the look does not replace it", () => {
+      const office = inPlace(start(), "office");
+      const sensing = looked(office);
+      const examined = { tool: "examine", result: sensor("examine").sense(office, "worker", { thing: "cupboard" }), atMs: 1 };
+      const lastBy = (tool: string) => ({ look: sensing, examine: examined })[tool];
+
+      expect(effector("take").readTarget(examined, call({ thing: "key" }), office, lastBy)).toBe("free");
+      expect(effector("put").readTarget(examined, call({ thing: "key", into: "cupboard" }), office, lastBy)).toBe("free");
+      expect(effector("give").readTarget(examined, call({ thing: "key", person: "ana" }), office, lastBy)).toBe("free");
+      expect(effector("go").readTarget(examined, call({ place: "hall" }), office, lastBy)).toBe("free");
+    });
+
     it("not_sensed for a look taken in another place, a sensing that is not a look, and for record and note", () => {
       const fromHall = looked(start());
       const office = inPlace(start(), "office");
