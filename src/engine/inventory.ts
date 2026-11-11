@@ -29,8 +29,11 @@ export interface ConditionInventory {
   /** The thinking level every session uses (FR-EXPERIMENT-05). */
   thinkingLevel: ThinkingLevel;
   limits: Limits;
-  /** Each material the condition sets a value to, by its path, with the hash of its content (FR-EXPERIMENT-04). */
-  materials: { path: string; hash: string }[];
+  /**
+   * Each material the condition sets a value to, by its path, with the hash of its content; a held-out one by its path
+   * only (FR-EXPERIMENT-04).
+   */
+  materials: { path: string; hash?: string }[];
 }
 
 /** A tool as its agents see it, with its duration as the scenario describes it and the text for each of its outcomes. */
@@ -108,7 +111,7 @@ function conditionInventory<State>(
     models: [...models],
     thinkingLevel,
     limits: { ...limits },
-    materials: materials.map(({ path, hash }) => ({ path, hash })),
+    materials: materials.map(({ path, hash, heldOut }) => (heldOut ? { path } : { path, hash })),
   };
 }
 
@@ -194,7 +197,7 @@ function modelsAndLimitsMarkdown({ models, thinkingLevel, limits }: ConditionInv
 
 function materialsMarkdown({ materials }: ConditionInventory): string {
   if (materials.length === 0) return `### Materials\n\n${NONE}\n`;
-  return ["### Materials\n", ...materials.map(({ path, hash }) => `- ${path}: ${hash}`), ""].join("\n");
+  return ["### Materials\n", ...materials.map(({ path, hash }) => `- ${path}: ${hash ?? "held out"}`), ""].join("\n");
 }
 
 /** A text as a fenced block, with a fence longer than any run of backticks in it, so the text is given whole. */

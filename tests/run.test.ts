@@ -58,7 +58,7 @@ const setup = {
   model: "scripted/one",
   code: { commit: "0000000", uncommittedChanges: false },
   inventory: {} as never,
-  materials: [{ path: "materials/wake.md", hash: "sha256:0" }],
+  materials: [{ path: "materials/wake.md", key: "rhythm.text", hash: "sha256:0", heldOut: false }],
 };
 
 /** The lines of the only log in a directory, which must be the run's, parsed. */

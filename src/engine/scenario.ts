@@ -172,8 +172,8 @@ function materialText(reference: MaterialReference, keyPath: readonly string[], 
       `Condition "${applying.condition}" sets ${keyPath.join(".")} to the material "${reference.path}", but was given no directory to read materials from`,
     );
   }
-  const { material, text } = applying.read.read(reference);
-  applying.materials.push(material);
+  const { hash, text } = applying.read.read(reference);
+  applying.materials.push({ path: reference.path, key: keyPath.join("."), hash, heldOut: reference.heldOut });
   return text;
 }
 

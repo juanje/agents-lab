@@ -2,34 +2,44 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { TomlValue } from "smol-toml";
-import { isTable } from "./scenario.ts";
+import { type Configuration, isTable } from "./scenario.ts";
 
-/** A value a condition gives as a material (FR-EXPERIMENT-04): a file, by its path from the experiment file. */
+/**
+ * A value a condition gives as a material (FR-EXPERIMENT-04): a file, by its path from the experiment file, and
+ * whether it is held out, so its text reaches the scenario but never the inventory or a run's setup line.
+ */
 export interface MaterialReference {
   path: string;
-}
-
-/** A material a condition set a value to, as a run's setup line lists it: its path and the hash of its content. */
-export interface Material {
-  path: string;
-  /** The SHA-256 hash of the file's content, in hexadecimal, after "sha256:". */
-  hash: string;
+  heldOut: boolean;
 }
 
 /**
- * The material a condition's value refers to, if it refers to one: a table whose only key is `file`, a text, as in
- * `{ file = "materials/character.md" }`.
+ * A material a condition set a value to, as a run's setup line lists it: its path, the key it set, as a dotted path in
+ * the configuration, the hash of its content, and whether it is held out.
  */
-export function materialReference(value: TomlValue): MaterialReference | undefined {
-  if (!isTable(value)) return undefined;
-  const keys = Object.keys(value);
-  if (keys.length !== 1 || typeof value.file !== "string") return undefined;
-  return { path: value.file };
+export interface Material {
+  path: string;
+  key: string;
+  /** The SHA-256 hash of the file's content, in hexadecimal, after "sha256:". */
+  hash: string;
+  heldOut: boolean;
 }
 
-/** A material's file, read: the material, with the hash of its content, and its text. */
+/**
+ * The material a condition's value refers to, if it refers to one: a table whose keys are `file`, a text, and,
+ * optionally, `held_out`, true or false, as in `{ file = "materials/character.md" }`.
+ */
+export function materialReference(value: TomlValue): MaterialReference | undefined {
+  if (!isTable(value) || typeof value.file !== "string") return undefined;
+  if (Object.keys(value).some((key) => key !== "file" && key !== "held_out")) return undefined;
+  const heldOut = value.held_out ?? false;
+  if (typeof heldOut !== "boolean") return undefined;
+  return { path: value.file, heldOut };
+}
+
+/** A material's file, read: the hash of its content, and its text. */
 interface Read {
-  material: Material;
+  hash: string;
   text: string;
 }
 
@@ -50,8 +60,25 @@ export class Materials {
     const known = this.#read.get(path);
     if (known !== undefined) return known;
     const content = readFileSync(join(this.#directory, path));
-    const read = { material: { path, hash: `sha256:${createHash("sha256").update(content).digest("hex")}` }, text: content.toString("utf8") };
+    const read = { hash: `sha256:${createHash("sha256").update(content).digest("hex")}`, text: content.toString("utf8") };
     this.#read.set(path, read);
     return read;
   }
+}
+
+/**
+ * A configuration as a run's log may hold it: each key a held-out material set gives the material's reference, as the
+ * experiment file gives it, in place of its text.
+ */
+export function hidingHeldOut(configuration: Configuration, materials: readonly Material[]): Configuration {
+  let hidden = configuration;
+  for (const { path, key, heldOut } of materials) {
+    if (heldOut) hidden = settingAt(hidden, key.split("."), { file: path, held_out: true });
+  }
+  return hidden;
+}
+
+/** A copy of a table with a value at a path of keys, each but the last naming a table in it. */
+function settingAt(table: Configuration, [key, ...rest]: readonly string[], value: TomlValue): Configuration {
+  return { ...table, [key]: rest.length === 0 ? value : settingAt(table[key] as Configuration, rest, value) };
 }

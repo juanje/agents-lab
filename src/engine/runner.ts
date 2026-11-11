@@ -8,6 +8,7 @@ import { type Experiment, replicaSeed } from "./experiment.ts";
 import { failure } from "./failure.ts";
 import { inventory } from "./inventory.ts";
 import { JsonlFile } from "./jsonl.ts";
+import { hidingHeldOut } from "./materials.ts";
 import type { LogLine } from "./recorder.ts";
 import { run } from "./run.ts";
 import { type Scenario, loadScenario } from "./scenario.ts";
@@ -96,7 +97,7 @@ export async function runExperiment<State>(
               setup: {
                 experiment: experiment.id,
                 condition: condition.name,
-                configuration: loaded.configuration,
+                configuration: hidingHeldOut(loaded.configuration, loaded.materials),
                 replica,
                 seed,
                 model: modelName,
