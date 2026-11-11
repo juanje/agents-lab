@@ -85,7 +85,7 @@ function leaving(space: Places, { entity, towards }: { entity: string; towards: 
   const from = whereHeld(space, entity, where);
   if (!("place" in from)) throw new Error(`${where}: it is in the passage between "${from.passage[0]}" and "${from.passage[1]}", not in a place`);
   assertPlace(space, towards, where);
-  const passage = space.passages.find(({ between }) => between.includes(from.place) && between.includes(towards) && from.place !== towards);
+  const passage = space.passages.find(({ between }) => joins(between, from.place, towards));
   if (passage === undefined) throw new Error(`${where}: place "${towards}" is not one passage away from place "${from.place}"`);
   return { passage: passage.between, towards };
 }
@@ -148,7 +148,7 @@ export function inSight(space: Places, entity: string): string[] {
         : at.passage.includes(from.place)
       : "place" in at
         ? from.passage.includes(at.place)
-        : at.passage[0] === from.passage[0] && at.passage[1] === from.passage[1];
+        : joins(at.passage, ...from.passage);
   return Object.entries(space.whereabouts)
     .filter(([other, at]) => other !== entity && seen(at))
     .map(([other]) => other);
