@@ -21,10 +21,14 @@ Feature: The environment inventory is generated, not written by hand
 
   Scenario: What the engine does not provide yet is listed as none, and perception is instant
     When "lab inventory" runs on the experiment file
-    Then each section lists the energy model and the environment processes as "none"
+    Then each section lists the energy model, the environment processes and each tool's effort as "none"
     And each section says that every sensor and channel is instant
 
   Scenario: The inventory needs no model and runs nothing
     When "lab inventory" runs on the experiment file
     Then no model was called
     And no run log was written
+
+  Scenario: The inventory lists the outcomes the engine itself can give
+    When "lab inventory" runs on the experiment file
+    Then each section lists, besides each tool's own outcomes, the outcomes the engine gives: "invalid_arguments", with the harness's explanation, "unknown_tool" and "cut_off"
