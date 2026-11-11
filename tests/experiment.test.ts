@@ -58,7 +58,6 @@ describe("readExperiment", () => {
     "limits.activations_per_agent",
     "limits.parallelism_limit",
     "limits.model_turn_timeout_ms",
-    "conditions",
   ])("refuses a file without %s, naming it", (path) => {
     expect(() => readExperiment(withSet(path, undefined))).toThrow(`The experiment file lacks the field "${path}"`);
   });
@@ -124,6 +123,15 @@ function described({ name, change, levels }: Experiment["conditions"][number]) {
 }
 
 describe("readExperiment with factors", () => {
+  it.each<[string, TomlValue | undefined]>([
+    ["without conditions or factors", undefined],
+    ["whose conditions are none, without factors", {}],
+  ])("refuses a file %s, naming both", (_, conditions) => {
+    expect(() => readExperiment(withSet("conditions", conditions))).toThrow(
+      'The experiment file gives no condition: it must give "conditions", "factors" or both',
+    );
+  });
+
   it("gives the baseline, with no change and no levels, then each combination of levels, named after them, the first factor's changing slowest", () => {
     const { conditions } = readExperiment(withFactors);
     expect(conditions.map(described)).toEqual([
