@@ -121,7 +121,7 @@ describe("ScriptedModel", () => {
   });
 
   it("answers Pi's request to write a summary with its summary, keeping the request apart, and takes no answer of its script for it", async () => {
-    const scripted = new ScriptedModel([{ text: "first", delayMs: 0 }], "small", { summary: "Summary: I looked." });
+    const scripted = new ScriptedModel([{ text: "first", delayMs: 0 }], "small", { summary: { text: "Summary: I looked.", delayMs: 0 } });
     const request = { systemPrompt: summaryInstructions.systemPrompt, messages: [{ role: "user" as const, content: "Summarize.", timestamp: 0 }] };
 
     const summary = await complete(scripted, request);
@@ -147,5 +147,16 @@ describe("ScriptedModel", () => {
     ]);
     expect(answers[4]).toMatchObject({ stopReason: "error", errorMessage: SCRIPT_EXHAUSTED_MESSAGE, content: [] });
     expect(scripted.sessions).toEqual(["a", "b", "a", "b"]);
+  });
+
+  it("answers Pi's request to write a summary as its summary answer says: with a provider error, or after its delay", async () => {
+    const request = { systemPrompt: summaryInstructions.systemPrompt, messages: [{ role: "user" as const, content: "Summarize.", timestamp: 0 }] };
+    const failing = new ScriptedModel([], "small", { summary: { error: "overloaded", delayMs: 0 } });
+    const slow = new ScriptedModel([], "small", { summary: { text: "Late.", delayMs: 100 } });
+    const started = performance.now();
+
+    expect(await complete(failing, request)).toMatchObject({ stopReason: "error", errorMessage: "overloaded", content: [] });
+    expect((await complete(slow, request)).content).toEqual([{ type: "text", text: "Late." }]);
+    expect(performance.now() - started).toBeGreaterThanOrEqual(100);
   });
 });
