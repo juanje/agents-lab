@@ -6,6 +6,7 @@ import { Given, Then, When } from "@cucumber/cucumber";
 import { type FauxResponseFactory, type Message, fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall, getCurrentSystemPrompt } from "@earendil-works/pi-ai";
 import { type TomlTable, stringify } from "smol-toml";
 import { lab } from "../../src/cli/lab.ts";
+import { waitAtLeast } from "../../src/engine/clock.ts";
 import { ScriptedModel } from "../../src/engine/scripted-model.ts";
 import { scenarioLibrary } from "../../src/scenarios/library.ts";
 import { workplaceScenario } from "../../src/scenarios/workplace.ts";
@@ -30,6 +31,9 @@ interface Verdict {
   reason: string;
 }
 
+/** How the scripted judge answers a question: with a verdict, a provider error, a verdict after a delay, or no call. */
+type Answer = { verdict: Verdict } | { error: string } | { delayMs: number } | { noCall: true };
+
 /** What the scripted judge answers a question it has no answer of the scenario's for. */
 const NO: Verdict = { verdict: "no", quoted: "", reason: "None of the texts says it." };
 
@@ -47,8 +51,8 @@ interface JudgeSetup {
   keys?: TomlTable;
   /** The judge file, as a TOML table, written beside the experiment file as "lab judge" runs. */
   judgeFile: TomlTable;
-  /** The verdict the scripted judge gives a question that holds a statement, by the statement. */
-  readonly answers: Map<string, Verdict>;
+  /** How the scripted judge answers a question that holds a statement, by the statement. */
+  readonly answers: Map<string, Answer>;
   /** Every call the scripted judge received, in order. */
   readonly asked: Asked[];
 }
@@ -131,11 +135,11 @@ Given("in that run the worker sent the note {string} and wrote no book entry", a
 });
 
 Given(
-  "the judge file {string} gives the model {string}, the thinking level {string} and the instructions {string}",
-  function (this: Context, file: string, model: string, thinkingLevel: string, instructions: string) {
+  "the judge file {string} gives the model {string}, the thinking level {string}, the instructions {string} and a timeout of {int} milliseconds",
+  function (this: Context, file: string, model: string, thinkingLevel: string, instructions: string, timeoutMs: number) {
     assert.equal(file, JUDGE_FILE);
     writeHome(this, instructions, "You judge what a worker wrote. Answer with the tool verdict.\n");
-    setupOf(this).judgeFile = { model, thinking_level: thinkingLevel, instructions: { file: instructions } };
+    setupOf(this).judgeFile = { model, thinking_level: thinkingLevel, instructions: { file: instructions }, timeout_ms: timeoutMs };
     writeHome(this, JUDGE_FILE, stringify(setupOf(this).judgeFile));
   },
 );
@@ -147,12 +151,17 @@ Given("the scripted judge answers each question with the tool {string}", functio
   const setup = setupOf(this);
   const faux = fauxProvider({ provider: "scripted-judge", models: [{ id: "judge" }] });
   // It answers a question that holds a statement the scenario gives an answer for with that answer, and any other "no".
-  const answer: FauxResponseFactory = (context) => {
+  const answer: FauxResponseFactory = async (context, options) => {
     faux.appendResponses([answer]);
     const text = textOf(context.messages);
     setup.asked.push({ systemPrompt: getCurrentSystemPrompt(context.messages), text });
-    const given = [...setup.answers].find(([statement]) => text.includes(statement))?.[1] ?? NO;
-    return fauxAssistantMessage([fauxText("Here is my verdict."), fauxToolCall(tool, { ...given })]);
+    const given = [...setup.answers].find(([statement]) => text.includes(statement))?.[1] ?? { verdict: NO };
+    if ("error" in given) return fauxAssistantMessage([], { stopReason: "error", errorMessage: given.error });
+    if ("noCall" in given) return fauxAssistantMessage([fauxText("I would rather not say.")]);
+    // A slow answer stops waiting when its call is aborted, as a real model's would; Pi then answers it as aborted.
+    if ("delayMs" in given) await waitAtLeast(given.delayMs, options?.signal);
+    const verdict = "verdict" in given ? given.verdict : NO;
+    return fauxAssistantMessage([fauxText("Here is my verdict."), fauxToolCall(tool, { ...verdict })]);
   };
   faux.setResponses([answer]);
   this.labModels.set(JUDGE_MODEL, { model: faux.getModel(), provider: faux.provider });
@@ -163,10 +172,66 @@ Given(
   function (this: Context, said: string, quoted: string, situation: string, notSaid: string) {
     const setup = setupOf(this);
     const keys = setup.keys?.[situation] as { said: { about: string }; not_said: string };
-    setup.answers.set(keys.said.about, { verdict: said as Verdict["verdict"], quoted, reason: "The note says the flaps were open." });
-    setup.answers.set(keys.not_said, { ...NO, verdict: notSaid as Verdict["verdict"] });
+    setup.answers.set(keys.said.about, { verdict: { verdict: said as Verdict["verdict"], quoted, reason: "The note says the flaps were open." } });
+    setup.answers.set(keys.not_said, { verdict: { ...NO, verdict: notSaid as Verdict["verdict"] } });
   },
 );
+
+/** A situation's said and not_said statements, as the scenario's keys give them. */
+function keysOf(context: Context, situation: string): { said: string; notSaid: string } {
+  const keys = setupOf(context).keys?.[situation] as { said: { about: string }; not_said: string } | undefined;
+  assert.ok(keys !== undefined, `the keys give nothing for "${situation}"`);
+  return { said: keys.said.about, notSaid: keys.not_said };
+}
+
+Given(
+  "the scripted judge answers {string} for the said of {string}, quoting {string}, and {string} for its not_said, quoting {string}",
+  function (this: Context, said: string, situation: string, quoted: string, notSaid: string, notSaidQuoted: string) {
+    const { said: saidStatement, notSaid: notSaidStatement } = keysOf(this, situation);
+    const { answers } = setupOf(this);
+    answers.set(saidStatement, { verdict: { verdict: said as Verdict["verdict"], quoted, reason: "The note says so." } });
+    answers.set(notSaidStatement, { verdict: { verdict: notSaid as Verdict["verdict"], quoted: notSaidQuoted, reason: "The note does not say so." } });
+  },
+);
+
+/** The scripted judge answers the said of a situation so, and its not_said "no". */
+function answering(context: Context, situation: string, answer: Answer, notSaid: string): void {
+  const { said, notSaid: notSaidStatement } = keysOf(context, situation);
+  const { answers } = setupOf(context);
+  answers.set(said, answer);
+  answers.set(notSaidStatement, { verdict: { ...NO, verdict: notSaid as Verdict["verdict"] } });
+}
+
+Given(
+  "the scripted judge answers with a provider error for the said of {string}, and answers {string} for its not_said",
+  function (this: Context, situation: string, notSaid: string) {
+    answering(this, situation, { error: "the provider is overloaded" }, notSaid);
+  },
+);
+
+Given(
+  "the scripted judge takes {int} milliseconds to answer for the said of {string}, and answers {string} for its not_said",
+  function (this: Context, delayMs: number, situation: string, notSaid: string) {
+    answering(this, situation, { delayMs }, notSaid);
+  },
+);
+
+Given(
+  "the scripted judge ends its turn without calling {string} for the said of {string}, and answers {string} for its not_said",
+  function (this: Context, tool: string, situation: string, notSaid: string) {
+    assert.equal(tool, "verdict");
+    answering(this, situation, { noCall: true }, notSaid);
+  },
+);
+
+Given("the judge file gives the thinking level {string}, which {string} cannot use", function (this: Context, thinkingLevel: string, model: string) {
+  const judge = this.labModels.get(model);
+  assert.ok(judge !== undefined, `there is no scripted model "${model}"`);
+  assert.equal(judge.model.reasoning, false, `"${model}" can reason`);
+  const { judgeFile } = setupOf(this);
+  judgeFile.thinking_level = thinkingLevel;
+  writeHome(this, JUDGE_FILE, stringify(judgeFile));
+});
 
 Given("the {string} material file has changed since the run", function (this: Context, key: string) {
   assert.equal(key, "situation_keys");
@@ -333,3 +398,22 @@ Then("{string} holds two files", function (this: Context, directory: string) {
   assert.equal(join(this.home, directory), `${judgementsDirectory(this)}/`);
   assert.equal(readdirSync(judgementsDirectory(this)).filter((file) => file.endsWith(".jsonl")).length, 2);
 });
+
+Then("the line for {string} and {string} gives {string} as {word}", function (this: Context, situation: string, key: string, field: string, value: string) {
+  assert.equal(lineFor(this, situation, key)[field], JSON.parse(value));
+});
+
+Then("the line for {string} and {string} gives the outcome {string} and no verdict", function (this: Context, situation: string, key: string, outcome: string) {
+  const line = lineFor(this, situation, key);
+  assert.equal(line.outcome, outcome);
+  assert.equal(line.verdict, null);
+});
+
+Then(
+  "the line for {string} and {string} gives the outcome {string} and the verdict {string}",
+  function (this: Context, situation: string, key: string, outcome: string, verdict: string) {
+    const line = lineFor(this, situation, key);
+    assert.equal(line.outcome, outcome);
+    assert.equal(line.verdict, verdict);
+  },
+);
