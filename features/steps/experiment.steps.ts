@@ -64,11 +64,12 @@ Given("the file has no {word}", function (this: Context, field: string) {
   delete this.experimentFile[field];
 });
 
-/** The value a scenario's words give: the text "…", an empty list, or a number written as TOML writes one. */
+/** The value a scenario's words give: the text "…", an empty list, true or false, or a number written as TOML writes one. */
 function valueOf(words: string): TomlValue {
   const text = /^the text "(.*)"$/.exec(words);
   if (text !== null) return text[1];
   if (words === "an empty list") return [];
+  if (words === "true" || words === "false") return words === "true";
   assert.match(words, /^-?\d+(\.\d+)?$/, `"${words}" is not a value the steps know`);
   return Number(words);
 }
