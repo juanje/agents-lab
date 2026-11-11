@@ -37,8 +37,12 @@ Given(
     const declared = declaring(slotsScenario, [first, second]);
     const tools = slotsScenario.tools.map((tool) => (tool.kind === "effector" && tool.name === "take" ? { ...tool, texts: TAKE_TEXTS } : tool));
     this.library = new Map([...scenarioLibrary, [scenario, { ...declared, tools }]]);
-    // A scripted model with no answers: "no model was called" checks it was never asked for one.
-    const scripted = new ScriptedModel([], model.split("/")[1]);
+    // A scripted model with answers to give, since it records only the calls it answers: "no model was called" checks
+    // it was never called.
+    const scripted = new ScriptedModel(
+      Array.from({ length: 50 }, () => ({ text: "Nothing to do.", delayMs: 0 })),
+      model.split("/")[1],
+    );
     this.models.set(model, scripted);
     this.labModels.set(model, scripted);
     this.experimentFile = {
