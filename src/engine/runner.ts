@@ -110,6 +110,7 @@ export async function runExperiment<State>(
             });
           } catch (error) {
             index.write({ ...listed, status: "stopped" } satisfies IndexLine);
+            observer?.runEnded("stopped");
             throw failure(`the run of condition "${condition.name}", model "${modelName}", replica ${replica} stopped`, error);
           }
           index.write({ ...listed, status: "completed" } satisfies IndexLine);
