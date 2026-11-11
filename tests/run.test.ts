@@ -65,6 +65,28 @@ describe("run", () => {
     expect(first.endedAtMs).toBeLessThanOrEqual(second.wokeAtMs);
   });
 
+  it("records each stimulus delivered to an agent: its channel, source and content, and when it was delivered", async () => {
+    const model = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
+    const logDirectory = newLogDirectory();
+
+    const { runId } = await run(slots({ channels: [rhythmChannel, bell] }), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, {
+      ...settings,
+      logDirectory,
+      onStart: (stimuli) => stimuli.deliver("a", "bell"),
+    });
+
+    const lines = logOf(logDirectory, runId);
+    const stimuli = lines.filter((line) => (line as { type: string }).type === "stimulus");
+    expect(stimuli).toEqual([
+      { type: "stimulus", agent: "a", channel: "bell", source: "town bell", content: "The bell rings.", deliveredAtMs: expect.any(Number) },
+      { type: "stimulus", agent: "a", channel: "rhythm", source: "rhythm", content: "You wake up.", deliveredAtMs: expect.any(Number) },
+    ]);
+    const [bellRang, woke] = stimuli as { deliveredAtMs: number }[];
+    const [activation] = lines.filter((line) => (line as { type: string }).type === "activation") as { wokeAtMs: number }[];
+    expect(bellRang.deliveredAtMs).toBeLessThanOrEqual(woke.deliveredAtMs);
+    expect(activation.wokeAtMs).toBeLessThanOrEqual(woke.deliveredAtMs);
+  });
+
   it("starts an activation with the rhythm channel's stimulus, which the model reads with its source", async () => {
     const model = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
 
