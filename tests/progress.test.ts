@@ -53,6 +53,21 @@ describe("Progress", () => {
     ]);
   });
 
+  it("prints durations in seconds to a tenth under a minute, and in hours, minutes and whole seconds from a minute on", () => {
+    const durations = [600, 59_940, 59_960, 75_000, 75_400, 1_800_000, 3_600_000, 3_725_000];
+    const printed = durations.map((ms) => {
+      let nowMs = 0;
+      let text = "";
+      const progress = new Progress((line) => (text += line), { intervalMs: 30_000, now: () => nowMs });
+      progress.runStarted(starting(1));
+      nowMs = ms;
+      progress.runEnded("completed");
+      return text.split("completed in ")[1].split(":")[0];
+    });
+
+    expect(printed).toEqual(["0.6 s", "59.9 s", "1 min 0 s", "1 min 15 s", "1 min 15 s", "30 min 0 s", "1 h 0 min 0 s", "1 h 2 min 5 s"]);
+  });
+
   it("counts, when the experiment ends, the runs that stopped apart from those that completed", () => {
     const printed: string[] = [];
     let nowMs = 0;

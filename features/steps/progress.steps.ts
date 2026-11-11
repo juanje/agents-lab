@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { Given, Then } from "@cucumber/cucumber";
+import { Progress } from "../../src/cli/progress.ts";
 import type { Context } from "../support/context.ts";
 import { idleModels, indexOf, logOf, runLogs } from "./lab.steps.ts";
 
@@ -56,8 +57,22 @@ function recorded(context: Context, runId: string): { turns: number; cost: numbe
   };
 }
 
-/** A number as lab run prints it, in seconds or dollars. */
+/** A number as lab run prints it, in dollars or as a count. */
 const NUMBER = String.raw`(\d+(?:\.\d+)?)`;
+
+/** A duration as lab run prints it, in hours, minutes and seconds. */
+const DURATION = String.raw`((?:\d+ h )?(?:\d+ min )?\d+(?:\.\d+)? s)`;
+
+/** A printed duration in seconds. */
+function secondsOf(duration: string): number {
+  const match = duration.match(/^(?:(\d+) h )?(?:(\d+) min )?(\d+(?:\.\d+)?) s$/);
+  assert.ok(match !== null, `"${duration}" is not a duration`);
+  const [, hours = "0", minutes = "0", seconds] = match;
+  return Number(hours) * 3600 + Number(minutes) * 60 + Number(seconds);
+}
+
+/** How far a printed duration may be from the time it stands for: a tenth of a second under a minute, a second above. */
+const rounding = (seconds: number) => (seconds < 60 ? 0.05 : 0.5);
 
 /** Where a printed line is, failing when none matches. */
 function lineAt(lines: readonly string[], pattern: RegExp, what: string): { at: number; match: RegExpMatchArray } {
@@ -106,16 +121,18 @@ Then(
       const number = at + 1;
       const { match } = lineAt(
         lines,
-        new RegExp(`^Run ${number} of ${index.length} completed in ${NUMBER} s: ${NUMBER} activations?, ${NUMBER} model turns?, cost \\$${NUMBER}$`),
+        new RegExp(`^Run ${number} of ${index.length} completed in ${DURATION}: ${NUMBER} activations?, ${NUMBER} model turns?, cost \\$${NUMBER}$`),
         `saying run ${number} completed, with its duration, activations, model turns and cost`,
       );
-      const [, seconds, done, turns, cost] = match.map(Number);
+      const [, duration, ...counts] = match;
+      const [done, turns, cost] = counts.map(Number);
+      const seconds = secondsOf(duration);
       const log = recorded(this, runId);
       assert.equal(done, activations, `run ${number} was said to make ${done} activations`);
       assert.equal(turns, log.turns, `run ${number} was said to make ${turns} model turns; its log records ${log.turns}`);
       assert.equal(cost, Number(log.cost.toFixed(4)), `run ${number} was said to cost ${cost}; its log records ${log.cost}`);
-      // Printed to a tenth of a second, so at most half a tenth below what the log spans.
-      assert.ok(seconds >= log.spanMs / 1000 - 0.05, `run ${number} was said to last ${seconds} s; its log spans ${log.spanMs} ms`);
+      // Printed rounded, so at most by its rounding below what the log spans.
+      assert.ok(seconds >= log.spanMs / 1000 - rounding(seconds), `run ${number} was said to last ${seconds} s; its log spans ${log.spanMs} ms`);
     }
   },
 );
@@ -126,22 +143,23 @@ Then(
  */
 function assertTotalLine(context: Context, lines: readonly string[], completed: number, stopped: number): void {
   const last = lines.at(-1) ?? "";
-  const match = last.match(new RegExp(`^${completed} runs? completed and ${stopped} stopped in ${NUMBER} s, cost \\$${NUMBER}$`));
+  const match = last.match(new RegExp(`^${completed} runs? completed and ${stopped} stopped in ${DURATION}, cost \\$${NUMBER}$`));
   assert.ok(match !== null, `the last line it printed is: ${last}`);
-  const [, seconds, cost] = match.map(Number);
+  const seconds = secondsOf(match[1]);
+  const cost = Number(match[2]);
   const index = indexOf(context);
   assert.equal(index.filter((run) => run.status === "completed").length, completed, "the index lists another count of completed runs");
   assert.equal(index.filter((run) => run.status === "stopped").length, stopped, "the index lists another count of stopped runs");
   const totalCost = index.reduce((sum, { runId }) => sum + recorded(context, runId).cost, 0);
   assert.equal(cost, Number(totalCost.toFixed(4)), `the experiment was said to cost ${cost}; its logs record ${totalCost}`);
   const runSeconds = lines.flatMap((line) => {
-    const run = line.match(new RegExp(`^Run \\d+ of \\d+ (?:completed|stopped) in ${NUMBER} s`));
-    return run === null ? [] : [Number(run[1])];
+    const run = line.match(new RegExp(`^Run \\d+ of \\d+ (?:completed|stopped) in ${DURATION}:`));
+    return run === null ? [] : [secondsOf(run[1])];
   });
   assert.equal(runSeconds.length, completed + stopped, `it printed ${runSeconds.length} run ends`);
   const sum = runSeconds.reduce((total, one) => total + one, 0);
-  // Each duration is printed to a tenth of a second.
-  assert.ok(seconds >= sum - 0.05 * (runSeconds.length + 1), `the experiment was said to last ${seconds} s; its runs lasted ${sum} s`);
+  // Each duration is printed rounded.
+  assert.ok(seconds >= sum - [seconds, ...runSeconds].reduce((total, one) => total + rounding(one), 0), `the experiment was said to last ${seconds} s; its runs lasted ${sum} s`);
 }
 
 Then(
@@ -167,14 +185,16 @@ Then(
     for (const [at, { runId }] of index.entries()) {
       const number = at + 1;
       const during = linesDuring(lines, number, index.length);
-      const progress = new RegExp(`^Run ${number} of ${index.length} running: ${NUMBER} s, ${NUMBER} of ${budget} activations, ${NUMBER} model turns?, cost \\$${NUMBER}$`);
+      const progress = new RegExp(`^Run ${number} of ${index.length} running: ${DURATION}, ${NUMBER} of ${budget} activations, ${NUMBER} model turns?, cost \\$${NUMBER}$`);
       assert.ok(during.length >= least, `it printed ${during.length} lines during run ${number}:\n${during.join("\n")}`);
       const log = recorded(this, runId);
       let lastSeconds = 0;
       for (const line of during) {
         const match = line.match(progress);
         assert.ok(match !== null, `a line printed during run ${number} is not a progress line: ${line}`);
-        const [, seconds, done, turns, cost] = match.map(Number);
+        const [, duration, ...counts] = match;
+        const [done, turns, cost] = counts.map(Number);
+        const seconds = secondsOf(duration);
         assert.ok(seconds >= lastSeconds, `the time since run ${number} started went back: ${line}`);
         assert.ok(done <= budget && turns <= log.turns && cost <= log.cost + 0.00005, `a progress line of run ${number} says more than its log records: ${line}`);
         lastSeconds = seconds;
@@ -202,4 +222,18 @@ Then("no line of any run's log holds what lab run printed", function (this: Cont
       for (const text of printed) assert.ok(!line.includes(text), `a log line holds what lab run printed, "${text}": ${line}`);
     }
   }
+});
+
+Then("a duration of {int} milliseconds is printed as {string}", function (this: Context, ms: number, expected: string) {
+  // A run that lasts that long, by a clock the step sets, as lab run prints its end.
+  let nowMs = 0;
+  let printed = "";
+  const progress = new Progress((text) => (printed += text), { intervalMs: 30_000, now: () => nowMs });
+  progress.runStarted({ number: 1, total: 1, condition: "baseline", model: "scripted/one", replica: 1, seed: 1, activations: 2 });
+  nowMs = ms;
+  progress.runEnded("completed");
+  const prefix = "Run 1 of 1 completed in ";
+  const ended = printed.split("\n").find((line) => line.startsWith(prefix));
+  assert.ok(ended !== undefined, `it printed no end of the run:\n${printed}`);
+  assert.equal(ended.slice(prefix.length).split(":")[0], expected);
 });
