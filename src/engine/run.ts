@@ -3,7 +3,7 @@ import { type AgentModel, type ModelTurn, type Records, type ToolCall, openRunti
 import { ChangesSinceSensing } from "./changes.ts";
 import { runComponent } from "./components.ts";
 import { RunClock, waitAtLeast } from "./clock.ts";
-import type { ThinkingLevel } from "./experiment.ts";
+import type { Compaction, ThinkingLevel } from "./experiment.ts";
 import { failure } from "./failure.ts";
 import { ParallelismLimit } from "./parallelism.ts";
 import { Random } from "./random.ts";
@@ -35,6 +35,8 @@ export interface RunSettings {
   modelTurnTimeoutMs: number;
   /** The thinking level every session of the run uses (FR-EXPERIMENT-05). */
   thinkingLevel: ThinkingLevel;
+  /** The context compaction every session of the run uses (FR-ADAPTER-03). */
+  compaction: Compaction;
   /** The maximum number of model calls running at once, across all agents. */
   parallelismLimit: number;
   /** How long the run may last, from its start; a tool call still running when it passes is cut off (FR-CLOCK-02). */
@@ -170,6 +172,7 @@ async function runAgents<State>(
     clock,
     modelTurnTimeoutMs: settings.modelTurnTimeoutMs,
     thinkingLevel: settings.thinkingLevel,
+    compaction: settings.compaction,
     runEnd: runEnd.signal,
     stop,
   };
@@ -187,6 +190,7 @@ async function runAgents<State>(
       toolCalls.push(call);
     },
     start: (start) => recorder.record({ type: "effector_start", ...start }),
+    compaction: (compaction) => recorder.record({ type: "compaction", ...compaction }),
   };
   const sensings = new Sensings();
   const changes = new ChangesSinceSensing();

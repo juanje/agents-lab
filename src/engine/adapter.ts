@@ -22,7 +22,8 @@ import {
 } from "@earendil-works/pi-ai";
 import { type ChangesSinceSensing, applyCounted } from "./changes.ts";
 import { type RunClock, waitAtLeast } from "./clock.ts";
-import type { ThinkingLevel } from "./experiment.ts";
+import { isSummaryRequest, piCompactionSettings } from "./compaction.ts";
+import type { Compaction, ThinkingLevel } from "./experiment.ts";
 import { failure } from "./failure.ts";
 import type { Position } from "./grid.ts";
 import type { ParallelismLimit } from "./parallelism.ts";
@@ -142,14 +143,33 @@ export interface EffectorStart {
   change: Readonly<Record<string, unknown>>;
 }
 
+/** One compaction of an agent's context, as Pi made it (FR-ADAPTER-03). */
+export interface ContextCompaction {
+  agent: string;
+  /** Why it started: the context filled the share of the window that starts one, or it overflowed the window. */
+  reason: "threshold" | "overflow";
+  /** When it started and ended, by performance.now(). */
+  startedAtMs: number;
+  endedAtMs: number;
+  /** The context's size in tokens before it, and after it, as Pi estimates them. */
+  contextTokensBefore: number;
+  contextTokensAfter: number;
+  /** The summary the agent's context holds from then on, as Pi composes it around the text the model wrote. */
+  summary: string;
+  /** The tokens and the cost of the model calls that wrote the summary, summed when Pi made more than one. */
+  tokens: Omit<Usage, "cost">;
+  cost: Usage["cost"];
+}
+
 /**
- * Where a session's model turns and tool calls go as each ends, and an effector's start as it is applied: the run's log
- * and what the run gives.
+ * Where a session's model turns and tool calls go as each ends, an effector's start as it is applied, and a compaction
+ * as it ends: the run's log and what the run gives.
  */
 export interface Records {
   turn(turn: ModelTurn): void;
   toolCall(call: ToolCall): void;
   start(start: EffectorStart): void;
+  compaction(compaction: ContextCompaction): void;
 }
 
 /** What an agent's session is given besides its tools. */
@@ -158,6 +178,8 @@ export interface SessionSettings {
   systemPrompt: string;
   /** The thinking level the session uses (FR-EXPERIMENT-05). */
   thinkingLevel: ThinkingLevel;
+  /** The context compaction the session uses (FR-ADAPTER-03). */
+  compaction: Compaction;
   /** How long a model turn may run before it is aborted. */
   modelTurnTimeoutMs: number;
   /**
@@ -197,8 +219,12 @@ export async function openSession<State>(
     resourceLoader: resources(settings.systemPrompt),
     sessionManager: SessionManager.inMemory(),
     // Neither the person's nor any project's Pi settings reach the session. A provider's error ends the activation
-    // (FR-ADAPTER-02), so Pi does not retry it: a retry would turn the provider's failure into another turn.
-    settingsManager: SettingsManager.inMemory({ retry: { enabled: false } }),
+    // (FR-ADAPTER-02), so Pi does not retry it: a retry would turn the provider's failure into another turn. Compaction
+    // is the experiment's, never Pi's default, at the same share of whatever window the model has (FR-ADAPTER-03).
+    settingsManager: SettingsManager.inMemory({
+      retry: { enabled: false },
+      compaction: piCompactionSettings(settings.compaction, agent.model.model.contextWindow),
+    }),
   });
   forceSystemPrompt(session, settings.systemPrompt);
   // A turn's calls run one after another until SPEC decides otherwise; Pi's default runs them all at once.
@@ -207,7 +233,39 @@ export async function openSession<State>(
   deliverBetweenTurns(session, agent.name, stimuli);
   endAtRunEnd(session, settings.runEnd);
   recordToolCalls(session, agent.name, tools, executed, records, settings);
+  recordCompactions(session, agent.name, records, settings);
   return session;
+}
+
+/**
+ * Records each compaction of the agent's context as it ends: why and when it started, the context's size before and
+ * after it, the summary the context holds from then on, and the tokens and cost of the calls that wrote it. Pi gives
+ * them with its end (pi-coding-agent 1.5.0, AgentSession._runAutoCompaction). A compaction Pi ends with no result, as
+ * one cut short by the run's end, changed nothing in the context and is not recorded.
+ */
+function recordCompactions(session: AgentSession, agent: string, records: Records, { stop }: SessionSettings): void {
+  let startedAtMs = 0;
+  session.subscribe((event) => {
+    if (event.type === "compaction_start") startedAtMs = performance.now();
+    if (event.type !== "compaction_end" || event.result === undefined || event.reason === "manual") return;
+    const { summary, tokensBefore, estimatedTokensAfter, usage } = event.result;
+    if (estimatedTokensAfter === undefined || usage === undefined) {
+      stop(new Error(`agent "${agent}"'s compaction could not be recorded: Pi gave no context size after it or no usage of its summary's calls`));
+      return;
+    }
+    const { cost, ...tokens } = usage;
+    records.compaction({
+      agent,
+      reason: event.reason,
+      startedAtMs,
+      endedAtMs: performance.now(),
+      contextTokensBefore: tokensBefore,
+      contextTokensAfter: estimatedTokensAfter,
+      summary,
+      tokens,
+      cost,
+    });
+  });
 }
 
 /**
@@ -319,6 +377,15 @@ function runTurns(
 ): void {
   const call = session.agent.streamFunction;
   session.agent.streamFunction = async (model, context, options) => {
+    // Pi writes a compaction's summary through the same call (AgentSession._runDefaultCompaction): it is a model call,
+    // which takes a slot and stops at the run's end, but no turn of the agent's (FR-ADAPTER-03).
+    if (isSummaryRequest(context.messages)) {
+      const free = await parallelism.acquire();
+      const signal = AbortSignal.any([...(options?.signal === undefined ? [] : [options.signal]), runEnd]);
+      const answer = await call(model, context, { ...options, signal });
+      void answer.result().then(free);
+      return answer;
+    }
     const requestedAtMs = performance.now();
     const free = await parallelism.acquire();
     const startedAtMs = performance.now();

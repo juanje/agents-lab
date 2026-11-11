@@ -140,6 +140,7 @@ export async function runScenario<State>(context: Context, loaded: LoadedScenari
   const { turns, messages, toolCalls, sensings, startedAtMs, runId } = await run(loaded, agents, context.seed, {
     logDirectory: context.logDirectory,
     modelTurnTimeoutMs: context.modelTurnTimeoutMs,
+    compaction: { enabled: false },
     // The scripted models cannot reason.
     thinkingLevel: "off",
     parallelismLimit: context.parallelismLimit,

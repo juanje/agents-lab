@@ -111,6 +111,7 @@ export async function runExperiment<State>(
               },
               modelTurnTimeoutMs: experiment.limits.modelTurnTimeoutMs,
               thinkingLevel: experiment.thinkingLevel,
+              compaction: experiment.compaction,
               parallelismLimit: experiment.limits.parallelismLimit,
               timeLimitMs: experiment.limits.timeLimitMs,
               metricIntervalMs: experiment.metricIntervalMs,

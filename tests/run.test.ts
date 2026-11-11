@@ -1701,7 +1701,14 @@ describe("run, with compaction", () => {
     const { runId, turns } = await run(slots(), [{ name: "a", model, activations: 1 }], seed, { ...settings, logDirectory, compaction: compactionOn });
 
     const lines = logOf(logDirectory, runId) as { type: string }[];
-    const compactions = lines.filter((line) => line.type === "compaction") as unknown as Record<string, number & string>[];
+    const compactions = lines.filter((line) => line.type === "compaction") as unknown as {
+      startedAtMs: number;
+      endedAtMs: number;
+      contextTokensBefore: number;
+      contextTokensAfter: number;
+      summary: string;
+      tokens: { totalTokens: number };
+    }[];
     expect(compactions.length).toBeGreaterThanOrEqual(1);
     const [first] = compactions;
     expect(first).toEqual({

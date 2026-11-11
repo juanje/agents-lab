@@ -97,6 +97,7 @@ async function runReplica(context: Context, seed: number, condition?: Condition)
   await run(loaded, runningAgents, seed, {
     logDirectory: context.logDirectory,
     modelTurnTimeoutMs: context.modelTurnTimeoutMs,
+    compaction: { enabled: false },
     // The scripted models cannot reason.
     thinkingLevel: "off",
     parallelismLimit: context.parallelismLimit,
