@@ -2,6 +2,19 @@ import type { Experiment } from "./experiment.ts";
 import { type LoadedScenario, type Scenario, loadScenario } from "./scenario.ts";
 import type { Tool } from "./tools.ts";
 
+/**
+ * What the engine does not provide yet, listed as "none", and how fast information travels until a medium exists
+ * (NFR-12).
+ */
+const NOT_PROVIDED = [
+  "### Energy model\n",
+  "none\n",
+  "### Environment processes\n",
+  "none\n",
+  "### How fast information travels\n",
+  "Every sensor and channel is instant.\n",
+].join("\n");
+
 /** What the agent receives for any outcome a tool declares no text for (FR-TOOL-02). */
 const OTHER_OUTCOME = "- any other outcome: the outcome's name";
 
@@ -12,7 +25,7 @@ const OTHER_OUTCOME = "- any other outcome: the outcome's name";
 export function inventory<State>(experiment: Experiment, scenario: Partial<Scenario<State>>): string {
   const sections = experiment.conditions.map((condition) => {
     const loaded = loadScenario(scenario, experiment.seed, condition);
-    return [`## Condition "${condition.name}"\n`, agentsOf(loaded), toolsOf(loaded), channelsOf(loaded), modelsAndLimitsOf(experiment)].join("\n");
+    return [`## Condition "${condition.name}"\n`, agentsOf(loaded), toolsOf(loaded), channelsOf(loaded), NOT_PROVIDED, modelsAndLimitsOf(experiment)].join("\n");
   });
   return [`# Environment inventory of experiment "${experiment.id}", scenario "${scenario.name}"\n`, ...sections].join("\n");
 }
