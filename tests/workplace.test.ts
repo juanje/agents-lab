@@ -405,6 +405,15 @@ class = "control"
     expect(sensed([made("take", { thing: "mug" }, 30)])).toEqual({});
   });
 
+  it("counts among a situation's things the things of the world its predicates name, after those it brings", () => {
+    const initial = start('[mug]\nwhere = { key = ["held"] }\nnot_given = ["mug"]');
+
+    expect(initial.situations.mug.things).toEqual(["mug", "key"]);
+    expect(metric("sensed_at_ms")(initial, [made("look", {}, 100, "success", lookIn(initial, "office"))])).toEqual({ parcel: 100, mug: 100 });
+    expect(metric("sensed_at_ms")(initial, [made("examine", { thing: "key" }, 40, "success", '{"name":"a small key","properties":{}}')])).toEqual({ mug: 40 });
+    expect(metric("acted_at_ms")(initial, [made("take", { thing: "key" }, 60)])).toEqual({ mug: 60 });
+  });
+
   it("gives when the worker first took, put or gave one of each situation's things", () => {
     const initial = start();
     const acted = (calls: ToolCall[]) => metric("acted_at_ms")(initial, calls);
