@@ -1102,6 +1102,102 @@ describe("run", () => {
     expect(endedAtMs - startedAtMs).toBeGreaterThanOrEqual(40);
   });
 
+  /**
+   * An effector under way in the slots world, "cross": as its call starts, its agent takes slot 1, and when it lands,
+   * the agent moves from slot 1 to slot 2. It takes this long, from the state as the call starts, kept in `asked`.
+   */
+  const crossing = (durationMs: number, asked: unknown[] = []): Effector<Slots> => ({
+    kind: "effector",
+    name: "cross",
+    description: "Cross from slot 1 to slot 2.",
+    parameters: { type: "object", properties: {} },
+    durationMs: (state) => {
+      asked.push(state);
+      return durationMs;
+    },
+    start: { precondition: (state, { agent }) => take.precondition(state, { agent, slot: 1 }), effect: (state, { agent }) => take.effect(state, { agent, slot: 1 }) },
+    action: {
+      precondition: (state, { agent }) => take.precondition(state, { agent, slot: 2 }),
+      effect: (state, { agent }) => [null, agent, ...state.slice(2)],
+    },
+    readTarget: () => "not_sensed",
+  });
+
+  it("applies an effector's start through the arbiter as its call starts, after taking its duration from the state before it, and its effect when it lands", async () => {
+    // "a" crosses at once, over 100 ms; "b" looks 50 ms in.
+    const a = new ScriptedModel([
+      { toolCalls: [{ name: "cross", arguments: {} }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+    const b = new ScriptedModel([
+      { toolCalls: [{ name: "look", arguments: {} }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+    const asked: unknown[] = [];
+    const loaded = slots({ tools: [...slotTools, crossing(100, asked)], ...agentsNamed("a", "b"), ...rhythms({ b: () => 50 }) });
+
+    const { toolCalls } = await run(
+      loaded,
+      [
+        { name: "a", model: a, activations: 1 },
+        { name: "b", model: b, activations: 1 },
+      ],
+      seed,
+      settings,
+    );
+
+    expect(asked).toEqual([emptySlots(3)]);
+    const cross = toolCalls.find((call) => call.tool === "cross");
+    const look = toolCalls.find((call) => call.tool === "look");
+    expect(look?.startedAtMs).toBeLessThan(cross?.endedAtMs ?? -Infinity);
+    expect(look?.result).toBe('["held","empty","empty"]');
+    expect(cross).toMatchObject({ outcome: "success" });
+    expect(loaded.world.state).toEqual([null, "a", null]);
+    expect(loaded.world.version).toBe(2);
+  });
+
+  it("counts an effector's start among the changes since sensing of another agent's effector call", async () => {
+    // "b" looks at once and takes slot 3 over 50 ms; "a" starts crossing 20 ms in, so its start lands between them.
+    const a = new ScriptedModel([
+      { toolCalls: [{ name: "cross", arguments: {} }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+    const b = new ScriptedModel([
+      { toolCalls: [{ name: "look", arguments: {} }], delayMs: 0 },
+      { toolCalls: [{ name: "take", arguments: { slot: 3 } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+
+    const { toolCalls } = await run(
+      slots({ tools: [...withTakeTaking(50), crossing(200)], ...agentsNamed("a", "b"), ...rhythms({ a: () => 20 }) }),
+      [
+        { name: "a", model: a, activations: 1 },
+        { name: "b", model: b, activations: 1 },
+      ],
+      seed,
+      settings,
+    );
+
+    const take = toolCalls.find((call) => call.tool === "take");
+    const cross = toolCalls.find((call) => call.tool === "cross");
+    expect(cross?.startedAtMs).toBeLessThan(take?.endedAtMs ?? -Infinity);
+    expect(take).toMatchObject({ outcome: "success", changesSinceSensing: 1, changesSinceSensingBy: ["a"] });
+  });
+
+  it("stops on an effector's start that its check refuses, as on a tool that throws, naming the reason", async () => {
+    // Slot 1 is held from the start, so the start of "cross" cannot take it.
+    const a = new ScriptedModel([
+      { toolCalls: [{ name: "cross", arguments: {} }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+    const loaded = slots({ tools: [...slotTools, crossing(0)], initialState: () => ["z", null, null] });
+
+    await expect(run(loaded, [{ name: "a", model: a, activations: 1 }], seed, settings)).rejects.toThrow(
+      `agent "a"'s "cross" call failed: its start was refused with "slot_taken"`,
+    );
+    expect(loaded.world.version).toBe(0);
+  });
+
   it("records beside an effector call's outcome what the agent last sensed of its target, which never decides it", async () => {
     const looking = new ScriptedModel([
       { toolCalls: [{ name: "look", arguments: {} }], delayMs: 0 },
