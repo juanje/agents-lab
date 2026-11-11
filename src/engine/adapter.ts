@@ -174,6 +174,8 @@ export async function openSession<State>(
     settingsManager: SettingsManager.inMemory({ retry: { enabled: false } }),
   });
   forceSystemPrompt(session, settings.systemPrompt);
+  // A turn's calls run one after another until SPEC decides otherwise; Pi's default runs them all at once.
+  session.agent.toolExecution = "sequential";
   runTurns(session, agent.name, settings, parallelism, records);
   deliverBetweenTurns(session, agent.name, stimuli);
   endAtRunEnd(session, settings.runEnd);
@@ -383,7 +385,10 @@ function definition<State>(
       const startedAtMs = performance.now();
       let called: CallResult;
       try {
-        called = undeclared(tool, args) ?? (await perform(world, tool, { agent, arguments: args }, sensings.last(agent), changes, runEnd));
+        // A call that comes after the run has ended is left unrun: it reads no target and applies nothing (FR-CLOCK-02).
+        called = runEnd.aborted
+          ? { outcome: CUT_OFF, text: CUT_OFF }
+          : (undeclared(tool, args) ?? (await perform(world, tool, { agent, arguments: args }, sensings.last(agent), changes, runEnd)));
       } catch (error) {
         // A tool that throws is a defect of the scenario, not the agent's behaviour: no outcome fits it, and the run
         // stops on it rather than going on with a world it cannot trust.
