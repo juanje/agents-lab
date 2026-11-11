@@ -34,6 +34,12 @@ describe("the neighbourhood scenario", () => {
     expect(kinds).toEqual({ "resident 1": "teal", "resident 2": "amber", "resident 3": "teal", "resident 4": "amber" });
   });
 
+  it("refuses more residents than the grid has cells, naming the grid's size and the resident left without one", () => {
+    expect(() => neighbourhoodScenario.initialState(configuration(2, 1, 3), new Random(1))).toThrow(
+      "the 2 by 1 grid has no empty cell left for resident 3",
+    );
+  });
+
   it("draws the cells from the random sequence it is given", () => {
     const cellsOf = (seed: number) => neighbourhoodScenario.initialState(configuration(6, 6, 10), new Random(seed)).grid;
     const where = (seed: number) =>
