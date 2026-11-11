@@ -87,10 +87,10 @@ Experiments are written outside this repository, in the experiment language (FR-
 9. FR-WORKPLACE-04
 10. FR-PROCESS-01 (components with their own life cycles, in the engine)
 11. FR-WORKPLACE-05 (the depot's day goes on: time, the porter and visitors)
-12. FR-WORKPLACE-06 (the depot's hours, light, closed doors, and weather as a perturbation)
-13. FR-ADAPTER-03
-14. FR-RUN-02
-15. FR-ANALYSIS-02
+12. FR-ADAPTER-03
+13. FR-RUN-02
+14. FR-ANALYSIS-02
+15. FR-WORKPLACE-06 (the depot's hours, light, closed doors, and weather as a perturbation), when an experiment needs it
 
 **Not yet ordered:** FR-EFFORT-01, FR-METRIC-01, FR-EXPERIMENT-03, FR-RUN-03, FR-ANALYSIS-01.
 
