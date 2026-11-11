@@ -770,7 +770,49 @@ export interface OneAnswer {
   cost: Usage["cost"];
 }
 
-/** A stub that calls no model, for the test to fail on its assertions. */
-export async function askOnce(_model: AgentModel, _settings: { systemPrompt: string; thinkingLevel: ThinkingLevel }, _tool: OfferedTool, _question: string): Promise<OneAnswer> {
-  return { calls: [], tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0 }, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
+/**
+ * Asks a model one question, through Pi, in a session of its own: the system prompt as it is, the question as its one
+ * message, and one tool, whose calls do nothing but end the turn. The session ends after that one model turn, so its
+ * tool's result never reaches the model. It gives the calls the model made, as it made them, and the turn's tokens and
+ * cost; a turn that ended in an error fails with the provider's message. Like a run's sessions, it reads nothing of the
+ * person's Pi directory (NFR-08), and Pi neither retries the call nor compacts the session.
+ */
+export async function askOnce(model: AgentModel, { systemPrompt, thinkingLevel }: { systemPrompt: string; thinkingLevel: ThinkingLevel }, tool: OfferedTool, question: string): Promise<OneAnswer> {
+  const runtime = await openRuntime([model.provider]);
+  const { session } = await createAgentSession({
+    agentDir: labPiDirectory(),
+    modelRuntime: runtime,
+    model: model.model,
+    thinkingLevel,
+    tools: [tool.name],
+    customTools: [
+      {
+        name: tool.name,
+        label: tool.name,
+        description: tool.description,
+        parameters: tool.parameters as ToolDefinition["parameters"],
+        execute: async () => ({ content: [{ type: "text", text: "Received." }], details: undefined }),
+      },
+    ],
+    resourceLoader: resources(systemPrompt),
+    sessionManager: SessionManager.inMemory(),
+    settingsManager: SettingsManager.inMemory({ retry: { enabled: false }, compaction: piCompactionSettings({ enabled: false }, model.model.contextWindow) }),
+  });
+  try {
+    forceSystemPrompt(session, systemPrompt);
+    // One model turn: Pi would otherwise answer the tool's call with its result and ask the model again.
+    session.agent.finishTurn = async () => ({ action: "end" as const });
+    let answer: AssistantMessage | undefined;
+    session.subscribe((event) => {
+      if (event.type === "message_end" && event.message.role === "assistant") answer = event.message;
+    });
+    await session.sendCustomMessage({ customType: "question", content: question, display: true }, { triggerTurn: true });
+    if (answer === undefined) throw new Error("the model gave no answer to the question");
+    if (answer.stopReason === "error") throw new Error(`the model answered the question with an error: ${answer.errorMessage ?? "no message"}`);
+    const { cost, ...tokens } = answer.usage;
+    const calls = answer.content.flatMap((block) => (block.type === "toolCall" ? [{ name: block.name, arguments: block.arguments }] : []));
+    return { calls, tokens, cost };
+  } finally {
+    session.dispose();
+  }
 }
