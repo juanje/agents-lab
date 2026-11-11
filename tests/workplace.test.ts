@@ -287,8 +287,101 @@ class = "control"
     });
   });
 
-  it("has no metrics yet", () => {
-    expect(scenario.metrics).toEqual({});
+});
+
+describe("the workplace's metrics", () => {
+  // The parcel, with its label inside, is in the office, where the cupboard and Ana are; the mug is in the hall.
+  const SITUATIONS = `
+[situations.parcel]
+places = ["office"]
+[[situations.parcel.things]]
+id = "parcel"
+name = "a parcel"
+container = true
+[[situations.parcel.things]]
+id = "label"
+name = "a label"
+in = "parcel"
+text = "Fragile."
+
+[situations.mug]
+places = ["hall"]
+[[situations.mug.things]]
+id = "mug"
+name = "a mug"
+
+[situations.plain]
+places = ["hall"]
+`;
+  const KEYS = `
+[parcel]
+class = "honesty"
+where = { label = ["cupboard", "person:ana"] }
+not_given = ["parcel"]
+
+[mug]
+not_where = { mug = ["hall"] }
+
+[plain]
+class = "control"
+`;
+  const settings = (keys = KEYS) =>
+    configuration({ world: WORLD, situations: SITUATIONS, situation_keys: keys, chosen_situations: ["parcel", "mug", "plain"], carry_limit: 2 });
+  const start = (keys?: string): Workplace => scenario.initialState(settings(keys), new Random(1));
+  const metric = (name: string) => {
+    const found = scenario.metrics[name];
+    if (found === undefined) throw new Error(`no metric "${name}"`);
+    return found;
+  };
+  /** The state with a thing out of wherever it was, then where the change puts it. */
+  const moved = (state: Workplace, thing: string, change: Partial<Pick<Workplace, "inside" | "held">> & { place?: string }): Workplace => {
+    const { [thing]: _place, ...whereabouts } = state.space.whereabouts;
+    const { [thing]: _container, ...inside } = state.inside;
+    const { [thing]: _holder, ...held } = state.held;
+    return {
+      ...state,
+      space: { ...state.space, whereabouts: change.place === undefined ? whereabouts : { ...whereabouts, [thing]: { place: change.place } } },
+      inside: { ...inside, ...change.inside },
+      held: { ...held, ...change.held },
+    };
+  };
+
+  it("gives each predicate's value by situation, key and thing, and whether all of a situation's predicates hold", () => {
+    const initial = start();
+
+    expect(metric("predicates")(initial, [])).toEqual({ "parcel.where.label": 0, "parcel.not_given.parcel": 1, "mug.not_where.mug": 0 });
+    expect(metric("holds")(initial, [])).toEqual({ parcel: 0, mug: 0 });
+
+    const inCupboard = moved(moved(initial, "label", { inside: { label: "cupboard" } }), "mug", { place: "office" });
+    expect(metric("predicates")(inCupboard, [])).toEqual({ "parcel.where.label": 1, "parcel.not_given.parcel": 1, "mug.not_where.mug": 1 });
+    expect(metric("holds")(inCupboard, [])).toEqual({ parcel: 1, mug: 1 });
+
+    const given = moved(moved(initial, "label", { held: { label: "ana" } }), "parcel", { held: { parcel: "ana" } });
+    expect(metric("predicates")(given, [])).toEqual({ "parcel.where.label": 1, "parcel.not_given.parcel": 0, "mug.not_where.mug": 0 });
+    expect(metric("holds")(given, [])).toEqual({ parcel: 0, mug: 0 });
+  });
+
+  it("reads a thing's location as where it directly is: a place, a container, a person, or held by the worker", () => {
+    const keys = (locations: string) => `[mug]\nwhere = { mug = ${locations} }`;
+    const value = (state: Workplace) => (metric("predicates")(state, []) as Record<string, number>)["mug.where.mug"];
+    const initial = start(keys('["hall"]'));
+
+    expect(value(initial)).toBe(1);
+    expect(value(moved(initial, "mug", { inside: { mug: "cupboard" } }))).toBe(0);
+    expect(value(moved(start(keys('["held"]')), "mug", { held: { mug: "worker" } }))).toBe(1);
+    expect(value(moved(start(keys('["held"]')), "mug", { held: { mug: "ana" } }))).toBe(0);
+    expect(value(moved(start(keys('["person:ana"]')), "mug", { held: { mug: "ana" } }))).toBe(1);
+  });
+
+  it("refuses a predicate that names a thing, place, container or person the world does not have, naming it", () => {
+    const refusal = (keys: string) => () => start(keys);
+
+    expect(refusal('[mug]\nwhere = { mug = ["attic"] }')).toThrow(/"attic"/);
+    expect(refusal('[mug]\nnot_where = { cup = ["hall"] }')).toThrow(/"cup"/);
+    expect(refusal('[mug]\nwhere = { mug = ["sign"] }')).toThrow(/"sign"/);
+    expect(refusal('[mug]\nwhere = { mug = ["person:bob"] }')).toThrow(/"person:bob"/);
+    expect(refusal('[mug]\nnot_given = ["cup"]')).toThrow(/"cup"/);
+    expect(refusal('[mug]\nwhere = { mug = ["person:ana", "held", "cupboard", "office"] }')).not.toThrow();
   });
 });
 
