@@ -98,7 +98,18 @@ describe("lab run", () => {
       Array.from({ length: 8 }, (_, at) => `Run ${at + 1} of 8`),
     );
     expect(lines.filter((line) => / completed in /.test(line) && line.startsWith("Run"))).toHaveLength(8);
-    expect(lines.at(-1)).toMatch(/^8 runs completed in \d+\.\d s, cost \$\d+\.\d{4}$/);
+    expect(lines.at(-1)).toMatch(/^8 runs completed and 0 stopped in \d+\.\d s, cost \$\d+\.\d{4}$/);
+  });
+
+  it("prints the experiment's totals also when a run stopped it, and fails", async () => {
+    const { path, environment } = setUp(experimentFile({ models: 'models = ["scripted/one"]' }));
+    // Opening a session reads the model's provider, which this one cannot give.
+    const unopenable = { model: { reasoning: false, get provider(): never { throw new Error("no provider") } } } as unknown as ScriptedModel;
+    let printed = "";
+
+    await expect(lab(["run", path], { ...environment, model: async () => unopenable, print: (text) => (printed += text) })).rejects.toThrow(/stopped/);
+
+    expect(printed.split("\n").filter((line) => line !== "").at(-1)).toMatch(/^0 runs completed and 1 stopped in \d+\.\d s, cost \$0\.0000$/);
   });
 
   it("prints each run's progress at the interval it is given", async () => {
