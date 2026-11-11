@@ -1,24 +1,20 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 
-/** The `lab` command's entry point, as a process runs it. */
-const MAIN = resolve("src/cli/main.ts");
+/** The `lab` command as the package installs it (`npm link`): the file its "bin" entry names, run as an executable. */
+const LAB = resolve((JSON.parse(readFileSync("package.json", "utf8")) as { bin?: { lab?: string } }).bin?.lab ?? "no bin entry for lab");
 
 /**
- * tsx's loader (its package's "." export), by its location: the process runs in a directory outside this repository,
- * where "tsx" is not found by name.
+ * Runs `lab` as a process with these arguments, in a new directory outside this repository with its own home, and gives
+ * what it did.
  */
-const TSX = pathToFileURL(resolve("node_modules/tsx/dist/loader.mjs")).href;
-
-/** Runs `lab` as a process with these arguments, in a new directory with its own home, and gives what it did. */
 function labProcess(args: readonly string[], files: Readonly<Record<string, string>> = {}) {
   const directory = mkdtempSync(join(tmpdir(), "agents-lab-cwd-"));
   for (const [name, content] of Object.entries(files)) writeFileSync(join(directory, name), content);
-  const { status, stderr } = spawnSync(process.execPath, ["--import", TSX, MAIN, ...args], {
+  const { status, stderr } = spawnSync(LAB, args, {
     cwd: directory,
     env: { ...process.env, HOME: directory },
     encoding: "utf8",
