@@ -6,6 +6,7 @@ import { type Neighbourhood, neighbourhoodScenario } from "../../src/scenarios/n
 import type { Context } from "../support/context.ts";
 import { withBase } from "./neighbourhood.steps.ts";
 import { assembled } from "./residents.steps.ts";
+import { callWithThenEnd, script } from "./tool.steps.ts";
 
 Given("the neighbourhood scenario with a grid {int} cells wide and {int} cells high", function (this: Context, width: number, height: number) {
   this.neighbourhood = withBase(neighbourhoodScenario, { width, height });
@@ -67,4 +68,18 @@ Then("the resident at {int}, {int} has no share, because it has no neighbour", f
 
 Then("the segregation is {float}", function (this: Context, segregation: number) {
   assert.equal(metric(this, "segregation"), segregation);
+});
+
+Given(
+  "the resident at {int}, {int} runs on a scripted model that calls {string} with dx {int} and dy {int}, then calls {string} with dx {int} and dy {int}, then ends without a tool call",
+  function (this: Context, x: number, y: number, first: string, dx: number, dy: number, second: string, nextDx: number, nextDy: number) {
+    const placed = this.residents.find((resident) => resident.x === x && resident.y === y);
+    assert.ok(placed !== undefined, `the scenario places no resident at ${x}, ${y}`);
+    script(this, placed.name, [{ toolCalls: [{ name: first, arguments: { dx, dy } }], delayMs: 0 }, ...callWithThenEnd(second, { dx: nextDx, dy: nextDy }, 0)]);
+  },
+);
+
+Then("the moves metric is {int}", function (this: Context, moves: number) {
+  assert.ok(this.toolCalls !== undefined, "the neighbourhood did not run");
+  assert.equal(metric(this, "moves"), moves);
 });

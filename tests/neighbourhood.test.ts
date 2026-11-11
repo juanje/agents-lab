@@ -27,7 +27,7 @@ function residentsAt(width: number, height: number, settings: { lookRadius: numb
   grid = place(grid, "r1", { x: 0, y: 0 });
   grid = place(grid, "r2", { x: 1, y: 0 });
   grid = place(grid, "r3", { x: 0, y: 1 });
-  return { grid, kinds: { r1: "teal", r2: "amber", r3: "teal" }, msPerLook: 0, ...settings };
+  return { grid, kinds: { r1: "teal", r2: "amber", r3: "teal" }, moves: 0, msPerLook: 0, ...settings };
 }
 
 describe("the neighbourhood scenario", () => {

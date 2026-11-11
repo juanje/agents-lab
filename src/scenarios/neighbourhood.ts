@@ -10,11 +10,12 @@ export type Kind = (typeof KINDS)[number];
 /**
  * The neighbourhood's state: its grid, where each resident is, and each resident's kind; and, as the configuration sets
  * them, how far a resident sees, how long a look takes and how long moving takes per cell of distance, which its tools
- * read.
+ * read; and how many moves the arbiter has applied.
  */
 export interface Neighbourhood {
   grid: Grid;
   kinds: Readonly<Record<string, Kind>>;
+  moves: number;
   lookRadius: number;
   msPerLook: number;
   msPerCell: number;
@@ -105,7 +106,7 @@ const move: Effector<Neighbourhood> = {
       if (!inside(state.grid, onGrid.to)) return { holds: false, reason: INVALID_TARGET };
       return moveOnGrid.precondition(state.grid, onGrid);
     },
-    effect: (state, call) => ({ ...state, grid: moveOnGrid.effect(state.grid, moveCall(state, call)) }),
+    effect: (state, call) => ({ ...state, grid: moveOnGrid.effect(state.grid, moveCall(state, call)), moves: state.moves + 1 }),
   },
   // Its target is the cell at the call's offset from where the resident is now, as its last look showed it, wherever it
   // looked from.
@@ -157,14 +158,14 @@ export const neighbourhoodScenario: Scenario<Neighbourhood> = {
       kinds[resident] = kindOf(configuration, resident);
     }
     const settings = configuration as { look_radius: number; ms_per_look: number; ms_per_cell: number };
-    return { grid, kinds, lookRadius: settings.look_radius, msPerLook: settings.ms_per_look, msPerCell: settings.ms_per_cell };
+    return { grid, kinds, moves: 0, lookRadius: settings.look_radius, msPerLook: settings.ms_per_look, msPerCell: settings.ms_per_cell };
   },
   tools: [look, move],
   channels: (configuration) => {
     const { source, text } = configuration.rhythm as { source: string; text: string };
     return [{ name: RHYTHM_CHANNEL, source, stimulus: text }];
   },
-  metrics: { shares, segregation },
+  metrics: { shares, segregation, moves: (state) => state.moves },
   // It describes the resident and its kind; a preference or rule comes only from the configuration, which a condition
   // sets (FR-NEIGHBOURHOOD-01).
   systemPrompt: (configuration, resident) => {
