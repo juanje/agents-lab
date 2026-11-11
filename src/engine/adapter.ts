@@ -755,3 +755,22 @@ function effect<State>(world: World<State>, effector: Effector<State>, call: Age
   const outcome = applyCounted(world, changes, call.agent, effector.action, { ...call, atMs: performance.now() });
   return { outcome, text: effector.texts?.[outcome] ?? outcome, changesSinceSensing, changesSinceSensingBy };
 }
+
+/** A tool a model is offered for one question: what it is called, what it is for, and what it takes. */
+export interface OfferedTool {
+  name: string;
+  description: string;
+  parameters: object;
+}
+
+/** What a model answered one question with: the tool calls it made, as it made them, and the call's tokens and cost. */
+export interface OneAnswer {
+  calls: { name: string; arguments: unknown }[];
+  tokens: Omit<Usage, "cost">;
+  cost: Usage["cost"];
+}
+
+/** A stub that calls no model, for the test to fail on its assertions. */
+export async function askOnce(_model: AgentModel, _settings: { systemPrompt: string; thinkingLevel: ThinkingLevel }, _tool: OfferedTool, _question: string): Promise<OneAnswer> {
+  return { calls: [], tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0 }, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
+}

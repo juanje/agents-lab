@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { type JsonObject, validateToolArguments } from "@earendil-works/pi-ai";
-import { labModel, unrunOutcome } from "../src/engine/adapter.ts";
+import { type JsonObject, getCurrentSystemMessage, getCurrentSystemPrompt, validateToolArguments } from "@earendil-works/pi-ai";
+import { askOnce, labModel, unrunOutcome } from "../src/engine/adapter.ts";
+import { ScriptedModel } from "../src/engine/scripted-model.ts";
 import { slotTools } from "./fixtures/slots.ts";
 
 describe("labModel", () => {
@@ -48,5 +49,39 @@ describe("unrunOutcome", () => {
     expect(() => unrunOutcome(take, { tool: "take", arguments: { slot: 1 } }, "Operation aborted", false)).toThrow(
       'Pi answered a call of "take" without running it, for no reason the engine recognises: Operation aborted',
     );
+  });
+});
+
+describe("askOnce", () => {
+  const verdict = {
+    name: "verdict",
+    description: "Give your verdict.",
+    parameters: { type: "object", properties: { verdict: { type: "string", enum: ["yes", "no"] } }, required: ["verdict"] },
+  };
+
+  it("makes one model call, with the system prompt as it is and only the one tool, and gives the calls it made and its tokens and cost", async () => {
+    const model = new ScriptedModel([
+      { text: "Thinking it over.", toolCalls: [{ name: "verdict", arguments: { verdict: "yes" } }], delayMs: 0 },
+      { text: "A second turn.", delayMs: 0 },
+    ]);
+
+    const answer = await askOnce(model, { systemPrompt: "You judge.", thinkingLevel: "off" }, verdict, "Is the sky blue?");
+
+    expect(model.received).toHaveLength(1);
+    const [received] = model.received;
+    expect(getCurrentSystemPrompt(received)).toBe("You judge.");
+    expect(getCurrentSystemMessage(received)?.toolsAdded?.map((tool) => tool.name)).toEqual(["verdict"]);
+    expect(JSON.stringify(received.filter((message) => message.role !== "system"))).toContain("Is the sky blue?");
+    expect(answer.calls).toEqual([{ name: "verdict", arguments: { verdict: "yes" } }]);
+    expect(answer.tokens.totalTokens).toBeGreaterThan(0);
+    expect(typeof answer.cost.total).toBe("number");
+  });
+
+  it("gives the calls as the model made them, even those Pi would reject", async () => {
+    const model = new ScriptedModel([{ toolCalls: [{ name: "verdict", arguments: { verdict: "maybe" } }], delayMs: 0 }]);
+
+    const answer = await askOnce(model, { systemPrompt: "You judge.", thinkingLevel: "off" }, verdict, "Is the sky blue?");
+
+    expect(answer.calls).toEqual([{ name: "verdict", arguments: { verdict: "maybe" } }]);
   });
 });
