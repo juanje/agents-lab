@@ -82,6 +82,10 @@ export async function run<State>(
     const result = await runAgents(loaded, agents, seed, settings, stimuli, recorder, end, stop);
     if (stoppedOn !== undefined) throw stoppedOn;
     return { runId: recorder.runId, ...result };
+  } catch (error) {
+    // Whatever stops the run, its log says so; the run fails with the error that stopped it first.
+    stop(error instanceof Error ? error : new Error(String(error)));
+    throw stoppedOn;
   } finally {
     recorder.close();
   }
@@ -121,10 +125,22 @@ async function runAgents<State>(
   const sensings = new Sensings();
   const changes = new ChangesSinceSensing();
   const messages = new Map<string, AgentSession["messages"]>();
-  // Every session is open before any agent starts, so opening them uses none of the time limit (FR-CLOCK-02).
-  const sessions = await Promise.all(
-    agents.map((agent) => openSession(world, scenario.tools, agent, runtime, sessionSettings, parallelism, records, stimuli, sensings, changes)),
+  // Every session is open before any agent starts, so opening them uses none of the time limit (FR-CLOCK-02). One that
+  // fails to open stops the run, once the others have opened, and those are closed.
+  const opening = await Promise.allSettled(
+    agents.map((agent) =>
+      openSession(world, scenario.tools, agent, runtime, sessionSettings, parallelism, records, stimuli, sensings, changes).catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error(`the session of agent "${agent.name}" failed to open: ${message}`, { cause: error });
+      }),
+    ),
   );
+  const failed = opening.find((opened) => opened.status === "rejected");
+  if (failed !== undefined) {
+    for (const opened of opening) if (opened.status === "fulfilled") opened.value.dispose();
+    throw failed.reason;
+  }
+  const sessions = opening.map((opened) => (opened as PromiseFulfilledResult<AgentSession>).value);
   const startedAtMs = performance.now();
   const timer = setTimeout(() => timeLimit.abort(), settings.timeLimitMs);
   try {
