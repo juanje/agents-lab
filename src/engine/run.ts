@@ -42,6 +42,8 @@ export interface RunSettings {
   metricIntervalMs?: number;
   /** Called with each line of the run's log as it is written, so a caller follows the run from what it records (FR-RUN-04). */
   onRecord?: (line: LogLine) => void;
+  /** Stops the run when it aborts, as an error would, with a log that says it was interrupted (FR-RUN-05). */
+  interruption?: AbortSignal;
   /**
    * Called with the run's stimuli once every session is open, before any agent wakes, so a caller can deliver stimuli while the run goes on. A seam
    * until the world's processes deliver them (FR-PROCESS-01).
@@ -90,6 +92,9 @@ export async function run<State>(
     recorder.stop(error);
     runEnd.abort();
   };
+  const interrupt = () => stop(new Error("the run was interrupted"));
+  if (settings.interruption?.aborted) interrupt();
+  settings.interruption?.addEventListener("abort", interrupt, { once: true });
   try {
     const stimuli = new Stimuli(loaded.channels, (agent, stimulus) =>
       recorder.record({ type: "stimulus", agent, ...stimulus, deliveredAtMs: performance.now() }),
@@ -106,6 +111,7 @@ export async function run<State>(
     stop(error instanceof Error ? error : new Error(String(error)));
     throw stoppedOn;
   } finally {
+    settings.interruption?.removeEventListener("abort", interrupt);
     recorder.close();
   }
 }
