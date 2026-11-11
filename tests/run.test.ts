@@ -635,6 +635,16 @@ describe("run", () => {
     expect(readdirSync(logDirectory)).toEqual(["replica-1.jsonl"]);
   });
 
+  it("hands each line of its log to onRecord as it writes it, so its caller follows the run from what it records", async () => {
+    const model = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
+    const logDirectory = newLogDirectory();
+    const read: unknown[] = [];
+
+    const { runId } = await run(slots(), [{ name: "a", model, activations: 1 }], seed, { ...settings, logDirectory, onRecord: (line) => read.push(line) });
+
+    expect(read).toEqual(logOf(logDirectory, runId));
+  });
+
   it("waits before each agent's activation the interval the loaded scenario's rhythm draws for that agent", async () => {
     const a = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
     const b = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
