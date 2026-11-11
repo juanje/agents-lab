@@ -344,6 +344,8 @@ A resident has two tools:
 - **look** (sensor): takes the configured time and returns its window of the configured radius, with its own kind, the other kind, empty and outside the grid marked distinctly.
 - **move dx dy** (effector): moves it to the cell at that offset, anywhere in the grid, seen or not, taking the grid's time for the distance. It fails with `cell_full` when the cell is held when it arrives, and with `invalid_target` when the cell is outside the grid. Its target, for the record, is that cell as the resident's last look showed it, wherever the resident looked from: a cell outside that look's window is `not_sensed`.
 
+A move's result says what happened: "You moved.", or, when it fails, why and that the resident has not moved.
+
 Staying is not acting: a resident that does not want to move ends its activation.
 *Why:* a resident can walk towards a place it cannot see, and only what it finds there decides whether it can stay; whether it had looked, and what it saw, is recorded beside the outcome (FR-TOOL-04), so experiments can tell other agents' timing from the resident's own errors.
 

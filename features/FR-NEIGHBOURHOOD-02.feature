@@ -53,3 +53,14 @@ Feature: Residents look and move
     When the run ends
     Then "r1"'s "move" call failed with "invalid_target"
     And the call recorded its target as sensed: "outside"
+
+  Scenario Outline: A move tells the resident what happened
+    Given resident "r1" runs on a scripted model that calls "move" with dx <dx> and dy <dy>, then ends without a tool call
+    When the run ends
+    Then the result "r1"'s model received for its "move" call says "<text>"
+
+    Examples:
+      | dx | dy | text                                                                   |
+      | 1  | 1  | You moved.                                                             |
+      | 1  | 0  | Someone already lives in that cell; you have not moved.                |
+      | -1 | 0  | That cell is beyond the edge of the neighbourhood; you have not moved. |
