@@ -89,23 +89,33 @@ Given("the scripted model {string}'s session fails to open", function (this: Con
   });
 });
 
-When('"lab run" runs the experiment file', async function (this: Context) {
-  const library = this.library;
+/**
+ * Runs "lab" with a command on the scenario's experiment file, written under its home, from its home, with its scenario
+ * library and its models by name; it keeps what the command printed, or the error it failed with.
+ */
+export async function runLab(context: Context, command: string): Promise<void> {
+  const library = context.library;
   assert.ok(library !== undefined, "the scenario gives no scenario library");
-  const directory = join(this.home, "experiments");
+  const directory = join(context.home, "experiments");
   mkdirSync(directory, { recursive: true });
-  const file = join(directory, `${String(this.experimentFile.id)}.toml`);
-  writeFileSync(file, stringify(this.experimentFile));
+  const file = join(directory, `${String(context.experimentFile.id)}.toml`);
+  writeFileSync(file, stringify(context.experimentFile));
   const model = async (name: string) => {
-    const found = this.labModels.get(name);
+    const found = context.labModels.get(name);
     if (found === undefined) throw new Error(`No model is named "${name}"`);
     return found;
   };
+  let printed = "";
   try {
-    await lab(["run", file], { directory: this.home, print: () => {}, scenarios: library, model });
+    await lab([command, file], { directory: context.home, print: (text) => (printed += text), scenarios: library, model });
+    context.labOutput = printed;
   } catch (error) {
-    this.labError = error as Error;
+    context.labError = error as Error;
   }
+}
+
+When('"lab run" runs the experiment file', async function (this: Context) {
+  await runLab(this, "run");
 });
 
 /** The experiment's runs directory, under the directory "lab run" ran in. */

@@ -155,7 +155,7 @@ export class Context extends CucumberWorld {
   readonly labModels = new Map<string, AgentModel>();
   /** The error "lab run" or "lab inventory" failed with, if it failed. */
   labError?: Error;
-  /** What "lab inventory" printed, if it ran. */
+  /** What "lab run" or "lab inventory" printed, if it did not fail. */
   labOutput?: string;
   /** The tool and the milliseconds the scenario last found its duration described with, for a step that says "does not". */
   lastDurationRead?: { tool: string; ms: number };

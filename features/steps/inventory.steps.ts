@@ -1,15 +1,13 @@
 import assert from "node:assert/strict";
-import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { Given, Then, When } from "@cucumber/cucumber";
 import { type TomlTable, parse, stringify } from "smol-toml";
-import { lab } from "../../src/cli/lab.ts";
 import { type LoadedScenario, type Scenario, loadScenario } from "../../src/engine/scenario.ts";
 import { ScriptedModel } from "../../src/engine/scripted-model.ts";
 import { scenarioLibrary } from "../../src/scenarios/library.ts";
 import { type Slots, slotsScenario } from "../../tests/fixtures/slots.ts";
 import type { Context } from "../support/context.ts";
 import { tableAt } from "./experiment.steps.ts";
+import { runLab } from "./lab.steps.ts";
 import { declaring } from "./scenario.steps.ts";
 
 /** The texts the test scenario's effector "take" declares, so the inventory has texts to list for its outcomes. */
@@ -63,24 +61,7 @@ Given(
 );
 
 When('"lab inventory" runs on the experiment file', async function (this: Context) {
-  const library = this.library;
-  assert.ok(library !== undefined, "the scenario gives no scenario library");
-  const directory = join(this.home, "experiments");
-  mkdirSync(directory, { recursive: true });
-  const file = join(directory, `${String(this.experimentFile.id)}.toml`);
-  writeFileSync(file, stringify(this.experimentFile));
-  const model = async (name: string) => {
-    const found = this.labModels.get(name);
-    if (found === undefined) throw new Error(`No model is named "${name}"`);
-    return found;
-  };
-  let printed = "";
-  try {
-    await lab(["inventory", file], { directory: this.home, scenarios: library, model, print: (text) => (printed += text) });
-    this.labOutput = printed;
-  } catch (error) {
-    this.labError = error as Error;
-  }
+  await runLab(this, "inventory");
 });
 
 /** What "lab inventory" printed: it did not fail. */
