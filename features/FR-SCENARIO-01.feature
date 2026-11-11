@@ -28,6 +28,7 @@ Feature: A scenario plugs into the engine
     Examples:
       | part               |
       | initial state      |
+      | agents             |
       | tools              |
       | stimulus channels  |
       | metrics            |
