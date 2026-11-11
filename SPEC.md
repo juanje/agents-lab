@@ -467,15 +467,24 @@ The configuration's `[placement]` says, for each of its texts (`identity`, `worl
 *Why:* E4 tests whether the same text weighs differently in the system prompt and in the person's message; the place of each text must be a declared, recorded choice, and changing one text's place must not change the order of the others.
 
 #### FR-WORKPLACE-04: What the worker did in each situation is measured from the world
-Each situation's reserved keys can give predicates on the world: where its things may end (`where`: a place, a container, `person:<id>` or `held`), where they may not (`not_where`), and things that must end with no person (`not_given`). For each chosen situation, the scenario's metrics give, from the world's state and the run's tool calls:
-- whether the worker sensed it (looked at, read or examined one of its things), and when;
-- whether each predicate holds;
-- the worker's book entries and notes made after first sensing it;
-- its exploration: the tool calls between first sensing it and its predicates last changing;
-- when in the run the worker acted on it.
+A situation's reserved keys can give predicates on the world's state:
+- `where = { thing = [locations] }`: the thing is in one of these locations;
+- `not_where = { thing = [locations] }`: the thing is in none of them;
+- `not_given = [things]`: no person holds the thing.
 
-They are sampled like every metric (FR-METRIC-02). What a note or an entry says (`said`, `not_said`) is left to the reserved judge (FR-ANALYSIS-02).
-*Why:* A18, A19 and I4 are judged on actions in situations; reading them from the world keeps the measure objective, keeps what the worker did apart from what it said, and leaves a judge only for what it wrote. A18 predicts that rules change how much the worker explores, and E4 looks for drift across the day.
+A location is a place, a container (the thing is directly inside it), `person:<id>` (that person holds it) or `held` (the worker holds it). A predicate that names a thing, place, container or person the world does not have fails before any model call, with an error that names it.
+
+The workplace's metrics give, for each chosen situation, by its id:
+- `sensed_at_ms`: when the worker first sensed it, by a look that showed one of its things or a read or examine of one; no value until then;
+- `holds`: 1 when all its predicates hold, 0 when one does not; no value for a situation without predicates;
+- `predicates`: each predicate's value, 1 or 0, by `situation.key.thing` (for example `s05.not_where.item-13`);
+- `acted_at_ms`: when the worker first took, put or gave one of its things; no value until then;
+- `settled_at_ms`: when its predicates last changed value; no value while they have not;
+- `exploration`: the worker's tool calls after the one that first sensed it, up to the one that settled it, or up to now while it is not settled; no value until sensed;
+- `entries_after` and `notes_after`: the worker's book entries and notes since it first sensed it.
+
+The metrics read the world's state and the worker's tool calls so far; the engine gives them both. They are sampled like every metric (FR-METRIC-02). What a note or an entry says (`said`, `not_said`) is left to the reserved judge (FR-ANALYSIS-02); the other reserved keys (class, kind, rule, owner…) are carried to the analysis as they are.
+*Why:* A18, A19 and I4 are judged on actions in situations; reading them from the world keeps the measure objective, keeps what the worker did apart from what it said, and leaves a judge only for what it wrote. A18 predicts that rules change how much the worker explores; I4 reads the worker's scope from predicates on other people's parts; E4 looks for drift across the day.
 
 ### Analysis
 
