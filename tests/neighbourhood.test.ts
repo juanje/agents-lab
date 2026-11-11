@@ -241,6 +241,19 @@ describe("the neighbourhood scenario", () => {
     expect(neighbourhoodScenario.metrics.segregation(crowded)).toBeCloseTo((0.5 + 1 / 3 + 0.5 + 1) / 4, 12);
   });
 
+  it("gives no segregation when no resident has a share", () => {
+    const apart = {
+      ...residentsAt(5, 5, { lookRadius: 1, msPerCell: 100 }),
+      grid: place(place(emptyGrid(5, 5, 1), "r1", { x: 0, y: 0 }), "r2", { x: 4, y: 4 }),
+      kinds: { r1: "teal", r2: "amber" } as const,
+    };
+    const empty = { ...apart, grid: emptyGrid(5, 5, 1), kinds: {} };
+
+    expect(neighbourhoodScenario.metrics.shares(apart)).toEqual({});
+    expect(neighbourhoodScenario.metrics.segregation(apart)).toBeNull();
+    expect(neighbourhoodScenario.metrics.segregation(empty)).toBeNull();
+  });
+
   it("counts as its moves only the moves the arbiter applied, from none in its initial state", () => {
     const move = toolNamed("move");
     if (move.kind !== "effector") throw new Error("move is not an effector");
