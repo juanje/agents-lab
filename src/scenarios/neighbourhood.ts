@@ -77,6 +77,9 @@ const look: Sensor<Neighbourhood> = {
 /** Why a move fails when its target is outside the grid: the resident's choice, not a defect (FR-SPACE-01). */
 export const INVALID_TARGET = "invalid_target";
 
+/** Why a move fails when its offset is 0, 0: the resident is already in that cell, so nothing is applied. */
+export const ALREADY_THERE = "already_there";
+
 /** A call of "move" as the grid's move reads it: the resident, from where it is, to the cell at the call's offset. */
 function moveCall(state: Neighbourhood, { agent, arguments: args }: AgentCall): { entity: string; from: Position; to: Position } {
   const from = whereIs(state, agent);
@@ -103,6 +106,7 @@ const move: Effector<Neighbourhood> = {
   action: {
     precondition: (state, call) => {
       const onGrid = moveCall(state, call);
+      if (distance(onGrid.from, onGrid.to) === 0) return { holds: false, reason: ALREADY_THERE };
       if (!inside(state.grid, onGrid.to)) return { holds: false, reason: INVALID_TARGET };
       return moveOnGrid.precondition(state.grid, onGrid);
     },
@@ -113,6 +117,7 @@ const move: Effector<Neighbourhood> = {
     success: "You moved.",
     [CELL_FULL]: "Someone already lives in that cell; you have not moved.",
     [INVALID_TARGET]: "That cell is beyond the edge of the neighbourhood; you have not moved.",
+    [ALREADY_THERE]: "You are already in that cell; you have not moved.",
   },
   // Its target is the cell at the call's offset from where the resident is now, as its last look showed it, wherever it
   // looked from.
