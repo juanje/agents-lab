@@ -197,6 +197,13 @@ export class Context extends CucumberWorld {
   workplaceLastState?: Workplace;
   /** Whether the scenario checks the run's first metric sample only, rather than the one it ended with. */
   firstSampleOnly = false;
+  /**
+   * The scripted model a compaction scenario fills its contexts with, as its Background describes it: each turn's delay
+   * and how it answers a summary call, which a later step may change (FR-ADAPTER-03).
+   */
+  compactionModel?: { name: string; contextWindow: number; tool: string; turns: number; turnDelayMs: number; summary: ScriptedAnswer };
+  /** How long after a summary call starts the run's time limit passes, for a scenario that cuts a compaction off. */
+  limitAfterSummaryMs?: number;
   /** The tool and the milliseconds the scenario last found its duration described with, for a step that says "does not". */
   lastDurationRead?: { tool: string; ms: number };
 }

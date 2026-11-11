@@ -14,14 +14,63 @@ const REFLECTION = "I look at the slots again, to see which of them are empty an
 Given(
   "the scripted model {string}, with a context window of {int} tokens, whose agents call {string} in every turn for {int} turns, then end without a tool call, and which writes the summary {string} when asked to compact",
   function (this: Context, name: string, contextWindow: number, tool: string, turns: number, summary: string) {
-    const script = [
-      ...Array.from({ length: turns }, () => ({ text: REFLECTION, toolCalls: [{ name: tool, arguments: {} }], delayMs: 0 })),
-      { text: "Done.", delayMs: 0 },
-    ];
-    // Each agent's session takes the script from its start, so both agents look in their own turns.
-    const model = new ScriptedModel(script, name.split("/")[1], { contextWindow, summary, perSession: true });
-    this.models.set(name, model);
-    this.labModels.set(name, model);
+    this.compactionModel = { name, contextWindow, tool, turns, turnDelayMs: 0, summary: { text: summary, delayMs: 0 } };
+    setUpCompactionModel(this);
+  },
+);
+
+/** Makes the compaction scenario's scripted model as it now stands, for "lab" to resolve by its name. */
+function setUpCompactionModel(context: Context): void {
+  assert.ok(context.compactionModel !== undefined, "the scenario gives no scripted model to compact with");
+  const { name, contextWindow, tool, turns, turnDelayMs, summary } = context.compactionModel;
+  const script = [
+    ...Array.from({ length: turns }, () => ({ text: REFLECTION, toolCalls: [{ name: tool, arguments: {} }], delayMs: turnDelayMs })),
+    { text: "Done.", delayMs: turnDelayMs },
+  ];
+  // Each agent's session takes the script from its start, so both agents look in their own turns.
+  const model = new ScriptedModel(script, name.split("/")[1], { contextWindow, summary, perSession: true });
+  context.models.set(name, model);
+  context.labModels.set(name, model);
+}
+
+/** Changes how the compaction scenario's scripted model answers a summary call, or how long its turns take. */
+function changeCompactionModel(context: Context, change: Partial<Pick<NonNullable<Context["compactionModel"]>, "summary" | "turnDelayMs">>): void {
+  assert.ok(context.compactionModel !== undefined, "the scenario gives no scripted model to compact with");
+  context.compactionModel = { ...context.compactionModel, ...change };
+  setUpCompactionModel(context);
+}
+
+Given(
+  'the file\'s compaction is enabled, with "trigger_at" {float} and "keep_recent_tokens" {int}, and a model turn timeout of {int} milliseconds',
+  function (this: Context, triggerAt: number, keepRecentTokens: number, timeoutMs: number) {
+    this.experimentFile.compaction = { enabled: true, trigger_at: triggerAt, keep_recent_tokens: keepRecentTokens };
+    (this.experimentFile.limits as Record<string, number>).model_turn_timeout_ms = timeoutMs;
+  },
+);
+
+Given("the scripted model answers the summary call with a provider error", function (this: Context) {
+  changeCompactionModel(this, { summary: { error: "overloaded", delayMs: 0 } });
+});
+
+Given("the scripted model takes {int} milliseconds to answer the summary call", function (this: Context, delayMs: number) {
+  changeCompactionModel(this, { summary: { ...this.compactionModel?.summary, delayMs } });
+});
+
+/**
+ * How long each scripted turn takes when the run's time limit must pass at a moment after the summary call starts:
+ * long enough that the agent's turns before its first compaction, not the engine's own work, set when that call starts.
+ */
+const TURN_DELAY_MS = 200;
+
+/** The agent's turns before its first compaction, with the Background's model, its window and the trigger at half of it. */
+const TURNS_BEFORE_COMPACTION = 6;
+
+Given(
+  "the scripted model takes {int} milliseconds to answer the summary call, and the run's time limit passes {int} milliseconds after the summary call starts, before its timeout",
+  function (this: Context, delayMs: number, afterMs: number) {
+    changeCompactionModel(this, { summary: { ...this.compactionModel?.summary, delayMs }, turnDelayMs: TURN_DELAY_MS });
+    (this.experimentFile.limits as Record<string, number>).time_limit_ms = TURNS_BEFORE_COMPACTION * TURN_DELAY_MS + afterMs;
+    this.limitAfterSummaryMs = afterMs;
   },
 );
 
@@ -53,6 +102,7 @@ Given('the file\'s compaction is enabled, with no "keep_recent_tokens"', functio
 /** A compaction line of a run's log, as JSON gives it back. */
 interface CompactionLine {
   agent: string;
+  outcome: string;
   reason: string;
   startedAtMs: number;
   endedAtMs: number;
@@ -115,6 +165,28 @@ Then(
       assert.ok(line.summary.includes(summary), `the summary does not hold the model's text: ${line.summary}`);
       assert.ok(line.tokens.totalTokens > 0, "a compaction gives no tokens for the call that wrote its summary");
       assert.equal(typeof line.cost.total, "number", "a compaction gives no cost for the call that wrote its summary");
+    }
+  },
+);
+
+Then(
+  "agent {string}'s log has a compaction line with the outcome {string}, no summary, and the tokens and cost spent",
+  function (this: Context, agent: string, outcome: string) {
+    const lines = compactionsOf(this, agent).filter((line) => line.outcome === outcome);
+    assert.ok(lines.length > 0, `agent "${agent}"'s log has no compaction line with the outcome "${outcome}": ${JSON.stringify(compactionsOf(this, agent))}`);
+    for (const line of lines) {
+      assert.equal(line.summary, undefined, `a compaction that did not finish gives the summary ${line.summary}`);
+      assert.ok(line.startedAtMs <= line.endedAtMs, "a compaction ended before it started");
+      for (const field of ["input", "output", "cacheRead", "cacheWrite", "totalTokens"]) assert.equal(typeof line.tokens?.[field], "number", `it gives no ${field} tokens`);
+      assert.equal(typeof line.cost?.total, "number", "it gives no cost");
+    }
+    if (this.limitAfterSummaryMs !== undefined) {
+      // The time limit passed as the scenario set it: after the summary call started, and before the call's timeout.
+      const [start] = onlyLog(this).filter((line) => line.type === "metric_sample") as unknown as { atMs: number }[];
+      const limitMs = (this.experimentFile.limits as Record<string, number>).time_limit_ms;
+      const timeoutMs = (this.experimentFile.limits as Record<string, number>).model_turn_timeout_ms;
+      const afterMs = start.atMs + limitMs - lines[0].startedAtMs;
+      assert.ok(afterMs > 0 && afterMs < timeoutMs, `the time limit passed ${afterMs} ms after the compaction started`);
     }
   },
 );
