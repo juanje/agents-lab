@@ -151,6 +151,15 @@ Then(
   },
 );
 
+Then(
+  "the log's tool call line for agent {string}'s {string} call gives {int} change(s) since its last sensing, applied by agent {string}",
+  function (this: Context, agent: string, tool: string, changes: number, by: string) {
+    const call = lineOf(this, "tool_call", agent, { tool });
+    assert.equal(call.changesSinceSensing, changes);
+    assert.deepEqual(call.changesSinceSensingBy, Array.from({ length: changes }, () => by));
+  },
+);
+
 Given("a previous run wrote its log", async function (this: Context) {
   script(this, "a", [{ text: "Nothing to do.", delayMs: 0 }]);
   await runTheScenario(this);

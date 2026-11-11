@@ -29,4 +29,24 @@ describe("ChangesSinceSensing", () => {
 
     expect(changes.since("a")).toBeNull();
   });
+
+  it("names the agent that applied each change since an agent last sensed, in the order applied", () => {
+    const changes = new ChangesSinceSensing();
+    changes.applied("b");
+    changes.sensed("a");
+
+    changes.applied("c");
+    changes.applied("a");
+    changes.applied("b");
+    changes.applied("c");
+
+    expect(changes.appliedBy("a")).toEqual(["c", "b", "c"]);
+  });
+
+  it("names no agents for an agent that has not sensed", () => {
+    const changes = new ChangesSinceSensing();
+    changes.applied("b");
+
+    expect(changes.appliedBy("a")).toBeNull();
+  });
 });
