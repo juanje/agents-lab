@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { type Experiment, replicaSeed } from "../src/engine/experiment.ts";
 import { inventory } from "../src/engine/inventory.ts";
-import { runExperiment } from "../src/engine/runner.ts";
+import { type ExperimentObserver, runExperiment } from "../src/engine/runner.ts";
 import { loadScenario } from "../src/engine/scenario.ts";
 import { ScriptedModel } from "../src/engine/scripted-model.ts";
 import { slotsScenario } from "./fixtures/slots.ts";
@@ -167,4 +167,32 @@ describe("runExperiment", () => {
     ]);
     expect(readdirSync(directory).sort()).toEqual([...index.map(({ runId }) => `${String(runId)}.jsonl`), "index.jsonl"].sort());
   });
+
+  it("tells its observer when each run starts, with its number out of all, what it runs and its activations, then each line its log records, then that it completed", async () => {
+    const directory = newRunsDirectory();
+    const events: unknown[] = [];
+    const observer: ExperimentObserver = {
+      runStarted: (started) => events.push({ started }),
+      recorded: (line) => events.push({ line }),
+      runEnded: (status) => events.push({ ended: status }),
+    };
+
+    await runExperiment(experiment, slotsScenario, scriptedModels(), directory, observer);
+
+    const expected = indexOf(directory).flatMap(({ runId, condition, model, replica, seed }, at) => [
+      // The slots test scenario's one agent, "a", makes one activation in each run.
+      { started: { number: at + 1, total: 8, condition, model, replica, seed, activations: 1 } },
+      ...logLinesOf(directory, String(runId)).map((line) => ({ line })),
+      { ended: "completed" },
+    ]);
+    expect(events).toEqual(expected);
+  });
 });
+
+/** The lines of a run's log, parsed. */
+function logLinesOf(directory: string, runId: string): unknown[] {
+  return readFileSync(join(directory, `${runId}.jsonl`), "utf8")
+    .split("\n")
+    .filter((line) => line !== "")
+    .map((line) => JSON.parse(line));
+}
