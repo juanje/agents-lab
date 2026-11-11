@@ -167,12 +167,12 @@ describe("the neighbourhood scenario", () => {
 
     expect(look.kind).toBe("sensor");
     if (look.kind !== "sensor") return;
-    expect(JSON.parse(look.sense(state, "r1"))).toEqual([
+    expect(JSON.parse(look.sense(state, "r1", {}))).toEqual([
       ["outside", "outside", "outside"],
       ["outside", "you", "other"],
       ["outside", "same", "empty"],
     ]);
-    expect(JSON.parse(look.sense(state, "r2"))).toEqual([
+    expect(JSON.parse(look.sense(state, "r2", {}))).toEqual([
       ["outside", "outside", "outside"],
       ["other", "you", "empty"],
       ["other", "empty", "empty"],
@@ -184,7 +184,7 @@ describe("the neighbourhood scenario", () => {
     const state = residentsAt(5, 5, { lookRadius: 2, msPerCell: 100 });
 
     if (look.kind !== "sensor") throw new Error("look is not a sensor");
-    expect(JSON.parse(look.sense(state, "r3"))).toEqual([
+    expect(JSON.parse(look.sense(state, "r3", {}))).toEqual([
       ["outside", "outside", "outside", "outside", "outside"],
       ["outside", "outside", "same", "other", "empty"],
       ["outside", "outside", "you", "empty", "empty"],
@@ -198,7 +198,7 @@ describe("the neighbourhood scenario", () => {
     if (move.kind !== "effector") throw new Error("move is not an effector");
     const world = new World(residentsAt(5, 5, { lookRadius: 1, msPerCell: 100 }));
 
-    expect(world.apply(move.action, { agent: "r1", arguments: { dx: 3, dy: 4 } })).toEqual({ applied: true });
+    expect(world.apply(move.action, { agent: "r1", arguments: { dx: 3, dy: 4 }, atMs: 0 })).toEqual({ applied: true });
     expect(position(world.state.grid, "r1")).toEqual({ x: 3, y: 4 });
     expect(world.version).toBe(1);
   });
@@ -209,9 +209,9 @@ describe("the neighbourhood scenario", () => {
     const world = new World(residentsAt(5, 5, { lookRadius: 1, msPerCell: 100 }));
     const before = world.state;
 
-    expect(world.apply(move.action, { agent: "r1", arguments: { dx: -1, dy: 0 } })).toEqual({ applied: false, reason: "invalid_target" });
-    expect(world.apply(move.action, { agent: "r2", arguments: { dx: 4, dy: 0 } })).toEqual({ applied: false, reason: "invalid_target" });
-    expect(world.apply(move.action, { agent: "r3", arguments: { dx: 0, dy: 4 } })).toEqual({ applied: false, reason: "invalid_target" });
+    expect(world.apply(move.action, { agent: "r1", arguments: { dx: -1, dy: 0 }, atMs: 0 })).toEqual({ applied: false, reason: "invalid_target" });
+    expect(world.apply(move.action, { agent: "r2", arguments: { dx: 4, dy: 0 }, atMs: 0 })).toEqual({ applied: false, reason: "invalid_target" });
+    expect(world.apply(move.action, { agent: "r3", arguments: { dx: 0, dy: 4 }, atMs: 0 })).toEqual({ applied: false, reason: "invalid_target" });
     expect(world.state).toBe(before);
     expect(world.version).toBe(0);
   });
@@ -223,7 +223,7 @@ describe("the neighbourhood scenario", () => {
     const before = world.state;
 
     expect(move.durationMs(world.state, { agent: "r1", arguments: { dx: 0, dy: 0 } })).toBe(0);
-    expect(world.apply(move.action, { agent: "r1", arguments: { dx: 0, dy: 0 } })).toEqual({ applied: false, reason: "already_there" });
+    expect(world.apply(move.action, { agent: "r1", arguments: { dx: 0, dy: 0 }, atMs: 0 })).toEqual({ applied: false, reason: "already_there" });
     expect(world.state).toBe(before);
     expect(world.version).toBe(0);
   });
@@ -253,7 +253,7 @@ describe("the neighbourhood scenario", () => {
     const move = toolNamed("move");
     if (look.kind !== "sensor" || move.kind !== "effector") throw new Error("look is not a sensor or move is not an effector");
     const state = residentsAt(5, 5, { lookRadius: 1, msPerCell: 100 });
-    const sensing = { tool: "look", result: look.sense(state, "r1"), takenFrom: { x: 0, y: 0 }, atMs: 0 };
+    const sensing = { tool: "look", result: look.sense(state, "r1", {}), takenFrom: { x: 0, y: 0 }, atMs: 0 };
     const target = (dx: number, dy: number) => move.readTarget(sensing, { agent: "r1", arguments: { dx, dy } }, state);
 
     expect([target(1, 0), target(0, 1)]).toEqual(["held", "held"]);
@@ -268,7 +268,7 @@ describe("the neighbourhood scenario", () => {
     if (look.kind !== "sensor" || move.kind !== "effector") throw new Error("look is not a sensor or move is not an effector");
     const looked = residentsAt(5, 5, { lookRadius: 1, msPerCell: 100 });
     expect(look.takenFrom?.(looked, "r1")).toEqual({ x: 0, y: 0 });
-    const sensing = { tool: "look", result: look.sense(looked, "r1"), takenFrom: { x: 0, y: 0 }, atMs: 0 };
+    const sensing = { tool: "look", result: look.sense(looked, "r1", {}), takenFrom: { x: 0, y: 0 }, atMs: 0 };
     // "r1" has since moved from 0, 0 to 0, 2.
     const moved = { ...looked, grid: place(emptyGrid(5, 5, 1), "r1", { x: 0, y: 2 }) };
     const target = (dx: number, dy: number) => move.readTarget(sensing, { agent: "r1", arguments: { dx, dy } }, moved);
@@ -283,7 +283,7 @@ describe("the neighbourhood scenario", () => {
     const move = toolNamed("move");
     if (look.kind !== "sensor" || move.kind !== "effector") throw new Error("look is not a sensor or move is not an effector");
     const state = residentsAt(5, 5, { lookRadius: 1, msPerCell: 100 });
-    const sensing = { tool: "look", result: look.sense(state, "r1"), takenFrom: { x: 0, y: 0 }, atMs: 0 };
+    const sensing = { tool: "look", result: look.sense(state, "r1", {}), takenFrom: { x: 0, y: 0 }, atMs: 0 };
 
     expect(move.readTarget(sensing, { agent: "r1", arguments: { dx: -1, dy: 0 } }, state)).toBe("outside");
     expect(move.readTarget(sensing, { agent: "r1", arguments: { dx: 1, dy: -1 } }, state)).toBe("outside");
@@ -327,10 +327,10 @@ describe("the neighbourhood scenario", () => {
     const world = new World(residentsAt(5, 5, { lookRadius: 1, msPerCell: 100 }));
 
     expect(neighbourhoodScenario.metrics.moves(initial)).toBe(0);
-    expect(world.apply(move.action, { agent: "r1", arguments: { dx: 1, dy: 0 } })).toEqual({ applied: false, reason: "cell_full" });
-    expect(world.apply(move.action, { agent: "r1", arguments: { dx: -1, dy: 0 } })).toEqual({ applied: false, reason: "invalid_target" });
-    expect(world.apply(move.action, { agent: "r1", arguments: { dx: 2, dy: 2 } })).toEqual({ applied: true });
-    expect(world.apply(move.action, { agent: "r1", arguments: { dx: 1, dy: 1 } })).toEqual({ applied: true });
+    expect(world.apply(move.action, { agent: "r1", arguments: { dx: 1, dy: 0 }, atMs: 0 })).toEqual({ applied: false, reason: "cell_full" });
+    expect(world.apply(move.action, { agent: "r1", arguments: { dx: -1, dy: 0 }, atMs: 0 })).toEqual({ applied: false, reason: "invalid_target" });
+    expect(world.apply(move.action, { agent: "r1", arguments: { dx: 2, dy: 2 }, atMs: 0 })).toEqual({ applied: true });
+    expect(world.apply(move.action, { agent: "r1", arguments: { dx: 1, dy: 1 }, atMs: 0 })).toEqual({ applied: true });
     expect(neighbourhoodScenario.metrics.moves(world.state)).toBe(2);
   });
 

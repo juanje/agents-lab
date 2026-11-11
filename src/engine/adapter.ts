@@ -541,7 +541,9 @@ async function perform<State>(
 ): Promise<CallResult> {
   const targetAsSensed = tool.kind === "effector" ? (sensing === undefined ? "not_sensed" : tool.readTarget(sensing, call, world.state)) : undefined;
   const durationMs = tool.durationMs(world.state, call);
-  if (tool.kind === "effector" && tool.start !== undefined) started(start(world, tool.start, call, changes));
+  if (tool.kind === "effector" && tool.start !== undefined && (tool.start.appliesTo?.(world.state, call) ?? true)) {
+    started(start(world, tool.start, call, changes));
+  }
   await waitAtLeast(durationMs, runEnd);
   const result = runEnd.aborted
     ? { outcome: CUT_OFF, text: CUT_OFF }
@@ -567,7 +569,7 @@ function start<State>(world: World<State>, action: Start<State>, call: AgentCall
 /** Reads the world for a sensor's call, which then always succeeds. */
 function sense<State>(world: World<State>, sensor: Sensor<State>, call: AgentCall): CallResult {
   const { state } = world;
-  const text = sensor.sense(state, call.agent);
+  const text = sensor.sense(state, call.agent, call.arguments);
   return sensor.takenFrom === undefined ? { outcome: "success", text } : { outcome: "success", text, takenFrom: sensor.takenFrom(state, call.agent) };
 }
 
@@ -579,7 +581,7 @@ function sense<State>(world: World<State>, sensor: Sensor<State>, call: AgentCal
 function effect<State>(world: World<State>, effector: Effector<State>, call: AgentCall, changes: ChangesSinceSensing): CallResult {
   const changesSinceSensing = changes.since(call.agent);
   const changesSinceSensingBy = changes.appliedBy(call.agent);
-  const result = world.apply(effector.action, call);
+  const result = world.apply(effector.action, { ...call, atMs: performance.now() });
   if (result.applied) changes.applied(call.agent);
   const outcome = result.applied ? "success" : result.reason;
   return { outcome, text: effector.texts?.[outcome] ?? outcome, changesSinceSensing, changesSinceSensingBy };

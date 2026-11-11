@@ -28,8 +28,8 @@ interface Declared<State> {
 /** A tool that returns part of the world, as seen from where the agent is, and changes nothing. */
 export interface Sensor<State> extends Declared<State> {
   kind: "sensor";
-  /** The text the agent receives. */
-  sense(state: State, agent: string): string;
+  /** The text the agent receives, from the state, the agent that calls it and the call's arguments. */
+  sense(state: State, agent: string, args: Readonly<Record<string, unknown>>): string;
   /**
    * Where the agent senses from, read against the same state as what it receives, for a sensor whose result is relative
    * to it; the engine keeps it with the sensing, so an effector can find its target in it later.
@@ -49,6 +49,17 @@ export type TargetAsSensed = "free" | "held" | "outside" | "not_sensed";
  */
 export interface Start<State> extends Action<State, AgentCall> {
   describe(state: State, call: AgentCall): Readonly<Record<string, unknown>>;
+  /**
+   * Whether the call starts under way at all, from the state as it starts; when it does not (a place that is not one
+   * passage away), no start is applied and the call's action alone decides its outcome. Every call starts when it is
+   * not declared.
+   */
+  appliesTo?(state: State, call: AgentCall): boolean;
+}
+
+/** An effector's call as its action is checked and applied: with the moment it is, by `performance.now()`. */
+export interface LandingCall extends AgentCall {
+  atMs: number;
 }
 
 /** A tool that changes the world through the arbiter. */
@@ -61,7 +72,7 @@ export interface Effector<State> extends Declared<State> {
    */
   start?: Start<State>;
   /** The change the call makes when it lands, checked then against the world as it is (FR-TOOL-04). */
-  action: Action<State, AgentCall>;
+  action: Action<State, LandingCall>;
   /**
    * The text the agent receives for each outcome of its call's effect, success included, by the outcome; an outcome
    * without one gives the outcome itself (FR-TOOL-02). It tells the agent only what happened to it, never the world's state.
