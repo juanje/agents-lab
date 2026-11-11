@@ -68,4 +68,26 @@ describe("runExperiment", () => {
     expect(existsSync(directory)).toBe(false);
     for (const model of models.values()) expect(model.received).toHaveLength(0);
   });
+
+  it("stops at a run that stops on an error: its index line says it stopped, no run starts after it, and it fails naming the run", async () => {
+    const directory = newRunsDirectory();
+    const models = scriptedModels();
+    // The second model's sessions cannot open, so the first run with it stops.
+    const failing = {
+      get model(): never {
+        throw new Error("this model cannot be given to a session");
+      },
+    };
+
+    const running = runExperiment(experiment, slotsScenario, new Map([...models].map(([name, model]) => [name, name === "scripted/two" ? failing : model])), directory);
+
+    await expect(running).rejects.toThrow('the run of condition "baseline", model "scripted/two", replica 1 stopped');
+    const index = indexOf(directory);
+    expect(index.map(({ model, replica, status }) => ({ model, replica, status }))).toEqual([
+      { model: "scripted/one", replica: 1, status: "completed" },
+      { model: "scripted/one", replica: 2, status: "completed" },
+      { model: "scripted/two", replica: 1, status: "stopped" },
+    ]);
+    expect(readdirSync(directory).sort()).toEqual([...index.map(({ runId }) => `${String(runId)}.jsonl`), "index.jsonl"].sort());
+  });
 });
