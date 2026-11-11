@@ -84,6 +84,20 @@ describe("lab run", () => {
     for (const model of models.values()) expect(model.received).toHaveLength(0);
   });
 
+  it("prints each run's start and end, in the order the runs ran, and last the experiment's totals", async () => {
+    const { path, environment } = setUp(experimentFile());
+    let printed = "";
+
+    await lab(["run", path], { ...environment, print: (text) => (printed += text) });
+
+    const lines = printed.split("\n").filter((line) => line !== "");
+    expect(lines.filter((line) => / started: /.test(line)).map((line) => line.split(" started")[0])).toEqual(
+      Array.from({ length: 8 }, (_, at) => `Run ${at + 1} of 8`),
+    );
+    expect(lines.filter((line) => / completed in /.test(line) && line.startsWith("Run"))).toHaveLength(8);
+    expect(lines.at(-1)).toMatch(/^8 runs completed in \d+\.\d s, cost \$\d+\.\d{4}$/);
+  });
+
   it.each([
     ["another command", ["walk", "e-test.toml"]],
     ["no experiment file", ["run"]],
