@@ -1,7 +1,9 @@
+import { randomUUID } from "node:crypto";
 import { closeSync, mkdirSync, openSync, writeSync } from "node:fs";
 import { join } from "node:path";
 import type { AgentModel } from "./adapter.ts";
 import { type Experiment, replicaSeed } from "./experiment.ts";
+import { failure } from "./failure.ts";
 import { run } from "./run.ts";
 import { type Scenario, loadScenario } from "./scenario.ts";
 
@@ -19,7 +21,8 @@ export interface IndexLine {
 /**
  * Runs an experiment: each condition with each of its models, given by name in the experiment's order, for each
  * replica, one run after another. Every agent of a run works with that run's model. Each run writes its log into the
- * runs directory, and the directory's index gets a line for each run as it ends.
+ * runs directory, and the directory's index gets a line for each run as it ends. A run that stops on an error stops
+ * the experiment there.
  */
 export async function runExperiment<State>(
   experiment: Experiment,
@@ -39,19 +42,31 @@ export async function runExperiment<State>(
           const seed = replicaSeed(experiment.seed, replica);
           const loaded = loadScenario(scenario, seed, condition);
           const agents = [...loaded.systemPrompts.keys()].map((name) => ({ name, model, activations: experiment.limits.activationsPerAgent }));
-          const { runId } = await run(loaded, agents, seed, {
-            logDirectory: runsDirectory,
-            modelTurnTimeoutMs: experiment.limits.modelTurnTimeoutMs,
-            parallelismLimit: experiment.limits.parallelismLimit,
-            timeLimitMs: experiment.limits.timeLimitMs,
-          });
-          const line: IndexLine = { runId, condition: condition.name, model: modelName, replica, seed, status: "completed" };
-          // Written at once, as a log line is: the index is how an experiment's runs are found.
-          writeSync(index, `${JSON.stringify(line)}\n`);
+          // Chosen here, so the index can list a run that stops as well as one that completes.
+          const runId = randomUUID();
+          const listed = { runId, condition: condition.name, model: modelName, replica, seed };
+          try {
+            await run(loaded, agents, seed, {
+              logDirectory: runsDirectory,
+              runId,
+              modelTurnTimeoutMs: experiment.limits.modelTurnTimeoutMs,
+              parallelismLimit: experiment.limits.parallelismLimit,
+              timeLimitMs: experiment.limits.timeLimitMs,
+            });
+          } catch (error) {
+            list(index, { ...listed, status: "stopped" });
+            throw failure(`the run of condition "${condition.name}", model "${modelName}", replica ${replica} stopped`, error);
+          }
+          list(index, { ...listed, status: "completed" });
         }
       }
     }
   } finally {
     closeSync(index);
   }
+}
+
+/** Adds a run's line to the index at once, as a log line is written: the index is how an experiment's runs are found. */
+function list(index: number, line: IndexLine): void {
+  writeSync(index, `${JSON.stringify(line)}\n`);
 }
