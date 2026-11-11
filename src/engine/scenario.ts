@@ -172,7 +172,13 @@ function materialText(reference: MaterialReference, keyPath: readonly string[], 
       `Condition "${applying.condition}" sets ${keyPath.join(".")} to the material "${reference.path}", but was given no directory to read materials from`,
     );
   }
-  const { hash, text } = applying.read.read(reference);
+  const read = applying.read.read(reference);
+  if (read === undefined) {
+    throw new Error(
+      `Condition "${applying.condition}" sets ${keyPath.join(".")} to the material "${reference.path}", whose file does not exist: ${applying.read.file(reference)}`,
+    );
+  }
+  const { hash, text } = read;
   applying.materials.push({ path: reference.path, key: keyPath.join("."), hash, heldOut: reference.heldOut });
   return text;
 }

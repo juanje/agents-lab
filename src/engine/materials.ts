@@ -55,11 +55,23 @@ export class Materials {
     this.#directory = directory;
   }
 
-  /** A material's file, as it was first read. */
-  read({ path }: MaterialReference): Read {
+  /** Where a material's file is. */
+  file({ path }: MaterialReference): string {
+    return join(this.#directory, path);
+  }
+
+  /** A material's file, as it was first read, or undefined when it does not exist. */
+  read(reference: MaterialReference): Read | undefined {
+    const { path } = reference;
     const known = this.#read.get(path);
     if (known !== undefined) return known;
-    const content = readFileSync(join(this.#directory, path));
+    let content: Buffer;
+    try {
+      content = readFileSync(this.file(reference));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+      throw error;
+    }
     const read = { hash: `sha256:${createHash("sha256").update(content).digest("hex")}`, text: content.toString("utf8") };
     this.#read.set(path, read);
     return read;
