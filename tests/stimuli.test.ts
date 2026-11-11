@@ -49,6 +49,23 @@ describe("Stimuli", () => {
     expect(delivered.filter(([agent]) => agent === "a")).toHaveLength(2);
   });
 
+  it("wakes an agent the first time with the rhythm's stimulus, then its first stimuli, then those that arrived; never again", () => {
+    const person = { name: "person", source: "Ada", stimulus: "Sort the post." };
+    const delivered: [string, unknown][] = [];
+    const stimuli = new Stimuli([bell, person, rhythmChannel], (agent, stimulus) => delivered.push([agent, stimulus]), new Map([["a", ["person"]]]));
+    const rhythm = { channel: "rhythm", source: "rhythm", content: "You wake up." };
+    const first = { channel: "person", source: "Ada", content: "Sort the post." };
+    const ring = { channel: "bell", source: "town bell", content: "The bell rings." };
+
+    stimuli.deliver("a", "bell");
+
+    expect(stimuli.wake("a")).toEqual([rhythm, first, ring]);
+    expect(stimuli.wake("a")).toEqual([rhythm]);
+    expect(stimuli.wake("b")).toEqual([rhythm]);
+    // Each is reported as it is delivered: the first stimuli as the agent first wakes, right after the rhythm's.
+    expect(delivered).toEqual([["a", ring], ["a", rhythm], ["a", first], ["a", rhythm], ["b", rhythm]]);
+  });
+
   it("refuses a stimulus from a channel the scenario does not declare, naming it", () => {
     const stimuli = new Stimuli([rhythmChannel]);
 
