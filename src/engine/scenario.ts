@@ -68,6 +68,7 @@ const requiredParts = [
   ["channels", "stimulus channels"],
   ["metrics", "metrics"],
   ["systemPrompt", "system prompt"],
+  ["rhythm", "rhythm"],
   ["baseConfiguration", "base configuration"],
 ] as const satisfies readonly (readonly [keyof Scenario<unknown>, string])[];
 
