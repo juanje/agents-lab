@@ -127,6 +127,14 @@ describe("inventory", () => {
     );
   });
 
+  it("lists the energy model and the environment processes as none, and every sensor and channel as instant, in each condition", () => {
+    const listed = inventory(experimentOf(["[conditions.baseline]", "[conditions.crowded]", "slots.count = 5"]), slotsWith());
+
+    const engine = ["### Energy model", "", "none", "", "### Environment processes", "", "none", "", "### How fast information travels", "", "Every sensor and channel is instant.", ""].join("\n");
+    expect(listed.slice(listed.indexOf('## Condition "baseline"'), listed.indexOf('## Condition "crowded"'))).toContain(engine);
+    expect(listed.slice(listed.indexOf('## Condition "crowded"'))).toContain(engine);
+  });
+
   it("fences a system prompt that holds a fence with a longer one, so the prompt is given whole", () => {
     const experiment = experimentOf(["[conditions.baseline]"]);
     const scenario = slotsWith({ systemPrompt: () => "Answer like this:\n```\ndone\n```" });

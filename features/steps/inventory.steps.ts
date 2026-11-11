@@ -265,3 +265,16 @@ Then("the section for {string} does not", function (this: Context, condition: st
   assert.ok(read !== undefined, "no duration was read before");
   assert.ok(!describesDuration(this, condition, read.tool, read.ms), `the section for "${condition}" describes "${read.tool}"'s duration with ${read.ms} ms`);
 });
+
+Then("each section lists the energy model and the environment processes as {string}", function (this: Context, none: string) {
+  for (const { name, section } of conditionsOf(this)) {
+    assert.equal(under(section, "### Energy model").trim(), none, `condition "${name}"`);
+    assert.equal(under(section, "### Environment processes").trim(), none, `condition "${name}"`);
+  }
+});
+
+Then("each section says that every sensor and channel is instant", function (this: Context) {
+  for (const { name, section } of conditionsOf(this)) {
+    assert.equal(under(section, "### How fast information travels").trim(), "Every sensor and channel is instant.", `condition "${name}"`);
+  }
+});
