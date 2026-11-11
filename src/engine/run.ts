@@ -82,6 +82,7 @@ export async function run<State>(
 ): Promise<RunResult> {
   // Refused before its log opens, as a scenario that fails to load is: nothing has run.
   assertScenarioAgents(loaded, agents);
+  assertNamesDiffer([...agents.map(({ name }) => name), ...loaded.components.map(({ name }) => name)]);
   const recorder = Recorder.open(settings.logDirectory, settings.runId, settings.onRecord);
   // Aborts when the run ends before its agents are done: its time limit passes (FR-CLOCK-02) or it stops on an error.
   const runEnd = new AbortController();
@@ -135,6 +136,15 @@ function assertScenarioAgents<State>({ scenario, systemPrompts }: LoadedScenario
     ...(undeclared.length > 0 ? [`${quoted(undeclared)} ${undeclared.length === 1 ? "is" : "are"} not declared`] : []),
   ];
   throw new Error(`The run's agents are not those of scenario "${scenario.name}": ${differences.join("; ")}`);
+}
+
+/**
+ * Refuses a run that would give two of its agents and components the same name: they would share a random sequence and
+ * be told apart neither among the changes since sensing nor in the log (FR-WORKPLACE-05).
+ */
+function assertNamesDiffer(names: readonly string[]): void {
+  const twice = names.find((name, index) => names.indexOf(name) !== index);
+  if (twice !== undefined) throw new Error(`The run gives two of its agents and components the name "${twice}"; each must have its own`);
 }
 
 /** Every sampling parameter but the thinking level, which the engine never sends, so the provider's defaults apply. */
