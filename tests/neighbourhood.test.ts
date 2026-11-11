@@ -59,24 +59,34 @@ describe("the neighbourhood scenario", () => {
     );
   });
 
-  it("tells each resident who it is and its kind, the kind its initial state gives it, and no rule by default", () => {
+  it("tells each resident who it is and its kind, the kind its initial state gives it, then the default world's rules, and no rule by default", () => {
     const base = configuration(3, 2, 2);
     const { kinds } = neighbourhoodScenario.initialState(base, new Random(1));
+    const worldRules = "Each cell holds one resident. Doing nothing leaves you where you are.";
 
     expect(base.rule).toBe("");
+    expect(base.world_rules).toBe(worldRules);
     expect(neighbourhoodScenario.systemPrompt(base, "resident 1")).toBe(
-      `You are "resident 1", a resident of a neighbourhood. Your kind is "${kinds["resident 1"]}".`,
+      `You are "resident 1", a resident of a neighbourhood. Your kind is "${kinds["resident 1"]}".\n\n${worldRules}`,
     );
     expect(neighbourhoodScenario.systemPrompt(base, "resident 2")).toBe(
-      `You are "resident 2", a resident of a neighbourhood. Your kind is "${kinds["resident 2"]}".`,
+      `You are "resident 2", a resident of a neighbourhood. Your kind is "${kinds["resident 2"]}".\n\n${worldRules}`,
     );
   });
 
-  it("adds the configured rule at the end of the system prompt, after a blank line", () => {
-    const ruled = { ...configuration(3, 2, 2), rule: "Stay put." };
+  it("gives the configured world's rules after the resident's description, after a blank line", () => {
+    const configured = { ...configuration(3, 2, 2), world_rules: "Cells are small." };
+
+    expect(neighbourhoodScenario.systemPrompt(configured, "resident 2")).toBe(
+      'You are "resident 2", a resident of a neighbourhood. Your kind is "amber".\n\nCells are small.',
+    );
+  });
+
+  it("adds the configured rule at the end of the system prompt, after the world's rules and a blank line", () => {
+    const ruled = { ...configuration(3, 2, 2), world_rules: "Cells are small.", rule: "Stay put." };
 
     expect(neighbourhoodScenario.systemPrompt(ruled, "resident 2")).toBe(
-      'You are "resident 2", a resident of a neighbourhood. Your kind is "amber".\n\nStay put.',
+      'You are "resident 2", a resident of a neighbourhood. Your kind is "amber".\n\nCells are small.\n\nStay put.',
     );
   });
 
