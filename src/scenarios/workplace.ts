@@ -66,8 +66,20 @@ export interface Workplace {
 /** The worker, the workplace's one agent. */
 const WORKER = "worker";
 
-/** The configuration's texts the worker's system prompt joins, in order. */
-const PROMPT_TEXTS = ["identity", "world_rules", "norms", "rules"] as const;
+/** The configuration's texts the worker meets, in the order each place joins them. */
+const TEXTS = ["identity", "world_rules", "norms", "rules", "task"] as const;
+
+/** Where a text goes: the system prompt, or the first message of the person who gives the task. */
+type Place = "system" | "person";
+
+/** The configuration's texts placed in a place, in order, each that holds something, joined with a blank line between them. */
+function textsIn(configuration: Configuration, place: Place): string {
+  const placement = configuration.placement as Record<string, Place>;
+  return TEXTS.filter((key) => placement[key] === place)
+    .map((key) => configuration[key] as string)
+    .filter((text) => text !== "")
+    .join("\n\n");
+}
 
 /** A thing as a world's text declares it: where it is, in a place or inside a container, and what it is. */
 interface ThingText {
@@ -608,11 +620,8 @@ export const workplaceScenario: Scenario<Workplace> = {
   // Its metrics come with FR-WORKPLACE-04.
   metrics: {},
   channels: rhythmChannels,
-  // The configured texts, in this order, each that holds something; nothing else, so the reserved keys never reach it.
-  systemPrompt: (configuration) =>
-    PROMPT_TEXTS.map((key) => configuration[key] as string)
-      .filter((text) => text !== "")
-      .join("\n\n"),
+  // The texts placed in it; nothing else, so the reserved keys never reach it.
+  systemPrompt: (configuration) => textsIn(configuration, "system"),
   rhythm: uniformRhythm,
   describeDuration,
   describeRhythm: describeUniformRhythm,
@@ -622,6 +631,8 @@ export const workplaceScenario: Scenario<Workplace> = {
     'world_rules = ""',
     'norms = ""',
     'rules = ""',
+    'task = ""',
+    'task_giver = "The person in charge"',
     "world = '''",
     "[worker]",
     'place = "room"',
@@ -651,6 +662,12 @@ export const workplaceScenario: Scenario<Workplace> = {
     'text = "You wake up."',
     "min_ms = 0",
     "max_ms = 1000",
+    "[placement]",
+    'identity = "system"',
+    'world_rules = "system"',
+    'norms = "system"',
+    'rules = "system"',
+    'task = "person"',
     "",
   ].join("\n"),
 };
