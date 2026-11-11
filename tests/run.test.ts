@@ -552,6 +552,118 @@ describe("run", () => {
     expect(world.version).toBe(1);
   });
 
+  /**
+   * The test world's "take", lasting 300 ms unless the call ends early, with the outcome "interrupted": when a change of
+   * the world fills slot 2, or a stimulus from the bell reaches its agent.
+   */
+  const patientTake: Effector<Slots> = {
+    ...(slotTools[1] as Effector<Slots>),
+    name: "take",
+    durationMs: () => 300,
+    endsEarly: {
+      outcome: "interrupted",
+      byChange: (before, after) => holder(before, 2) === null && holder(after, 2) !== null,
+      byStimulus: (stimulus) => stimulus.channel === bell.name,
+    },
+    texts: { success: "Taken.", interrupted: "You were interrupted, and took it." },
+  };
+
+  it("ends an effector's call early, with the outcome it declares, at a change of the world its condition names, and applies its action then", async () => {
+    // Agent b's calls take no time: it takes slot 3, which ends nothing, then slot 2.
+    const loaded = slots({ ...agentsNamed("a", "b"), tools: [{ ...patientTake, durationMs: (_slots, call) => (call.agent === "a" ? 300 : 0) }] });
+    const a = new ScriptedModel([
+      { toolCalls: [{ name: "take", arguments: { slot: 1 } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+    const b = new ScriptedModel([
+      { toolCalls: [{ name: "take", arguments: { slot: 3 } }], delayMs: 20 },
+      { toolCalls: [{ name: "take", arguments: { slot: 2 } }], delayMs: 30 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+
+    const { toolCalls } = await run(loaded, [
+      { name: "a", model: a, activations: 1 },
+      { name: "b", model: b, activations: 1 },
+    ], seed, settings);
+
+    const ofA = toolCalls.find((call) => call.agent === "a");
+    const filled = toolCalls.filter((call) => call.agent === "b").at(-1);
+    expect(ofA).toMatchObject({ outcome: "interrupted", text: "You were interrupted, and took it." });
+    expect(filled).toMatchObject({ arguments: { slot: 2 }, outcome: "success" });
+    expect(ofA!.endedAtMs - filled!.endedAtMs).toBeGreaterThanOrEqual(0);
+    expect(ofA!.endedAtMs - filled!.endedAtMs).toBeLessThan(20);
+    expect(loaded.world.state).toEqual(["a", "b", "b"]);
+  });
+
+  it("ends an effector's call early at a stimulus its condition names that reaches its agent, which still waits for the agent's next turn", async () => {
+    const loaded = slots({ channels: () => [rhythmChannel, bell], tools: [patientTake] });
+    const model = new ScriptedModel([
+      { toolCalls: [{ name: "take", arguments: { slot: 1 } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+
+    const { toolCalls, startedAtMs } = await run(loaded, [{ name: "a", model, activations: 1 }], seed, {
+      ...settings,
+      onStart: (stimuli) => setTimeout(() => stimuli.deliver("a", "bell"), 50),
+    });
+
+    const [call] = toolCalls;
+    expect(call).toMatchObject({ outcome: "interrupted" });
+    expect(call.endedAtMs - startedAtMs).toBeGreaterThanOrEqual(50);
+    expect(call.endedAtMs - startedAtMs).toBeLessThan(70);
+    expect(loaded.world.state).toEqual(["a", null, null]);
+    const text = (value: string) => ({ role: "user", content: [{ type: "text", text: value }] });
+    expect(model.received[1]?.at(-1)).toMatchObject(text("town bell: The bell rings."));
+  });
+
+  it("lets an effector's call last its whole duration when no change or stimulus meets its condition", async () => {
+    const loaded = slots({ channels: () => [rhythmChannel, bell], tools: [{ ...patientTake, durationMs: () => 100 }] });
+    const model = new ScriptedModel([
+      { toolCalls: [{ name: "take", arguments: { slot: 1 } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+
+    const { toolCalls } = await run(loaded, [{ name: "a", model, activations: 1 }], seed, {
+      ...settings,
+      onStart: (stimuli) => setTimeout(() => stimuli.deliver("a", "rhythm"), 30),
+    });
+
+    const [call] = toolCalls;
+    expect(call).toMatchObject({ outcome: "success", text: "Taken." });
+    expect(call.endedAtMs - call.startedAtMs).toBeGreaterThanOrEqual(100);
+  });
+
+  it("gives an effector with no action, which changes nothing, its outcome without the arbiter: the world's version stays", async () => {
+    const { action: _action, ...still } = patientTake;
+    const loaded = slots({ tools: [{ ...still, durationMs: () => 20 }] });
+    const model = new ScriptedModel([
+      { toolCalls: [{ name: "take", arguments: { slot: 1 } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+
+    const { toolCalls } = await run(loaded, [{ name: "a", model, activations: 1 }], seed, settings);
+
+    expect(toolCalls[0]).toMatchObject({ outcome: "success", text: "Taken." });
+    expect(loaded.world.version).toBe(0);
+  });
+
+  it("refuses, as invalid_arguments and taking no time, a call whose arguments the effector says it does not take, with its reason", async () => {
+    const refusing: Effector<Slots> = { ...patientTake, refuses: (slots, call) => ((call.arguments.slot as number) > slots.length ? `"take" takes a slot up to ${slots.length}` : undefined) };
+    const loaded = slots({ tools: [refusing] });
+    const model = new ScriptedModel([
+      { toolCalls: [{ name: "take", arguments: { slot: 4 } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+
+    const { toolCalls } = await run(loaded, [{ name: "a", model, activations: 1 }], seed, settings);
+
+    const [call] = toolCalls;
+    expect(call).toMatchObject({ outcome: "invalid_arguments" });
+    expect(call.endedAtMs - call.startedAtMs).toBeLessThan(5);
+    expect(model.received[1]?.at(-1)).toMatchObject({ role: "toolResult", isError: true, content: [{ type: "text", text: 'invalid_arguments: "take" takes a slot up to 3' }] });
+    expect(loaded.world.version).toBe(0);
+  });
+
   it("runs all of an agent's model turns in one Pi session, across its activations", async () => {
     const model = new ScriptedModel([
       { toolCalls: [{ name: "look", arguments: {} }], delayMs: 0 },
