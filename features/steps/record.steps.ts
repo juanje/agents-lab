@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { Given, Then } from "@cucumber/cucumber";
+import { Given, Then, When } from "@cucumber/cucumber";
 import { rhythmChannel } from "../../tests/fixtures/slots.ts";
 import type { Context } from "../support/context.ts";
 import { landsWhileUnderWay } from "./acting.steps.ts";
 import { turnsOf } from "./adapter.steps.ts";
-import { modelOf, returned, runTheScenario, script } from "./tool.steps.ts";
+import { callWithThenEnd, modelOf, returned, runTheScenario, script } from "./tool.steps.ts";
 
 /** The log files in the scenario's log directory, by name, in no particular order. */
 function logFiles(context: Context): string[] {
@@ -165,4 +165,54 @@ Then("the first one is unchanged", function (this: Context) {
   assert.ok(this.previousLog !== undefined, "no previous run wrote a log");
   assert.ok(logFiles(this).includes(this.previousLog.file), "the previous run's log is gone");
   assert.equal(readFileSync(join(this.logDirectory, this.previousLog.file), "utf8"), this.previousLog.content);
+});
+
+Given("an effector that throws an error when it runs", function (this: Context) {
+  this.throwingTool = { name: "jam", message: "the jam effector broke" };
+  const { message } = this.throwingTool;
+  const broken = () => {
+    throw new Error(message);
+  };
+  this.tools = [
+    ...this.tools,
+    {
+      kind: "effector",
+      name: this.throwingTool.name,
+      description: "Jam the slots.",
+      parameters: { type: "object", properties: {} },
+      durationMs: () => 0,
+      action: { precondition: broken, effect: broken },
+      readTarget: () => "not_sensed",
+    },
+  ];
+});
+
+Given("agent {string} runs on a scripted model that calls that effector, then ends without a tool call", function (this: Context, agent: string) {
+  assert.ok(this.throwingTool !== undefined, "the scenario declares no effector that throws");
+  script(this, agent, callWithThenEnd(this.throwingTool.name, {}, 0));
+});
+
+When("the run stops on that error", async function (this: Context) {
+  try {
+    await runTheScenario(this);
+  } catch (error) {
+    this.runError = error as Error;
+    return;
+  }
+  assert.fail("the run did not stop");
+});
+
+/** The last line of the only log the scenario's run wrote, which says the run stopped. */
+function stopLine(context: Context): Line {
+  const last = logLines(context).at(-1);
+  assert.ok(last !== undefined, "the run's log is empty");
+  assert.equal(last.type, "run_stopped", `the log's last line does not say the run stopped: ${JSON.stringify(last)}`);
+  assert.equal(typeof last.error, "string", "the line that says the run stopped gives no error");
+  return last;
+}
+
+Then("the last line of the run's log says the run stopped and gives the error", function (this: Context) {
+  assert.ok(this.throwingTool !== undefined, "the scenario declares no effector that throws");
+  assert.match(stopLine(this).error as string, new RegExp(this.throwingTool.message));
+  assert.match(this.runError?.message ?? "", new RegExp(this.throwingTool.message));
 });

@@ -48,6 +48,8 @@ export class Context extends CucumberWorld {
   runId?: string;
   /** A log an earlier run of the scenario wrote: its file's name and its content. */
   previousLog?: { file: string; content: string };
+  /** The tool the scenario declares to throw an error when it runs, and that error's message. */
+  throwingTool?: { name: string; message: string };
   /** The error the run stopped on, for a scenario whose run stops. */
   runError?: Error;
   /** The tool calls the run gave. */
