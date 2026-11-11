@@ -128,6 +128,8 @@ export interface SessionSettings {
   modelTurnTimeoutMs: number;
   /** Aborts when the run's time limit passes, which cuts off the tool calls still running (FR-CLOCK-02). */
   timeLimit: AbortSignal;
+  /** Stops the run on an error that is not the agent's behaviour, such as a tool that throws (FR-RECORD-01). */
+  stop(error: Error): void;
 }
 
 /** Opens the Pi session an agent keeps for the whole run (FR-ADAPTER-02). */
@@ -151,7 +153,7 @@ export async function openSession<State>(
     model: agent.model.model,
     // The allowlist leaves out Pi's built-in tools and filters custom tools too, so it names every scenario tool.
     tools: tools.map((tool) => tool.name),
-    customTools: tools.map((tool) => definition(world, tool, agent.name, executed, sensings, changes, settings.timeLimit)),
+    customTools: tools.map((tool) => definition(world, tool, agent.name, executed, sensings, changes, settings)),
     resourceLoader: resources(settings.systemPrompt),
     sessionManager: SessionManager.inMemory(),
     // Neither the person's nor any project's Pi settings reach the session. A provider's error ends the activation
@@ -347,7 +349,7 @@ function definition<State>(
   executed: Map<string, Executed>,
   sensings: Sensings,
   changes: ChangesSinceSensing,
-  timeLimit: AbortSignal,
+  { timeLimit, stop }: SessionSettings,
 ): ToolDefinition {
   return {
     name: tool.name,
@@ -356,8 +358,17 @@ function definition<State>(
     parameters: tool.parameters as ToolDefinition["parameters"],
     execute: async (id, args: Record<string, unknown>) => {
       const startedAtMs = performance.now();
-      const { outcome, text, ...perceived } =
-        undeclared(tool, args) ?? (await perform(world, tool, { agent, arguments: args }, sensings.last(agent), changes, timeLimit));
+      let called: CallResult;
+      try {
+        called = undeclared(tool, args) ?? (await perform(world, tool, { agent, arguments: args }, sensings.last(agent), changes, timeLimit));
+      } catch (error) {
+        // A tool that throws is a defect of the scenario, not the agent's behaviour: no outcome fits it, and the run
+        // stops on it rather than going on with a world it cannot trust.
+        const message = error instanceof Error ? error.message : String(error);
+        stop(new Error(`agent "${agent}"'s "${tool.name}" call failed: ${message}`, { cause: error }));
+        throw error;
+      }
+      const { outcome, text, ...perceived } = called;
       const endedAtMs = performance.now();
       const sensed = tool.kind === "sensor" && outcome === "success";
       executed.set(id, {

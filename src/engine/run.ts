@@ -64,12 +64,24 @@ export async function run<State>(
   settings: RunSettings,
 ): Promise<RunResult> {
   const recorder = Recorder.open(settings.logDirectory);
+  // Aborts when the run ends before its agents are done: its time limit passes (FR-CLOCK-02) or it stops on an error.
+  const end = new AbortController();
+  let stoppedOn: Error | undefined;
+  // The first error stops the run at once: its log ends there, and every agent stops as at the time limit.
+  const stop = (error: Error) => {
+    if (stoppedOn !== undefined) return;
+    stoppedOn = error;
+    recorder.stop(error);
+    end.abort();
+  };
   try {
     const stimuli = new Stimuli(loaded.scenario.channels, (agent, stimulus) =>
       recorder.record({ type: "stimulus", agent, ...stimulus, deliveredAtMs: performance.now() }),
     );
     settings.onStart?.(stimuli);
-    return { runId: recorder.runId, ...(await runAgents(loaded, agents, seed, settings, stimuli, recorder)) };
+    const result = await runAgents(loaded, agents, seed, settings, stimuli, recorder, end, stop);
+    if (stoppedOn !== undefined) throw stoppedOn;
+    return { runId: recorder.runId, ...result };
   } finally {
     recorder.close();
   }
@@ -83,12 +95,14 @@ async function runAgents<State>(
   settings: RunSettings,
   stimuli: Stimuli,
   recorder: Recorder,
+  timeLimit: AbortController,
+  stop: (error: Error) => void,
 ): Promise<Omit<RunResult, "runId">> {
-  const timeLimit = new AbortController();
   const sessionSettings = {
     systemPrompt: scenario.systemPrompt,
     modelTurnTimeoutMs: settings.modelTurnTimeoutMs,
     timeLimit: timeLimit.signal,
+    stop,
   };
   const runtime = await openRuntime(agents.map((agent) => agent.model.provider));
   const parallelism = new ParallelismLimit(settings.parallelismLimit);
