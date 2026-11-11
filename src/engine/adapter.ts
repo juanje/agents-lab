@@ -27,7 +27,7 @@ import { failure } from "./failure.ts";
 import type { Position } from "./grid.ts";
 import type { ParallelismLimit } from "./parallelism.ts";
 import { SCRIPT_EXHAUSTED_MESSAGE } from "./scripted-model.ts";
-import type { Sensing, Sensings } from "./sensings.ts";
+import type { Sensings } from "./sensings.ts";
 import type { Stimuli, Stimulus } from "./stimuli.ts";
 import type { AgentCall, Effector, Sensor, Start, TargetAsSensed, Tool } from "./tools.ts";
 import type { World } from "./world.ts";
@@ -430,7 +430,7 @@ function definition<State>(
         // A call that comes after the run has ended is left unrun: it reads no target and applies nothing (FR-CLOCK-02).
         called = runEnd.aborted
           ? { outcome: CUT_OFF, text: CUT_OFF }
-          : (undeclared(tool, args) ?? (await perform(world, tool, { agent, arguments: args }, sensings.last(agent), changes, runEnd, started)));
+          : (undeclared(tool, args) ?? (await perform(world, tool, { agent, arguments: args }, sensings, changes, runEnd, started)));
       } catch (error) {
         // A tool that throws is a defect of the scenario, not the agent's behaviour: no outcome fits it, and the run
         // stops on it rather than going on with a world it cannot trust.
@@ -534,12 +534,14 @@ async function perform<State>(
   world: World<State>,
   tool: Tool<State>,
   call: AgentCall,
-  sensing: Sensing | undefined,
+  sensings: Sensings,
   changes: ChangesSinceSensing,
   runEnd: AbortSignal,
   started: (change: EffectorStart["change"]) => void,
 ): Promise<CallResult> {
-  const targetAsSensed = tool.kind === "effector" ? (sensing === undefined ? "not_sensed" : tool.readTarget(sensing, call, world.state)) : undefined;
+  const sensing = sensings.last(call.agent);
+  const lastBy = (sensor: string) => sensings.lastBy(call.agent, sensor);
+  const targetAsSensed = tool.kind === "effector" ? (sensing === undefined ? "not_sensed" : tool.readTarget(sensing, call, world.state, lastBy)) : undefined;
   const durationMs = tool.durationMs(world.state, call);
   if (tool.kind === "effector" && tool.start !== undefined && (tool.start.appliesTo?.(world.state, call) ?? true)) {
     started(start(world, tool.start, call, changes));

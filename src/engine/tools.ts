@@ -62,6 +62,9 @@ export interface LandingCall extends AgentCall {
   atMs: number;
 }
 
+/** An agent's last sensing by a sensor, by the sensor's name, or undefined if it never used it. */
+export type LastBy = (tool: string) => Sensing | undefined;
+
 /** A tool that changes the world through the arbiter. */
 export interface Effector<State> extends Declared<State> {
   kind: "effector";
@@ -80,9 +83,10 @@ export interface Effector<State> extends Declared<State> {
   texts?: Readonly<Record<string, string>>;
   /**
    * What the agent's last sensing says of the call's target, which it finds from the state as the call starts;
-   * "not_sensed" when that sensing does not show it.
+   * "not_sensed" when that sensing does not show it. `lastBy` gives the agent's last sensing by a sensor, by its name,
+   * whatever it sensed after it, for an effector that reads its target in what one sensor showed.
    */
-  readTarget(sensing: Sensing, call: AgentCall, state: State): TargetAsSensed;
+  readTarget(sensing: Sensing, call: AgentCall, state: State, lastBy: LastBy): TargetAsSensed;
 }
 
 /** An agent's only interface with the world (FR-TOOL-01). */

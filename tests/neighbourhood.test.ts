@@ -5,6 +5,7 @@ import { Random } from "../src/engine/random.ts";
 import type { Configuration } from "../src/engine/scenario.ts";
 import type { Tool } from "../src/engine/tools.ts";
 import { World } from "../src/engine/world.ts";
+import { onlySensing } from "./fixtures/sensing.ts";
 import { type Neighbourhood, neighbourhoodScenario } from "../src/scenarios/neighbourhood.ts";
 
 const configuration = (width: number, height: number, residents: number): Configuration => ({
@@ -254,12 +255,12 @@ describe("the neighbourhood scenario", () => {
     if (look.kind !== "sensor" || move.kind !== "effector") throw new Error("look is not a sensor or move is not an effector");
     const state = residentsAt(5, 5, { lookRadius: 1, msPerCell: 100 });
     const sensing = { tool: "look", result: look.sense(state, "r1", {}), takenFrom: { x: 0, y: 0 }, atMs: 0 };
-    const target = (dx: number, dy: number) => move.readTarget(sensing, { agent: "r1", arguments: { dx, dy } }, state);
+    const target = (dx: number, dy: number) => move.readTarget(sensing, { agent: "r1", arguments: { dx, dy } }, state, onlySensing(sensing));
 
     expect([target(1, 0), target(0, 1)]).toEqual(["held", "held"]);
     expect(target(1, 1)).toBe("free");
     expect([target(2, 0), target(3, 3)]).toEqual(["not_sensed", "not_sensed"]);
-    expect(move.readTarget({ ...sensing, tool: "another sensor" }, { agent: "r1", arguments: { dx: 1, dy: 1 } }, state)).toBe("not_sensed");
+    expect(move.readTarget({ ...sensing, tool: "another sensor" }, { agent: "r1", arguments: { dx: 1, dy: 1 } }, state, onlySensing({ ...sensing, tool: "another sensor" }))).toBe("not_sensed");
   });
 
   it("reads a move's target as the cell the last look showed, wherever the resident looked from", () => {
@@ -271,7 +272,7 @@ describe("the neighbourhood scenario", () => {
     const sensing = { tool: "look", result: look.sense(looked, "r1", {}), takenFrom: { x: 0, y: 0 }, atMs: 0 };
     // "r1" has since moved from 0, 0 to 0, 2.
     const moved = { ...looked, grid: place(emptyGrid(5, 5, 1), "r1", { x: 0, y: 2 }) };
-    const target = (dx: number, dy: number) => move.readTarget(sensing, { agent: "r1", arguments: { dx, dy } }, moved);
+    const target = (dx: number, dy: number) => move.readTarget(sensing, { agent: "r1", arguments: { dx, dy } }, moved, onlySensing(sensing));
 
     expect(target(1, -2)).toBe("held");
     expect(target(1, -1)).toBe("free");
@@ -285,8 +286,8 @@ describe("the neighbourhood scenario", () => {
     const state = residentsAt(5, 5, { lookRadius: 1, msPerCell: 100 });
     const sensing = { tool: "look", result: look.sense(state, "r1", {}), takenFrom: { x: 0, y: 0 }, atMs: 0 };
 
-    expect(move.readTarget(sensing, { agent: "r1", arguments: { dx: -1, dy: 0 } }, state)).toBe("outside");
-    expect(move.readTarget(sensing, { agent: "r1", arguments: { dx: 1, dy: -1 } }, state)).toBe("outside");
+    expect(move.readTarget(sensing, { agent: "r1", arguments: { dx: -1, dy: 0 } }, state, onlySensing(sensing))).toBe("outside");
+    expect(move.readTarget(sensing, { agent: "r1", arguments: { dx: 1, dy: -1 } }, state, onlySensing(sensing))).toBe("outside");
   });
 
   it("gives each resident with an occupied neighbouring cell the share of its neighbours of its own kind, by its name", () => {

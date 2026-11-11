@@ -5,6 +5,7 @@ import type { Configuration, Scenario } from "../src/engine/scenario.ts";
 import { leave, put, where } from "../src/engine/places.ts";
 import type { Effector, Sensor } from "../src/engine/tools.ts";
 import { World } from "../src/engine/world.ts";
+import { onlySensing } from "./fixtures/sensing.ts";
 import { type Workplace, workplaceScenario } from "../src/scenarios/workplace.ts";
 
 const scenario = workplaceScenario as Scenario<Workplace>;
@@ -509,20 +510,20 @@ describe("the workplace's tools", () => {
     it("go: free for an exit it showed, outside for a place it showed no exit to", () => {
       const sensing = looked(start());
 
-      expect(effector("go").readTarget(sensing, call({ place: "office" }), start())).toBe("free");
-      expect(effector("go").readTarget(sensing, call({ place: "attic" }), start())).toBe("outside");
+      expect(effector("go").readTarget(sensing, call({ place: "office" }), start(), onlySensing(sensing))).toBe("free");
+      expect(effector("go").readTarget(sensing, call({ place: "attic" }), start(), onlySensing(sensing))).toBe("outside");
     });
 
     it("take, put and give: free for a thing, container or person it showed", () => {
       const office = inPlace(start(), "office");
       const sensing = looked(office);
 
-      expect(effector("take").readTarget(sensing, call({ thing: "key" }), office)).toBe("free");
-      expect(effector("take").readTarget(sensing, call({ thing: "sign" }), office)).toBe("not_sensed");
-      expect(effector("put").readTarget(sensing, call({ thing: "key", into: "cupboard" }), office)).toBe("free");
-      expect(effector("put").readTarget(sensing, call({ thing: "key" }), office)).toBe("not_sensed");
-      expect(effector("give").readTarget(sensing, call({ thing: "key", person: "ana" }), office)).toBe("free");
-      expect(effector("give").readTarget(sensing, call({ thing: "key", person: "bob" }), office)).toBe("not_sensed");
+      expect(effector("take").readTarget(sensing, call({ thing: "key" }), office, onlySensing(sensing))).toBe("free");
+      expect(effector("take").readTarget(sensing, call({ thing: "sign" }), office, onlySensing(sensing))).toBe("not_sensed");
+      expect(effector("put").readTarget(sensing, call({ thing: "key", into: "cupboard" }), office, onlySensing(sensing))).toBe("free");
+      expect(effector("put").readTarget(sensing, call({ thing: "key" }), office, onlySensing(sensing))).toBe("not_sensed");
+      expect(effector("give").readTarget(sensing, call({ thing: "key", person: "ana" }), office, onlySensing(sensing))).toBe("free");
+      expect(effector("give").readTarget(sensing, call({ thing: "key", person: "bob" }), office, onlySensing(sensing))).toBe("not_sensed");
     });
 
     it("not_sensed for a look taken in another place, a sensing that is not a look, and for record and note", () => {
@@ -530,10 +531,10 @@ describe("the workplace's tools", () => {
       const office = inPlace(start(), "office");
       const read = { tool: "read", result: "Quiet, please.", atMs: 0 };
 
-      expect(effector("go").readTarget(fromHall, call({ place: "hall" }), office)).toBe("not_sensed");
-      expect(effector("go").readTarget(read, call({ place: "office" }), start())).toBe("not_sensed");
-      expect(effector("record").readTarget(fromHall, call({ entry: "x" }), start())).toBe("not_sensed");
-      expect(effector("note").readTarget(fromHall, call({ text: "x" }), start())).toBe("not_sensed");
+      expect(effector("go").readTarget(fromHall, call({ place: "hall" }), office, onlySensing(fromHall))).toBe("not_sensed");
+      expect(effector("go").readTarget(read, call({ place: "office" }), start(), onlySensing(read))).toBe("not_sensed");
+      expect(effector("record").readTarget(fromHall, call({ entry: "x" }), start(), onlySensing(fromHall))).toBe("not_sensed");
+      expect(effector("note").readTarget(fromHall, call({ text: "x" }), start(), onlySensing(fromHall))).toBe("not_sensed");
     });
   });
 
