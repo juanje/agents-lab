@@ -15,8 +15,13 @@ export interface LabEnvironment {
   model: (name: string) => Promise<AgentModel>;
 }
 
+/** How the command is used, as an error for other arguments says. */
+const USAGE = "Usage: lab run <experiment.toml>";
+
 /** The `lab` command, with its arguments: `lab run <experiment.toml>`. */
-export async function lab([, path]: readonly string[], environment: LabEnvironment): Promise<void> {
+export async function lab(args: readonly string[], environment: LabEnvironment): Promise<void> {
+  const [command, path, ...rest] = args;
+  if (command !== "run" || path === undefined || rest.length > 0) throw new Error(`lab was given ${JSON.stringify(args)}. ${USAGE}`);
   const experiment = readExperiment(readFileSync(path, "utf8"));
   const scenario = environment.scenarios.get(experiment.scenario);
   if (scenario === undefined) throw new Error(`The scenario library has no scenario "${experiment.scenario}"`);
