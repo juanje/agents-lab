@@ -314,7 +314,13 @@ The engine reads them at run time, writes each path with a content hash to the r
 *Why:* texts are reviewed and changed as files, and a result must say exactly which version of each text produced it.
 
 #### FR-RUN-01: An experiment runs every condition, model and replica
-`lab run <experiment.toml>` runs each condition with each model, for the configured number of replicas, one after another, each replica with its own seed. It fails before any model call when the file names an unknown scenario, condition or model, with an error that names it.
+`lab run <experiment.toml>` runs each condition with each model, for the configured number of replicas, one after another, each replica with its own seed. Every agent of a run uses that run's model. Replica r's seed is derived from the base seed and r, so it is the same in every condition and model.
+
+It fails before any model call when the file names an unknown scenario or model, or a condition the scenario's configuration refuses, with an error that names it.
+
+It writes each run's log into `runs/<experiment id>/` under the current directory, and adds to that directory's `index.jsonl` one line per run, with its run id, condition, model, replica, seed and whether it completed or stopped. A run that stops on an error stops the experiment.
+
+`lab` is a command in `src/cli/`, which may import the engine, the scenarios and the analysis; the scenario library gives each scenario by its name.
 *Why:* an experiment is the full grid of conditions and models, and a typo found after an hour of model calls wastes the run.
 
 #### FR-RUN-02: Summaries across replicas

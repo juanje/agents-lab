@@ -23,7 +23,7 @@ When finishing without stopping conflicts with a doubt about the contract, stopp
 ## Project facts
 
 - TypeScript on Node (ES modules), npm with a lock file.
-- Source in `src/engine/` (the engine), `src/scenarios/` (reusable scenarios) and `src/analysis/` (log analysis). The engine never imports from the other two.
+- Source in `src/engine/` (the engine), `src/scenarios/` (reusable scenarios), `src/analysis/` (log analysis) and `src/cli/` (the `lab` command). The engine never imports from the others; the CLI may import all three.
 - Unit tests in `tests/` (vitest), acceptance scenarios in `features/` with their steps in `features/steps/` (cucumber-js).
 - Experiments, their materials and results live in `~/git/agents-lab-experiments`, never here.
 - Commands:
