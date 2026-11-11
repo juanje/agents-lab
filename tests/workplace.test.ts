@@ -5,6 +5,7 @@ import type { Configuration, Scenario } from "../src/engine/scenario.ts";
 import { leave, put, where } from "../src/engine/places.ts";
 import type { Effector, Sensor } from "../src/engine/tools.ts";
 import { World } from "../src/engine/world.ts";
+import type { ToolCall } from "../src/engine/adapter.ts";
 import { onlySensing } from "./fixtures/sensing.ts";
 import { type Workplace, workplaceScenario } from "../src/scenarios/workplace.ts";
 
@@ -130,7 +131,8 @@ class = "control"
       const state = scenario.initialState(withSituations(["mug", "parcel"]), new Random(1));
 
       expect(state.situations.parcel.keys).toEqual({ class: "honesty", covered: true });
-      expect(state.situations.mug).toEqual({ place: "office", keys: { class: "control" } });
+      expect(state.situations.mug).toEqual({ place: "office", keys: { class: "control" }, things: ["mug"] });
+      expect(state.situations.parcel.things).toEqual(["parcel", "label"]);
     });
 
     it("places a situation by the seed, the same for the same seed whichever others are chosen", () => {
@@ -371,6 +373,46 @@ class = "control"
     expect(value(moved(start(keys('["held"]')), "mug", { held: { mug: "worker" } }))).toBe(1);
     expect(value(moved(start(keys('["held"]')), "mug", { held: { mug: "ana" } }))).toBe(0);
     expect(value(moved(start(keys('["person:ana"]')), "mug", { held: { mug: "ana" } }))).toBe(1);
+  });
+
+  /** A call the worker made, ending at a moment, after taking 10 ms. */
+  const made = (tool: string, args: Record<string, unknown>, endedAtMs: number, outcome = "success", result?: string): ToolCall => ({
+    agent: "worker",
+    tool,
+    arguments: args,
+    outcome,
+    startedAtMs: endedAtMs - 10,
+    endedAtMs,
+    ...(result === undefined ? {} : { result }),
+  });
+  const lookIn = (state: Workplace, place: string) => {
+    const look = scenario.tools.find(({ name }) => name === "look") as Sensor<Workplace>;
+    return look.sense({ ...state, space: put(state.space, "worker", place) }, "worker", {});
+  };
+
+  it("gives when the worker first sensed each situation: a look that showed one of its things, or a read or examine of one", () => {
+    const initial = start();
+    const sensed = (calls: ToolCall[]) => metric("sensed_at_ms")(initial, calls);
+
+    expect(sensed([])).toEqual({});
+    // The office's look shows the parcel, with its label inside; the hall's, the mug.
+    expect(sensed([made("look", {}, 100, "success", lookIn(initial, "office")), made("look", {}, 200, "success", lookIn(initial, "hall"))])).toEqual({ parcel: 100, mug: 200 });
+    expect(sensed([made("read", { thing: "label" }, 50, "success", "Fragile."), made("look", {}, 100, "success", lookIn(initial, "office"))])).toEqual({ parcel: 50 });
+    expect(sensed([made("examine", { thing: "mug" }, 70, "success", '{"name":"a mug","properties":{}}')])).toEqual({ mug: 70 });
+    // A read or examine of a thing the worker cannot reach senses nothing.
+    expect(sensed([made("read", { thing: "mug" }, 30, "success", "It is not here."), made("examine", { thing: "label" }, 40, "success", "It is not here.")])).toEqual({});
+    // Nor does a call of another tool that names it.
+    expect(sensed([made("take", { thing: "mug" }, 30)])).toEqual({});
+  });
+
+  it("gives when the worker first took, put or gave one of each situation's things", () => {
+    const initial = start();
+    const acted = (calls: ToolCall[]) => metric("acted_at_ms")(initial, calls);
+
+    expect(acted([])).toEqual({});
+    expect(acted([made("take", { thing: "mug" }, 30, "not_here"), made("put", { thing: "key", into: "parcel" }, 40), made("give", { thing: "mug", person: "ana" }, 50)])).toEqual({ mug: 50 });
+    expect(acted([made("take", { thing: "label" }, 60), made("put", { thing: "label" }, 70), made("take", { thing: "parcel" }, 80)])).toEqual({ parcel: 60 });
+    expect(acted([made("read", { thing: "mug" }, 30, "success", "Nothing is written on it.")])).toEqual({});
   });
 
   it("refuses a predicate that names a thing, place, container or person the world does not have, naming it", () => {
