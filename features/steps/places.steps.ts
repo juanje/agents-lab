@@ -6,6 +6,7 @@ import { type Action, World } from "../../src/engine/world.ts";
 import { goTool, placesScenario } from "../../tests/fixtures/places-world.ts";
 import type { Context } from "../support/context.ts";
 import { stateAt } from "./acting.steps.ts";
+import { logLines } from "./record.steps.ts";
 import { assembled, callOf, callWithThenEnd, script } from "./tool.steps.ts";
 
 Given(
@@ -277,3 +278,21 @@ When(
 Then("it is refused with an error that names the places {string} and {string}", function (this: Context, one: string, other: string) {
   assertRefused(this, `places "${one}" and "${other}"`);
 });
+
+Then(
+  "the run's log has, before the line of agent {string}'s {string} call, a line for its start, with agent {string}, the tool {string}, the moment it started, and that agent {string} left {string} towards {string}",
+  function (this: Context, agent: string, tool: string, starter: string, started: string, walker: string, from: string, towards: string) {
+    assert.equal(starter, agent);
+    assert.equal(started, tool);
+    assert.equal(walker, agent);
+    const lines = logLines(this);
+    const callAt = lines.findIndex((line) => line.type === "tool_call" && line.agent === agent && line.tool === tool);
+    assert.ok(callAt !== -1, `the log has no line of agent "${agent}"'s "${tool}" call`);
+    const starts = lines.flatMap((line, index) => (line.type === "effector_start" && line.agent === agent && line.tool === tool ? [index] : []));
+    assert.equal(starts.length, 1, `the log has ${starts.length} start lines of agent "${agent}"'s "${tool}"`);
+    const [startAt] = starts;
+    assert.ok(startAt < callAt, `the start line comes after the line of the call`);
+    assert.equal(lines[startAt].atMs, lines[callAt].startedAtMs, "the start was not recorded at the moment the call started");
+    assert.deepEqual(lines[startAt].change, { left: from, towards });
+  },
+);
