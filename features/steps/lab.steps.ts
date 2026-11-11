@@ -256,7 +256,7 @@ export function logOf(context: Context, runId: string, from = context.home): Log
 }
 
 /** Every time a log line gives, by performance.now(). */
-function timesOf(line: LogLine): number[] {
+export function timesOf(line: LogLine): number[] {
   return ["wokeAtMs", "endedAtMs", "startedAtMs", "deliveredAtMs"].flatMap((field) => (typeof line[field] === "number" ? [line[field]] : []));
 }
 

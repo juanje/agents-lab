@@ -6,7 +6,8 @@ import type { AgentModel } from "../../src/engine/adapter.ts";
 import { waitAtLeast } from "../../src/engine/clock.ts";
 import type { Context } from "../support/context.ts";
 import { tableAt } from "./experiment.steps.ts";
-import { experimentFileOf, idleModels, indexOf, logOf, runLab, runLogs } from "./lab.steps.ts";
+import { experimentFileOf, idleModels, indexOf, logOf, runLab, runLogs, timesOf } from "./lab.steps.ts";
+import { printedLines } from "./progress.steps.ts";
 
 Given(
   "the scripted model {string}, whose agents wait {int} milliseconds and then end every turn without a tool call",
@@ -97,12 +98,6 @@ interface Printed {
   replica: number;
 }
 
-/** The lines "lab run" printed, without empty ones. */
-function printedLines(context: Context): string[] {
-  assert.ok(context.labOutput !== undefined, '"lab run" printed nothing');
-  return context.labOutput.split("\n").filter((line) => line !== "");
-}
-
 /** Each run "lab run" said started, by its number, with where it said it started and ended. */
 function printedRuns(lines: readonly string[]): Printed[] {
   const runs = new Map<number, Printed>();
@@ -137,9 +132,7 @@ function mostPrintedInProgress(context: Context): number {
 /** Each run's span in time, from the first to the last time its log gives, by performance.now(). */
 function spans(context: Context): { runId: string; fromMs: number; toMs: number }[] {
   return indexOf(context).map(({ runId }) => {
-    const times = logOf(context, runId).flatMap((line) =>
-      ["wokeAtMs", "endedAtMs", "startedAtMs", "deliveredAtMs", "atMs"].flatMap((field) => (typeof line[field] === "number" ? [line[field] as number] : [])),
-    );
+    const times = logOf(context, runId).flatMap(timesOf);
     assert.ok(times.length > 0, `run ${runId}'s log gives no time`);
     return { runId, fromMs: Math.min(...times), toMs: Math.max(...times) };
   });

@@ -23,7 +23,7 @@ Given('"lab run" reports progress every {int} milliseconds', function (this: Con
 });
 
 /** The lines "lab run" printed, in order, without empty ones. */
-function printedLines(context: Context): string[] {
+export function printedLines(context: Context): string[] {
   assert.ok(context.labOutput !== undefined, '"lab run" printed nothing');
   return context.labOutput.split("\n").filter((line) => line !== "");
 }
