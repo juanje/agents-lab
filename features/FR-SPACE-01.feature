@@ -45,3 +45,8 @@ Feature: A grid space
     When entity "a" moves to 5, 1
     Then the move is refused with an error that names the cell at 5, 1
     And entity "a" is still at 1, 1
+
+  Scenario: The grid says which cell an entity is in
+    Given entity "a" is at 1, 1 and entity "b" is at 1, 2
+    Then entity "a"'s position is 1, 1
+    And entity "z" has no position
