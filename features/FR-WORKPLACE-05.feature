@@ -8,10 +8,10 @@ Feature: The depot's day goes on: time, the porter and visitors
     And the world has the thing "crate", named "a wooden crate", that arrives "09:10"
 
   Scenario: The worker learns the time only by checking it
-    Given the configuration's "check_time_ms" is 10
+    Given the configuration's "check_time_ms" is 10 and its "time_scale" is 600, so one depot minute is 100 milliseconds of the run
     And the worker's scripted turns call "look", then wait 130 milliseconds, then call "check_time", then end
     When the run ends
-    Then the "check_time" call's result is "09:15"
+    Then the "check_time" call's result is "09:01"
     And the look's result gives no time
     And the worker's system prompt and stimuli give no time
 
