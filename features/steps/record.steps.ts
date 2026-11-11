@@ -5,6 +5,7 @@ import { Then } from "@cucumber/cucumber";
 import { rhythmChannel } from "../../tests/fixtures/slots.ts";
 import type { Context } from "../support/context.ts";
 import { turnsOf } from "./adapter.steps.ts";
+import { modelOf } from "./tool.steps.ts";
 
 /** The log files in the scenario's log directory, by name, in no particular order. */
 function logFiles(context: Context): string[] {
@@ -83,5 +84,30 @@ Then(
     const deliveredAtMs = timeIn(stimulus, "deliveredAtMs");
     assert.ok(timeIn(activation, "wokeAtMs") <= deliveredAtMs, "the stimulus was delivered before the agent woke");
     assert.ok(deliveredAtMs <= turnsOf(this, agent)[0].startedAtMs, "the stimulus was delivered after the first model turn started");
+  },
+);
+
+/** The usage Pi reported with each of an agent's answers, as its session kept them, in order. */
+function usagesOf(context: Context, agent: string) {
+  const messages = context.sessionMessages?.get(agent);
+  assert.ok(messages !== undefined, `the run gave no session for agent "${agent}"`);
+  return messages.flatMap((message) => (message.role === "assistant" ? [message.usage] : []));
+}
+
+Then(
+  "the log has a model turn line for agent {string} with the text {string}, the model that answered, its wait for a model slot, a latency of at least {int} milliseconds, its tokens and its cost",
+  function (this: Context, agent: string, text: string, latencyMs: number) {
+    const turn = lineOf(this, "model_turn", agent);
+    assert.equal(turn.text, text);
+    const { model } = modelOf(this, agent);
+    assert.equal(turn.model, `${model.provider}/${model.id}`);
+    assert.ok(timeIn(turn, "slotWaitMs") >= 0, "the wait for a model slot is negative");
+    assert.ok(timeIn(turn, "latencyMs") >= latencyMs, `the latency was ${String(turn.latencyMs)} ms`);
+    // The tokens and the cost are what Pi reported with the answer.
+    const [usage] = usagesOf(this, agent);
+    const { cost, ...tokens } = usage;
+    assert.ok(tokens.output > 0, "Pi reported no output tokens to compare with");
+    assert.deepEqual(turn.tokens, tokens);
+    assert.deepEqual(turn.cost, cost);
   },
 );
