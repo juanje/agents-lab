@@ -8,30 +8,42 @@ interface Tally {
   activations: number;
   turns: number;
   cost: number;
+  /** Prints the run's progress at the interval, until it ends. */
+  timer: ReturnType<typeof setInterval>;
 }
 
 /**
- * What `lab run` prints while it runs (FR-RUN-04): each run's start, its end, and the experiment's totals. What it
+ * What `lab run` prints while it runs (FR-RUN-04): each run's start, its progress at an interval, its end, and the
+ * experiment's totals. What it
  * counts it reads from the lines each run's log records; it writes nothing to the log.
  */
 export class Progress implements ExperimentObserver {
   readonly #print: (text: string) => void;
   readonly #now: () => number;
+  readonly #intervalMs: number;
   readonly #startedAtMs: number;
   #tally: Tally | undefined;
   #completed = 0;
   #cost = 0;
 
-  /** Prints with `print`, timing by `now`, in milliseconds, from now on. */
-  constructor(print: (text: string) => void, { now = () => performance.now() }: { intervalMs: number; now?: () => number }) {
+  /** Prints with `print`, a run's progress every `intervalMs`, timing by `now`, in milliseconds, from now on. */
+  constructor(print: (text: string) => void, { intervalMs, now = () => performance.now() }: { intervalMs: number; now?: () => number }) {
     this.#print = print;
     this.#now = now;
+    this.#intervalMs = intervalMs;
     this.#startedAtMs = now();
   }
 
   runStarted(run: StartingRun): void {
-    this.#tally = { run, startedAtMs: this.#now(), activations: 0, turns: 0, cost: 0 };
+    const timer = setInterval(() => this.#printProgress(), this.#intervalMs);
+    this.#tally = { run, startedAtMs: this.#now(), activations: 0, turns: 0, cost: 0, timer };
     this.#print(`${runName(run)} started: condition "${run.condition}", model "${run.model}", replica ${run.replica}, seed ${run.seed}\n`);
+  }
+
+  #printProgress(): void {
+    const tally = this.#current();
+    const done = `${tally.activations} of ${tally.run.activations} activations`;
+    this.#print(`${runName(tally.run)} running: ${seconds(this.#now() - tally.startedAtMs)}, ${done}, ${counted(tally.turns, "model turn")}, ${cost(tally.cost)}\n`);
   }
 
   recorded(line: LogLine): void {
@@ -45,6 +57,7 @@ export class Progress implements ExperimentObserver {
 
   runEnded(status: IndexLine["status"]): void {
     const tally = this.#current();
+    clearInterval(tally.timer);
     this.#tally = undefined;
     if (status === "completed") this.#completed += 1;
     this.#cost += tally.cost;
