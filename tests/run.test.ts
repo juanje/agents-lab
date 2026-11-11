@@ -117,6 +117,22 @@ describe("run", () => {
     expect(turn.latencyMs).toBeGreaterThanOrEqual(20);
   });
 
+  it("records each tool call as the model made it, with when it started and ended, its outcome and, for a sensor, its result", async () => {
+    const model = new ScriptedModel([
+      { toolCalls: [{ name: "look", arguments: {} }], delayMs: 0 },
+      { toolCalls: [{ name: "fly", arguments: { slot: 1 } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+    const logDirectory = newLogDirectory();
+
+    const { runId } = await run(slots(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, { ...settings, logDirectory });
+
+    expect(logOf(logDirectory, runId).filter((line) => (line as { type: string }).type === "tool_call")).toEqual([
+      { type: "tool_call", agent: "a", tool: "look", arguments: {}, outcome: "success", result: '["empty","empty","empty"]', ...timed },
+      { type: "tool_call", agent: "a", tool: "fly", arguments: { slot: 1 }, outcome: "unknown_tool", ...timed },
+    ]);
+  });
+
   it("starts an activation with the rhythm channel's stimulus, which the model reads with its source", async () => {
     const model = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
 
