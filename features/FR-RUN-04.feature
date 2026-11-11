@@ -26,3 +26,18 @@ Feature: lab run shows its progress
   Scenario: Progress is not written to the log
     When "lab run" runs the experiment file
     Then no line of any run's log holds what lab run printed
+
+  Scenario: lab run prints the experiment's total also when a run stopped it
+    Given the scripted model "scripted/one"'s session fails to open
+    When "lab run" runs the experiment file
+    Then it printed, last, a line saying 0 runs completed and 1 stopped, with the total duration and the total cost
+
+  Scenario Outline: Durations are printed in hours, minutes and seconds
+    Then a duration of <ms> milliseconds is printed as "<printed>"
+
+    Examples:
+      | ms      | printed         |
+      | 600     | 0.6 s           |
+      | 75000   | 1 min 15 s      |
+      | 1800000 | 30 min 0 s      |
+      | 3725000 | 1 h 2 min 5 s   |

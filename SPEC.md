@@ -358,7 +358,9 @@ While it runs, `lab run` prints to the terminal:
 - when a run starts: its number out of the experiment's total, its condition, model, replica and seed;
 - during a run, every 30 seconds unless the command is given another interval: the time since it started, the activations done out of its budget, the model turns, and the cost so far;
 - when a run ends: whether it completed or stopped, its duration, its activations, model turns and cost;
-- when the experiment ends: how many runs completed, the total duration and the total cost.
+- when the experiment ends, also when a run stopped it: how many runs completed and how many stopped, the total duration and the total cost.
+
+Durations are printed in hours, minutes and seconds (for example `30 min 0 s`), and costs in dollars.
 
 What it prints is read from what the run records, and nothing it prints goes to the log.
 *Why:* a run of an experiment the size of E13 takes many minutes, and a silent terminal cannot tell a working run from a stuck one.
