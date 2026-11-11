@@ -118,6 +118,7 @@ Given(
       id,
       scenario,
       models: [name],
+      thinking_level: "off",
       replicas: 1,
       seed: 1,
       limits: { time_limit_ms: timeLimitMs, activations_per_agent: 1, parallelism_limit: 10, model_turn_timeout_ms: 10_000 },

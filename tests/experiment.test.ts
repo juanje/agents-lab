@@ -7,6 +7,7 @@ const valid = [
   'id = "e-test"',
   'scenario = "slots"',
   'models = ["scripted/one", "scripted/two"]',
+  'thinking_level = "low"',
   "replicas = 2",
   "seed = 7",
   "[limits]",
@@ -21,12 +22,13 @@ const valid = [
 ].join("\n");
 
 describe("readExperiment", () => {
-  it("gives the experiment's id, scenario, models, replicas, base seed and limits", () => {
+  it("gives the experiment's id, scenario, models, thinking level, replicas, base seed and limits", () => {
     const experiment = readExperiment(valid);
     expect(experiment).toMatchObject({
       id: "e-test",
       scenario: "slots",
       models: ["scripted/one", "scripted/two"],
+      thinkingLevel: "low",
       replicas: 2,
       seed: 7,
       limits: { timeLimitMs: 1000, activationsPerAgent: 3, parallelismLimit: 2, modelTurnTimeoutMs: 500 },
@@ -48,6 +50,7 @@ describe("readExperiment", () => {
     "id",
     "scenario",
     "models",
+    "thinking_level",
     "replicas",
     "seed",
     "limits",
@@ -64,12 +67,15 @@ describe("readExperiment", () => {
   const models = "a list of at least one model id";
   const atLeastOne = "a whole number of at least 1";
   const seed = "a whole number from 0 to 4294967295";
+  const thinkingLevel = "one of off, minimal, low, medium, high, xhigh or max";
   it.each<[string, TomlValue, string]>([
     ["id", 3, text],
     ["scenario", ["slots"], text],
     ["models", "scripted/one", models],
     ["models", [], models],
     ["models", ["scripted/one", 3], models],
+    ["thinking_level", "huge", thinkingLevel],
+    ["thinking_level", 3, thinkingLevel],
     ["replicas", "2", atLeastOne],
     ["replicas", 0, atLeastOne],
     ["replicas", 1.5, atLeastOne],

@@ -28,10 +28,10 @@ Given(
   },
 );
 
-/** Scripted models by name, whose agents end every turn without a tool call, for "lab" to resolve. */
-function idleModels(context: Context, names: readonly string[]): void {
+/** Scripted models by name, whose agents end every turn without a tool call, for "lab" to resolve; they can reason or not. */
+function idleModels(context: Context, names: readonly string[], reasoning = false): void {
   for (const name of names) {
-    const model = new ScriptedModel(Array.from({ length: ANSWERS }, () => ({ text: "Nothing to do.", delayMs: 0 })), name.split("/")[1]);
+    const model = new ScriptedModel(Array.from({ length: ANSWERS }, () => ({ text: "Nothing to do.", delayMs: 0 })), name.split("/")[1], { reasoning });
     // Kept by name, so "no model was called" checks every one of them.
     context.models.set(name, model);
     context.labModels.set(name, model);
@@ -49,6 +49,45 @@ Given("the scripted model {string}, whose agents end every turn without a tool c
   idleModels(this, [name]);
 });
 
+Given("the scripted model {string}, which can reason, whose agents end every turn without a tool call", function (this: Context, name: string) {
+  idleModels(this, [name], true);
+});
+
+Given("the scripted model {string}, which cannot reason", function (this: Context, name: string) {
+  idleModels(this, [name]);
+});
+
+Given(
+  "an experiment file {string} for the scenario {string}, with the model {string}, {int} replica, {int} activation per agent, the condition {string}, with no change, and the thinking level {string}",
+  function (this: Context, id: string, scenario: string, model: string, replicas: number, activationsPerAgent: number, condition: string, thinkingLevel: string) {
+    this.experimentFile = {
+      id,
+      scenario,
+      models: [model],
+      thinking_level: thinkingLevel,
+      replicas,
+      seed: 1,
+      // Limits no run here reaches but its activations.
+      limits: { time_limit_ms: 60_000, activations_per_agent: activationsPerAgent, parallelism_limit: 10, model_turn_timeout_ms: 10_000 },
+      conditions: { [condition]: {} },
+    };
+  },
+);
+
+Given("the experiment file names the model {string} and the thinking level {string}", function (this: Context, name: string, thinkingLevel: string) {
+  this.experimentFile.models = [...(this.experimentFile.models as string[]), name];
+  this.experimentFile.thinking_level = thinkingLevel;
+});
+
+Given("the experiment file has no thinking level", function (this: Context) {
+  assert.ok(Object.hasOwn(this.experimentFile, "thinking_level"), "the experiment file has no thinking level to leave out");
+  delete this.experimentFile.thinking_level;
+});
+
+Given("the experiment file sets the thinking level to {string}", function (this: Context, thinkingLevel: string) {
+  this.experimentFile.thinking_level = thinkingLevel;
+});
+
 Given(
   "an experiment file {string} for the scenario {string}, with the model {string}, {int} replica, the base seed {int}, {int} activation per agent, and the condition {string}, which sets {string} to {int}",
   function (this: Context, id: string, scenario: string, model: string, replicas: number, seed: number, activationsPerAgent: number, condition: string, path: string, value: number) {
@@ -56,6 +95,8 @@ Given(
       id,
       scenario,
       models: [model],
+      // The scripted model cannot reason.
+      thinking_level: "off",
       replicas,
       seed,
       // Limits no run here reaches but its activations.
@@ -85,6 +126,8 @@ Given(
       id,
       scenario,
       models: [first, second],
+      // The scripted models cannot reason.
+      thinking_level: "off",
       replicas,
       seed,
       // Limits no run here reaches but its activations.
@@ -285,6 +328,26 @@ Then("each agent's log in every run has exactly {int} activation(s)", function (
       assert.equal(made, count, `agent "${agent}" made ${made} activations in run ${runId}`);
     }
   }
+});
+
+Then("it fails with an error that names {string} and {string}", function (this: Context, first: string, second: string) {
+  assert.ok(this.labError !== undefined, '"lab run" did not fail');
+  for (const name of [first, second]) assert.ok(this.labError.message.includes(name), `the error does not name "${name}": ${this.labError.message}`);
+});
+
+Then("every session of the run used the thinking level {string}", function (this: Context, thinkingLevel: string) {
+  completedIndex(this);
+  for (const [name, model] of this.models) {
+    assert.ok(model.sessions.length > 0, `no session called "${name}"`);
+    assert.deepEqual(new Set(model.reasoningLevels), new Set([thinkingLevel]), `the calls of "${name}" asked for the thinking levels ${model.reasoningLevels.join(", ")}`);
+  }
+  // Each agent's session called the model: two sessions, one for each agent.
+  const sessions = new Set([...this.models.values()].flatMap((model) => model.sessions));
+  assert.equal(sessions.size, 2, `${sessions.size} sessions called the model`);
+});
+
+Then("the first line of the run's log gives the thinking level {string}", function (this: Context, thinkingLevel: string) {
+  assert.deepEqual((firstLine(this).sampling as { thinkingLevels: unknown }).thinkingLevels, { a: thinkingLevel, b: thinkingLevel });
 });
 
 Then("it fails with an error that names {string}", function (this: Context, name: string) {

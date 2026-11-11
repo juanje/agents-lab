@@ -45,6 +45,7 @@ Given(
       id,
       scenario,
       models: [model],
+      thinking_level: "off",
       replicas,
       seed,
       limits: {
