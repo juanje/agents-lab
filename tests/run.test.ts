@@ -1011,6 +1011,26 @@ describe("run", () => {
     expect(sensings?.last("a")).toEqual({ tool: "look", result: '["empty","empty","empty"]', atMs: toolCalls[0]?.endedAtMs });
   });
 
+  it("gives a sensor the call's arguments, as it gives an effector's action", async () => {
+    // A sensor that reads one slot, the one the call names.
+    const peek: Sensor<Slots> = {
+      kind: "sensor",
+      name: "peek",
+      description: "See whether a slot is held.",
+      parameters: { type: "object", properties: { slot: { type: "integer" } }, required: ["slot"] },
+      durationMs: () => 0,
+      sense: (state, agent, args) => `${agent} sees slot ${String(args.slot)} ${state[(args.slot as number) - 1] === null ? "empty" : "held"}`,
+    };
+    const model = new ScriptedModel([
+      { toolCalls: [{ name: "peek", arguments: { slot: 2 } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+
+    const { toolCalls } = await run(slots({ tools: [peek], initialState: () => [null, "z", null] }), [{ name: "a", model, activations: 1 }], seed, settings);
+
+    expect(toolCalls[0]).toMatchObject({ outcome: "success", result: "a sees slot 2 held" });
+  });
+
   it("keeps where a sensor's call was taken from, when the sensor declares it, beside what it returned", async () => {
     const look: Sensor<Slots> = { ...(slotTools[0] as Sensor<Slots>), sense: () => "seen", takenFrom: (_state: Slots, agent: string) => ({ x: agent.length, y: 7 }) };
     const model = new ScriptedModel([
@@ -1204,6 +1224,58 @@ describe("run", () => {
     const cross = toolCalls.find((call) => call.tool === "cross");
     expect(cross?.startedAtMs).toBeLessThan(take?.endedAtMs ?? -Infinity);
     expect(take).toMatchObject({ outcome: "success", changesSinceSensing: 1, changesSinceSensingBy: ["a"] });
+  });
+
+  it("applies no start for a call the effector's start does not apply to: its action alone says how it ends", async () => {
+    const a = new ScriptedModel([
+      { toolCalls: [{ name: "cross", arguments: {} }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+    const logDirectory = newLogDirectory();
+    // Slot 1 is held, so this crossing does not start, and slot 2 is held, so its action fails.
+    const cross = crossing(0);
+    const notStarting: Effector<Slots> = { ...cross, start: { ...(cross.start as NonNullable<Effector<Slots>["start"]>), appliesTo: (state) => state[0] === null } };
+    const loaded = slots({ tools: [...slotTools, notStarting], initialState: () => ["z", "y", null] });
+
+    const { runId, toolCalls } = await run(loaded, [{ name: "a", model: a, activations: 1 }], seed, { ...settings, logDirectory });
+
+    expect(toolCalls[0]).toMatchObject({ tool: "cross", outcome: "slot_taken" });
+    expect(loaded.world.version).toBe(0);
+    expect((logOf(logDirectory, runId) as { type: string }[]).filter((line) => line.type === "effector_start")).toEqual([]);
+  });
+
+  it("gives an effector's action the moment it is checked and applied, by the run's clock", async () => {
+    const a = new ScriptedModel([
+      { toolCalls: [{ name: "stamp", arguments: {} }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+    const moments: number[] = [];
+    const stamp: Effector<Slots> = {
+      kind: "effector",
+      name: "stamp",
+      description: "Take slot 1, noting when.",
+      parameters: { type: "object", properties: {} },
+      durationMs: () => 30,
+      action: {
+        precondition: (state, { agent, atMs }) => {
+          moments.push(atMs);
+          return take.precondition(state, { agent, slot: 1 });
+        },
+        effect: (state, { agent, atMs }) => {
+          moments.push(atMs);
+          return take.effect(state, { agent, slot: 1 });
+        },
+      },
+      readTarget: () => "not_sensed",
+    };
+
+    const { toolCalls } = await run(slots({ tools: [stamp] }), [{ name: "a", model: a, activations: 1 }], seed, settings);
+
+    const [{ startedAtMs, endedAtMs }] = toolCalls;
+    expect(moments).toHaveLength(2);
+    expect(moments[1]).toBe(moments[0]);
+    expect(moments[0]).toBeGreaterThanOrEqual(startedAtMs + 30);
+    expect(moments[0]).toBeLessThanOrEqual(endedAtMs);
   });
 
   it("stops on an effector's start that its check refuses, as on a tool that throws, naming the reason", async () => {
