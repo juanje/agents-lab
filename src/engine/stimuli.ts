@@ -19,15 +19,19 @@ export interface Stimulus {
 export class Stimuli {
   readonly #channels: readonly Channel[];
   readonly #waiting = new Map<string, Stimulus[]>();
+  readonly #delivered: (agent: string, stimulus: Stimulus) => void;
 
-  constructor(channels: readonly Channel[]) {
+  /** Takes the scenario's channels, and what to do with each stimulus as it is delivered: the run records it. */
+  constructor(channels: readonly Channel[], delivered: (agent: string, stimulus: Stimulus) => void = () => {}) {
     this.#channels = channels;
+    this.#delivered = delivered;
   }
 
   /** Delivers a channel's stimulus to an agent: it waits until the agent's session takes it. */
   deliver(agent: string, channel: string): void {
-    const waiting = this.#waiting.get(agent) ?? [];
-    this.#waiting.set(agent, [...waiting, this.#stimulusOf(channel)]);
+    const stimulus = this.#stimulusOf(channel);
+    this.#delivered(agent, stimulus);
+    this.#waiting.set(agent, [...(this.#waiting.get(agent) ?? []), stimulus]);
   }
 
   /** Takes the stimuli waiting for an agent, in the order they were delivered. */
@@ -39,7 +43,9 @@ export class Stimuli {
 
   /** What an agent receives when its rhythm wakes it: the rhythm's stimulus, then the stimuli waiting for it. */
   wake(agent: string): Stimulus[] {
-    return [this.#stimulusOf(RHYTHM_CHANNEL), ...this.take(agent)];
+    const rhythm = this.#stimulusOf(RHYTHM_CHANNEL);
+    this.#delivered(agent, rhythm);
+    return [rhythm, ...this.take(agent)];
   }
 
   #stimulusOf(name: string): Stimulus {
