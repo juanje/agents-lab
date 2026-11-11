@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -58,4 +59,17 @@ describe("materials", () => {
 
     expect(rhythmOf(loaded.configuration).text).toBe("Morning comes.");
   });
+
+  it("are listed, for the condition that sets them, by their path and the SHA-256 hash of their content", () => {
+    writeMaterial("materials/wake.md", "Morning comes.");
+
+    const loaded = loadedWith('rhythm.text = { file = "materials/wake.md" }');
+
+    expect(loaded.materials).toEqual([{ path: "materials/wake.md", hash: `sha256:${sha256("Morning comes.")}` }]);
+  });
 });
+
+/** The SHA-256 hash of a text, in hexadecimal. */
+function sha256(text: string): string {
+  return createHash("sha256").update(text).digest("hex");
+}
