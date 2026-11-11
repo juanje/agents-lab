@@ -9,8 +9,8 @@ import { scenarioLibrary } from "../../src/scenarios/library.ts";
 import { type Workplace, workplaceScenario } from "../../src/scenarios/workplace.ts";
 import type { Context } from "../support/context.ts";
 import { headings, itemOf, under } from "./inventory.steps.ts";
-import { runLab } from "./lab.steps.ts";
 import { withBase } from "./neighbourhood.steps.ts";
+import { listInventory, placeOf } from "./workplace.steps.ts";
 import { logLines } from "./record.steps.ts";
 import { modelOf, runTheScenario, script } from "./tool.steps.ts";
 
@@ -162,14 +162,6 @@ function workplaceNow(context: Context): Workplace {
   const loaded = context.libraryLoads.at(-1);
   assert.ok(loaded !== undefined, "the workplace was neither loaded nor run");
   return loaded.world.state as Workplace;
-}
-
-/** The place an entity of the workplace is in; it must be in a place, not in a passage. */
-function placeOf(state: Workplace, entity: string): string {
-  const at = where(state.space, entity);
-  assert.ok(at !== undefined, `the workplace's space holds no "${entity}"`);
-  assert.ok("place" in at, `"${entity}" is in a passage, not in a place`);
-  return at.place;
 }
 
 // The contract says "the worker is in" both to put the worker in a place, as a Given, and to check where it is, as a
@@ -507,19 +499,7 @@ Then(
 );
 
 Then('"lab inventory" can list an experiment file for the scenario {string}', async function (this: Context, scenario: string) {
-  this.library = scenarioLibrary;
-  this.experimentFile = {
-    id: `${scenario}-inventory`,
-    scenario,
-    models: ["faux/scripted"],
-    thinking_level: "off",
-    replicas: 1,
-    seed: SEED,
-    limits: { time_limit_ms: 1_000, activations_per_agent: 1, parallelism_limit: 1, model_turn_timeout_ms: 1_000 },
-    conditions: { base: {} },
-  };
-  await runLab(this, "inventory");
-  assert.equal(this.labError, undefined, `"lab inventory" failed: ${this.labError?.message}`);
+  await listInventory(this, scenarioLibrary, scenario);
 });
 
 Then(

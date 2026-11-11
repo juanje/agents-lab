@@ -39,7 +39,7 @@ function loadedWorkplace(context: Context): LoadedScenario<Workplace> {
 }
 
 /** The place an entity of the workplace's space is in; it must be in a place, not in a passage. */
-function placeOf({ space }: Workplace, entity: string): string {
+export function placeOf({ space }: Workplace, entity: string): string {
   const at = where(space, entity);
   assert.ok(at !== undefined, `the workplace's space holds no "${entity}"`);
   assert.ok("place" in at, `"${entity}" is in a passage, not in a place`);
@@ -194,9 +194,17 @@ Then("the worker's system prompt holds none of {string}, {string} or {string}", 
 When('"lab inventory" lists it', async function (this: Context) {
   // An experiment of one condition, with no change, over the workplace as the scenario configured it.
   const scenario = String(this.libraryScenario.name);
-  this.library = new Map([...scenarioLibrary, [scenario, this.libraryScenario]]);
-  this.experimentFile = {
-    id: "workplace-inventory",
+  await listInventory(this, new Map([...scenarioLibrary, [scenario, this.libraryScenario]]), scenario);
+});
+
+/**
+ * Lists with "lab inventory" an experiment file of one unchanged condition over a scenario of the library given, with
+ * the seed 42; it must list it.
+ */
+export async function listInventory(context: Context, library: Context["library"], scenario: string): Promise<void> {
+  context.library = library;
+  context.experimentFile = {
+    id: `${scenario}-inventory`,
     scenario,
     models: ["faux/scripted"],
     thinking_level: "off",
@@ -205,9 +213,9 @@ When('"lab inventory" lists it', async function (this: Context) {
     limits: { time_limit_ms: 1_000, activations_per_agent: 1, parallelism_limit: 1, model_turn_timeout_ms: 1_000 },
     conditions: { base: {} },
   };
-  await runLab(this, "inventory");
-  assert.equal(this.labError, undefined, `"lab inventory" failed: ${this.labError?.message}`);
-});
+  await runLab(context, "inventory");
+  assert.equal(context.labError, undefined, `"lab inventory" failed: ${context.labError?.message}`);
+}
 
 Then("the inventory lists the chosen situation {string} by its id only", function (this: Context, situation: string) {
   const printed = this.labOutput ?? "";

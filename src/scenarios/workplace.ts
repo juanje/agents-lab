@@ -203,11 +203,15 @@ function outermost({ inside }: Workplace, thing: string): string {
   return Object.hasOwn(inside, thing) ? outermost({ inside } as Workplace, inside[thing]) : thing;
 }
 
+/** Whether the space holds an entity in the place the worker is in. */
+function besideWorker(state: Workplace, agent: string, entity: string): boolean {
+  const at = where(state.space, entity);
+  return at !== undefined && "place" in at && at.place === hereOf(state, agent);
+}
+
 /** Whether a thing is in the worker's place, or inside a container there. */
 function isHere(state: Workplace, agent: string, thing: string): boolean {
-  if (!Object.hasOwn(state.things, thing)) return false;
-  const at = where(state.space, outermost(state, thing));
-  return at !== undefined && "place" in at && at.place === hereOf(state, agent);
+  return Object.hasOwn(state.things, thing) && besideWorker(state, agent, outermost(state, thing));
 }
 
 /** Whether a thing is in the worker's hands, or inside a container it holds. */
@@ -519,11 +523,9 @@ const give: Effector<Workplace> = {
   action: {
     precondition: (state, call) => {
       const person = call.arguments.person as string;
-      const at = where(state.space, person);
-      const present = Object.hasOwn(state.people, person) && at !== undefined && "place" in at && at.place === hereOf(state, call.agent);
       return firstFailing([
         [() => state.held[thingOf(call.arguments)] !== call.agent, NOT_HELD],
-        [() => !present, NOT_HERE],
+        [() => !(Object.hasOwn(state.people, person) && besideWorker(state, call.agent, person)), NOT_HERE],
       ]);
     },
     effect: (state, call) => ({ ...state, held: { ...state.held, [thingOf(call.arguments)]: call.arguments.person as string } }),
