@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { Given, Then, When } from "@cucumber/cucumber";
 import { type TomlTable, parse, stringify } from "smol-toml";
 import { entitiesAt } from "../../src/engine/grid.ts";
+import { Random } from "../../src/engine/random.ts";
 import { type Condition, type LoadedScenario, type Scenario, loadScenario } from "../../src/engine/scenario.ts";
 import { RHYTHM_CHANNEL, Stimuli, type Stimulus } from "../../src/engine/stimuli.ts";
 import { KINDS, type Neighbourhood, neighbourhoodScenario } from "../../src/scenarios/neighbourhood.ts";
@@ -60,6 +61,19 @@ Given(
   "the configuration sets the rhythm channel's source to {string} and its text to {string}",
   function (this: Context, source: string, text: string) {
     this.neighbourhood = withBase(this.neighbourhood, { rhythm: { source, text } });
+  },
+);
+
+Given(
+  "the configuration sets {string} to {int} and {string} to {int}",
+  function (this: Context, firstPath: string, first: number, secondPath: string, second: number) {
+    const values: TomlTable = {};
+    for (const [path, value] of [[firstPath, first], [secondPath, second]] as const) {
+      const [table, key, ...rest] = path.split(".");
+      assert.ok(key !== undefined && rest.length === 0, `"${path}" is not a key inside a table of the configuration`);
+      values[table] = { ...((values[table] as TomlTable | undefined) ?? {}), [key]: value };
+    }
+    this.neighbourhood = withBase(this.neighbourhood, values);
   },
 );
 
@@ -154,6 +168,25 @@ Then(
     for (const resident of systemPrompts.keys()) {
       const received: Stimulus[] = stimuli.wake(resident).filter((stimulus) => stimulus.channel === channel);
       assert.deepEqual(received,[{ channel, source, content }], `resident "${resident}" received other stimuli`);
+    }
+  },
+);
+
+/** How many intervals the steps draw from each resident's rhythm: enough to reach near both ends of its range. */
+const DRAWS = 1_000;
+
+Then(
+  "every interval each resident's rhythm draws is from {int} to {int} milliseconds",
+  function (this: Context, minMs: number, maxMs: number) {
+    const loaded = lastLoaded(this);
+    assert.ok(loaded.rhythms !== undefined, "the loaded neighbourhood gives no rhythms");
+    assert.deepEqual([...loaded.rhythms.keys()], [...loaded.systemPrompts.keys()], "not every resident has a rhythm");
+    for (const [resident, rhythm] of loaded.rhythms) {
+      const random = Random.derive(42, `rhythm of ${resident}`);
+      for (let draw = 0; draw < DRAWS; draw += 1) {
+        const intervalMs = rhythm(random);
+        assert.ok(intervalMs >= minMs && intervalMs <= maxMs, `"${resident}"'s rhythm drew ${intervalMs} ms`);
+      }
     }
   },
 );

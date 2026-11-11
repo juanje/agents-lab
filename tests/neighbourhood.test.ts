@@ -97,6 +97,19 @@ describe("the neighbourhood scenario", () => {
     expect(neighbourhoodScenario.channels(base)).toEqual([{ name: "rhythm", source, stimulus: text }]);
   });
 
+  it("has each resident wait an interval drawn uniformly between its configuration's rhythm.min_ms and rhythm.max_ms", () => {
+    const base = configuration(3, 2, 2);
+    const rhythm = neighbourhoodScenario.rhythm({ ...base, rhythm: { ...(base.rhythm as object), min_ms: 100, max_ms: 200 } }, "resident 1");
+    const random = new Random(7);
+    const same = new Random(7);
+
+    const drawn = Array.from({ length: 5 }, () => rhythm(random));
+
+    expect(drawn).toEqual(Array.from({ length: 5 }, () => 100 + same.next() * 100));
+    const { min_ms, max_ms } = base.rhythm as { min_ms: unknown; max_ms: unknown };
+    expect([typeof min_ms, typeof max_ms]).toEqual(["number", "number"]);
+  });
+
   it("keeps the configured look radius and time per cell of distance in its state, for its tools to read", () => {
     const base = parse(neighbourhoodScenario.baseConfiguration);
     const state = neighbourhoodScenario.initialState({ ...configuration(3, 2, 2), look_radius: 2, ms_per_cell: 40 }, new Random(1));
