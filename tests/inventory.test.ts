@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { summaryInstructions } from "../src/engine/compaction.ts";
 import { readExperiment } from "../src/engine/experiment.ts";
 import { inventory, inventoryMarkdown } from "../src/engine/inventory.ts";
 import type { Scenario } from "../src/engine/scenario.ts";
@@ -213,6 +214,32 @@ describe("inventory", () => {
         "",
       ].join("\n"),
     );
+  });
+
+  it("gives the experiment's compaction in each condition and, with it on, the instructions Pi gives the model to write a summary", () => {
+    const experiment = { ...experimentOf(["[conditions.baseline]", "[conditions.crowded]", "slots.count = 5"]), compaction: { enabled: true, triggerAt: 0.5, keepRecentTokens: 500 } as const };
+
+    const { conditions } = inventory(experiment, slotsWith());
+    const listed = inventoryMarkdown({ experiment: "e-test", scenario: "slots", conditions });
+
+    for (const condition of conditions) expect(condition.compaction).toEqual({ enabled: true, triggerAt: 0.5, keepRecentTokens: 500, instructions: summaryInstructions });
+    const crowded = listed.slice(listed.indexOf('## Condition "crowded"'));
+    expect(crowded).toContain(["### Compaction", "", "- Compaction: enabled, with trigger_at 0.5 and keep_recent_tokens 500", ""].join("\n"));
+    for (const [heading, text] of [
+      ["The system prompt for writing a summary:", summaryInstructions.systemPrompt],
+      ["The instructions for a first summary, after the conversation it summarizes:", summaryInstructions.first],
+      ["The instructions for updating the previous summary, after the new conversation and that summary:", summaryInstructions.update],
+      ["The instructions for the start of a turn the compaction cuts through, after that start:", summaryInstructions.splitTurn],
+    ]) {
+      expect(crowded).toContain(`${heading}\n\n\`\`\`text\n${text}\n\`\`\`\n`);
+    }
+  });
+
+  it("gives compaction off, with no instructions, when the experiment turns it off", () => {
+    const { conditions } = inventory(experimentOf(["[conditions.baseline]"]), slotsWith());
+
+    expect(conditions[0].compaction).toEqual({ enabled: false });
+    expect(inventoryMarkdown({ experiment: "e-test", scenario: "slots", conditions })).toContain(["### Compaction", "", "- Compaction: off", ""].join("\n"));
   });
 
   it("lists the energy model and the environment processes as none, and every sensor and channel as instant, in each condition", () => {

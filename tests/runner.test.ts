@@ -84,9 +84,21 @@ describe("runExperiment", () => {
       code: { commit: git("rev-parse", "HEAD").trim(), uncommittedChanges: git("status", "--porcelain").trim() !== "" },
       inventory: inventory(once, slotsScenario).conditions[0],
       materials: [],
+      compaction: { enabled: false },
       sampling: { thinkingLevels: { a: "off" }, otherParameters: "the provider's defaults" },
     });
     expect(seed).toBe(replicaSeed(7, 1));
+  });
+
+  it("gives the experiment's compaction in each run's setup line", async () => {
+    const directory = newRunsDirectory();
+    const models = new Map([["scripted/one", new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }])]]);
+    const compaction = { enabled: true, triggerAt: 0.5, keepRecentTokens: 500 } as const;
+
+    await runExperiment({ ...experiment, models: ["scripted/one"], replicas: 1, conditions: [experiment.conditions[0]], compaction }, slotsScenario, models, directory);
+
+    const [{ runId }] = indexOf(directory);
+    expect(JSON.parse(readFileSync(join(directory, `${String(runId)}.jsonl`), "utf8").split("\n")[0]).compaction).toEqual(compaction);
   });
 
   it("gives the level of each factor of a run's condition in its setup line and its index line, and no levels for a condition that is not a combination", async () => {
