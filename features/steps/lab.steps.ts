@@ -155,10 +155,13 @@ Given(
 Given("the scripted model {string}'s session fails to open", function (this: Context, name: string) {
   assert.ok(this.labModels.has(name), `there is no scripted model "${name}"`);
   this.labModels.set(name, {
-    // Opening the session asks for its model, and this one has none to give.
-    get model(): Model<Api> {
-      throw new Error("this model cannot be given to a session");
-    },
+    // A model that can use the thinking level "off", but opening a session reads its provider, which fails.
+    model: {
+      reasoning: false,
+      get provider(): never {
+        throw new Error("this model cannot be given to a session");
+      },
+    } as unknown as Model<Api>,
   });
 });
 

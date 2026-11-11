@@ -145,11 +145,15 @@ describe("runExperiment", () => {
   it("stops at a run that stops on an error: its index line says it stopped, no run starts after it, and it fails naming the run", async () => {
     const directory = newRunsDirectory();
     const models = scriptedModels();
-    // The second model's sessions cannot open, so the first run with it stops.
+    // The second model's sessions cannot open, so the first run with it stops: it can use the thinking level "off",
+    // but opening a session reads its provider, which fails.
     const failing = {
-      get model(): never {
-        throw new Error("this model cannot be given to a session");
-      },
+      model: {
+        reasoning: false,
+        get provider(): never {
+          throw new Error("this model cannot be given to a session");
+        },
+      } as never,
     };
 
     const running = runExperiment(experiment, slotsScenario, new Map([...models].map(([name, model]) => [name, name === "scripted/two" ? failing : model])), directory);
