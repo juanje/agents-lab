@@ -836,3 +836,41 @@ describe("the workplace's tools", () => {
     });
   });
 });
+
+describe("the depot's day", () => {
+  /** The test world with a day that starts at a time. */
+  const withDay = (start: string) => `[day]\nstart = "${start}"\n${WORLD}`;
+  // With a time scale of 6000, a depot minute is 10 ms of the run.
+  const day = (values: Configuration = {}): Workplace =>
+    scenario.initialState(configuration({ world: withDay("09:00"), time_scale: 6000, ...values }), new Random(1));
+  const checkTime = () => {
+    const found = scenario.tools.find((declared) => declared.name === "check_time");
+    if (found?.kind !== "sensor") throw new Error('no sensor "check_time"');
+    return found;
+  };
+
+  it("lets the worker check the time on its watch, to the minute, from the day's start and the time scale", () => {
+    const state = day();
+
+    expect(checkTime().sense(state, "worker", {}, 0)).toBe("09:00");
+    expect(checkTime().sense(state, "worker", {}, 150)).toBe("09:15");
+    expect(checkTime().sense(state, "worker", {}, 159.9)).toBe("09:15");
+    // The watch goes round past midnight.
+    expect(checkTime().sense(scenario.initialState(configuration({ world: withDay("23:50"), time_scale: 6000 }), new Random(1)), "worker", {}, 200)).toBe("00:10");
+  });
+
+  it("takes the configured time to check it, as the inventory describes it", () => {
+    const durations = { ...(parse(scenario.baseConfiguration).durations as Configuration), check_time_ms: 7 };
+
+    expect(checkTime().durationMs(day({ durations }), { agent: "worker", arguments: {} })).toBe(7);
+    expect(scenario.describeDuration(configuration({ durations }), "check_time")).toBe("7 ms.");
+  });
+
+  it("gives the time through no other tool, nor in a prompt", () => {
+    const state = day();
+    const look = scenario.tools.find((declared) => declared.name === "look") as Sensor<Workplace>;
+
+    expect(look.sense(state, "worker", {}, 150)).not.toMatch(/\d\d:\d\d/);
+    expect(scenario.systemPrompt(configuration({ world: withDay("09:00") }), "worker")).not.toMatch(/\d\d:\d\d/);
+  });
+});
