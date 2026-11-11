@@ -191,6 +191,10 @@ export const neighbourhoodScenario: Scenario<Neighbourhood> = {
     const { min_ms: minMs, max_ms: maxMs } = configuration.rhythm as { min_ms: number; max_ms: number };
     return (random) => minMs + random.next() * (maxMs - minMs);
   },
+  describeRhythm: (configuration) => {
+    const { min_ms: minMs, max_ms: maxMs } = configuration.rhythm as { min_ms: number; max_ms: number };
+    return `An interval drawn uniformly between ${minMs} and ${maxMs} ms before each activation.`;
+  },
   baseConfiguration: [
     "width = 6",
     "height = 6",
