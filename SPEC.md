@@ -243,7 +243,7 @@ At the end of every run the core reports, per agent and in total:
 *Why:* these show whether a run behaved as a run without turns, and how agents spent their time and effort, before its scenario metrics are read.
 
 #### FR-METRIC-02: Scenario metrics are sampled on a schedule
-The engine computes the scenario's metrics from the world's state at the start of a run, at the interval the configuration gives, and at the end, and writes each sample to the log.
+The engine computes the scenario's metrics from the world's state at the start of a run, at the interval the experiment file gives (`metric_interval_ms`; without it, only at the start and the end), and at the end, and writes each sample to the log as one line: when it was taken, the world's version it was computed from, and each metric's value. A metric with no value is recorded as `null`; a metric with one value per agent is recorded with each agent's value.
 *Why:* experiments compare how a system-level pattern develops, not only where it ends.
 
 #### FR-RECORD-02: A run records what it ran
@@ -288,6 +288,7 @@ An experiment file (TOML) gives:
 - the models;
 - the number of replicas and the base seed, a whole number from 0 to 4294967295;
 - the run limits (time, activations per agent, parallelism, timeout);
+- optionally, the interval between metric samples (FR-METRIC-02);
 - its conditions, each a named change over the scenario's base configuration.
 
 The engine validates the file against the experiment schema before anything runs. An invalid file fails with an error that names the field and what was expected; a key the schema does not know is invalid.
