@@ -292,13 +292,9 @@ class Compactions {
     const cutOff = stopAs("cut_off");
     if (runEnd.aborted) cutOff();
     runEnd.addEventListener("abort", cutOff, { once: true });
-    const free = await this.parallelism.acquire();
-    const timer = setTimeout(stopAs("timeout"), modelTurnTimeoutMs);
-    const answer = await call(model, context, { ...options, signal: abortedBy(options?.signal, runEnd) });
-    void answer.result().then((message) => {
-      clearTimeout(timer);
+    const { answer, ended } = await limitedCall(call, [model, context, options], this.parallelism, modelTurnTimeoutMs, runEnd, stopAs("timeout"));
+    void ended.then((message) => {
       runEnd.removeEventListener("abort", cutOff);
-      free();
       this.#spent = this.#spent === undefined ? message.usage : summed(this.#spent, message.usage);
       if (message.stopReason === "error") this.#unfinished ??= "model_error";
     });
@@ -463,19 +459,12 @@ function runTurns(
     // which takes a slot and stops at the run's end, but no turn of the agent's (FR-ADAPTER-03).
     if (isSummaryRequest(context.messages)) return compactions.summarize(call, model, context, options);
     const requestedAtMs = performance.now();
-    const free = await parallelism.acquire();
-    const startedAtMs = performance.now();
-    const timeout = new AbortController();
-    const timer = setTimeout(() => timeout.abort(), modelTurnTimeoutMs);
-    const signal = abortedBy(options?.signal, timeout.signal, runEnd);
-    const answer = await call(model, context, { ...options, signal });
-    void answer.result().then((message) => {
+    const { answer, ended, startedAtMs, timeout } = await limitedCall(call, [model, context, options], parallelism, modelTurnTimeoutMs, runEnd);
+    void ended.then((message) => {
       const endedAtMs = performance.now();
-      clearTimeout(timer);
-      free();
       const outcome = runEnd.aborted
         ? { outcome: CUT_OFF }
-        : timeout.signal.aborted
+        : timeout.aborted
           ? { outcome: "timeout" as const }
           : outcomeOf(message);
       const text = textOf(message.content);
@@ -497,6 +486,35 @@ function runTurns(
     });
     return answer;
   };
+}
+
+/**
+ * A call to the model under the run's limits (FR-ADAPTER-02, FR-CLOCK-02): it waits for a free slot under the
+ * parallelism limit, and is aborted when it runs longer than the timeout, after `onTimeout` is told, or when the run
+ * ends; its slot is freed as its answer ends, which `ended` gives.
+ */
+async function limitedCall(
+  call: AgentSession["agent"]["streamFunction"],
+  [model, context, options]: Parameters<AgentSession["agent"]["streamFunction"]>,
+  parallelism: ParallelismLimit,
+  timeoutMs: number,
+  runEnd: AbortSignal,
+  onTimeout: () => void = () => {},
+) {
+  const free = await parallelism.acquire();
+  const startedAtMs = performance.now();
+  const timeout = new AbortController();
+  const timer = setTimeout(() => {
+    onTimeout();
+    timeout.abort();
+  }, timeoutMs);
+  const answer = await call(model, context, { ...options, signal: abortedBy(options?.signal, timeout.signal, runEnd) });
+  const ended = answer.result().then((message) => {
+    clearTimeout(timer);
+    free();
+    return message;
+  });
+  return { answer, ended, startedAtMs, timeout: timeout.signal };
 }
 
 /** A signal that aborts as soon as any of the call's own signal, if it has one, and the others aborts. */
