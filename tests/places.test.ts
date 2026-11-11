@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { arrive, entitiesIn, exits, layout, leave, put, where } from "../src/engine/places.ts";
+import { arrive, entitiesIn, exits, inSight, layout, leave, put, where } from "../src/engine/places.ts";
 import { World } from "../src/engine/world.ts";
 
 /** Three places: a passage of length 2 joins "hall" and "store", and one of length 5 "hall" and "yard". */
@@ -68,5 +68,34 @@ describe("leave and arrive", () => {
     expect(where(world.state, "a")).toEqual({ passage: ["hall", "store"], towards: "hall" });
     world.apply(arrive, { entity: "a" });
     expect(where(world.state, "a")).toEqual({ place: "hall" });
+  });
+});
+
+describe("inSight", () => {
+  /**
+   * "a" and "c" in "hall", "b" in "store", "d" in "yard", "e" on its way from "yard" to "hall" and "f" from "hall" to
+   * "yard".
+   */
+  const peopled = () => {
+    let space = put(put(put(put(building(), "a", "hall"), "c", "hall"), "b", "store"), "d", "yard");
+    space = leave.effect(put(space, "e", "yard"), { entity: "e", towards: "hall" });
+    return leave.effect(put(space, "f", "hall"), { entity: "f", towards: "yard" });
+  };
+
+  it("from a place, gives the others in that place and in the passages that leave it", () => {
+    expect(inSight(peopled(), "a").sort()).toEqual(["c", "e", "f"]);
+  });
+
+  it("from a passage, gives the others in that passage and in the two places it joins", () => {
+    expect(inSight(peopled(), "e").sort()).toEqual(["a", "c", "d", "f"]);
+  });
+
+  it("gives no one through walls, nor in a place from another place", () => {
+    expect(inSight(peopled(), "b")).toEqual([]);
+    expect(inSight(peopled(), "d").sort()).toEqual(["e", "f"]);
+  });
+
+  it("refuses an entity the space does not hold, naming it", () => {
+    expect(() => inSight(peopled(), "z")).toThrow('entity "z"');
   });
 });
