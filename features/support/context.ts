@@ -1,4 +1,5 @@
 import { World as CucumberWorld, setWorldConstructor } from "@cucumber/cucumber";
+import type { JsonObject } from "@earendil-works/pi-ai";
 import type { Grid, Position, WindowCell } from "../../src/engine/grid.ts";
 import type { Places } from "../../src/engine/places.ts";
 import type { TomlTable } from "smol-toml";
@@ -12,6 +13,7 @@ import type { Action, ActionResult, World } from "../../src/engine/world.ts";
 import type { Tool } from "../../src/engine/tools.ts";
 import type { LibraryScenario } from "../../src/scenarios/library.ts";
 import type { Neighbourhood } from "../../src/scenarios/neighbourhood.ts";
+import type { Workplace } from "../../src/scenarios/workplace.ts";
 import { type Slots, rhythmChannel, slotTools, slotsScenario } from "../../tests/fixtures/slots.ts";
 
 /**
@@ -180,6 +182,12 @@ export class Context extends CucumberWorld {
   readonly labInterruption = new AbortController();
   /** The options "lab run" is given after the experiment file, as the scenario sets them. */
   readonly labOptions: string[] = [];
+  /** The changes the scenario makes to the workplace as the engine loads it, before the worker runs in it, in order. */
+  readonly workplaceSetups: ((state: Workplace) => Workplace)[] = [];
+  /** The calls the worker makes, in order, each in a turn of its own, in one activation. */
+  readonly workerCalls: { tool: string; arguments: JsonObject }[] = [];
+  /** The workplace's world the worker ran in, once it has run. */
+  workplaceWorld?: World<Workplace>;
   /** The tool and the milliseconds the scenario last found its duration described with, for a step that says "does not". */
   lastDurationRead?: { tool: string; ms: number };
 }

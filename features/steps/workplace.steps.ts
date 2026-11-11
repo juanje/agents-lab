@@ -68,10 +68,6 @@ Then(
   },
 );
 
-Then("the worker is in {string}", function (this: Context, place: string) {
-  assert.equal(placeOf(loadedWorkplace(this).world.state, WORKER), place);
-});
-
 /** A thing the workplace holds, by its id. */
 function thingOf(state: Workplace, id: string): Workplace["things"][string] {
   assert.ok(Object.hasOwn(state.things, id), `the workplace holds no thing "${id}"`);

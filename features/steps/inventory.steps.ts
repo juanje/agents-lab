@@ -84,7 +84,7 @@ function headingLevel(line: string): number {
  * The part of a Markdown text under a heading, given as the whole heading line, up to the next heading of the same
  * level or higher; it fails when the text has no such heading, or more than one.
  */
-function under(text: string, heading: string): string {
+export function under(text: string, heading: string): string {
   const lines = text.split("\n");
   const found = lines.flatMap((line, index) => (line === heading ? [index] : []));
   assert.equal(found.length, 1, `expected one heading ${JSON.stringify(heading)}, found ${found.length} in:\n${text}`);
@@ -95,12 +95,12 @@ function under(text: string, heading: string): string {
 }
 
 /** The headings of a level in a Markdown text, in order. */
-function headings(text: string, level: number): string[] {
+export function headings(text: string, level: number): string[] {
   return text.split("\n").filter((line) => headingLevel(line) === level);
 }
 
 /** The value of a "- Label: value" line of a part. */
-function itemOf(part: string, label: string): string {
+export function itemOf(part: string, label: string): string {
   const prefix = `- ${label}: `;
   const lines = part.split("\n").filter((line) => line.startsWith(prefix));
   assert.equal(lines.length, 1, `expected one line "${prefix}…", found ${lines.length} in:\n${part}`);
