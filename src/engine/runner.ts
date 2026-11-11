@@ -52,6 +52,7 @@ export async function runExperiment<State>(
               modelTurnTimeoutMs: experiment.limits.modelTurnTimeoutMs,
               parallelismLimit: experiment.limits.parallelismLimit,
               timeLimitMs: experiment.limits.timeLimitMs,
+              metricIntervalMs: experiment.metricIntervalMs,
             });
           } catch (error) {
             index.write({ ...listed, status: "stopped" } satisfies IndexLine);

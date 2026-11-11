@@ -21,13 +21,15 @@ export interface Experiment {
   /** The base seed, from which each replica's seed comes. */
   seed: number;
   limits: Limits;
+  /** How long each run waits between metric samples; without it, each run samples only at its start and its end. */
+  metricIntervalMs?: number;
   /** Its conditions, each a named change over the scenario's base configuration, in the order the file gives them. */
   conditions: readonly Condition[];
 }
 
 /** Reads an experiment file, in TOML, and validates it against the experiment schema before anything runs. */
 export function readExperiment(toml: string): Experiment {
-  const file = readTable(parse(toml), [], fileSchema);
+  const file = readTable(parse(toml), [], fileSchema, optionalFileSchema);
   const limits = readTable(file.limits, ["limits"], limitsSchema);
   return {
     id: file.id,
@@ -41,6 +43,7 @@ export function readExperiment(toml: string): Experiment {
       parallelismLimit: limits.parallelism_limit,
       modelTurnTimeoutMs: limits.model_turn_timeout_ms,
     },
+    ...(file.metric_interval_ms === undefined ? {} : { metricIntervalMs: file.metric_interval_ms }),
     // A change's keys are checked when the scenario is loaded with it, against the scenario's base configuration.
     conditions: Object.keys(file.conditions).map((name) => ({
       name,
@@ -86,7 +89,7 @@ const atLeastOne = wholeNumber("a whole number of at least 1", 1);
 
 const seed = wholeNumber("a whole number from 0 to 4294967295", 0, 4294967295);
 
-/** Each field a table of the file has, by its key, with the kind of value it holds; every field is required. */
+/** Each field a table of the file has, by its key, with the kind of value it holds. */
 type Schema = Readonly<Record<string, Kind<TomlValue>>>;
 
 /** A table read against its schema: each field's value, of its kind. */
@@ -102,6 +105,11 @@ const fileSchema = {
   conditions: namedConditions,
 } satisfies Schema;
 
+/** The fields the file may leave out. */
+const optionalFileSchema = {
+  metric_interval_ms: atLeastOne,
+} satisfies Schema;
+
 const limitsSchema = {
   time_limit_ms: atLeastOne,
   activations_per_agent: atLeastOne,
@@ -110,21 +118,29 @@ const limitsSchema = {
 } satisfies Schema;
 
 /**
- * Reads a table of the file, at its path from the file, against its schema: a key the schema does not know is refused,
- * since a misspelled key would otherwise be left unread, and so is a field that is missing or of another kind.
+ * Reads a table of the file, at its path from the file, against its schema of required fields and, if it has any, of
+ * fields it may leave out: a key neither knows is refused, since a misspelled key would otherwise be left unread, and
+ * so is a required field that is missing or any field of another kind.
  */
-function readTable<S extends Schema>(holder: TomlTable, at: readonly string[], schema: S): Read<S> {
+function readTable<S extends Schema, O extends Schema = Record<never, never>>(
+  holder: TomlTable,
+  at: readonly string[],
+  schema: S,
+  optional: O = {} as O,
+): Read<S> & Partial<Read<O>> {
   for (const key of Object.keys(holder)) {
-    if (!Object.hasOwn(schema, key)) {
+    if (!Object.hasOwn(schema, key) && !Object.hasOwn(optional, key)) {
       throw new Error(`The experiment file has the field "${[...at, key].join(".")}", which the experiment schema does not know`);
     }
   }
-  return Object.fromEntries(Object.entries(schema).map(([key, kind]) => [key, field(holder, [...at, key], kind)])) as Read<S>;
+  const given = Object.entries(optional).filter(([key]) => Object.hasOwn(holder, key));
+  return Object.fromEntries([...Object.entries(schema), ...given].map(([key, kind]) => [key, field(holder, [...at, key], kind)])) as Read<S> &
+    Partial<Read<O>>;
 }
 
 /**
- * The value of a required field, from the table that holds it: the file itself or a table in it. The field's path,
- * from the file, names it in errors.
+ * The value of a field that must be there, from the table that holds it: the file itself or a table in it. The field's
+ * path, from the file, names it in errors.
  */
 function field<T extends TomlValue>(holder: TomlTable, path: readonly string[], kind: Kind<T>): T {
   const key = path[path.length - 1];
