@@ -22,12 +22,12 @@ function toolNamed(name: string): Tool<Neighbourhood> {
 }
 
 /** A neighbourhood of that size with "r1" (teal) at 0, 0, "r2" (amber) at 1, 0 and "r3" (teal) at 0, 1. */
-function residentsAt(width: number, height: number, settings: { lookRadius: number; msPerCell: number }): Neighbourhood {
+function residentsAt(width: number, height: number, settings: { lookRadius: number; msPerCell: number; msPerLook?: number }): Neighbourhood {
   let grid = emptyGrid(width, height, 1);
   grid = place(grid, "r1", { x: 0, y: 0 });
   grid = place(grid, "r2", { x: 1, y: 0 });
   grid = place(grid, "r3", { x: 0, y: 1 });
-  return { grid, kinds: { r1: "teal", r2: "amber", r3: "teal" }, ...settings };
+  return { grid, kinds: { r1: "teal", r2: "amber", r3: "teal" }, msPerLook: 0, ...settings };
 }
 
 describe("the neighbourhood scenario", () => {
@@ -103,6 +103,20 @@ describe("the neighbourhood scenario", () => {
 
     expect([typeof base.look_radius, typeof base.ms_per_cell]).toEqual(["number", "number"]);
     expect({ lookRadius: state.lookRadius, msPerCell: state.msPerCell }).toEqual({ lookRadius: 2, msPerCell: 40 });
+  });
+
+  it("keeps the configured time a look takes in its state", () => {
+    const base = parse(neighbourhoodScenario.baseConfiguration);
+    const state = neighbourhoodScenario.initialState({ ...configuration(3, 2, 2), ms_per_look: 30 }, new Random(1));
+
+    expect(typeof base.ms_per_look).toBe("number");
+    expect(state.msPerLook).toBe(30);
+  });
+
+  it("takes the configured time for a look", () => {
+    const look = toolNamed("look");
+
+    expect(look.durationMs(residentsAt(5, 5, { lookRadius: 1, msPerCell: 100, msPerLook: 30 }), { agent: "r1", arguments: {} })).toBe(30);
   });
 
   it("lets a resident look at its window, rows from the top, marking itself, its kind, the other kind, empty and outside", () => {
