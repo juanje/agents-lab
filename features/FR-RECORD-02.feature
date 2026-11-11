@@ -9,6 +9,7 @@ Feature: A run records what it ran
   Scenario: The first line of a run's log says what the run ran
     When "lab run" runs the experiment file
     Then the first line of the run's log gives its run id, the experiment "e-test", the condition "five-slots" and the resolved configuration, with "slots.count" as 5
+    And it gives the scenario "slots"
     And it gives replica 1, the replica's seed, the model "scripted/one" and the sampling settings its sessions use
 
   Scenario: The first line gives the code's commit and whether it had uncommitted changes

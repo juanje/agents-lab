@@ -283,7 +283,7 @@ The engine computes the scenario's metrics from the world's state at the start o
 
 #### FR-RECORD-02: A run records what it ran
 The first line of each run's log holds:
-- the run id, the experiment's id, the condition's name and the resolved configuration;
+- the run id, the experiment's id, the scenario's name in the library, the condition's name and the resolved configuration;
 - the replica, its seed, the model and the sampling settings its sessions use;
 - the commit of the code, and whether the working tree had changes not committed;
 - the environment inventory of the run's condition (FR-INVENTORY-01).
@@ -525,7 +525,7 @@ The world's `[day]` gives the counter's opening hours; rooms and passages can be
 
 
 #### FR-ANALYSIS-02: A reserved judge classifies what agents said
-`lab judge <runs-dir> <judge.toml>` asks a model, after the runs, to classify what agents wrote against statements they never saw. The judge file gives the judge's `model`, its `thinking_level` and its `instructions` (a material, FR-EXPERIMENT-04); every one is required.
+`lab judge <runs-dir> <judge.toml>` asks a model, after the runs, to classify what agents wrote against statements they never saw. The judge file gives the judge's `model`, its `thinking_level` and its `instructions` (a material, FR-EXPERIMENT-04); every one is required. The judge file sits beside the experiment file: the material paths of the judge file and of each run's setup line are read relative to its directory. The run's setup line names its scenario (FR-RECORD-02), which declares what can be judged.
 
 A scenario declares what can be judged in a run. The workplace declares, for each chosen situation whose reserved keys give `said` or `not_said`, the worker's texts on that key's channel (`note`: its notes; `book`: its book entries; `either`: both), with when each was written:
 - for `said`, whether one of the texts says what `about` states;
