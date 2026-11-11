@@ -1,4 +1,4 @@
-import { type JsonObject, type Message, type Model, type Provider, fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall } from "@earendil-works/pi-ai";
+import { type JsonObject, type Message, type Model, type Provider, fauxAssistantMessage, fauxProvider, fauxText, fauxThinking, fauxToolCall } from "@earendil-works/pi-ai";
 import { waitAtLeast } from "./clock.ts";
 
 /**
@@ -11,10 +11,11 @@ export const SCRIPT_EXHAUSTED_MESSAGE = "No more faux responses queued";
 let made = 0;
 
 /**
- * One answer of a script: its text and the tools it calls, or the provider's error message in their place, and how
+ * One answer of a script: the reasoning the provider returns with it, its text and the tools it calls, or the provider's error message in their place, and how
  * long the model takes to give it.
  */
 export interface ScriptedAnswer {
+  reasoning?: string;
   text?: string;
   toolCalls?: readonly { name: string; arguments: JsonObject }[];
   error?: string;
@@ -46,7 +47,7 @@ export class ScriptedModel {
     const faux = fauxProvider({ provider: `scripted-${made}`, models: [{ id: id ?? "faux-1", reasoning }] });
     // Each answer is a response factory, so its delay starts when the call reaches the provider, as a real model's does.
     faux.setResponses(
-      script.map(({ text, toolCalls = [], error, delayMs }) => async (context, options) => {
+      script.map(({ reasoning, text, toolCalls = [], error, delayMs }) => async (context, options) => {
         this.sessions.push(options?.sessionId);
         this.reasoningLevels.push(options?.reasoning);
         // Copied: the caller may go on adding to the same transcript after this turn.
@@ -56,6 +57,7 @@ export class ScriptedModel {
         await waitAtLeast(delayMs, options?.signal);
         if (error !== undefined) return fauxAssistantMessage([], { stopReason: "error", errorMessage: error });
         return fauxAssistantMessage([
+          ...(reasoning === undefined ? [] : [fauxThinking(reasoning)]),
           ...(text === undefined ? [] : [fauxText(text)]),
           ...toolCalls.map((call) => fauxToolCall(call.name, call.arguments)),
         ]);

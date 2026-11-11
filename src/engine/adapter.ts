@@ -87,6 +87,8 @@ export interface ModelTurn {
   message?: string;
   /** The text the model wrote: the agent's reflection, which acts on nothing and reaches no one (FR-TOOL-02). */
   text: string;
+  /** The reasoning the provider returned with the answer, when it returned any. */
+  reasoning?: string;
   /** The model that answered, in Pi's provider/id form. */
   model: string;
   /** How long the turn waited for a free slot under the parallelism limit before its call started. */
@@ -230,11 +232,17 @@ function recordToolCalls<State>(
 }
 
 /** A block of a message's or a tool result's content, as far as its text goes. */
-type Block = { type: string; text?: string };
+type Block = { type: string; text?: string; thinking?: string };
 
 /** The text a message's or a tool result's content holds, its text blocks joined. */
 function textOf(content: readonly Block[]): string {
   return content.flatMap((block) => (block.type === "text" ? [block.text ?? ""] : [])).join("");
+}
+
+/** The reasoning an answer's content holds, its thinking blocks' text joined, or undefined when it holds none. */
+function reasoningOf(content: readonly Block[]): string | undefined {
+  const thinking = content.flatMap((block) => (block.type === "thinking" ? [block.thinking ?? ""] : []));
+  return thinking.length === 0 ? undefined : thinking.join("");
 }
 
 /**
@@ -312,11 +320,13 @@ function runTurns(
           ? { outcome: "timeout" as const }
           : outcomeOf(message);
       const text = textOf(message.content);
+      const reasoning = reasoningOf(message.content);
       const { cost, ...tokens } = message.usage;
       records.turn({
         agent,
         ...outcome,
         text,
+        ...(reasoning === undefined ? {} : { reasoning }),
         model: `${message.provider}/${message.responseModel ?? message.model}`,
         slotWaitMs: startedAtMs - requestedAtMs,
         latencyMs: endedAtMs - startedAtMs,
