@@ -84,6 +84,12 @@ describe("readExperiment", () => {
       `The experiment file's field "${path}" must be ${expected}`,
     );
   });
+
+  it.each(["replica", "limits.time_limit"])("refuses the key %s, which the schema does not know, naming it", (path) => {
+    expect(() => readExperiment(withSet(path, 2))).toThrow(
+      `The experiment file has the field "${path}", which the experiment schema does not know`,
+    );
+  });
 });
 
 /** The valid file with the value at a dotted path set, or left out when the value is undefined. */
