@@ -69,6 +69,8 @@ const look: Sensor<Neighbourhood> = {
     const cells = window(state.grid, at, state.lookRadius).map(mark);
     return JSON.stringify(Array.from({ length: side }, (_, row) => cells.slice(row * side, (row + 1) * side)));
   },
+  // The window's middle is the resident's cell when it looks, which a later move needs to find its target in it.
+  takenFrom: whereIs,
 };
 
 /** Why a move fails when its target is outside the grid: the resident's choice, not a defect (FR-SPACE-01). */
@@ -105,12 +107,14 @@ const move: Effector<Neighbourhood> = {
     },
     effect: (state, call) => ({ ...state, grid: moveOnGrid.effect(state.grid, moveCall(state, call)) }),
   },
-  // Its target is the cell at the call's offset in the resident's last look, whose middle is the resident's cell.
-  readTarget: (sensing, { arguments: args }) => {
-    if (sensing.tool !== look.name) return "not_sensed";
+  // Its target is the cell at the call's offset from where the resident is now, as its last look showed it, wherever it
+  // looked from.
+  readTarget: (sensing, call, state) => {
+    if (sensing.tool !== look.name || sensing.takenFrom === undefined) return "not_sensed";
+    const { to } = moveCall(state, call);
     const rows = JSON.parse(sensing.result) as Mark[][];
     const middle = (rows.length - 1) / 2;
-    const mark = rows[middle + (args.dy as number)]?.[middle + (args.dx as number)];
+    const mark = rows[middle + to.y - sensing.takenFrom.y]?.[middle + to.x - sensing.takenFrom.x];
     // A cell beyond the grid's edge is neither free nor held.
     if (mark === undefined || mark === "outside") return "not_sensed";
     return mark === "empty" ? "free" : "held";

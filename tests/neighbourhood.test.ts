@@ -187,7 +187,7 @@ describe("the neighbourhood scenario", () => {
     const move = toolNamed("move");
     if (look.kind !== "sensor" || move.kind !== "effector") throw new Error("look is not a sensor or move is not an effector");
     const state = residentsAt(5, 5, { lookRadius: 1, msPerCell: 100 });
-    const sensing = { tool: "look", result: look.sense(state, "r1"), atMs: 0 };
+    const sensing = { tool: "look", result: look.sense(state, "r1"), takenFrom: { x: 0, y: 0 }, atMs: 0 };
     const target = (dx: number, dy: number) => move.readTarget(sensing, { agent: "r1", arguments: { dx, dy } }, state);
 
     expect([target(1, 0), target(0, 1)]).toEqual(["held", "held"]);
@@ -217,7 +217,7 @@ describe("the neighbourhood scenario", () => {
     const move = toolNamed("move");
     if (look.kind !== "sensor" || move.kind !== "effector") throw new Error("look is not a sensor or move is not an effector");
     const state = residentsAt(5, 5, { lookRadius: 1, msPerCell: 100 });
-    const sensing = { tool: "look", result: look.sense(state, "r1"), atMs: 0 };
+    const sensing = { tool: "look", result: look.sense(state, "r1"), takenFrom: { x: 0, y: 0 }, atMs: 0 };
 
     expect(move.readTarget(sensing, { agent: "r1", arguments: { dx: -1, dy: 0 } }, state)).toBe("not_sensed");
     expect(move.readTarget(sensing, { agent: "r1", arguments: { dx: 1, dy: -1 } }, state)).toBe("not_sensed");
