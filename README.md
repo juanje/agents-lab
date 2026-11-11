@@ -54,10 +54,16 @@ Run the smoke test, two agents on a real model (it makes real model calls):
 AGENTS_LAB_SMOKE_MODEL=openai/gpt-6-luna NODE_OPTIONS="--import tsx" npx cucumber-js -p smoke
 ```
 
-Run an experiment from the directory its results go under (it writes each run's log and an `index.jsonl` into `runs/<experiment id>/` there). The command is `lab run <experiment.toml>`; until `lab` is installed as a command, run its entry point with this repository's tsx:
+Install the `lab` command once, from this repository:
 
 ```bash
-node --import ~/git/agents-lab/node_modules/tsx/dist/loader.mjs ~/git/agents-lab/src/cli/main.ts run <experiment.toml>
+npm link
+```
+
+Then run an experiment from the directory its results go under. It writes each run's log, and an `index.jsonl` that lists every run, into `runs/<experiment id>/` there:
+
+```bash
+lab run <experiment.toml>
 ```
 
 ## Documentation

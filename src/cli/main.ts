@@ -1,4 +1,4 @@
-// The `lab` command as a process: `npx tsx src/cli/main.ts run <experiment.toml>`, from the directory its runs go under.
+// The `lab` command as a process, which bin.mjs starts: `lab run <experiment.toml>`, from the directory its runs go under.
 import { labModel } from "../engine/adapter.ts";
 import { scenarioLibrary } from "../scenarios/library.ts";
 import { lab } from "./lab.ts";
