@@ -33,6 +33,22 @@ describe("Stimuli", () => {
     expect(stimuli.take("a")).toEqual([]);
   });
 
+  it("reports each stimulus as it is delivered to an agent: one delivered while it works or rests, and the rhythm's as it wakes", () => {
+    const delivered: [string, unknown][] = [];
+    const stimuli = new Stimuli([bell, rhythmChannel], (agent, stimulus) => delivered.push([agent, stimulus]));
+
+    stimuli.deliver("a", "bell");
+    expect(delivered).toEqual([["a", { channel: "bell", source: "town bell", content: "The bell rings." }]]);
+    stimuli.wake("b");
+    expect(delivered).toEqual([
+      ["a", { channel: "bell", source: "town bell", content: "The bell rings." }],
+      ["b", { channel: "rhythm", source: "rhythm", content: "You wake up." }],
+    ]);
+    // Taking a stimulus already delivered delivers nothing again.
+    stimuli.wake("a");
+    expect(delivered.filter(([agent]) => agent === "a")).toHaveLength(2);
+  });
+
   it("refuses a stimulus from a channel the scenario does not declare, naming it", () => {
     const stimuli = new Stimuli([rhythmChannel]);
 
