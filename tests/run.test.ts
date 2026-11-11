@@ -799,6 +799,37 @@ describe("run", () => {
     expect(sensings?.last("a")).toEqual({ tool: "look", result: '["empty","empty","empty"]', atMs: toolCalls[0]?.endedAtMs });
   });
 
+  it("keeps where a sensor's call was taken from, when the sensor declares it, beside what it returned", async () => {
+    const look = { ...slotTools[0], kind: "sensor" as const, sense: () => "seen", takenFrom: (_state: Slots, agent: string) => ({ x: agent.length, y: 7 }) };
+    const model = new ScriptedModel([
+      { toolCalls: [{ name: "look", arguments: {} }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+
+    const { toolCalls, sensings } = await run(slots({ tools: [look, slotTools[1]] }), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+
+    expect(sensings.last("a")).toEqual({ tool: "look", result: "seen", takenFrom: { x: 1, y: 7 }, atMs: toolCalls[0]?.endedAtMs });
+  });
+
+  it("gives an effector's target reading the state as the call starts, beside the agent's last sensing", async () => {
+    // This reading looks only at the state: two slots read as "held", whatever the look showed.
+    const take = { ...slotTools[1], kind: "effector" as const, readTarget: (_sensing: unknown, _call: AgentCall, state: Slots) => (state.length === 2 ? "held" as const : "free" as const) };
+    const model = new ScriptedModel([
+      { toolCalls: [{ name: "look", arguments: {} }], delayMs: 0 },
+      { toolCalls: [{ name: "take", arguments: { slot: 1 } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+
+    const { toolCalls } = await run(
+      slots({ tools: [slotTools[0], take], initialState: () => emptySlots(2) }),
+      [{ name: "a", model, activations: 1, rhythm: noWait }],
+      seed,
+      settings,
+    );
+
+    expect(toolCalls.find((call) => call.tool === "take")).toMatchObject({ outcome: "success", targetAsSensed: "held" });
+  });
+
   it("keeps no sensing of an effector's call, nor of a sensor's call it rejected", async () => {
     const model = new ScriptedModel([
       { toolCalls: [{ name: "take", arguments: { slot: 1 } }], delayMs: 0 },
