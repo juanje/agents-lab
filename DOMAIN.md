@@ -24,7 +24,7 @@ What the words mean here, how the pieces fit together, and how the tools behave 
 | World | The state of a scenario (entities, positions, quantities, energy) plus its arbiter. | The scenario, which also declares tools, channels and metrics. |
 | Arbiter | The part of the world that applies one effect at a time against the current state. | A scheduler. The arbiter never decides who acts next. |
 | Version | A counter of applied effects in a world. | A run id or a code version. |
-| Scenario | A TypeScript module in `src/scenarios/` (initial state, tools, channels, metrics, system prompt) plus its base configuration, reusable by several experiments. | An experiment, which runs a scenario under several conditions. |
+| Scenario | A TypeScript module in `src/scenarios/` (its agents, initial state, tools, channels, metrics and a system prompt for each agent; agents, channels and prompts from the configuration) plus its base configuration, reusable by several experiments. | An experiment, which runs a scenario under several conditions. |
 | Test scenario | A small scenario under `tests/fixtures/`, written only to test the engine. | A library scenario in `src/scenarios/`, which experiments use. |
 | Condition | A named change over a scenario's base configuration, written directly or produced by combining factor levels. | A run or a replica. |
 | Experiment | A file in the experiment language (TOML) in the experiments repository: scenario, factors and conditions, models, replicas, seeds, prediction and materials. | A hypothesis, which the experiment states and tests. |
