@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { type TomlTable, type TomlValue, parse, stringify } from "smol-toml";
-import { readExperiment, replicaSeed } from "../src/engine/experiment.ts";
+import { type Experiment, readExperiment, replicaSeed } from "../src/engine/experiment.ts";
 
 /** A valid experiment file, in TOML. */
 const valid = [
@@ -102,6 +102,37 @@ describe("readExperiment", () => {
     expect(() => readExperiment(withSet(path, 2))).toThrow(
       `The experiment file has the field "${path}", which the experiment schema does not know`,
     );
+  });
+});
+
+/** The valid file with factors in place of its conditions: "count", whose levels set slots.count, then "held". */
+const withFactors = [
+  ...valid.split("[conditions.baseline]")[0].split("\n"),
+  "[factors.count.three]",
+  "slots.count = 3",
+  "[factors.count.five]",
+  "slots.count = 5",
+  "[factors.held.none]",
+  "[factors.held.two]",
+  "slots.held = 2",
+  "",
+].join("\n");
+
+/** A condition as the tests compare it: its name, its change as a table, and its levels. */
+function described({ name, change, levels }: Experiment["conditions"][number]) {
+  return { name, change: { ...parse(change) }, levels };
+}
+
+describe("readExperiment with factors", () => {
+  it("gives the baseline, with no change and no levels, then each combination of levels, named after them, the first factor's changing slowest", () => {
+    const { conditions } = readExperiment(withFactors);
+    expect(conditions.map(described)).toEqual([
+      { name: "baseline", change: {}, levels: {} },
+      { name: "count=three,held=none", change: { slots: { count: 3 } }, levels: { count: "three", held: "none" } },
+      { name: "count=three,held=two", change: { slots: { count: 3, held: 2 } }, levels: { count: "three", held: "two" } },
+      { name: "count=five,held=none", change: { slots: { count: 5 } }, levels: { count: "five", held: "none" } },
+      { name: "count=five,held=two", change: { slots: { count: 5, held: 2 } }, levels: { count: "five", held: "two" } },
+    ]);
   });
 });
 
