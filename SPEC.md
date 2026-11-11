@@ -364,8 +364,13 @@ It writes each run's log into `runs/<experiment id>/` under the current director
 *Why:* an experiment is the full grid of conditions and models, and a typo found after an hour of model calls wastes the run.
 
 #### FR-RUN-02: Summaries across replicas
-`lab summarize <runs-dir>` prints one row per condition and model, with the number of replicas and the distribution of each metric across them: every value, and its quantiles.
-*Why:* hypotheses are judged on distributions across replicas, not on single runs.
+`lab summarize <runs-dir>` reads the index and the logs of an experiment's runs and prints, as Markdown, one row per condition, model and metric, from each run's last metric sample:
+- the number of runs that completed and of runs that stopped; a stopped run gives no values;
+- every value, in replica order, with the runs whose value is null counted apart;
+- the minimum, the lower quartile, the median, the upper quartile and the maximum of the values (quartiles by linear interpolation).
+
+A metric with one value per agent or per situation gives one row per agent or situation. `--json` writes the same summary as JSON instead. A directory without an index is refused, naming it. The summary reads only the logs.
+*Why:* hypotheses are judged on distributions across replicas, not on single runs or on a mean that hides them; every value stays in view so that a reader can see the spread for themselves.
 
 #### FR-RUN-03: One experiment at a time
 `lab run` refuses to start, with an error that says another run is active, while another `lab run` on the same machine holds the lock.
