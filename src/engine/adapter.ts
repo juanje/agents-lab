@@ -10,7 +10,7 @@ import {
   createAgentSession,
   createExtensionRuntime,
 } from "@earendil-works/pi-coding-agent";
-import { type Api, type AssistantMessage, type Model, type Provider, getCurrentSystemMessage } from "@earendil-works/pi-ai";
+import { type Api, type AssistantMessage, type Model, type Provider, type Usage, getCurrentSystemMessage } from "@earendil-works/pi-ai";
 import { waitAtLeast } from "./clock.ts";
 import type { ParallelismLimit } from "./parallelism.ts";
 import { SCRIPT_EXHAUSTED_MESSAGE } from "./scripted-model.ts";
@@ -74,11 +74,18 @@ export interface ModelTurn {
   message?: string;
   /** The text the model wrote: the agent's reflection, which acts on nothing and reaches no one (FR-TOOL-02). */
   text: string;
+  /** The model that answered, in Pi's provider/id form. */
+  model: string;
   /** How long the turn waited for a free slot under the parallelism limit before its call started. */
   slotWaitMs: number;
+  /** How long the model took to answer, from the call's start to its answer's end. */
+  latencyMs: number;
   /** When the call to the model started and when its answer ended, by performance.now(). */
   startedAtMs: number;
   endedAtMs: number;
+  /** The tokens and the cost Pi reported with the answer. */
+  tokens: Omit<Usage, "cost">;
+  cost: Usage["cost"];
 }
 
 /** One tool call an agent's model made, and how it ended. */
@@ -99,6 +106,12 @@ export interface ToolCall {
   targetAsSensed?: TargetAsSensed;
 }
 
+/** Where a session's model turns and tool calls go as each ends: the run's log and what the run gives. */
+export interface Records {
+  turn(turn: ModelTurn): void;
+  toolCall(call: ToolCall): void;
+}
+
 /** What an agent's session is given besides its tools. */
 export interface SessionSettings {
   /** The scenario's system prompt, which takes the place of Pi's own. */
@@ -117,9 +130,8 @@ export async function openSession<State>(
   runtime: ModelRuntime,
   settings: SessionSettings,
   parallelism: ParallelismLimit,
-  turns: ModelTurn[],
+  records: Records,
   stimuli: Stimuli,
-  toolCalls: ToolCall[],
   sensings: Sensings,
 ): Promise<AgentSession> {
   const executed = new Map<string, Executed>();
@@ -138,10 +150,10 @@ export async function openSession<State>(
     settingsManager: SettingsManager.inMemory({ retry: { enabled: false } }),
   });
   forceSystemPrompt(session, settings.systemPrompt);
-  runTurns(session, agent.name, settings, parallelism, turns);
+  runTurns(session, agent.name, settings, parallelism, records);
   deliverBetweenTurns(session, agent.name, stimuli);
   endAtTimeLimit(session, settings.timeLimit);
-  recordToolCalls(session, agent.name, new Set(tools.map((tool) => tool.name)), executed, toolCalls);
+  recordToolCalls(session, agent.name, new Set(tools.map((tool) => tool.name)), executed, records);
   return session;
 }
 
@@ -157,7 +169,7 @@ function recordToolCalls(
   agent: string,
   offered: ReadonlySet<string>,
   executed: ReadonlyMap<string, Executed>,
-  toolCalls: ToolCall[],
+  records: Records,
 ): void {
   const made = new Map<string, { args: unknown; startedAtMs: number }>();
   session.subscribe((event) => {
@@ -169,7 +181,7 @@ function recordToolCalls(
         startedAtMs: call?.startedAtMs ?? performance.now(),
         endedAtMs: performance.now(),
       };
-      toolCalls.push({ agent, tool: event.toolName, arguments: call?.args, ...ran });
+      records.toolCall({ agent, tool: event.toolName, arguments: call?.args, ...ran });
     }
   });
 }
@@ -228,7 +240,7 @@ function runTurns(
   agent: string,
   { modelTurnTimeoutMs, timeLimit }: SessionSettings,
   parallelism: ParallelismLimit,
-  turns: ModelTurn[],
+  records: Records,
 ): void {
   const call = session.agent.streamFunction;
   session.agent.streamFunction = async (model, context, options) => {
@@ -249,7 +261,19 @@ function runTurns(
           ? { outcome: "timeout" as const }
           : outcomeOf(message);
       const text = message.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("");
-      turns.push({ agent, ...outcome, text, slotWaitMs: startedAtMs - requestedAtMs, startedAtMs, endedAtMs });
+      const { cost, ...tokens } = message.usage;
+      records.turn({
+        agent,
+        ...outcome,
+        text,
+        model: `${message.provider}/${message.responseModel ?? message.model}`,
+        slotWaitMs: startedAtMs - requestedAtMs,
+        latencyMs: endedAtMs - startedAtMs,
+        startedAtMs,
+        endedAtMs,
+        tokens,
+        cost,
+      });
     });
     return answer;
   };

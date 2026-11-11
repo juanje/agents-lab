@@ -1,5 +1,5 @@
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
-import { type AgentModel, type ModelTurn, type ToolCall, openRuntime, openSession, wake } from "./adapter.ts";
+import { type AgentModel, type ModelTurn, type Records, type ToolCall, openRuntime, openSession, wake } from "./adapter.ts";
 import { waitAtLeast } from "./clock.ts";
 import { ParallelismLimit } from "./parallelism.ts";
 import { Random } from "./random.ts";
@@ -93,11 +93,18 @@ async function runAgents<State>(
   const parallelism = new ParallelismLimit(settings.parallelismLimit);
   const turns: ModelTurn[] = [];
   const toolCalls: ToolCall[] = [];
+  const records: Records = {
+    turn: (turn) => {
+      recorder.record({ type: "model_turn", ...turn });
+      turns.push(turn);
+    },
+    toolCall: (call) => toolCalls.push(call),
+  };
   const sensings = new Sensings();
   const messages = new Map<string, AgentSession["messages"]>();
   // Every session is open before any agent starts, so opening them uses none of the time limit (FR-CLOCK-02).
   const sessions = await Promise.all(
-    agents.map((agent) => openSession(world, scenario.tools, agent, runtime, sessionSettings, parallelism, turns, stimuli, toolCalls, sensings)),
+    agents.map((agent) => openSession(world, scenario.tools, agent, runtime, sessionSettings, parallelism, records, stimuli, sensings)),
   );
   const startedAtMs = performance.now();
   const timer = setTimeout(() => timeLimit.abort(), settings.timeLimitMs);

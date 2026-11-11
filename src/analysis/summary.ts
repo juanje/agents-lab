@@ -1,10 +1,13 @@
 import type { ModelTurn, ToolCall } from "../engine/adapter.ts";
 
+/** What the summary reads of a model turn. */
+type SummarizedTurn = Pick<ModelTurn, "agent" | "outcome" | "message" | "text" | "slotWaitMs" | "startedAtMs" | "endedAtMs">;
+
 /**
  * A run as a person reads it, agent by agent in the order they first appear: each model turn with its outcome, its
  * latency and its wait for a model slot, then each tool call as the model made it, with its outcome.
  */
-export function summarize({ turns, toolCalls }: { turns: readonly ModelTurn[]; toolCalls: readonly ToolCall[] }): string {
+export function summarize({ turns, toolCalls }: { turns: readonly SummarizedTurn[]; toolCalls: readonly ToolCall[] }): string {
   const agents = [...new Set([...turns, ...toolCalls].map((entry) => entry.agent))];
   return agents
     .map((agent) => {
