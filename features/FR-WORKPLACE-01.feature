@@ -138,3 +138,13 @@ Feature: A workplace from its materials
       | "chosen_situations" is ["flood"]                                         | the situation "flood"       |
       | the situation "jar" can be in "cellar" instead                           | the place "cellar"          |
       | "world" is "[[places]"                                                   | "world"                     |
+
+  Scenario: A situation's thing that gives its own place is refused
+    Given the thing "note" of the situation "open-box" also gives the place "yard"
+    When the engine loads it with the seed 42
+    Then loading fails with an error that names the thing "note" and its place
+
+  Scenario: Reserved keys for a situation that is not declared are refused
+    Given "situation_keys" also gives keys for the situation "open-bx"
+    When the engine loads it with the seed 42
+    Then loading fails with an error that names the situation "open-bx"
