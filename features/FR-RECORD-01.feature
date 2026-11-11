@@ -85,3 +85,8 @@ Feature: Everything an agent does is recorded
     And agent "a" runs on a scripted model that calls "take" with slot 1, then ends without a tool call
     When the run ends
     Then the log's tool call line for agent "a"'s "take" call gives the outcome "slot_taken" and the text "Someone already holds that slot."
+
+  Scenario: A model turn records the reasoning its provider returned
+    Given agent "a" runs on a scripted model whose first turn has the reasoning "The slot may be taken; I should look first." and calls "look", then ends without a tool call
+    When the run ends
+    Then the log's first model turn line for agent "a" gives the reasoning "The slot may be taken; I should look first."
