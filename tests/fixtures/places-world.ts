@@ -1,7 +1,7 @@
 import { type Places, arrive, exits, leave, where } from "../../src/engine/places.ts";
 import type { Scenario } from "../../src/engine/scenario.ts";
 import type { AgentCall, Effector, Tool } from "../../src/engine/tools.ts";
-import { rhythmChannel } from "./slots.ts";
+import { testWorldScenario } from "./slots.ts";
 
 /** A call of the effector "go" as the space's leave reads it: the calling agent leaves towards the place it names. */
 function goCall({ agent, arguments: args }: AgentCall) {
@@ -41,18 +41,5 @@ export function goTool(msPerUnit: number): Effector<Places> {
 
 /** The test place world as a scenario, with the space it starts from, its tools and its agents. */
 export function placesScenario(start: Places, tools: readonly Tool<Places>[], agents: readonly string[]): Scenario<Places> {
-  return {
-    name: "places",
-    agents: () => agents,
-    initialState: () => start,
-    tools,
-    channels: () => [rhythmChannel],
-    metrics: {},
-    systemPrompt: () => "You are an agent in a building.",
-    // Its agents wake at once: a test that needs another rhythm gives it.
-    rhythm: () => () => 0,
-    describeDuration: () => "As each tool gives it.",
-    describeRhythm: () => "No wait before any activation.",
-    baseConfiguration: "",
-  };
+  return testWorldScenario("places", "in a building", start, tools, agents);
 }

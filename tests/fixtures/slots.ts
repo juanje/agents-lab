@@ -64,6 +64,27 @@ export const slotTools: readonly Tool<Slots>[] = [
 /** The test world's rhythm channel, which wakes each agent. */
 export const rhythmChannel: Channel = { name: "rhythm", source: "rhythm", stimulus: "You wake up." };
 
+/**
+ * A test world as a scenario without a configuration: the state it starts from, its tools and its agents, who are told
+ * they are agents `where` (for example, "on a grid") and wake through the rhythm channel at once.
+ */
+export function testWorldScenario<State>(name: string, where: string, start: State, tools: readonly Tool<State>[], agents: readonly string[]): Scenario<State> {
+  return {
+    name,
+    agents: () => agents,
+    initialState: () => start,
+    tools,
+    channels: () => [rhythmChannel],
+    metrics: {},
+    systemPrompt: () => `You are an agent ${where}.`,
+    // Its agents wake at once: a test that needs another rhythm gives it.
+    rhythm: () => () => 0,
+    describeDuration: () => "As each tool gives it.",
+    describeRhythm: () => "No wait before any activation.",
+    baseConfiguration: "",
+  };
+}
+
 /** The rhythm channel's source and text, as the slots test scenario's configuration gives them in its [rhythm] table. */
 export function rhythmOf(configuration: Configuration): { source: string; text: string } {
   const { source, text } = configuration.rhythm as { source: string; text: string };

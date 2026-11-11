@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { BeforeStep, Given, Then, When } from "@cucumber/cucumber";
-import { type Places, arrive, entitiesIn, exits, inSight, layout, leave, put, where } from "../../src/engine/places.ts";
+import { type Places, type Where, arrive, entitiesIn, exits, inSight, layout, leave, put, where } from "../../src/engine/places.ts";
 import type { LoadedScenario } from "../../src/engine/scenario.ts";
 import { type Action, World } from "../../src/engine/world.ts";
 import { goTool, placesScenario } from "../../tests/fixtures/places-world.ts";
@@ -108,7 +108,7 @@ When("entity {string} arrives", function (this: Context, entity: string) {
 });
 
 /** Whether a place or passage is the passage between two places, whichever way it is named. */
-function isPassageBetween(at: ReturnType<typeof where>, one: string, other: string): boolean {
+function isPassageBetween(at: Where | undefined, one: string, other: string): boolean {
   if (at === undefined || !("passage" in at)) return false;
   return [...at.passage].sort().join("\n") === [one, other].sort().join("\n");
 }

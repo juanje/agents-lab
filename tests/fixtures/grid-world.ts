@@ -1,7 +1,7 @@
 import { type Grid, distance, move, position } from "../../src/engine/grid.ts";
 import type { Scenario } from "../../src/engine/scenario.ts";
 import type { AgentCall, Effector, Tool } from "../../src/engine/tools.ts";
-import { rhythmChannel } from "./slots.ts";
+import { testWorldScenario } from "./slots.ts";
 
 /** A call of the effector "walk" as the grid's move reads it: the calling agent moves to the cell its arguments give. */
 function walkCall({ agent, arguments: args }: AgentCall) {
@@ -40,18 +40,5 @@ export function walkTool(msPerCell: number): Effector<Grid> {
 
 /** The test grid world as a scenario, with the grid it starts from, its tools and its agents. */
 export function gridScenario(start: Grid, tools: readonly Tool<Grid>[], agents: readonly string[]): Scenario<Grid> {
-  return {
-    name: "grid",
-    agents: () => agents,
-    initialState: () => start,
-    tools,
-    channels: () => [rhythmChannel],
-    metrics: {},
-    systemPrompt: () => "You are an agent on a grid.",
-    // Its agents wake at once: a test that needs another rhythm gives it.
-    rhythm: () => () => 0,
-    describeDuration: () => "As each tool gives it.",
-    describeRhythm: () => "No wait before any activation.",
-    baseConfiguration: "",
-  };
+  return testWorldScenario("grid", "on a grid", start, tools, agents);
 }
