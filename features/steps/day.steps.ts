@@ -16,7 +16,7 @@ import { withBase } from "./neighbourhood.steps.ts";
 import { linesOf, logLines } from "./record.steps.ts";
 import { runScenario } from "./tool.steps.ts";
 import { editText } from "./workplace.steps.ts";
-import { WORLD, situations } from "./workplace-tools.steps.ts";
+import { WORLD, holding, situations } from "./workplace-tools.steps.ts";
 
 /** The worker, the workplace's one agent. */
 const WORKER = "worker";
@@ -224,13 +224,7 @@ Given(
 );
 
 Given("the worker holds {string}", function (this: Context, id: string) {
-  this.workplaceSetups.push((state) => {
-    assert.ok(Object.hasOwn(state.things, id), `the workplace holds no thing "${id}"`);
-    // The thing leaves wherever it was, in a place or inside a container, for the worker's hands.
-    const { [id]: _place, ...whereabouts } = state.space.whereabouts;
-    const { [id]: _container, ...inside } = state.inside;
-    return { ...state, space: { ...state.space, whereabouts }, inside, held: { ...state.held, [id]: WORKER } };
-  });
+  holding(this, id);
 });
 
 Given("the situation {string} is not chosen", function (this: Context, id: string) {

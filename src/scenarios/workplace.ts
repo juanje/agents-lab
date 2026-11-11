@@ -744,8 +744,19 @@ function lengthTo(state: Workplace, call: AgentCall): number | undefined {
   return exits(state.space, hereOf(state, call.agent)).find(({ place }) => place === call.arguments.place)?.length;
 }
 
+/** Someone in a passage reaches the place they were heading for. */
+const arriving = (entity: string): Action<Workplace, unknown> => inSpace(arrive, () => ({ entity }));
+
 /** A call of "go" as the space's leave reads it. */
 const leaving = ({ agent, arguments: args }: AgentCall) => ({ entity: agent, towards: args.place as string });
+
+/** An action on the space, such as leave or arrive (FR-SPACE-03), as an action on the workplace's space, its arguments read from the workplace's. */
+function inSpace<Args, SpaceArgs>(action: Action<Places, SpaceArgs>, read: (args: Args) => SpaceArgs): Action<Workplace, Args> {
+  return {
+    precondition: (state, args) => action.precondition(state.space, read(args)),
+    effect: (state, args) => ({ ...state, space: action.effect(state.space, read(args)) }),
+  };
+}
 
 /**
  * "go place": the worker leaves when the call starts and arrives when it ends, taking the time per unit of the
@@ -758,9 +769,8 @@ const go: Effector<Workplace> = {
   parameters: { type: "object", properties: { place: { type: "string" } }, required: ["place"] },
   durationMs: (state, call) => state.settings.durations.ms_per_length * (lengthTo(state, call) ?? 0),
   start: {
+    ...inSpace(leave, leaving),
     appliesTo: (state, call) => lengthTo(state, call) !== undefined,
-    precondition: (state, call) => leave.precondition(state.space, leaving(call)),
-    effect: (state, call) => ({ ...state, space: leave.effect(state.space, leaving(call)) }),
     describe: (state, call) => ({ left: hereOf(state, call.agent), towards: leaving(call).towards }),
   },
   action: {
@@ -768,9 +778,9 @@ const go: Effector<Workplace> = {
     precondition: (state, call) => {
       const at = where(state.space, call.agent);
       if (at !== undefined && "place" in at) return { holds: false, reason: at.place === call.arguments.place ? ALREADY_THERE : INVALID_TARGET };
-      return arrive.precondition(state.space, { entity: call.agent });
+      return arriving(call.agent).precondition(state, call);
     },
-    effect: (state, call) => ({ ...state, space: arrive.effect(state.space, { entity: call.agent }) }),
+    effect: (state, call) => arriving(call.agent).effect(state, call),
   },
   texts: {
     success: "You have arrived.",
@@ -1117,14 +1127,8 @@ function* walking(person: string, way: readonly { place: string; length: number 
       kind: "action",
       name: `walk to "${place}"`,
       durationMs: now().state.settings.durations.ms_per_length * length,
-      start: {
-        precondition: (state) => leave.precondition(state.space, { entity: person, towards: place }),
-        effect: (state) => ({ ...state, space: leave.effect(state.space, { entity: person, towards: place }) }),
-      },
-      action: {
-        precondition: (state) => arrive.precondition(state.space, { entity: person }),
-        effect: (state) => ({ ...state, space: arrive.effect(state.space, { entity: person }) }),
-      },
+      start: inSpace(leave, () => ({ entity: person, towards: place })),
+      action: arriving(person),
     };
   }
 }

@@ -194,14 +194,19 @@ Given("the worker holds nothing", function (this: Context) {
 });
 
 Given("the worker holds the thing {string}", function (this: Context, id: string) {
-  this.workplaceSetups.push((state) => {
+  holding(this, id);
+});
+
+/** The worker holds a thing as the world is built, before anything has happened in it. */
+export function holding(context: Context, id: string): void {
+  context.workplaceSetups.push((state) => {
     assert.ok(Object.hasOwn(state.things, id), `the workplace holds no thing "${id}"`);
     // The thing leaves wherever it was, in a place or inside a container, for the worker's hands.
     const { [id]: _place, ...whereabouts } = state.space.whereabouts;
     const { [id]: _container, ...inside } = state.inside;
     return { ...state, space: { ...state.space, whereabouts }, inside, held: { ...state.held, [id]: WORKER } };
   });
-});
+}
 
 /** The things someone holds, by their ids. */
 function heldBy(state: Workplace, holder: string): string[] {
