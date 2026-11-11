@@ -92,6 +92,8 @@ Experiments are written outside this repository, in the experiment language (FR-
 14. FR-ANALYSIS-02
 15. FR-WORKPLACE-06 (the depot's hours, light, closed doors, and weather as a perturbation), when an experiment needs it
 
+**Small known gaps** (to close when convenient): `lab summarize` prints numbers at full precision; a completed run whose log has no metric sample gives no values without saying so; a run in the index whose log is missing fails with Node's own error.
+
 **Not yet ordered:** FR-EFFORT-01, FR-METRIC-01, FR-EXPERIMENT-03, FR-RUN-03, FR-ANALYSIS-01.
 
 ## Invariants
