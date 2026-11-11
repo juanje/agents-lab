@@ -63,7 +63,7 @@ function git(...args: string[]): string {
 }
 
 describe("runExperiment", () => {
-  it("writes first in each run's log what it ran: its id, experiment, condition, resolved configuration, replica, seed, model, code and condition's inventory", async () => {
+  it("writes first in each run's log what it ran: its id, experiment, scenario, condition, resolved configuration, replica, seed, model, code and condition's inventory", async () => {
     const directory = newRunsDirectory();
     const models = new Map([["scripted/one", new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }])]]);
     const once = { ...experiment, models: ["scripted/one"], replicas: 1, conditions: [experiment.conditions[1]] };
@@ -76,6 +76,7 @@ describe("runExperiment", () => {
       type: "run_setup",
       runId,
       experiment: "e-test",
+      scenario: "slots",
       condition: "five-slots",
       configuration: loadScenario(slotsScenario, replicaSeed(7, 1), experiment.conditions[1]).configuration,
       replica: 1,

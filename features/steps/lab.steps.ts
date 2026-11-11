@@ -369,6 +369,10 @@ Then("every session of the run used the thinking level {string}", function (this
   assert.equal(sessions.size, 2, `${sessions.size} sessions called the model`);
 });
 
+Then("it gives the scenario {string}", function (this: Context, name: string) {
+  assert.equal(firstLine(this).scenario, name);
+});
+
 Then("the first line of the run's log gives the thinking level {string}", function (this: Context, thinkingLevel: string) {
   assert.deepEqual((firstLine(this).sampling as { thinkingLevels: unknown }).thinkingLevels, { a: thinkingLevel, b: thinkingLevel });
 });
