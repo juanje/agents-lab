@@ -1,6 +1,7 @@
 import { type TomlTable, type TomlValue, parse } from "smol-toml";
 import { type Passage, type Places, layout, put } from "../engine/places.ts";
 import type { Configuration, Scenario } from "../engine/scenario.ts";
+import { Random } from "../engine/random.ts";
 import { RHYTHM_CHANNEL } from "../engine/stimuli.ts";
 
 /** A thing in the workplace, as anyone in its place sees it. */
@@ -59,17 +60,39 @@ interface WorldText {
   people?: { id: string; name: string; description: string; place: string }[];
 }
 
-/** The workplace's initial state, from the world's text in the configuration. */
-function initialState(configuration: Configuration): Workplace {
+/** A situation as its text declares it: the places it can be in, and the things it brings. */
+interface SituationText {
+  places: string[];
+  things?: ThingText[];
+}
+
+/**
+ * The workplace's initial state, from the texts in the configuration. Each chosen situation is placed by its own
+ * sequence, derived from the initial state's first draw and the situation's id, so its place depends only on the seed
+ * and its id, whichever other situations are chosen.
+ */
+function initialState(configuration: Configuration, random: Random): Workplace {
+  const situationsSeed = Math.floor(random.next() * 2 ** 32);
   const world = parse(configuration.world as string) as unknown as WorldText;
+  const declared = parse(configuration.situations as string) as unknown as { situations?: Record<string, SituationText> };
+  const keys = parse(configuration.situation_keys as string);
   let space = layout(
     world.places.map(({ name }) => name),
     world.passages ?? [],
   );
   space = put(space, WORKER, world.worker.place);
+  const situations: Record<string, { place: string; keys: TomlTable }> = {};
+  const placed: (ThingText & { place?: string })[] = [...(world.things ?? [])];
+  for (const id of configuration.chosen_situations as string[]) {
+    const situation = (declared.situations ?? {})[id];
+    const draw = Random.derive(situationsSeed, `situation ${id}`).next();
+    const place = situation.places[Math.floor(draw * situation.places.length)];
+    situations[id] = { place, keys: (keys[id] ?? {}) as TomlTable };
+    placed.push(...(situation.things ?? []).map((thing) => (thing.in === undefined ? { ...thing, place } : thing)));
+  }
   const things: Record<string, Thing> = {};
   const inside: Record<string, string> = {};
-  for (const { id, name, place, in: container, text, properties, container: isContainer, portable } of world.things ?? []) {
+  for (const { id, name, place, in: container, text, properties, container: isContainer, portable } of placed) {
     things[id] = { name, properties: properties ?? {}, ...(text === undefined ? {} : { text }), container: isContainer ?? false, portable: portable ?? true };
     if (container !== undefined) inside[id] = container;
     else space = put(space, id, place as string);
@@ -79,7 +102,7 @@ function initialState(configuration: Configuration): Workplace {
     people[id] = { name, description };
     space = put(space, id, place);
   }
-  return { space, things, inside, people, situations: {} };
+  return { space, things, inside, people, situations };
 }
 
 /** The workplace scenario: one worker in a world of places, things and people that its configuration gives as texts in TOML. */
