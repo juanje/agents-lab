@@ -84,8 +84,17 @@ const runName = ({ number, total }: StartingRun) => `Run ${number} of ${total}`;
 /** A count with its noun, plural unless it is one. */
 const counted = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
 
-/** Milliseconds as seconds, to a tenth. */
-const seconds = (ms: number) => `${(ms / 1000).toFixed(1)} s`;
+/**
+ * Milliseconds as a duration: seconds to a tenth under a minute; from a minute on, whole seconds after the minutes,
+ * and the hours before them from an hour on.
+ */
+function seconds(ms: number): string {
+  const tenths = Math.round(ms / 100);
+  if (tenths < 600) return `${(tenths / 10).toFixed(1)} s`;
+  const whole = Math.round(ms / 1000);
+  const [hours, minutes, rest] = [Math.floor(whole / 3600), Math.floor((whole % 3600) / 60), whole % 60];
+  return `${hours > 0 ? `${hours} h ` : ""}${minutes} min ${rest} s`;
+}
 
 /** A cost in dollars, to a hundredth of a cent. */
 const cost = (dollars: number) => `cost $${dollars.toFixed(4)}`;
