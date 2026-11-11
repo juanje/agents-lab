@@ -257,3 +257,14 @@ Then("agent {string}'s session is closed", function (this: Context, agent: strin
   assert.ok(provider !== undefined, `agent "${agent}" runs on no scripted model`);
   assert.ok(this.closedSessions?.includes(provider), `agent "${agent}"'s session was not closed`);
 });
+
+Then(
+  "the log's tool call line for agent {string}'s {string} call gives the target as sensed {string} and no count of changes since sensing",
+  function (this: Context, agent: string, tool: string, sensed: string) {
+    const call = lineOf(this, "tool_call", agent, { tool });
+    assert.equal(call.targetAsSensed, sensed);
+    // No count is written as one, not left out, so the field is there in every effector call that ran.
+    assert.ok("changesSinceSensing" in call, "the line leaves out the changes since sensing");
+    assert.equal(call.changesSinceSensing, null);
+  },
+);
