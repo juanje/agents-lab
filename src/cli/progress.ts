@@ -8,21 +8,22 @@ interface Tally {
   activations: number;
   turns: number;
   cost: number;
-  /** Prints the run's progress at the interval, until it ends. */
-  timer: ReturnType<typeof setInterval>;
 }
 
 /**
  * What `lab run` prints while it runs (FR-RUN-04): each run's start, its progress at an interval, its end, and the
- * experiment's totals. What it
- * counts it reads from the lines each run's log records; it writes nothing to the log.
+ * experiment's totals. While several runs are in progress, each progress line gives each of them by its number
+ * (FR-RUN-06). What it counts it reads from the lines each run's log records; it writes nothing to the log.
  */
 export class Progress implements ExperimentObserver {
   readonly #print: (text: string) => void;
   readonly #now: () => number;
   readonly #intervalMs: number;
   readonly #startedAtMs: number;
-  #tally: Tally | undefined;
+  /** Each run in progress, by its number. */
+  readonly #tallies = new Map<number, Tally>();
+  /** Prints the progress of the runs in progress at the interval, while there is any. */
+  #timer: ReturnType<typeof setInterval> | undefined;
   #completed = 0;
   #stopped = 0;
   #cost = 0;
@@ -36,19 +37,22 @@ export class Progress implements ExperimentObserver {
   }
 
   runStarted(run: StartingRun): void {
-    const timer = setInterval(() => this.#printProgress(), this.#intervalMs);
-    this.#tally = { run, startedAtMs: this.#now(), activations: 0, turns: 0, cost: 0, timer };
+    this.#timer ??= setInterval(() => this.#printProgress(), this.#intervalMs);
+    this.#tallies.set(run.number, { run, startedAtMs: this.#now(), activations: 0, turns: 0, cost: 0 });
     this.#print(`${runName(run)} started: condition "${run.condition}", model "${run.model}", replica ${run.replica}, seed ${run.seed}\n`);
   }
 
+  /** Prints one line with the progress of each run in progress, in the order of their numbers. */
   #printProgress(): void {
-    const tally = this.#current();
-    const done = `${tally.activations} of ${tally.run.activations} activations`;
-    this.#print(`${runName(tally.run)} running: ${duration(this.#now() - tally.startedAtMs)}, ${done}, ${counted(tally.turns, "model turn")}, ${cost(tally.cost)}\n`);
+    const runs = [...this.#tallies.values()].sort((one, other) => one.run.number - other.run.number).map((tally) => {
+      const done = `${tally.activations} of ${tally.run.activations} activations`;
+      return `${runName(tally.run)} running: ${duration(this.#now() - tally.startedAtMs)}, ${done}, ${counted(tally.turns, "model turn")}, ${cost(tally.cost)}`;
+    });
+    this.#print(`${runs.join("; ")}\n`);
   }
 
-  recorded(_number: number, line: LogLine): void {
-    const tally = this.#current();
+  recorded(number: number, line: LogLine): void {
+    const tally = this.#tallyOf(number);
     if (line.type === "activation") tally.activations += 1;
     if (line.type === "model_turn") {
       tally.turns += 1;
@@ -56,10 +60,13 @@ export class Progress implements ExperimentObserver {
     }
   }
 
-  runEnded(_number: number, status: IndexLine["status"]): void {
-    const tally = this.#current();
-    clearInterval(tally.timer);
-    this.#tally = undefined;
+  runEnded(number: number, status: IndexLine["status"]): void {
+    const tally = this.#tallyOf(number);
+    this.#tallies.delete(number);
+    if (this.#tallies.size === 0) {
+      clearInterval(this.#timer);
+      this.#timer = undefined;
+    }
     if (status === "completed") this.#completed += 1;
     else this.#stopped += 1;
     this.#cost += tally.cost;
@@ -72,9 +79,10 @@ export class Progress implements ExperimentObserver {
     this.#print(`${counted(this.#completed, "run")} completed and ${this.#stopped} stopped in ${duration(this.#now() - this.#startedAtMs)}, ${cost(this.#cost)}\n`);
   }
 
-  #current(): Tally {
-    if (this.#tally === undefined) throw new Error("No run has started");
-    return this.#tally;
+  #tallyOf(number: number): Tally {
+    const tally = this.#tallies.get(number);
+    if (tally === undefined) throw new Error(`Run ${number} is not in progress`);
+    return tally;
   }
 }
 
