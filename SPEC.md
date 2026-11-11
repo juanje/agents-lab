@@ -85,11 +85,12 @@ Experiments are written outside this repository, in the experiment language (FR-
 7. FR-WORKPLACE-02
 8. FR-WORKPLACE-03
 9. FR-WORKPLACE-04
-10. FR-ADAPTER-03
-11. FR-RUN-02
-12. FR-ANALYSIS-02
+10. FR-PROCESS-01 (the workplace changes while the worker works)
+11. FR-ADAPTER-03
+12. FR-RUN-02
+13. FR-ANALYSIS-02
 
-**Not yet ordered:** FR-PROCESS-01, FR-EFFORT-01, FR-METRIC-01, FR-EXPERIMENT-03, FR-RUN-03, FR-ANALYSIS-01.
+**Not yet ordered:** FR-EFFORT-01, FR-METRIC-01, FR-EXPERIMENT-03, FR-RUN-03, FR-ANALYSIS-01.
 
 ## Invariants
 
