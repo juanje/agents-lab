@@ -46,6 +46,8 @@ export class Context extends CucumberWorld {
   logDirectory!: string;
   /** The id the run gave itself, which names its log file. */
   runId?: string;
+  /** A log an earlier run of the scenario wrote: its file's name and its content. */
+  previousLog?: { file: string; content: string };
   /** The error the run stopped on, for a scenario whose run stops. */
   runError?: Error;
   /** The tool calls the run gave. */

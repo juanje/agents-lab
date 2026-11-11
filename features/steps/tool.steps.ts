@@ -68,22 +68,27 @@ Given(
 );
 
 When("the run ends", async function (this: Context) {
+  await runTheScenario(this);
+});
+
+/** Runs the scenario as its steps set it up, and keeps what the run gave. */
+export async function runTheScenario(context: Context): Promise<void> {
   // Most of these scenarios set up their world and the scenario's parts step by step rather than from a base
   // configuration, so the scenario is assembled around them as loading would give it: the test grid world when the
   // scenario declared its tools, the slots world otherwise.
-  if (this.gridTools !== undefined) {
-    this.gridWorld = new World(this.grid);
-    await runScenario(this, { scenario: gridScenario(this.grid, this.gridTools), configuration: {}, world: this.gridWorld });
+  if (context.gridTools !== undefined) {
+    context.gridWorld = new World(context.grid);
+    await runScenario(context, { scenario: gridScenario(context.grid, context.gridTools), configuration: {}, world: context.gridWorld });
     return;
   }
-  this.versionBefore = this.world.version;
-  const loaded: LoadedScenario<Slots> = this.loaded ?? {
-    scenario: { ...slotsScenario, tools: this.tools, channels: this.channels, systemPrompt: this.systemPrompt },
+  context.versionBefore = context.world.version;
+  const loaded: LoadedScenario<Slots> = context.loaded ?? {
+    scenario: { ...slotsScenario, tools: context.tools, channels: context.channels, systemPrompt: context.systemPrompt },
     configuration: {},
-    world: this.world,
+    world: context.world,
   };
-  await runScenario(this, loaded);
-});
+  await runScenario(context, loaded);
+}
 
 /** Runs the scenario's agents in a loaded scenario, watching its arbiter, and keeps what the run gave. */
 async function runScenario<State>(context: Context, loaded: LoadedScenario<State>): Promise<void> {

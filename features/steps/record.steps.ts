@@ -6,7 +6,7 @@ import { rhythmChannel } from "../../tests/fixtures/slots.ts";
 import type { Context } from "../support/context.ts";
 import { landsWhileUnderWay } from "./acting.steps.ts";
 import { turnsOf } from "./adapter.steps.ts";
-import { modelOf, returned } from "./tool.steps.ts";
+import { modelOf, returned, runTheScenario, script } from "./tool.steps.ts";
 
 /** The log files in the scenario's log directory, by name, in no particular order. */
 function logFiles(context: Context): string[] {
@@ -148,3 +148,21 @@ Then(
     assert.equal(call.changesSinceSensing, changes);
   },
 );
+
+Given("a previous run wrote its log", async function (this: Context) {
+  script(this, "a", [{ text: "Nothing to do.", delayMs: 0 }]);
+  await runTheScenario(this);
+  const file = theLog(this);
+  this.previousLog = { file, content: readFileSync(join(this.logDirectory, file), "utf8") };
+  assert.notEqual(this.previousLog.content, "", "the previous run's log is empty");
+});
+
+Then("there are two log files", function (this: Context) {
+  assert.equal(logFiles(this).length, 2);
+});
+
+Then("the first one is unchanged", function (this: Context) {
+  assert.ok(this.previousLog !== undefined, "no previous run wrote a log");
+  assert.ok(logFiles(this).includes(this.previousLog.file), "the previous run's log is gone");
+  assert.equal(readFileSync(join(this.logDirectory, this.previousLog.file), "utf8"), this.previousLog.content);
+});
