@@ -422,17 +422,43 @@ A text that is not valid TOML, or a world or situation that names a place, a con
 *Why:* E1–E4 share one invented workplace; its norms, things and situations are written as material, reviewed as files and fingerprinted, so an experiment changes texts and situations, not code. Placing each situation by its own id keeps conditions comparable on the same starting worlds (NFR-05).
 
 #### FR-WORKPLACE-02: The worker senses and acts through the workplace's tools
-The worker has these tools:
-- **look** (sensor): the room it is in, its passages, the things in it and what can be seen of them;
-- **read** (sensor): the text on a thing in its room;
-- **examine** (sensor): a thing's visible properties;
-- **go** (effector): to a room one passage away, taking the passage's time;
-- **take**, **put** and **give** (effectors): a thing in its room into its hands, from its hands into the room or a container, or to a person in its room;
-- **record** (effector): an entry in the workplace's book;
-- **note** (effector): a note to the person who gave the task, delivered to them, not to any agent.
+The workplace is in the scenario library. The worker refers to things, people and places by the ids and names `look` gives. It can hold up to `carry_limit` things (a configuration value). Each tool's duration comes from the configuration's `[durations]`. The tools:
 
-Each tool declares its duration and the text the worker receives for each outcome. A failed action says why and what did not happen.
-*Why:* in E1–E4 what the worker did in each situation is read from the world (where things ended up, what was recorded, what was said to the person), not judged from a text.
+- **look** (sensor, `look_ms`): as JSON, the place the worker is in; its exits, each with its passage's length; the things in it, each with its id and name, and with the things inside it when it is a container; the people in it; the things the worker holds; and who is in sight in the passages that leave it (FR-SPACE-03).
+- **read** `thing` (sensor, `ms_per_word` for each word of the text, at least `look_ms`): the text on a thing in the worker's place, in a container there or in its hands. When the thing is not there, or has no text, the result says so.
+- **examine** `thing` (sensor, `examine_ms`): the name and visible properties of a thing there, as JSON; or that it is not there.
+- **go** `place` (effector, `ms_per_length` for each unit of the passage's length): the worker leaves when the call starts and arrives when it ends (FR-SPACE-03). A place that is not one passage away fails at once with `invalid_target`, changes nothing and takes no time; so does the worker's own place, with `already_there`.
+- **take** `thing` (effector, `take_ms`): a thing in the worker's place, or in a container there, into its hands. It fails, checked in this order, with `already_held`, `not_here`, `not_portable` or `hands_full`.
+- **put** `thing`, optionally `into` (effector, `put_ms`): a thing the worker holds into its place, or into a container there. It fails, checked in this order, with `not_held`, `not_here` (the container) or `not_a_container`.
+- **give** `thing`, `person` (effector, `give_ms`): a thing the worker holds to a person in its place, who then holds it. It fails, checked in this order, with `not_held` or `not_here` (the person).
+- **record** `entry` (effector, `ms_per_word` for each word): an entry in the workplace's book, the thing the configuration's `book` names, with the moment it was written. The worker must be where the book is; otherwise it fails with `not_here`.
+- **note** `text` (effector, `ms_per_word` for each word): a note to the person who gave the task, kept in the world with the moment it was sent; it reaches no agent.
+
+The text the worker receives for each outcome:
+
+| Tool | Outcome | Text |
+|---|---|---|
+| go | success | You have arrived. |
+| go | invalid_target | There is no passage from here to that place; you have not moved. |
+| go | already_there | You are already there; you have not moved. |
+| take | success | You are holding it. |
+| take | not_here | It is not here; you have taken nothing. |
+| take | not_portable | It cannot be carried; you have taken nothing. |
+| take | hands_full | Your hands are full; you have taken nothing. |
+| take | already_held | You are already holding it. |
+| put | success | You have put it there. |
+| put | not_held | You are not holding it; nothing has moved. |
+| put | not_here | That container is not here; you are still holding it. |
+| put | not_a_container | Nothing can be put inside that; you are still holding it. |
+| give | success | You have given it. |
+| give | not_held | You are not holding it; you have given nothing. |
+| give | not_here | That person is not here; you are still holding it. |
+| record | success | It is in the book. |
+| record | not_here | The book is not here; nothing has been recorded. |
+| note | success | Your note has been sent. |
+
+Each effector reads its target in the worker's last sensing (FR-TOOL-04): `go`, from the exits of its last look; `take` and `examine`'s thing, `put`'s container and `give`'s person, from the things and people of its last look; `free` when that look, taken where the worker is now, showed the target there; for `go`, `outside` when it showed no exit to that place; `not_sensed` otherwise. `record` and `note` have no target and record `not_sensed`.
+*Why:* in E1–E4 what the worker did in each situation is read from the world (where things ended up, what was recorded, what was said to the person), not judged from a text. Every action takes time, and reading and writing take longer the longer the text.
 
 #### FR-WORKPLACE-03: The task comes from a person, and each text has a declared place
 The workplace declares a channel from the person who gives the task, with that person as its source; the task arrives through it when the worker first wakes. The configuration says, for each block of text (identity and character, rules, the task, the workplace's norms), whether it goes in the system prompt or in the person's first message.
