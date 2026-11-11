@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -59,5 +59,18 @@ describe("lab run", () => {
     expect(index).toHaveLength(8);
     expect(readdirSync(runs)).toHaveLength(9);
     for (const model of models.values()) expect(model.received).toHaveLength(4);
+  });
+
+  it("refuses a file that names a scenario the library does not have, naming it, before any model is resolved or run", async () => {
+    const { directory, path, models, environment } = setUp(experimentFile({ scenario: 'scenario = "slotz"' }));
+    const resolve = environment.model;
+    const resolved: string[] = [];
+
+    const running = lab(["run", path], { ...environment, model: (name) => (resolved.push(name), resolve(name)) });
+
+    await expect(running).rejects.toThrow('The scenario library has no scenario "slotz"');
+    expect(resolved).toEqual([]);
+    expect(existsSync(join(directory, "runs"))).toBe(false);
+    for (const model of models.values()) expect(model.received).toHaveLength(0);
   });
 });
