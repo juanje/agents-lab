@@ -793,10 +793,16 @@ export interface OneAnswer {
  * Asks a model one question, through Pi, in a session of its own: the system prompt as it is, the question as its one
  * message, and one tool, whose calls do nothing but end the turn. The session ends after that one model turn, so its
  * tool's result never reaches the model. It gives the calls the model made, as it made them, and the turn's tokens and
- * cost; a turn that ended in an error fails with the provider's message. Like a run's sessions, it reads nothing of the
+ * cost. A call that runs past the timeout is aborted, with the outcome `timeout`; one the provider answers with an
+ * error has the outcome `model_error` and its message; either gives no calls. Like a run's sessions, it reads nothing of the
  * person's Pi directory (NFR-08), and Pi neither retries the call nor compacts the session.
  */
-export async function askOnce(model: AgentModel, { systemPrompt, thinkingLevel }: { systemPrompt: string; thinkingLevel: ThinkingLevel; timeoutMs: number }, tool: OfferedTool, question: string): Promise<OneAnswer> {
+export async function askOnce(
+  model: AgentModel,
+  { systemPrompt, thinkingLevel, timeoutMs }: { systemPrompt: string; thinkingLevel: ThinkingLevel; timeoutMs: number },
+  tool: OfferedTool,
+  question: string,
+): Promise<OneAnswer> {
   const runtime = await openRuntime([model.provider]);
   const answering: ToolDefinition = {
     name: tool.name,
@@ -806,21 +812,27 @@ export async function askOnce(model: AgentModel, { systemPrompt, thinkingLevel }
     execute: async () => ({ content: [{ type: "text", text: "Received." }], details: undefined }),
   };
   const session = await isolatedSession(runtime, model, { systemPrompt, thinkingLevel, compaction: { enabled: false } }, [answering]);
+  const timeout = new AbortController();
+  const timer = setTimeout(() => timeout.abort(), timeoutMs);
   try {
     // One model turn: Pi would otherwise answer the tool's call with its result and ask the model again.
     session.agent.finishTurn = async () => ({ action: "end" as const });
+    // The call is aborted once it runs past the timeout; an aborted answer carries no tool call Pi would run.
+    const call = session.agent.streamFunction;
+    session.agent.streamFunction = (streamed, context, options) => call(streamed, context, { ...options, signal: abortedBy(options?.signal, timeout.signal) });
     let answer: AssistantMessage | undefined;
     session.subscribe((event) => {
       if (event.type === "message_end" && event.message.role === "assistant") answer = event.message;
     });
     await session.sendCustomMessage({ customType: "question", content: question, display: true }, { triggerTurn: true });
     if (answer === undefined) throw new Error("the model gave no answer to the question");
-    if (answer.stopReason === "error") throw new Error(`the model answered the question with an error: ${answer.errorMessage ?? "no message"}`);
     const { cost, ...tokens } = answer.usage;
+    if (timeout.signal.aborted) return { outcome: "timeout", calls: [], tokens, cost };
+    if (answer.stopReason === "error") return { outcome: "model_error", message: answer.errorMessage ?? "", calls: [], tokens, cost };
     const calls = answer.content.flatMap((block) => (block.type === "toolCall" ? [{ name: block.name, arguments: block.arguments }] : []));
-    // A stub of the outcome, for the tests to fail on their assertions.
     return { outcome: "success", calls, tokens, cost };
   } finally {
+    clearTimeout(timer);
     session.dispose();
   }
 }
