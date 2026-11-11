@@ -1,6 +1,6 @@
-import type { TomlTable, TomlValue } from "smol-toml";
-import type { Places } from "../engine/places.ts";
-import type { Scenario } from "../engine/scenario.ts";
+import { type TomlTable, type TomlValue, parse } from "smol-toml";
+import { type Passage, type Places, layout, put } from "../engine/places.ts";
+import type { Configuration, Scenario } from "../engine/scenario.ts";
 
 /** A thing in the workplace, as anyone in its place sees it. */
 export interface Thing {
@@ -31,9 +31,57 @@ export interface Workplace {
   situations: Readonly<Record<string, { place: string; keys: TomlTable }>>;
 }
 
+/** The worker, the workplace's one agent. */
+const WORKER = "worker";
+
+/** A thing as a world's text declares it: where it is, in a place or inside a container, and what it is. */
+interface ThingText {
+  id: string;
+  name: string;
+  place?: string;
+  in?: string;
+  text?: string;
+  properties?: TomlTable;
+  container?: boolean;
+  portable?: boolean;
+}
+
+/** A world as its text declares it. */
+interface WorldText {
+  worker: { place: string };
+  places: { name: string }[];
+  passages?: Passage[];
+  things?: ThingText[];
+  people?: { id: string; name: string; description: string; place: string }[];
+}
+
+/** The workplace's initial state, from the world's text in the configuration. */
+function initialState(configuration: Configuration): Workplace {
+  const world = parse(configuration.world as string) as unknown as WorldText;
+  let space = layout(
+    world.places.map(({ name }) => name),
+    world.passages ?? [],
+  );
+  space = put(space, WORKER, world.worker.place);
+  const things: Record<string, Thing> = {};
+  const inside: Record<string, string> = {};
+  for (const { id, name, place, in: container, text, properties, container: isContainer, portable } of world.things ?? []) {
+    things[id] = { name, properties: properties ?? {}, ...(text === undefined ? {} : { text }), container: isContainer ?? false, portable: portable ?? true };
+    if (container !== undefined) inside[id] = container;
+    else space = put(space, id, place as string);
+  }
+  const people: Record<string, Person> = {};
+  for (const { id, name, description, place } of world.people ?? []) {
+    people[id] = { name, description };
+    space = put(space, id, place);
+  }
+  return { space, things, inside, people, situations: {} };
+}
+
 /** The workplace scenario: one worker in a world of places, things and people that its configuration gives as texts in TOML. */
 export const workplaceScenario: Partial<Scenario<Workplace>> = {
   name: "workplace",
+  initialState,
   baseConfiguration: [
     'identity = "You work here."',
     'world_rules = ""',
