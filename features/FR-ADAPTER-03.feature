@@ -52,4 +52,4 @@ Feature: Context compaction is declared and recorded
       | summary                                                                                  | outcome     |
       | the scripted model answers the summary call with a provider error                        | model_error |
       | the scripted model takes 1000 milliseconds to answer the summary call                    | timeout     |
-      | the scripted model takes 1000 milliseconds to answer the summary call, and the run's time limit passes while it waits | cut_off |
+      | the scripted model takes 1000 milliseconds to answer the summary call, and the run's time limit passes 200 milliseconds after the summary call starts, before its timeout | cut_off |
