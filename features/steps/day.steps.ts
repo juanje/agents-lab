@@ -10,6 +10,7 @@ import { World } from "../../src/engine/world.ts";
 import { type Workplace, workplaceScenario } from "../../src/scenarios/workplace.ts";
 import type { Context } from "../support/context.ts";
 import { stateAt } from "./acting.steps.ts";
+import { itemOf, under } from "./inventory.steps.ts";
 import { experimentFileOf, idleModels } from "./lab.steps.ts";
 import { DURATIONS, MODEL } from "./measures.steps.ts";
 import { withBase } from "./neighbourhood.steps.ts";
@@ -473,3 +474,42 @@ Then(
     assert.ok(Math.abs(arrivals[0] - arrivals[1]) < SAME_MOMENT_MS, `"${id}" arrived ${arrivals[0]} and ${arrivals[1]} ms into the runs`);
   },
 );
+
+Given("the thing {string} arrives {string} instead", function (this: Context, id: string, round: string) {
+  editWorld(this, (world) => {
+    const thing = ((world.things ?? []) as TomlTable[]).find((each) => each.id === id);
+    assert.ok(thing !== undefined, `the world declares no thing "${id}"`);
+    thing.arrives = round;
+  });
+});
+
+Given("the world has no porter", function (this: Context) {
+  editWorld(this, (world) => {
+    delete world.porter;
+  });
+});
+
+Given("the place {string} is added with no passage, and the porter enters {string}", function (this: Context, place: string, enters: string) {
+  editWorld(this, (world) => {
+    world.places = [...((world.places ?? []) as TomlTable[]), { name: place }];
+    world.porter = { ...tableOf(world, "porter"), enters };
+  });
+});
+
+Given("the visitor {string} is declared while the person {string} is also declared", function (this: Context, visitor: string, person: string) {
+  assert.equal(visitor, person);
+  editWorld(this, (world) => {
+    const declared = ((world.people ?? []) as TomlTable[]).find((each) => each.id === person);
+    assert.ok(declared !== undefined, `the world has no person "${person}"`);
+    world.visitors = [
+      ...((world.visitors ?? []) as TomlTable[]),
+      { id: visitor, name: declared.name, description: declared.description, enters: declared.place, arrives_between: ["09:05", "09:05"], waits_minutes: 20, comes_for: [] },
+    ];
+  });
+});
+
+Then("it gives the clock's start time {string} and the time scale {int}", function (this: Context, start: string, scale: number) {
+  const clock = under(under(this.labOutput ?? "", '## Condition "base"'), "### Clock");
+  assert.equal(itemOf(clock, "Start"), start);
+  assert.equal(itemOf(clock, "Time scale"), `${scale} depot seconds for each second of the run`);
+});
