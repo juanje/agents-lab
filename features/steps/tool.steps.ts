@@ -189,23 +189,34 @@ Given(
   },
 );
 
+/** The results the agent's model received back for its calls of the tool, in later turns, in the order it made them. */
+function resultsOf(context: Context, agent: string, tool: string) {
+  // The last turn's transcript holds every earlier call and its result.
+  const messages = modelOf(context, agent).received.at(-1) ?? [];
+  const calls = messages
+    .flatMap((message) => (message.role === "assistant" ? message.content : []))
+    .flatMap((block) => (block.type === "toolCall" && block.name === tool ? [block] : []));
+  assert.ok(calls.length > 0, `agent "${agent}"'s model had no call of "${tool}" in its transcript`);
+  return calls.map((call) => {
+    const result = messages.find((message) => message.role === "toolResult" && message.toolCallId === call.id);
+    assert.ok(result !== undefined && result.role === "toolResult", `agent "${agent}"'s "${tool}" call returned nothing`);
+    return result;
+  });
+}
+
 /** The result the agent's model received back for its first call of the tool, in a later turn. */
 function resultOf(context: Context, agent: string, tool: string) {
-  const messages = modelOf(context, agent).received.flat();
-  const call = messages
-    .flatMap((message) => (message.role === "assistant" ? message.content : []))
-    .find((block) => block.type === "toolCall" && block.name === tool);
-  assert.ok(call !== undefined && call.type === "toolCall", `agent "${agent}"'s model had no call of "${tool}" in its transcript`);
-  const result = messages.find((message) => message.role === "toolResult" && message.toolCallId === call.id);
-  assert.ok(result !== undefined && result.role === "toolResult", `agent "${agent}"'s "${tool}" call returned nothing`);
-  return result;
+  return resultsOf(context, agent, tool)[0];
+}
+
+/** The text a tool result holds, its text blocks joined. */
+function textOf(result: ReturnType<typeof resultOf>): string {
+  return result.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("");
 }
 
 /** The text the agent's model received back for its first call of the tool, in a later turn. */
 export function returned(context: Context, agent: string, tool: string): string {
-  return resultOf(context, agent, tool)
-    .content.flatMap((block) => (block.type === "text" ? [block.text] : []))
-    .join("");
+  return textOf(resultOf(context, agent, tool));
 }
 
 Then(
@@ -317,26 +328,12 @@ Given(
   },
 );
 
-/** The results the agent's model received back for its calls of the tool, in the order it made them. */
-function resultsOf(context: Context, agent: string, tool: string) {
-  // The last turn's transcript holds every earlier call and its result.
-  const messages = modelOf(context, agent).received.at(-1) ?? [];
-  const calls = messages
-    .flatMap((message) => (message.role === "assistant" ? message.content : []))
-    .flatMap((block) => (block.type === "toolCall" && block.name === tool ? [block] : []));
-  return calls.map((call) => {
-    const result = messages.find((message) => message.role === "toolResult" && message.toolCallId === call.id);
-    assert.ok(result !== undefined && result.role === "toolResult", `agent "${agent}"'s "${tool}" call returned nothing`);
-    return result;
-  });
-}
-
 /** Checks the result the agent's model received for its call of the tool at an index from 0, and keeps who and what for the next step. */
 function checkNthResult(context: Context, agent: string, tool: string, index: number, isError: boolean, text: string): void {
   const result = resultsOf(context, agent, tool)[index];
   assert.ok(result !== undefined, `agent "${agent}"'s model received no result for its call ${index + 1} of "${tool}"`);
   assert.equal(result.isError, isError, `the result is${isError ? " not" : ""} marked as an error`);
-  assert.equal(result.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join(""), text);
+  assert.equal(textOf(result), text);
   context.lastResultOf = { agent, tool };
 }
 
