@@ -17,9 +17,18 @@ export interface Places {
   whereabouts: Readonly<Record<string, Where>>;
 }
 
-/** A space with these places and passages, holding no entity. */
+/**
+ * A space with these places and passages, holding no entity. A passage that names a place the layout does not declare,
+ * or whose length is not greater than zero, is refused with an error that names it.
+ */
 export function layout(places: readonly string[], passages: readonly Passage[]): Places {
-  return { places, passages, whereabouts: {} };
+  const space = { places, passages, whereabouts: {} };
+  for (const { between, length } of passages) {
+    const where = `cannot lay out a passage between "${between[0]}" and "${between[1]}"`;
+    for (const place of between) assertPlace(space, place, where);
+    if (!(length > 0)) throw new Error(`${where}: its length ${length} is not greater than zero`);
+  }
+  return space;
 }
 
 /** Refuses a place the space does not declare, saying what was attempted (`where`). */
@@ -61,20 +70,58 @@ export function entitiesIn(space: Places, place: string): string[] {
     .map(([entity]) => entity);
 }
 
+/**
+ * Where an entity that leaves its place towards another is then: in the passage between them. A leave of an entity the
+ * space does not hold, or not in a place, or towards a place that is unknown or not one passage away, is refused with an
+ * error that names the entity or the place.
+ */
+function leaving(space: Places, { entity, towards }: { entity: string; towards: string }): Where {
+  const where = `entity "${entity}" cannot leave towards place "${towards}"`;
+  const from = whereHeld(space, entity, where);
+  if (!("place" in from)) throw new Error(`${where}: it is in the passage between "${from.passage[0]}" and "${from.passage[1]}", not in a place`);
+  assertPlace(space, towards, where);
+  const passage = space.passages.find(({ between }) => between.includes(from.place) && between.includes(towards) && from.place !== towards);
+  if (passage === undefined) throw new Error(`${where}: place "${towards}" is not one passage away from place "${from.place}"`);
+  return { passage: passage.between, towards };
+}
+
+/**
+ * Where an entity in a passage is once it arrives: the place it was heading for. An arrive of an entity that is not in
+ * a passage is refused with an error that names it.
+ */
+function arriving(space: Places, entity: string): Where {
+  const where = `entity "${entity}" cannot arrive`;
+  const from = whereHeld(space, entity, where);
+  if (!("passage" in from)) throw new Error(`${where}: it is in place "${from.place}", not in a passage`);
+  return { place: from.towards };
+}
+
+/** Where an entity is, refusing one the space does not hold, saying what was attempted (`attempt`). */
+function whereHeld(space: Places, entity: string, attempt: string): Where {
+  const at = where(space, entity);
+  if (at === undefined) throw new Error(`${attempt}: the space holds no entity "${entity}"`);
+  return at;
+}
+
+// A leave or an arrive the space cannot make is a defect in the scenario that asks for it, not an agent's choice, so it
+// is refused before the world changes rather than recorded as an outcome (FR-SPACE-03).
+
 /** An entity in a place enters the passage towards a place one passage away. */
 export const leave: Action<Places, { entity: string; towards: string }> = {
-  precondition: () => ({ holds: true }),
-  effect: (space, { entity, towards }) => {
-    const from = (where(space, entity) as { place: string }).place;
-    const passage = space.passages.find(({ between }) => between.includes(from) && between.includes(towards)) as Passage;
-    return moved(space, entity, { passage: passage.between, towards });
+  precondition: (space, args) => {
+    leaving(space, args);
+    return { holds: true };
   },
+  effect: (space, args) => moved(space, args.entity, leaving(space, args)),
 };
 
 /** An entity in a passage reaches the place it was heading for. */
 export const arrive: Action<Places, { entity: string }> = {
-  precondition: () => ({ holds: true }),
-  effect: (space, { entity }) => moved(space, entity, { place: (where(space, entity) as { towards: string }).towards }),
+  precondition: (space, { entity }) => {
+    arriving(space, entity);
+    return { holds: true };
+  },
+  effect: (space, { entity }) => moved(space, entity, arriving(space, entity)),
 };
 
 /** The space with an entity it holds somewhere else. */
