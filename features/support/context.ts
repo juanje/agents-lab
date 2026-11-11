@@ -7,6 +7,7 @@ import type { ScriptedAnswer, ScriptedModel } from "../../src/engine/scripted-mo
 import type { Channel, Stimuli } from "../../src/engine/stimuli.ts";
 import type { Action, ActionResult, World } from "../../src/engine/world.ts";
 import type { Tool } from "../../src/engine/tools.ts";
+import type { Neighbourhood } from "../../src/scenarios/neighbourhood.ts";
 import { type Slots, rhythmChannel, slotTools } from "../../tests/fixtures/slots.ts";
 
 /**
@@ -120,6 +121,10 @@ export class Context extends CucumberWorld {
   moveError?: Error;
   /** The test grid world's tools, when the scenario runs its agents on the grid rather than in the slots world. */
   gridTools?: readonly Tool<Grid>[];
+  /** The neighbourhood scenario as the scenario configures it. */
+  neighbourhood!: Partial<Scenario<Neighbourhood>>;
+  /** Each neighbourhood the engine loaded, in order. */
+  readonly neighbourhoodLoads: LoadedScenario<Neighbourhood>[] = [];
 }
 
 setWorldConstructor(Context);
