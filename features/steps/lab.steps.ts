@@ -167,7 +167,8 @@ Given("the scripted model {string}'s session fails to open", function (this: Con
 
 /**
  * Runs "lab" with a command on the scenario's experiment file, written under its home, from its home, with its scenario
- * library and its models by name; it keeps what the command printed, or the error it failed with.
+ * library, its models by name and the options the scenario gives; it keeps what the command printed, and the error it
+ * failed with, if it failed.
  */
 export async function runLab(context: Context, command: string): Promise<void> {
   const library = context.library;
@@ -183,11 +184,11 @@ export async function runLab(context: Context, command: string): Promise<void> {
   };
   let printed = "";
   try {
-    await lab([command, file], { directory: context.home, print: (text) => (printed += text), scenarios: library, model });
-    context.labOutput = printed;
+    await lab([command, file, ...context.labOptions], { directory: context.home, print: (text) => (printed += text), scenarios: library, model });
   } catch (error) {
     context.labError = error as Error;
   }
+  context.labOutput = printed;
 }
 
 When('"lab run" runs the experiment file', async function (this: Context) {
