@@ -68,6 +68,17 @@ describe("the neighbourhood scenario", () => {
     );
   });
 
+  it("declares its rhythm channel with the source and text its configuration's [rhythm] table gives", () => {
+    const base = configuration(3, 2, 2);
+
+    expect(neighbourhoodScenario.channels({ ...base, rhythm: { source: "a clock", text: "Tick." } })).toEqual([
+      { name: "rhythm", source: "a clock", stimulus: "Tick." },
+    ]);
+    const { source, text } = base.rhythm as { source: unknown; text: unknown };
+    expect([typeof source, typeof text]).toEqual(["string", "string"]);
+    expect(neighbourhoodScenario.channels(base)).toEqual([{ name: "rhythm", source, stimulus: text }]);
+  });
+
   it("draws the cells from the random sequence it is given", () => {
     const cellsOf = (seed: number) => neighbourhoodScenario.initialState(configuration(6, 6, 10), new Random(seed)).grid;
     const where = (seed: number) =>
