@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readExperiment } from "../src/engine/experiment.ts";
 import { inventory, inventoryMarkdown } from "../src/engine/inventory.ts";
 import type { Scenario } from "../src/engine/scenario.ts";
-import { type Slots, slotsScenario } from "./fixtures/slots.ts";
+import { type Slots, filler, slotsScenario } from "./fixtures/slots.ts";
 
 /** An experiment file over the slots test scenario, in TOML, with these conditions after its other fields. */
 function experimentOf(conditions: readonly string[]) {
@@ -261,6 +261,33 @@ describe("inventory", () => {
 
     expect(inventory(experiment, slotsWith()).conditions[0]).not.toHaveProperty("situations");
     expect(printed(experiment, slotsWith())).not.toContain("Situations");
+  });
+
+  it("lists each component each condition declares, with its kind and the description of its cycle, when the scenario has components", () => {
+    const porter = filler("porter", { slot: 2, thing: "crate", waitMs: () => 100, actionMs: 400 });
+    const storm = filler("storm", { slot: 3, thing: "leaves", waitMs: () => 500, actionMs: 0, kind: "perturbation" });
+    const scenario = slotsWith({ components: (configuration) => ((configuration.slots as { count: number }).count === 5 ? [porter, storm] : []) });
+    const experiment = experimentOf(["[conditions.baseline]", "[conditions.stormy]", "slots.count = 5"]);
+
+    expect(inventory(experiment, scenario).conditions.map(({ components }) => components)).toEqual([
+      [],
+      [
+        { name: "porter", kind: "world", cycle: porter.description },
+        { name: "storm", kind: "perturbation", cycle: storm.description },
+      ],
+    ]);
+    const markdown = printed(experiment, scenario);
+    expect(markdown).toContain(
+      `### Components\n\n#### Component "porter"\n\n- Kind: part of the world\n- Cycle: ${porter.description}\n\n#### Component "storm"\n\n- Kind: external perturbation\n- Cycle: ${storm.description}\n`,
+    );
+    expect(markdown).toContain("### Components\n\nnone\n");
+  });
+
+  it("has no components for a scenario without them", () => {
+    const experiment = experimentOf(["[conditions.baseline]"]);
+
+    expect(inventory(experiment, slotsWith()).conditions[0]).not.toHaveProperty("components");
+    expect(printed(experiment, slotsWith())).not.toContain("Components");
   });
 
   it("fences a system prompt that holds a fence with a longer one, so the prompt is given whole", () => {
