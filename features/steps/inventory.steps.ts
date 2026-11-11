@@ -64,6 +64,8 @@ Given(
 
 When('"lab inventory" runs on the experiment file', async function (this: Context) {
   await runLab(this, "inventory");
+  // Kept apart, since a "lab run" after it prints over what "lab" printed.
+  if (this.labError === undefined) this.inventoryOutput = this.labOutput;
 });
 
 /** What "lab inventory" printed: it did not fail. */

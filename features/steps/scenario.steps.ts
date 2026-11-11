@@ -7,6 +7,7 @@ import { type Condition, type LoadedScenario, type Scenario, loadScenario } from
 import { RHYTHM_CHANNEL } from "../../src/engine/stimuli.ts";
 import { type Slots, rhythmOf, slotsScenario } from "../../tests/fixtures/slots.ts";
 import type { Context } from "../support/context.ts";
+import { indexOf, logOf } from "./lab.steps.ts";
 import { logLines } from "./record.steps.ts";
 import { asRead, userTexts } from "./stimulus.steps.ts";
 import { modelOf, script } from "./tool.steps.ts";
@@ -296,6 +297,15 @@ Then(
 );
 
 Then("agent {string}'s rhythm stimulus has the content {string}", function (this: Context, agent: string, content: string) {
+  // A scenario run by "lab run" loads none here: the log of its only run gives the stimulus as it was delivered.
+  if (this.loaded === undefined) {
+    assert.equal(this.labError, undefined, `"lab run" failed: ${this.labError?.message}`);
+    const [{ runId }] = indexOf(this);
+    const stimulus = logOf(this, runId).find((line) => line.type === "stimulus" && line.agent === agent && line.channel === RHYTHM_CHANNEL);
+    assert.ok(stimulus !== undefined, `the log has no rhythm stimulus for agent "${agent}"`);
+    assert.equal(stimulus.content, content);
+    return;
+  }
   const { source } = rhythmOf(loadedOf(this).configuration);
   const [first] = userTexts(modelOf(this, agent).received[0] ?? []);
   assert.equal(first, asRead(source, content), `agent "${agent}"'s activation began with another stimulus`);

@@ -2,7 +2,7 @@ import { World as CucumberWorld, setWorldConstructor } from "@cucumber/cucumber"
 import type { Grid, Position, WindowCell } from "../../src/engine/grid.ts";
 import type { TomlTable } from "smol-toml";
 import type { Experiment } from "../../src/engine/experiment.ts";
-import type { Condition, LoadedScenario, Rhythm, Scenario } from "../../src/engine/scenario.ts";
+import type { Condition, Configuration, LoadedScenario, Rhythm, Scenario } from "../../src/engine/scenario.ts";
 import type { AgentModel, ModelTurn } from "../../src/engine/adapter.ts";
 import type { RunResult } from "../../src/engine/run.ts";
 import type { ScriptedAnswer, ScriptedModel } from "../../src/engine/scripted-model.ts";
@@ -159,6 +159,10 @@ export class Context extends CucumberWorld {
   labError?: Error;
   /** What "lab run" or "lab inventory" printed, whether or not it failed; while it runs, what it printed so far. */
   labOutput?: string;
+  /** What "lab inventory" printed, when it did not fail. */
+  inventoryOutput?: string;
+  /** Each configuration the library's scenario was given, when the scenario keeps them. */
+  readonly configurationsGiven: Configuration[] = [];
   /** "lab run" while it runs, which a step that acts on it during its run leaves running. */
   labRunning?: Promise<void>;
   /** Interrupts "lab run", as Ctrl-C or a termination signal would. */

@@ -172,11 +172,11 @@ Given("the scripted model {string}'s session fails to open", function (this: Con
 });
 
 /**
- * Runs "lab" with a command on the scenario's experiment file, written under its home, from its home, with its scenario
- * library, its models by name and the options the scenario gives; it keeps what the command printed, and the error it
- * failed with, if it failed.
+ * Runs "lab" with a command on the scenario's experiment file, written under its home, from a directory, its home unless
+ * given, with its scenario library, its models by name and the options the scenario gives; it keeps what the command
+ * printed, and the error it failed with, if it failed.
  */
-export async function runLab(context: Context, command: string): Promise<void> {
+export async function runLab(context: Context, command: string, from = context.home): Promise<void> {
   const library = context.library;
   assert.ok(library !== undefined, "the scenario gives no scenario library");
   const directory = join(context.home, "experiments");
@@ -193,7 +193,7 @@ export async function runLab(context: Context, command: string): Promise<void> {
     context.labOutput += text;
   };
   try {
-    await lab([command, file, ...context.labOptions], { directory: context.home, print, scenarios: library, model, interruption: context.labInterruption.signal });
+    await lab([command, file, ...context.labOptions], { directory: from, print, scenarios: library, model, interruption: context.labInterruption.signal });
   } catch (error) {
     context.labError = error as Error;
   }
@@ -208,9 +208,9 @@ BeforeStep(async function (this: Context, { pickleStep }) {
   if (pickleStep.type === "Outcome") await this.labRunning;
 });
 
-/** The experiment's runs directory, under the directory "lab run" ran in. */
-function runsDirectory(context: Context): string {
-  return join(context.home, "runs", String(context.experimentFile.id));
+/** The experiment's runs directory, under the directory "lab run" ran in, its home unless given. */
+function runsDirectory(context: Context, from = context.home): string {
+  return join(from, "runs", String(context.experimentFile.id));
 }
 
 /** A line of the experiment's index. */
@@ -223,9 +223,9 @@ interface IndexLine {
   status: string;
 }
 
-/** The lines of the experiment's index, parsed, in the order the runs ran. */
-export function indexOf(context: Context): IndexLine[] {
-  const path = join(runsDirectory(context), "index.jsonl");
+/** The lines of the experiment's index, parsed, in the order the runs ran from a directory, its home unless given. */
+export function indexOf(context: Context, from = context.home): IndexLine[] {
+  const path = join(runsDirectory(context, from), "index.jsonl");
   assert.ok(existsSync(path), `"lab run" wrote no index${context.labError === undefined ? "" : `; it failed: ${context.labError.message}`}`);
   const text = readFileSync(path, "utf8");
   assert.ok(text.endsWith("\n"), "the index does not end with a line break");
@@ -248,9 +248,9 @@ export function runLogs(context: Context): string[] {
 /** A line of a run's log, as JSON gives it back. */
 type LogLine = Record<string, unknown> & { type: string };
 
-/** The lines of a run's log, by its run id. */
-export function logOf(context: Context, runId: string): LogLine[] {
-  const text = readFileSync(join(runsDirectory(context), `${runId}.jsonl`), "utf8");
+/** The lines of a run's log, by its run id, as it ran from a directory, its home unless given. */
+export function logOf(context: Context, runId: string, from = context.home): LogLine[] {
+  const text = readFileSync(join(runsDirectory(context, from), `${runId}.jsonl`), "utf8");
   return text.slice(0, -1).split("\n").map((line) => JSON.parse(line) as LogLine);
 }
 
