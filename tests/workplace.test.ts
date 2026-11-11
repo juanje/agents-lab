@@ -862,6 +862,11 @@ describe("the depot's day", () => {
     expect(checkTime().sense(scenario.initialState(configuration({ world: withDay("23:50"), time_scale: 6000 }), new Random(1)), "worker", {}, 200)).toBe("00:10");
   });
 
+  it("gives the inventory its clock: the day's start, midnight when the world has none, and the time scale", () => {
+    expect(scenario.clock?.(configuration({ world: withDay("09:00"), time_scale: 6000 }))).toEqual({ start: "09:00", timeScale: 6000 });
+    expect(scenario.clock?.(configuration({ world: WORLD }))).toEqual({ start: "00:00", timeScale: 1 });
+  });
+
   it("takes the configured time to check it, as the inventory describes it", () => {
     const durations = { ...(parse(scenario.baseConfiguration).durations as Configuration), check_time_ms: 7 };
 

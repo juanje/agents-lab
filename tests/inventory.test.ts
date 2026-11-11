@@ -290,6 +290,26 @@ describe("inventory", () => {
     expect(printed(experiment, slotsWith())).not.toContain("Components");
   });
 
+  it("gives the clock's start time and time scale each condition sets, when the scenario has a clock", () => {
+    const scenario = slotsWith({ clock: (configuration) => ({ start: "08:30", timeScale: (configuration.slots as { count: number }).count === 5 ? 60 : 1 }) });
+    const experiment = experimentOf(["[conditions.baseline]", "[conditions.fast]", "slots.count = 5"]);
+
+    expect(inventory(experiment, scenario).conditions.map(({ clock }) => clock)).toEqual([
+      { start: "08:30", timeScale: 1 },
+      { start: "08:30", timeScale: 60 },
+    ]);
+    const markdown = printed(experiment, scenario);
+    expect(markdown).toContain("### Clock\n\n- Start: 08:30\n- Time scale: 60 depot seconds for each second of the run\n");
+    expect(markdown).toContain("### Clock\n\n- Start: 08:30\n- Time scale: 1 depot seconds for each second of the run\n");
+  });
+
+  it("has no clock for a scenario without one", () => {
+    const experiment = experimentOf(["[conditions.baseline]"]);
+
+    expect(inventory(experiment, slotsWith()).conditions[0]).not.toHaveProperty("clock");
+    expect(printed(experiment, slotsWith())).not.toContain("Clock");
+  });
+
   it("fences a system prompt that holds a fence with a longer one, so the prompt is given whole", () => {
     const experiment = experimentOf(["[conditions.baseline]"]);
     const scenario = slotsWith({ systemPrompt: () => "Answer like this:\n```\ndone\n```" });
