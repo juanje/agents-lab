@@ -15,6 +15,25 @@ describe("loadScenario", () => {
     expect(loaded.scenario.metrics).toBe(slotsScenario.metrics);
   });
 
+  it("gives each of the scenario's agents, named from the configuration, its own system prompt from the configuration and the agent", () => {
+    const loaded = loadScenario(
+      {
+        ...slotsScenario,
+        baseConfiguration: "agents = ['a', 'b']\n[slots]\ncount = 2\nheld = 0\n",
+        agents: (configuration) => configuration.agents as string[],
+        systemPrompt: (configuration, agent) => `You are "${agent}", among ${(configuration.slots as { count: number }).count} slots.`,
+      },
+      seed,
+    );
+
+    expect(loaded.systemPrompts).toEqual(
+      new Map([
+        ["a", 'You are "a", among 2 slots.'],
+        ["b", 'You are "b", among 2 slots.'],
+      ]),
+    );
+  });
+
   it("applies the condition's change over the base configuration, keeping what the change does not set", () => {
     const loaded = loadScenario(
       { ...slotsScenario, baseConfiguration: "label = 'base'\nmode = 'plain'\n[slots]\ncount = 2\nheld = 0\n" },
