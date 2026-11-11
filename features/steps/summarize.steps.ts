@@ -61,8 +61,11 @@ Given("a runs directory {string} whose index lists these runs, each with its log
   writeFileSync(join(runs, "index.jsonl"), index.map((line) => `${line}\n`).join(""));
 });
 
-/** Runs "lab" with a command line, as the person types it, from the scenario's home. */
-async function summarize(context: Context, command: string): Promise<Summarized> {
+/**
+ * Runs "lab" with a command line, as the person types it, from the scenario's home, with the scenario's library, the
+ * whole library unless it gives one, and its models by name.
+ */
+export async function runCommand(context: Context, command: string): Promise<Summarized> {
   const [program, ...args] = command.split(" ");
   assert.equal(program, "lab");
   const done: Summarized = { output: "" };
@@ -72,9 +75,11 @@ async function summarize(context: Context, command: string): Promise<Summarized>
       print: (text) => {
         done.output += text;
       },
-      scenarios: scenarioLibrary,
+      scenarios: context.library ?? scenarioLibrary,
       model: async (name) => {
-        throw new Error(`"lab summarize" asked for the model "${name}"`);
+        const found = context.labModels.get(name);
+        if (found === undefined) throw new Error(`No model is named "${name}"`);
+        return found;
       },
     });
   } catch (error) {
@@ -85,7 +90,7 @@ async function summarize(context: Context, command: string): Promise<Summarized>
 
 // What it printed and the error it failed with are kept where the other "lab" steps keep them.
 When("{string} runs", async function (this: Context, command: string) {
-  const { output, error } = await summarize(this, command);
+  const { output, error } = await runCommand(this, command);
   this.labOutput = output;
   this.labError = error;
 });
@@ -232,7 +237,7 @@ Then("it prints JSON with the same rows, counts, values and quartiles", async fu
   }));
   // The same summary, as Markdown, from the same runs directory.
   const command = "lab summarize runs/e-test";
-  const markdown = await summarize(this, command);
+  const markdown = await runCommand(this, command);
   assert.equal(markdown.error, undefined, `"${command}" failed: ${markdown.error?.message}`);
   const fromMarkdown = markdownRows(markdown.output);
   assert.ok(fromMarkdown.length > 0, "the Markdown summary gives no rows");
