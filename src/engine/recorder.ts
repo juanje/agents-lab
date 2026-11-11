@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { closeSync, openSync, writeSync } from "node:fs";
 import { join } from "node:path";
 import type { ModelTurn, ToolCall } from "./adapter.ts";
+import { JsonlFile } from "./jsonl.ts";
 import type { Stimulus } from "./stimuli.ts";
 
 /** A line of a run's log: one event of the run. Every time in it is by performance.now(). */
@@ -15,10 +15,10 @@ export type LogLine =
 /** Writes a run's log: one new JSONL file, named with the run's id, with a line for each event (FR-RECORD-01). */
 export class Recorder {
   readonly runId: string;
-  readonly #file: number;
+  readonly #file: JsonlFile;
   #stopped = false;
 
-  private constructor(runId: string, file: number) {
+  private constructor(runId: string, file: JsonlFile) {
     this.runId = runId;
     this.#file = file;
   }
@@ -28,21 +28,12 @@ export class Recorder {
    * already there: a run never writes to an existing file.
    */
   static open(directory: string, runId: string = randomUUID()): Recorder {
-    const path = join(directory, `${runId}.jsonl`);
-    try {
-      return new Recorder(runId, openSync(path, "wx"));
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-      throw new Error(`A run never writes to an existing file, and ${path} is already there`, { cause: error });
-    }
+    return new Recorder(runId, JsonlFile.create(join(directory, `${runId}.jsonl`)));
   }
 
-  /**
-   * Writes one line at once, synchronously: a line kept in a buffer would be lost if the process stopped, and the log
-   * is all an experiment is read from.
-   */
+  /** Writes one line at once. */
   record(line: LogLine): void {
-    if (!this.#stopped) writeSync(this.#file, `${JSON.stringify(line)}\n`);
+    if (!this.#stopped) this.#file.write(line);
   }
 
   /**
@@ -55,6 +46,6 @@ export class Recorder {
   }
 
   close(): void {
-    closeSync(this.#file);
+    this.#file.close();
   }
 }

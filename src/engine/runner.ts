@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { closeSync, mkdirSync, openSync, writeSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { AgentModel } from "./adapter.ts";
 import { type Experiment, replicaSeed } from "./experiment.ts";
 import { failure } from "./failure.ts";
+import { JsonlFile } from "./jsonl.ts";
 import { run } from "./run.ts";
 import { type Scenario, loadScenario } from "./scenario.ts";
 
@@ -33,8 +34,7 @@ export async function runExperiment<State>(
   // Each condition is loaded once before the first run, so one the scenario refuses fails before any model call.
   for (const condition of experiment.conditions) loadScenario(scenario, experiment.seed, condition);
   mkdirSync(runsDirectory, { recursive: true });
-  // Created exclusively, as a run's log is: an experiment never writes to an existing file.
-  const index = openSync(join(runsDirectory, "index.jsonl"), "wx");
+  const index = JsonlFile.create(join(runsDirectory, "index.jsonl"));
   try {
     for (const condition of experiment.conditions) {
       for (const [modelName, model] of models) {
@@ -54,19 +54,14 @@ export async function runExperiment<State>(
               timeLimitMs: experiment.limits.timeLimitMs,
             });
           } catch (error) {
-            list(index, { ...listed, status: "stopped" });
+            index.write({ ...listed, status: "stopped" } satisfies IndexLine);
             throw failure(`the run of condition "${condition.name}", model "${modelName}", replica ${replica} stopped`, error);
           }
-          list(index, { ...listed, status: "completed" });
+          index.write({ ...listed, status: "completed" } satisfies IndexLine);
         }
       }
     }
   } finally {
-    closeSync(index);
+    index.close();
   }
-}
-
-/** Adds a run's line to the index at once, as a log line is written: the index is how an experiment's runs are found. */
-function list(index: number, line: IndexLine): void {
-  writeSync(index, `${JSON.stringify(line)}\n`);
 }
