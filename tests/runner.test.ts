@@ -21,7 +21,7 @@ const experiment: Experiment = {
   ],
 };
 
-/** Each model of the experiment, by its name: a scripted model that ends every turn without a tool call. */
+/** Each model of the experiment, by its name, in its order: a scripted model that ends every turn without a tool call. */
 function scriptedModels(): Map<string, ScriptedModel> {
   const answers = () => Array.from({ length: 10 }, () => ({ text: "Nothing to do.", delayMs: 0 }));
   return new Map(experiment.models.map((name) => [name, new ScriptedModel(answers())]));
