@@ -67,6 +67,18 @@ describe("materials", () => {
 
     expect(loaded.materials).toEqual([{ path: "materials/wake.md", hash: `sha256:${sha256("Morning comes.")}` }]);
   });
+
+  it("are read once for an experiment, so a file changed after its first run started does not reach a later run", () => {
+    writeMaterial("materials/wake.md", "Morning comes.");
+    const [condition] = readExperiment(experimentFile('rhythm.text = { file = "materials/wake.md" }'), directory).conditions;
+    loadScenario(slotsScenario, 1, condition);
+
+    writeMaterial("materials/wake.md", "Night falls.");
+    const later = loadScenario(slotsScenario, 2, condition);
+
+    expect(rhythmOf(later.configuration).text).toBe("Morning comes.");
+    expect(later.materials).toEqual([{ path: "materials/wake.md", hash: `sha256:${sha256("Morning comes.")}` }]);
+  });
 });
 
 /** The SHA-256 hash of a text, in hexadecimal. */
