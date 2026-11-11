@@ -1252,6 +1252,8 @@ export const workplaceScenario: Scenario<Workplace> = {
   situations: (configuration) => configuration.chosen_situations as string[],
   components,
   clock: clockOf,
+  // A stub that declares nothing, for the test to fail on its assertions.
+  judged: () => [],
   baseConfiguration: [
     'identity = "You work here."',
     'world_rules = ""',

@@ -59,6 +59,23 @@ export interface Scenario<State> {
   clock?: (configuration: Configuration) => { start: string; timeScale: number };
   /** The components besides the agents, from the resolved configuration; none when the scenario declares none (FR-PROCESS-01). */
   components?: (configuration: Configuration) => readonly Component<State>[];
+  /**
+   * What can be judged in a run, from its resolved configuration, held-out materials included, and its agents' tool
+   * calls, in the order they ended; none when the scenario declares nothing to judge (FR-ANALYSIS-02).
+   */
+  judged?: (configuration: Configuration, toolCalls: readonly ToolCall[]) => Judgeable[];
+}
+
+/**
+ * A statement a judge decides from the texts an agent wrote in a run (FR-ANALYSIS-02): the situation and the key that
+ * give it, whether a text must say it or reveal it, and the texts it is judged on, each with when it was written.
+ */
+export interface Judgeable {
+  situation: string;
+  key: string;
+  statement: string;
+  asks: "says" | "reveals";
+  texts: { text: string; atMs: number }[];
 }
 
 /** A named change over a scenario's base configuration. */
