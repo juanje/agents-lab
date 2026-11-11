@@ -1,5 +1,6 @@
 import { type TomlTable, type TomlValue, parse } from "smol-toml";
 import type { ToolCall } from "./adapter.ts";
+import type { Component } from "./components.ts";
 import { type Material, type MaterialReference, type Materials, materialReference } from "./materials.ts";
 import { Random } from "./random.ts";
 import { type Channel, RHYTHM_CHANNEL } from "./stimuli.ts";
@@ -51,6 +52,8 @@ export interface Scenario<State> {
    * lists them by id only (FR-WORKPLACE-01).
    */
   situations?: (configuration: Configuration) => readonly string[];
+  /** The components besides the agents, from the resolved configuration; none when the scenario declares none (FR-PROCESS-01). */
+  components?: (configuration: Configuration) => readonly Component<State>[];
 }
 
 /** A named change over a scenario's base configuration. */

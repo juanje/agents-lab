@@ -491,7 +491,7 @@ function rejection<State>(tool: Tool<State>, call: { tool: string; arguments: un
 }
 
 /** The outcome of a tool call or a model turn still running when the run's time limit passes (FR-CLOCK-02). */
-const CUT_OFF = "cut_off" as const;
+export const CUT_OFF = "cut_off" as const;
 
 /** A call the tool ran: its outcome, when it started and ended, a sensor's result and an effector's target as sensed. */
 type Executed = Pick<ToolCall, "outcome" | "startedAtMs" | "endedAtMs" | "result" | "text" | "targetAsSensed" | "changesSinceSensing" | "changesSinceSensingBy">;
