@@ -213,7 +213,7 @@ Given(
 );
 
 /** The scenario with its base configuration declaring these agents, so a run of exactly them is the scenario's. */
-function declaring(scenario: Partial<Scenario<Slots>>, agents: readonly string[]): Partial<Scenario<Slots>> {
+export function declaring(scenario: Partial<Scenario<Slots>>, agents: readonly string[]): Partial<Scenario<Slots>> {
   const base = parse(scenario.baseConfiguration ?? "");
   return { ...scenario, baseConfiguration: stringify({ ...base, agents: [...agents] }) };
 }

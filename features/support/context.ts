@@ -9,6 +9,7 @@ import type { ScriptedAnswer, ScriptedModel } from "../../src/engine/scripted-mo
 import type { Channel, Stimuli } from "../../src/engine/stimuli.ts";
 import type { Action, ActionResult, World } from "../../src/engine/world.ts";
 import type { Tool } from "../../src/engine/tools.ts";
+import type { LibraryScenario } from "../../src/scenarios/library.ts";
 import type { Neighbourhood } from "../../src/scenarios/neighbourhood.ts";
 import { type Slots, rhythmChannel, slotTools } from "../../tests/fixtures/slots.ts";
 
@@ -142,6 +143,12 @@ export class Context extends CucumberWorld {
   experiment?: Experiment;
   /** The error reading the experiment file gave, if it was refused. */
   readingError?: Error;
+  /** The scenario library "lab run" is given: the lab's own, with the test scenarios the scenario adds. */
+  library?: ReadonlyMap<string, LibraryScenario>;
+  /** The model each name gives "lab run", as the scenario sets them up. */
+  readonly labModels = new Map<string, AgentModel>();
+  /** The error "lab run" failed with, if it failed. */
+  labError?: Error;
 }
 
 setWorldConstructor(Context);

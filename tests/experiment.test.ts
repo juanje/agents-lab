@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { type TomlTable, type TomlValue, parse, stringify } from "smol-toml";
-import { readExperiment } from "../src/engine/experiment.ts";
+import { readExperiment, replicaSeed } from "../src/engine/experiment.ts";
 
 /** A valid experiment file, in TOML. */
 const valid = [
@@ -102,3 +102,14 @@ function withSet(path: string, value: TomlValue | undefined): string {
   else table[last] = value;
   return stringify(file);
 }
+
+describe("replicaSeed", () => {
+  it("derives each replica's seed from the base seed and the replica: the same pair gives the same seed, another replica another", () => {
+    const seeds = [1, 2, 3].map((replica) => replicaSeed(7, replica));
+
+    expect(new Set(seeds).size).toBe(3);
+    expect([1, 2, 3].map((replica) => replicaSeed(7, replica))).toEqual(seeds);
+    expect(replicaSeed(8, 1)).not.toBe(seeds[0]);
+    for (const seed of seeds) expect(Number.isInteger(seed) && seed >= 0 && seed <= 4294967295).toBe(true);
+  });
+});
