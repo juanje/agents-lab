@@ -48,6 +48,11 @@ export interface Effector<State> extends Declared<State> {
   kind: "effector";
   action: Action<State, AgentCall>;
   /**
+   * The text the agent receives for each outcome of its call's effect, success included, by the outcome; an outcome
+   * without one gives the outcome itself (FR-TOOL-02). It tells the agent only what happened to it, never the world's state.
+   */
+  texts?: Readonly<Record<string, string>>;
+  /**
    * What the agent's last sensing says of the call's target, which it finds from the state as the call starts;
    * "not_sensed" when that sensing does not show it.
    */

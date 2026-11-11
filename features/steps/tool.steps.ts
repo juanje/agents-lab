@@ -293,3 +293,60 @@ Then(
     }
   },
 );
+
+Given(
+  "the effector {string} declares the text {string} for {string} and {string} for {string}",
+  function (this: Context, name: string, firstText: string, firstOutcome: string, secondText: string, secondOutcome: string) {
+    const declared = fixtureTool("effector", name);
+    const texts = { [firstOutcome]: firstText, [secondOutcome]: secondText };
+    this.tools = this.tools.map((tool) => (tool.name === name ? { ...declared, texts } : tool));
+  },
+);
+
+Given(
+  "agent {string} runs on a scripted model that calls {string} with slot {int}, then calls {string} with slot {int}, then ends without a tool call",
+  function (this: Context, agent: string, firstTool: string, firstSlot: number, secondTool: string, secondSlot: number) {
+    script(this, agent, [
+      { toolCalls: [{ name: firstTool, arguments: { slot: firstSlot } }], delayMs: 0 },
+      ...callThenEnd(secondTool, secondSlot, 0),
+    ]);
+  },
+);
+
+/** The results the agent's model received back for its calls of the tool, in the order it made them. */
+function resultsOf(context: Context, agent: string, tool: string) {
+  // The last turn's transcript holds every earlier call and its result.
+  const messages = modelOf(context, agent).received.at(-1) ?? [];
+  const calls = messages
+    .flatMap((message) => (message.role === "assistant" ? message.content : []))
+    .flatMap((block) => (block.type === "toolCall" && block.name === tool ? [block] : []));
+  return calls.map((call) => {
+    const result = messages.find((message) => message.role === "toolResult" && message.toolCallId === call.id);
+    assert.ok(result !== undefined && result.role === "toolResult", `agent "${agent}"'s "${tool}" call returned nothing`);
+    return result;
+  });
+}
+
+/** Checks the result the agent's model received for its call of the tool at an index from 0, and keeps who and what for the next step. */
+function checkNthResult(context: Context, agent: string, tool: string, index: number, isError: boolean, text: string): void {
+  const result = resultsOf(context, agent, tool)[index];
+  assert.ok(result !== undefined, `agent "${agent}"'s model received no result for its call ${index + 1} of "${tool}"`);
+  assert.equal(result.isError, isError, `the result is${isError ? " not" : ""} marked as an error`);
+  assert.equal(result.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join(""), text);
+  context.lastResultOf = { agent, tool };
+}
+
+Then(
+  "the result agent {string}'s model received for its first {string} call is marked as an error and says {string}",
+  function (this: Context, agent: string, tool: string, text: string) {
+    checkNthResult(this, agent, tool, 0, true, text);
+  },
+);
+
+Then(
+  "the result it received for its second {string} call is not marked as an error and says {string}",
+  function (this: Context, tool: string, text: string) {
+    assert.ok(this.lastResultOf !== undefined && this.lastResultOf.tool === tool, `no result of a "${tool}" call was checked before`);
+    checkNthResult(this, this.lastResultOf.agent, tool, 1, false, text);
+  },
+);

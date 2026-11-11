@@ -520,9 +520,9 @@ function sense<State>(world: World<State>, sensor: Sensor<State>, call: AgentCal
 }
 
 /**
- * Applies an effector's call through the arbiter, against the world as it is now; the agent receives its outcome:
- * "success" or the failure's reason. The changes since the agent last sensed, and who applied them, are read at this
- * moment, beside it.
+ * Applies an effector's call through the arbiter, against the world as it is now; its outcome is "success" or the
+ * failure's reason, and the agent receives the text the effector declares for it, or the outcome itself. The changes
+ * since the agent last sensed, and who applied them, are read at this moment, beside it.
  */
 function effect<State>(world: World<State>, effector: Effector<State>, call: AgentCall, changes: ChangesSinceSensing): CallResult {
   const changesSinceSensing = changes.since(call.agent);
@@ -530,5 +530,5 @@ function effect<State>(world: World<State>, effector: Effector<State>, call: Age
   const result = world.apply(effector.action, call);
   if (result.applied) changes.applied(call.agent);
   const outcome = result.applied ? "success" : result.reason;
-  return { outcome, text: outcome, changesSinceSensing, changesSinceSensingBy };
+  return { outcome, text: effector.texts?.[outcome] ?? outcome, changesSinceSensing, changesSinceSensingBy };
 }
