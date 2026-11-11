@@ -3,8 +3,10 @@ import { Given, Then, When } from "@cucumber/cucumber";
 import { type TomlValue, parse, stringify } from "smol-toml";
 import { exits, where } from "../../src/engine/places.ts";
 import type { LoadedScenario } from "../../src/engine/scenario.ts";
+import { scenarioLibrary } from "../../src/scenarios/library.ts";
 import { type Workplace, workplaceScenario } from "../../src/scenarios/workplace.ts";
 import type { Context } from "../support/context.ts";
+import { runLab } from "./lab.steps.ts";
 import { assertRhythmWithin, assertWakeStimuli, inTables, lastLoaded, loadLibraryScenario, withBase } from "./neighbourhood.steps.ts";
 
 /** The worker, the workplace's one agent. */
@@ -172,4 +174,49 @@ Then(
 
 Then("every interval the worker's rhythm draws is from {int} to {int} milliseconds", function (this: Context, minMs: number, maxMs: number) {
   assertRhythmWithin(this, [WORKER], minMs, maxMs);
+});
+
+Then(
+  "the scenario holds the reserved keys of {string}: class {string}, covered {word} and kind {string}",
+  function (this: Context, situation: string, kind: string, covered: string, conflict: string) {
+    const { situations } = loadedWorkplace(this).world.state;
+    assert.ok(Object.hasOwn(situations, situation), `the workplace holds no situation "${situation}"`);
+    assert.deepEqual(situations[situation].keys, { class: kind, covered: tomlValue(covered), kind: conflict });
+  },
+);
+
+Then("the worker's system prompt holds none of {string}, {string} or {string}", function (this: Context, ...words: string[]) {
+  const prompt = loadedWorkplace(this).systemPrompts.get(WORKER) ?? "";
+  assert.ok(prompt !== "", "the worker has no system prompt");
+  const held = words.filter((word) => prompt.includes(word));
+  assert.deepEqual(held, [], `the worker's system prompt holds ${held.join(", ")}: ${prompt}`);
+});
+
+When('"lab inventory" lists it', async function (this: Context) {
+  // An experiment of one condition, with no change, over the workplace as the scenario configured it.
+  const scenario = String(this.libraryScenario.name);
+  this.library = new Map([...scenarioLibrary, [scenario, this.libraryScenario]]);
+  this.experimentFile = {
+    id: "workplace-inventory",
+    scenario,
+    models: ["faux/scripted"],
+    thinking_level: "off",
+    replicas: 1,
+    seed: 42,
+    limits: { time_limit_ms: 1_000, activations_per_agent: 1, parallelism_limit: 1, model_turn_timeout_ms: 1_000 },
+    conditions: { base: {} },
+  };
+  await runLab(this, "inventory");
+  assert.equal(this.labError, undefined, `"lab inventory" failed: ${this.labError?.message}`);
+});
+
+Then("the inventory lists the chosen situation {string} by its id only", function (this: Context, situation: string) {
+  const printed = this.labOutput ?? "";
+  const lines = printed.split("\n").filter((line) => line.includes(situation));
+  assert.equal(lines.length, 1, `the inventory names "${situation}" on ${lines.length} lines:\n${printed}`);
+  assert.equal(lines[0].replace(/^- /, "").replaceAll("`", "").trim(), situation, `the inventory lists more than the id: ${lines[0]}`);
+  // Nothing the situation brings or holds reaches it: neither its things nor its reserved keys.
+  for (const text of ["a cardboard box", "a folded note", "honesty", "conflict"]) {
+    assert.ok(!printed.includes(text), `the inventory holds "${text}"`);
+  }
 });

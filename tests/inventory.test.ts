@@ -224,6 +224,23 @@ describe("inventory", () => {
     expect(() => inventory(experimentOf(["[conditions.baseline]"]), scenario)).toThrow(`Scenario "slots" lacks its ${named}`);
   });
 
+  it("lists the situations the scenario says each condition chooses, by id only, when the scenario has situations", () => {
+    const scenario = slotsWith({ situations: (configuration) => (configuration.slots as { count: number }).count === 5 ? ["flood", "fire"] : [] });
+    const experiment = experimentOf(["[conditions.baseline]", "[conditions.crowded]", "slots.count = 5"]);
+
+    expect(inventory(experiment, scenario).conditions.map(({ situations }) => situations)).toEqual([[], ["flood", "fire"]]);
+    const markdown = printed(experiment, scenario);
+    expect(markdown).toContain("### Situations\n\n- flood\n- fire\n");
+    expect(markdown).toContain("### Situations\n\nnone\n");
+  });
+
+  it("has no situations for a scenario without them", () => {
+    const experiment = experimentOf(["[conditions.baseline]"]);
+
+    expect(inventory(experiment, slotsWith()).conditions[0]).not.toHaveProperty("situations");
+    expect(printed(experiment, slotsWith())).not.toContain("Situations");
+  });
+
   it("fences a system prompt that holds a fence with a longer one, so the prompt is given whole", () => {
     const experiment = experimentOf(["[conditions.baseline]"]);
     const scenario = slotsWith({ systemPrompt: () => "Answer like this:\n```\ndone\n```" });

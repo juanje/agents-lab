@@ -140,6 +140,17 @@ class = "control"
     });
   });
 
+  it("gives the inventory the chosen situations by id", () => {
+    expect(scenario.situations?.(configuration({ chosen_situations: ["mug", "parcel"] }))).toEqual(["mug", "parcel"]);
+  });
+
+  it("describes the worker's rhythm with its bounds, and refuses to describe a tool it does not have", () => {
+    const rhythm = { source: "", text: "", min_ms: 100, max_ms: 200 };
+
+    expect(scenario.describeRhythm(configuration({ rhythm }), "worker")).toBe("An interval drawn uniformly between 100 and 200 ms before each activation.");
+    expect(() => scenario.describeDuration(configuration({}), "look")).toThrow('The workplace has no tool "look"');
+  });
+
   it("has one agent, the worker", () => {
     expect(scenario.agents(configuration({ world: WORLD }))).toEqual(["worker"]);
   });
