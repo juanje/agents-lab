@@ -632,6 +632,26 @@ describe("the workplace's tools", () => {
     });
   });
 
+  it("take, put and give keep each move of a thing, from where it directly was to where it is, with the moment it lands", () => {
+    const office = inPlace(start(), "office");
+    expect(office.moves).toEqual([]);
+
+    const taken = land(office, "take", { thing: "key" }, 5).state;
+    const refused = land(taken, "take", { thing: "sign" }, 6).state;
+    const down = land(refused, "put", { thing: "key" }, 7).state;
+    const back = land(land(down, "take", { thing: "key" }, 8).state, "put", { thing: "key", into: "cupboard" }, 9).state;
+    const given = land(land(back, "take", { thing: "key" }, 10).state, "give", { thing: "key", person: "ana" }, 11).state;
+
+    expect(given.moves).toEqual([
+      { thing: "key", from: "cupboard", to: "held", atMs: 5 },
+      { thing: "key", from: "held", to: "office", atMs: 7 },
+      { thing: "key", from: "office", to: "held", atMs: 8 },
+      { thing: "key", from: "held", to: "cupboard", atMs: 9 },
+      { thing: "key", from: "cupboard", to: "held", atMs: 10 },
+      { thing: "key", from: "held", to: "person:ana", atMs: 11 },
+    ]);
+  });
+
   describe("record", () => {
     it("writes an entry in the book, with the moment it lands, where the book is; it takes the time per word", () => {
       const written = land(start(), "record", { entry: "Two parcels in." }, 1234);
