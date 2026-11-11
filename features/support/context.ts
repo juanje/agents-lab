@@ -1,5 +1,6 @@
 import { World as CucumberWorld, setWorldConstructor } from "@cucumber/cucumber";
 import type { JsonObject } from "@earendil-works/pi-ai";
+import type { Component } from "../../src/engine/components.ts";
 import type { Grid, Position, WindowCell } from "../../src/engine/grid.ts";
 import type { Places } from "../../src/engine/places.ts";
 import type { TomlTable } from "smol-toml";
@@ -79,6 +80,8 @@ export class Context extends CucumberWorld {
   readonly channels: Channel[] = [rhythmChannel];
   /** The run's stimuli, from the moment the run starts, for what the scenario delivers while it runs. */
   stimuli!: Stimuli;
+  /** The components the scenario declares besides its agents, in the test world (FR-PROCESS-01). */
+  components: Component<Slots>[] = [];
   /** The tools the scenario declares: the test world's, as the scenario sets them. */
   tools: readonly Tool<Slots>[] = slotTools;
   /** The metrics the scenario declares: the test world's, and any the scenario adds. */

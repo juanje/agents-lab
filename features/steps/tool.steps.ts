@@ -101,6 +101,7 @@ export async function runTheScenario(context: Context): Promise<void> {
     metrics: context.metrics,
     systemPrompt: () => context.systemPrompt,
     rhythm: rhythmsOf(context),
+    components: () => context.components,
   };
   await runScenario(context, context.loaded ?? assembled(scenario, context.world));
 }

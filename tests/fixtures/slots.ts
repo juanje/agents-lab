@@ -1,3 +1,5 @@
+import type { Component } from "../../src/engine/components.ts";
+import type { Random } from "../../src/engine/random.ts";
 import type { Configuration, Scenario } from "../../src/engine/scenario.ts";
 import type { Channel } from "../../src/engine/stimuli.ts";
 import type { AgentCall, Tool } from "../../src/engine/tools.ts";
@@ -167,3 +169,42 @@ export const placingScenario: Scenario<Slots> = {
   },
   baseConfiguration: "[slots]\ncount = 10\nagents = 3\n",
 };
+
+/** A draw of whole milliseconds from a range, both ends included, from a random sequence. */
+export function drawBetween(minMs: number, maxMs: number): (random: Random) => number {
+  return (random) => minMs + Math.floor(random.next() * (maxMs - minMs + 1));
+}
+
+/**
+ * A component of the test world whose cycle waits a number of milliseconds it draws, then fills a slot with a thing,
+ * an action that takes its duration and fails with "slot_taken" when the slot is held when it lands, then ends.
+ */
+export function filler(
+  name: string,
+  { slot, thing, waitMs, actionMs, kind = "world" }: { slot: number; thing: string; waitMs: (random: Random) => number; actionMs: number; kind?: Component<Slots>["kind"] },
+): Component<Slots> {
+  return {
+    name,
+    kind,
+    description: `Waits, then fills slot ${slot} with "${thing}" in ${actionMs} ms, then ends.`,
+    cycle: (random) => {
+      let steps = 0;
+      return {
+        next: () => {
+          steps += 1;
+          if (steps === 1) return { kind: "wait", ms: waitMs(random) };
+          if (steps === 2) {
+            return {
+              kind: "action",
+              name: `fill slot ${slot} with "${thing}"`,
+              durationMs: actionMs,
+              // The thing holds the slot as an agent would, by its name.
+              action: { precondition: (slots) => take.precondition(slots, { agent: thing, slot }), effect: (slots) => take.effect(slots, { agent: thing, slot }) },
+            };
+          }
+          return { kind: "end" };
+        },
+      };
+    },
+  };
+}
