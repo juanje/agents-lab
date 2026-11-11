@@ -19,6 +19,7 @@ import {
   type Provider,
   type Usage,
   getCurrentSystemMessage,
+  getSupportedThinkingLevels,
   validateToolArguments,
 } from "@earendil-works/pi-ai";
 import { type ChangesSinceSensing, applyCounted } from "./changes.ts";
@@ -54,6 +55,15 @@ export async function labModel(name: string): Promise<AgentModel> {
   const model = runtime.getModel(name.slice(0, separator), name.slice(separator + 1));
   if (model === undefined) throw new Error(`The lab's Pi directory knows no model "${name}"`);
   return { model };
+}
+
+/**
+ * Refuses a thinking level a model cannot use, naming the model, by the name it was given, and the level: Pi would
+ * lower it without saying so, and the record would name another level than the one used (FR-EXPERIMENT-05).
+ */
+export function assertThinkingLevel(name: string, model: Model<Api>, level: ThinkingLevel): void {
+  const usable = getSupportedThinkingLevels(model);
+  if (!usable.includes(level)) throw new Error(`The model "${name}" cannot use the thinking level "${level}"; it can use: ${usable.join(", ")}`);
 }
 
 /** The lab's own Pi directory (D-08). Read when a run starts, so it follows the home directory the run sees. */

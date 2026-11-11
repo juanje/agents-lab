@@ -1,8 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
-import type { AgentModel } from "./adapter.ts";
+import { type AgentModel, assertThinkingLevel } from "./adapter.ts";
 import { codeVersion } from "./code-version.ts";
 import { type Experiment, replicaSeed } from "./experiment.ts";
 import { failure } from "./failure.ts";
@@ -64,12 +63,7 @@ export async function runExperiment<State>(
   // Each condition is loaded once before the first run, so one the scenario refuses fails before any model call.
   for (const condition of experiment.conditions) loadScenario(scenario, experiment.seed, condition);
   // Pi would lower a level a model cannot use without saying so; the run would then use another model than declared.
-  for (const [name, { model }] of models) {
-    const usable = getSupportedThinkingLevels(model);
-    if (!usable.includes(experiment.thinkingLevel)) {
-      throw new Error(`The model "${name}" cannot use the thinking level "${experiment.thinkingLevel}"; it can use: ${usable.join(", ")}`);
-    }
-  }
+  for (const [name, { model }] of models) assertThinkingLevel(name, model, experiment.thinkingLevel);
   // What every run's log gives first, read before any run, so a scenario the inventory refuses, or code whose version
   // cannot be read, fails before any model call.
   const inventories = inventory(experiment, scenario).conditions;

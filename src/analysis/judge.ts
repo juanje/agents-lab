@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { type TomlValue, parse } from "smol-toml";
-import { type AgentModel, type OfferedTool, type OneAnswer, askOnce } from "../engine/adapter.ts";
+import { type AgentModel, type OfferedTool, type OneAnswer, askOnce, assertThinkingLevel } from "../engine/adapter.ts";
 import { THINKING_LEVELS, type ThinkingLevel } from "../engine/experiment.ts";
 import { JsonlFile } from "../engine/jsonl.ts";
 import { Materials, materialReference, settingAt } from "../engine/materials.ts";
@@ -15,13 +15,13 @@ export interface JudgeFile {
   model: string;
   thinkingLevel: ThinkingLevel;
   instructions: { path: string; hash: string; text: string };
-  /** How long each model call may run, in milliseconds (a stub reads none yet). */
+  /** How long each model call may run, in milliseconds. */
   timeoutMs: number;
 }
 
 /**
- * Reads a judge file: its `model`, its `thinking_level` and its `instructions`, a material read from beside the file,
- * every one required. A field that is missing or of another kind, and instructions whose file does not exist, are
+ * Reads a judge file: its `model`, its `thinking_level`, its `instructions`, a material read from beside the file, and
+ * its `timeout_ms` for each call, every one required. A field that is missing or of another kind, and instructions whose file does not exist, are
  * refused, naming them.
  */
 export function readJudgeFile(path: string): JudgeFile {
@@ -37,7 +37,8 @@ export function readJudgeFile(path: string): JudgeFile {
   if (reference === undefined) throw new Error(`The judge file "${path}"'s field "instructions" must be a material`);
   const read = new Materials(dirname(path)).read(reference);
   if (read === undefined) throw new Error(`The judge file "${path}"'s instructions "${reference.path}" do not exist`);
-  return { model, thinkingLevel, instructions: { path: reference.path, ...read }, timeoutMs: 0 };
+  const timeoutMs = given("timeout_ms", (value) => Number.isInteger(value) && (value as number) >= 1, "a whole number of milliseconds of at least 1") as number;
+  return { model, thinkingLevel, instructions: { path: reference.path, ...read }, timeoutMs };
 }
 
 /** The tool the judge answers each question with. */
@@ -84,23 +85,33 @@ interface Question extends Judgeable {
   runId: string;
 }
 
-/** The verdict a judge's answer gives: one call of the verdict tool, with a yes or no, the quoted words and a reason. */
-function verdictOf(answer: OneAnswer, { runId, situation, key }: Question): { verdict: string; quoted: string; reason: string } {
+/** The verdict a judge's answer gives, if it is one call of the verdict tool with a yes or no, the quoted words and a reason. */
+function verdictOf(answer: OneAnswer): { verdict: string; quoted: string; reason: string } | undefined {
   const calls = answer.calls.filter(({ name }) => name === VERDICT.name);
   const given = calls[0]?.arguments as Record<string, unknown> | undefined;
-  const valid = calls.length === 1 && ["yes", "no"].includes(given?.verdict as string) && typeof given?.quoted === "string" && typeof given?.reason === "string";
-  if (!valid) {
-    throw new Error(`The judge's answer about run "${runId}", situation "${situation}", key "${key}" is not one verdict with a yes or no, the quoted words and a reason: ${JSON.stringify(answer.calls)}`);
-  }
-  return { verdict: given?.verdict as string, quoted: given?.quoted as string, reason: given?.reason as string };
+  if (calls.length !== 1 || answer.calls.length !== 1 || given === undefined) return undefined;
+  const { verdict, quoted, reason } = given;
+  if (!["yes", "no"].includes(verdict as string) || typeof quoted !== "string" || typeof reason !== "string") return undefined;
+  return { verdict: verdict as string, quoted, reason };
 }
+
+/** Whether quoted words appear, as written, in one of the texts; none when nothing was quoted. */
+function quotedFound(quoted: string, texts: Judgeable["texts"]): boolean | null {
+  return quoted === "" ? null : texts.some(({ text }) => text.includes(quoted));
+}
+
+/** The line of a question the judge did not answer with one valid verdict: its outcome, and no verdict. */
+const UNANSWERED = { verdict: null, quoted: null, reason: null, quoted_found: null };
 
 /**
  * Judges the completed runs of a runs directory (FR-ANALYSIS-02). It reads the judge file, then each completed run's
  * setup line and tool calls; the run's scenario, by its name in the library, declares what can be judged, from the run's
  * configuration with its held-out materials read from beside the judge file. Every run is read before any model call.
- * Each statement with texts is one question to the judge's model, through Pi; one without is "no", with no call. Each
- * verdict is a line of a new file, `judgements/<judge run id>.jsonl`, whose path it gives.
+ * A thinking level the judge's model cannot use is refused before any call. Each statement with texts is one question
+ * to the judge's model, through Pi, limited by the judge file's timeout; one without is "no", with no call. Each
+ * question is a line of a new file, `judgements/<judge run id>.jsonl`, whose path it gives: with its verdict and
+ * whether its quoted words are in the texts, or, for a call that erred, timed out or gave no one valid verdict, with
+ * that outcome and no verdict, and the judge goes on.
  */
 export async function judgeRuns(
   runsDirectory: string,
@@ -122,6 +133,7 @@ export async function judgeRuns(
       return scenario.judged(configurationOf(setup, materials), toolCalls).map((judgeable) => ({ runId, ...judgeable }));
     });
   const agentModel = await model(judge.model);
+  assertThinkingLevel(judge.model, agentModel.model, judge.thinkingLevel);
   const directory = join(runsDirectory, "judgements");
   mkdirSync(directory, { recursive: true });
   const path = join(directory, `${randomUUID()}.jsonl`);
@@ -131,11 +143,22 @@ export async function judgeRuns(
     for (const question of questions) {
       const { runId, situation, key, texts } = question;
       if (texts.length === 0) {
-        file.write({ runId, situation, key, verdict: "no", quoted: null, reason: "no text on the channel", ...settings, tokens: null, cost: null });
+        file.write({ runId, situation, key, outcome: "success", verdict: "no", quoted: null, reason: "no text on the channel", quoted_found: null, ...settings, tokens: null, cost: null });
         continue;
       }
-      const answer = await askOnce(agentModel, { systemPrompt: judge.instructions.text, thinkingLevel: judge.thinkingLevel, timeoutMs: 60_000 }, VERDICT, questionOf(question));
-      file.write({ runId, situation, key, ...verdictOf(answer, question), ...settings, tokens: answer.tokens, cost: answer.cost });
+      const answer = await askOnce(agentModel, { systemPrompt: judge.instructions.text, thinkingLevel: judge.thinkingLevel, timeoutMs: judge.timeoutMs }, VERDICT, questionOf(question));
+      const spent = { tokens: answer.tokens, cost: answer.cost };
+      if (answer.outcome !== "success") {
+        const message = answer.message === undefined ? {} : { message: answer.message };
+        file.write({ runId, situation, key, outcome: answer.outcome, ...message, ...UNANSWERED, ...settings, ...spent });
+        continue;
+      }
+      const verdict = verdictOf(answer);
+      if (verdict === undefined) {
+        file.write({ runId, situation, key, outcome: "invalid_verdict", ...UNANSWERED, ...settings, ...spent });
+        continue;
+      }
+      file.write({ runId, situation, key, outcome: "success", ...verdict, quoted_found: quotedFound(verdict.quoted, texts), ...settings, ...spent });
     }
   } finally {
     file.close();
