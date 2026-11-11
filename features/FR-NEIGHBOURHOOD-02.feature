@@ -64,3 +64,11 @@ Feature: Residents look and move
       | 1  | 1  | You moved.                                                             |
       | 1  | 0  | Someone already lives in that cell; you have not moved.                |
       | -1 | 0  | That cell is beyond the edge of the neighbourhood; you have not moved. |
+      | 0  | 0  | You are already in that cell; you have not moved.                      |
+
+  Scenario: A move to the resident's own cell is already_there and applies nothing
+    Given resident "r1" runs on a scripted model that calls "move" with dx 0 and dy 0, then ends without a tool call
+    When the run ends
+    Then "r1"'s "move" call failed with "already_there"
+    And resident "r1" is still at 0, 0
+    And the world's version did not change
