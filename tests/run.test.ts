@@ -551,6 +551,31 @@ describe("run", () => {
     expect(world.state).toEqual(["a", "b", null]);
   });
 
+  it("waits before each agent's activation the interval the loaded scenario's rhythm draws for that agent", async () => {
+    const a = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
+    const b = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
+    const logDirectory = newLogDirectory();
+    const loaded = slots({ ...agentsNamed("a", "b"), rhythm: (_configuration, agent) => () => (agent === "a" ? 80 : 0) });
+
+    const { runId, startedAtMs } = await run(
+      loaded,
+      [
+        { name: "a", model: a, activations: 1 },
+        { name: "b", model: b, activations: 1 },
+      ],
+      seed,
+      { ...settings, logDirectory },
+    );
+
+    const woke = new Map(
+      (logOf(logDirectory, runId) as { type: string; agent: string; wokeAtMs: number }[])
+        .filter((line) => line.type === "activation")
+        .map((line) => [line.agent, line.wokeAtMs - startedAtMs]),
+    );
+    expect(woke.get("a")).toBeGreaterThanOrEqual(80);
+    expect(woke.get("b")).toBeLessThan(80);
+  });
+
   it("gives each agent's rhythm the same draws for the same seed, however long the other agents' models take", async () => {
     /** Runs agents "a" and "b" with seed 42, "b" answering after its delay, and gives the draws of "a"'s rhythm. */
     async function drawsOfA(bDelayMs: number): Promise<number[]> {
