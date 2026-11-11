@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parse } from "smol-toml";
+import { type TomlTable, type TomlValue, parse, stringify } from "smol-toml";
 import { readExperiment } from "../src/engine/experiment.ts";
 
 /** A valid experiment file, in TOML. */
@@ -38,4 +38,31 @@ describe("readExperiment", () => {
     expect(conditions.map(({ name }) => name)).toEqual(["baseline", "five-slots"]);
     expect(conditions.map(({ change }) => parse(change))).toEqual([{}, { slots: { count: 5 } }]);
   });
+
+  it.each([
+    "id",
+    "scenario",
+    "models",
+    "replicas",
+    "seed",
+    "limits",
+    "limits.time_limit_ms",
+    "limits.activations_per_agent",
+    "limits.parallelism_limit",
+    "limits.model_turn_timeout_ms",
+    "conditions",
+  ])("refuses a file without %s, naming it", (path) => {
+    expect(() => readExperiment(withSet(path, undefined))).toThrow(`The experiment file lacks the field "${path}"`);
+  });
 });
+
+/** The valid file with the value at a dotted path set, or left out when the value is undefined. */
+function withSet(path: string, value: TomlValue | undefined): string {
+  const file = parse(valid);
+  const keys = path.split(".");
+  const last = keys.pop() as string;
+  const table = keys.reduce((inner, key) => inner[key] as TomlTable, file);
+  if (value === undefined) delete table[last];
+  else table[last] = value;
+  return stringify(file);
+}
