@@ -15,6 +15,10 @@ const valid = [
   "activations_per_agent = 3",
   "parallelism_limit = 2",
   "model_turn_timeout_ms = 500",
+  "[compaction]",
+  "enabled = true",
+  "trigger_at = 0.5",
+  "keep_recent_tokens = 500",
   "[conditions.baseline]",
   "[conditions.five-slots]",
   "slots.count = 5",
@@ -33,6 +37,24 @@ describe("readExperiment", () => {
       seed: 7,
       limits: { timeLimitMs: 1000, activationsPerAgent: 3, parallelismLimit: 2, modelTurnTimeoutMs: 500 },
     });
+  });
+
+  it("gives the compaction every session uses: on, with the share of the window that starts one and how much of the most recent context it keeps", () => {
+    expect(readExperiment(valid).compaction).toEqual({ enabled: true, triggerAt: 0.5, keepRecentTokens: 500 });
+  });
+
+  it("gives compaction off, with nothing else, when the file turns it off", () => {
+    expect(readExperiment(withSet("compaction", { enabled: false })).compaction).toEqual({ enabled: false });
+  });
+
+  it.each(["compaction", "compaction.enabled", "compaction.trigger_at", "compaction.keep_recent_tokens"])("refuses a file without %s, naming it", (path) => {
+    expect(() => readExperiment(withSet(path, undefined))).toThrow(`The experiment file lacks the field "${path}"`);
+  });
+
+  it.each(["trigger_at", "keep_recent_tokens"])("refuses %s when compaction is off, since nothing would read it", (key) => {
+    expect(() => readExperiment(withSet("compaction", { enabled: false, [key]: 1 }))).toThrow(
+      `The experiment file has the field "compaction.${key}", which the experiment schema does not know`,
+    );
   });
 
   it("gives the interval between metric samples when the file gives metric_interval_ms, and none when it does not", () => {
@@ -67,6 +89,7 @@ describe("readExperiment", () => {
   const atLeastOne = "a whole number of at least 1";
   const seed = "a whole number from 0 to 4294967295";
   const thinkingLevel = "one of off, minimal, low, medium, high, xhigh or max";
+  const share = "a number above 0 and below 1";
   it.each<[string, TomlValue, string]>([
     ["id", 3, text],
     ["scenario", ["slots"], text],
@@ -91,6 +114,14 @@ describe("readExperiment", () => {
     ["conditions.baseline", 5, "a table"],
     ["metric_interval_ms", 0, atLeastOne],
     ["metric_interval_ms", "100", atLeastOne],
+    ["compaction", true, "a table"],
+    ["compaction.enabled", "yes", "true or false"],
+    ["compaction.trigger_at", 0, share],
+    ["compaction.trigger_at", 1, share],
+    ["compaction.trigger_at", 1.2, share],
+    ["compaction.trigger_at", "0.5", share],
+    ["compaction.keep_recent_tokens", 0, atLeastOne],
+    ["compaction.keep_recent_tokens", 1.5, atLeastOne],
   ])("refuses %s set to %j, naming it and what was expected", (path, value, expected) => {
     expect(() => readExperiment(withSet(path, value))).toThrow(
       `The experiment file's field "${path}" must be ${expected}`,
