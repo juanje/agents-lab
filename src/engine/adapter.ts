@@ -2,6 +2,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import {
   type AgentSession,
+  type CompactionResult,
   ModelRuntime,
   type ResourceLoader,
   SessionManager,
@@ -148,15 +149,20 @@ export interface ContextCompaction {
   agent: string;
   /** Why it started: the context filled the share of the window that starts one, or it overflowed the window. */
   reason: "threshold" | "overflow";
+  /**
+   * "success" when it finished; "model_error" when a summary call's provider answered with an error, "timeout" when one
+   * ran longer than the model turn timeout, "cut_off" when the run's end cut one short (FR-CLOCK-02).
+   */
+  outcome: "success" | "model_error" | "timeout" | "cut_off";
   /** When it started and ended, by performance.now(). */
   startedAtMs: number;
   endedAtMs: number;
-  /** The context's size in tokens before it, and after it, as Pi estimates them. */
-  contextTokensBefore: number;
-  contextTokensAfter: number;
-  /** The summary the agent's context holds from then on, as Pi composes it around the text the model wrote. */
-  summary: string;
-  /** The tokens and the cost of the model calls that wrote the summary, summed when Pi made more than one. */
+  /** For a compaction that finished, the context's size in tokens before it, and after it, as Pi estimates them. */
+  contextTokensBefore?: number;
+  contextTokensAfter?: number;
+  /** For a compaction that finished, the summary the agent's context holds from then on, as Pi composes it around the text the model wrote. */
+  summary?: string;
+  /** The tokens and the cost of the model calls it made, summed when Pi made more than one, whether or not it finished. */
   tokens: Omit<Usage, "cost">;
   cost: Usage["cost"];
 }
@@ -229,43 +235,118 @@ export async function openSession<State>(
   forceSystemPrompt(session, settings.systemPrompt);
   // A turn's calls run one after another until SPEC decides otherwise; Pi's default runs them all at once.
   session.agent.toolExecution = "sequential";
-  runTurns(session, agent.name, settings, parallelism, records);
+  runTurns(session, agent.name, settings, parallelism, records, new Compactions(session, agent.name, records, settings, parallelism));
   deliverBetweenTurns(session, agent.name, stimuli);
   endAtRunEnd(session, settings.runEnd);
   recordToolCalls(session, agent.name, tools, executed, records, settings);
-  recordCompactions(session, agent.name, records, settings);
   return session;
 }
 
 /**
- * Records each compaction of the agent's context as it ends: why and when it started, the context's size before and
- * after it, the summary the context holds from then on, and the tokens and cost of the calls that wrote it. Pi gives
- * them with its end (pi-coding-agent 1.5.0, AgentSession._runAutoCompaction). A compaction Pi ends with no result, as
- * one cut short by the run's end, changed nothing in the context and is not recorded.
+ * The compactions of an agent's context: each one Pi starts is recorded as it ends, with its outcome (FR-ADAPTER-03).
+ * One that finished gives why and when it started, the context's size before and after it, the summary the context
+ * holds from then on (pi-coding-agent 1.5.0, AgentSession._runAutoCompaction) and the tokens and cost of the calls that
+ * wrote it. One that did not finish, since a summary call failed, ran past the model turn timeout or was cut off by
+ * the run's end, gives no summary, but the tokens and cost spent; Pi leaves the context as it was.
  */
-function recordCompactions(session: AgentSession, agent: string, records: Records, { stop }: SessionSettings): void {
-  let startedAtMs = 0;
-  session.subscribe((event) => {
-    if (event.type === "compaction_start") startedAtMs = performance.now();
-    if (event.type !== "compaction_end" || event.result === undefined || event.reason === "manual") return;
-    const { summary, tokensBefore, estimatedTokensAfter, usage } = event.result;
-    if (estimatedTokensAfter === undefined || usage === undefined) {
-      stop(new Error(`agent "${agent}"'s compaction could not be recorded: Pi gave no context size after it or no usage of its summary's calls`));
+class Compactions {
+  readonly session: AgentSession;
+  readonly agent: string;
+  readonly records: Records;
+  readonly settings: SessionSettings;
+  readonly parallelism: ParallelismLimit;
+  #startedAtMs = 0;
+  #spent: Usage | undefined;
+  #unfinished: Exclude<ContextCompaction["outcome"], "success"> | undefined;
+
+  constructor(session: AgentSession, agent: string, records: Records, settings: SessionSettings, parallelism: ParallelismLimit) {
+    this.session = session;
+    this.agent = agent;
+    this.records = records;
+    this.settings = settings;
+    this.parallelism = parallelism;
+    // No compaction starts once the run has ended, as no model turn does (FR-CLOCK-02); Pi would start one as the
+    // activation ends.
+    settings.runEnd.addEventListener("abort", () => session.setAutoCompactionEnabled(false), { once: true });
+    session.subscribe((event) => {
+      if (event.type === "compaction_start") {
+        this.#startedAtMs = performance.now();
+        this.#spent = undefined;
+        this.#unfinished = undefined;
+      }
+      if (event.type === "compaction_end" && event.reason !== "manual") this.#ended(event.reason, event.result, event.errorMessage);
+    });
+  }
+
+  /**
+   * Makes a call Pi makes to write a summary: a model call, which takes a slot, is limited by the model turn timeout and
+   * stops at the run's end, but no turn of the agent's. A call stopped by either aborts the whole compaction: Pi would
+   * otherwise keep the empty answer as the summary.
+   */
+  async summarize(call: AgentSession["agent"]["streamFunction"], ...[model, context, options]: Parameters<AgentSession["agent"]["streamFunction"]>) {
+    const { modelTurnTimeoutMs, runEnd } = this.settings;
+    const stopAs = (outcome: "timeout" | "cut_off") => () => {
+      this.#unfinished ??= outcome;
+      this.session.abortCompaction();
+    };
+    const cutOff = stopAs("cut_off");
+    if (runEnd.aborted) cutOff();
+    runEnd.addEventListener("abort", cutOff, { once: true });
+    const free = await this.parallelism.acquire();
+    const timer = setTimeout(stopAs("timeout"), modelTurnTimeoutMs);
+    const answer = await call(model, context, { ...options, signal: abortedBy(options?.signal, runEnd) });
+    void answer.result().then((message) => {
+      clearTimeout(timer);
+      runEnd.removeEventListener("abort", cutOff);
+      free();
+      this.#spent = this.#spent === undefined ? message.usage : summed(this.#spent, message.usage);
+      if (message.stopReason === "error") this.#unfinished ??= "model_error";
+    });
+    return answer;
+  }
+
+  #ended(reason: ContextCompaction["reason"], result: CompactionResult | undefined, errorMessage: string | undefined): void {
+    const { cost, ...tokens } = this.#spent ?? NO_USAGE;
+    const ended = { agent: this.agent, reason, startedAtMs: this.#startedAtMs, endedAtMs: performance.now(), tokens, cost };
+    if (result !== undefined && this.#unfinished === undefined) {
+      if (result.estimatedTokensAfter === undefined) {
+        this.settings.stop(new Error(`agent "${this.agent}"'s compaction could not be recorded: Pi gave no context size after it`));
+        return;
+      }
+      this.records.compaction({
+        ...ended,
+        outcome: "success",
+        contextTokensBefore: result.tokensBefore,
+        contextTokensAfter: result.estimatedTokensAfter,
+        summary: result.summary,
+      });
       return;
     }
-    const { cost, ...tokens } = usage;
-    records.compaction({
-      agent,
-      reason: event.reason,
-      startedAtMs,
-      endedAtMs: performance.now(),
-      contextTokensBefore: tokensBefore,
-      contextTokensAfter: estimatedTokensAfter,
-      summary,
-      tokens,
-      cost,
-    });
-  });
+    if (this.#unfinished === undefined) {
+      // Pi ended it unfinished for a reason no outcome fits, such as an answer that called a tool.
+      this.settings.stop(new Error(`agent "${this.agent}"'s compaction did not finish, for no reason the engine recognises: ${errorMessage ?? "Pi gave none"}`));
+      return;
+    }
+    this.records.compaction({ ...ended, outcome: this.#unfinished });
+  }
+}
+
+/** No tokens and no cost: what a compaction that made no call spent. */
+const NO_USAGE: Usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
+
+/** The tokens and cost of two calls together: each count of either, summed. */
+function summed(one: Usage, other: Usage): Usage {
+  return { ...countsAdded(one, other), cost: countsAdded(one.cost, other.cost) } as unknown as Usage;
+}
+
+/** Each number either record gives, summed by its key; anything else, such as a flag, is left out. */
+function countsAdded(one: object, other: object): Record<string, number> {
+  const count = (record: object, key: string) => {
+    const value = (record as Record<string, unknown>)[key];
+    return typeof value === "number" ? value : undefined;
+  };
+  const keys = [...new Set([...Object.keys(one), ...Object.keys(other)])].filter((key) => count(one, key) !== undefined || count(other, key) !== undefined);
+  return Object.fromEntries(keys.map((key) => [key, (count(one, key) ?? 0) + (count(other, key) ?? 0)]));
 }
 
 /**
@@ -374,18 +455,13 @@ function runTurns(
   { modelTurnTimeoutMs, runEnd }: SessionSettings,
   parallelism: ParallelismLimit,
   records: Records,
+  compactions: Compactions,
 ): void {
   const call = session.agent.streamFunction;
   session.agent.streamFunction = async (model, context, options) => {
     // Pi writes a compaction's summary through the same call (AgentSession._runDefaultCompaction): it is a model call,
     // which takes a slot and stops at the run's end, but no turn of the agent's (FR-ADAPTER-03).
-    if (isSummaryRequest(context.messages)) {
-      const free = await parallelism.acquire();
-      const signal = abortedBy(options?.signal, runEnd);
-      const answer = await call(model, context, { ...options, signal });
-      void answer.result().then(free);
-      return answer;
-    }
+    if (isSummaryRequest(context.messages)) return compactions.summarize(call, model, context, options);
     const requestedAtMs = performance.now();
     const free = await parallelism.acquire();
     const startedAtMs = performance.now();

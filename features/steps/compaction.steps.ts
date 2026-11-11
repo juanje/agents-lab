@@ -62,8 +62,11 @@ Given("the scripted model takes {int} milliseconds to answer the summary call", 
  */
 const TURN_DELAY_MS = 200;
 
-/** The agent's turns before its first compaction, with the Background's model, its window and the trigger at half of it. */
-const TURNS_BEFORE_COMPACTION = 6;
+/**
+ * The agent's turns before its first compaction, with the Background's model, its window and the trigger at half of
+ * it: about 520 tokens of reflection a turn fill half of 4000 within 4. The outcome step checks the moment it gives.
+ */
+const TURNS_BEFORE_COMPACTION = 4;
 
 Given(
   "the scripted model takes {int} milliseconds to answer the summary call, and the run's time limit passes {int} milliseconds after the summary call starts, before its timeout",
