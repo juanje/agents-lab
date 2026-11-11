@@ -87,6 +87,36 @@ describe("run", () => {
     expect(activation.wokeAtMs).toBeLessThanOrEqual(woke.deliveredAtMs);
   });
 
+  it("records each model turn: its text, the model that answered, its wait for a slot, its latency, and the tokens and cost Pi reported", async () => {
+    const model = new ScriptedModel([{ text: "Nothing to do.", delayMs: 20 }]);
+    const logDirectory = newLogDirectory();
+
+    const { runId, messages } = await run(slots(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, { ...settings, logDirectory });
+
+    const answer = messages.get("a")?.find((message) => message.role === "assistant");
+    if (answer?.role !== "assistant") throw new Error("the session kept no answer");
+    const { cost, ...tokens } = answer.usage;
+    const turns = logOf(logDirectory, runId).filter((line) => (line as { type: string }).type === "model_turn");
+    expect(turns).toEqual([
+      {
+        type: "model_turn",
+        agent: "a",
+        outcome: "success",
+        text: "Nothing to do.",
+        model: `${model.model.provider}/${model.model.id}`,
+        slotWaitMs: expect.any(Number),
+        latencyMs: expect.any(Number),
+        startedAtMs: expect.any(Number),
+        endedAtMs: expect.any(Number),
+        tokens,
+        cost,
+      },
+    ]);
+    const [turn] = turns as { latencyMs: number; startedAtMs: number; endedAtMs: number }[];
+    expect(turn.latencyMs).toBe(turn.endedAtMs - turn.startedAtMs);
+    expect(turn.latencyMs).toBeGreaterThanOrEqual(20);
+  });
+
   it("starts an activation with the rhythm channel's stimulus, which the model reads with its source", async () => {
     const model = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
 
