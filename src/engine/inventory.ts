@@ -34,6 +34,8 @@ export interface ConditionInventory {
    * only (FR-EXPERIMENT-04).
    */
   materials: { path: string; hash?: string }[];
+  /** The situations the condition chooses, by id only, for a scenario that has situations (FR-WORKPLACE-01). */
+  situations?: string[];
 }
 
 /** A tool as its agents see it, with its duration as the scenario describes it and the text for each of its outcomes. */
@@ -112,6 +114,7 @@ function conditionInventory<State>(
     thinkingLevel,
     limits: { ...limits },
     materials: materials.map(({ path, hash, heldOut }) => (heldOut ? { path } : { path, hash })),
+    ...(scenario.situations === undefined ? {} : { situations: [...scenario.situations(configuration)] }),
   };
 }
 
@@ -138,6 +141,7 @@ export function inventoryMarkdown({ experiment, scenario, conditions }: Inventor
       `### How fast information travels\n\n${condition.informationSpeed}\n`,
       modelsAndLimitsMarkdown(condition),
       materialsMarkdown(condition),
+      ...(condition.situations === undefined ? [] : [situationsMarkdown(condition.situations)]),
     ].join("\n"),
   );
   return [`# Environment inventory of experiment "${experiment}", scenario "${scenario}"\n`, ...sections].join("\n");
@@ -198,6 +202,11 @@ function modelsAndLimitsMarkdown({ models, thinkingLevel, limits }: ConditionInv
 function materialsMarkdown({ materials }: ConditionInventory): string {
   if (materials.length === 0) return `### Materials\n\n${NONE}\n`;
   return ["### Materials\n", ...materials.map(({ path, hash }) => `- ${path}: ${hash ?? "held out"}`), ""].join("\n");
+}
+
+function situationsMarkdown(situations: readonly string[]): string {
+  if (situations.length === 0) return `### Situations\n\n${NONE}\n`;
+  return ["### Situations\n", ...situations.map((id) => `- ${id}`), ""].join("\n");
 }
 
 /** A text as a fenced block, with a fence longer than any run of backticks in it, so the text is given whole. */

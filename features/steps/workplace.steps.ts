@@ -181,11 +181,13 @@ Then(
   function (this: Context, situation: string, kind: string, covered: string, conflict: string) {
     const { situations } = loadedWorkplace(this).world.state;
     assert.ok(Object.hasOwn(situations, situation), `the workplace holds no situation "${situation}"`);
-    assert.deepEqual(situations[situation].keys, { class: kind, covered: tomlValue(covered), kind: conflict });
+    // The keys come as smol-toml reads a table, with no prototype; their entries are what counts.
+    assert.deepEqual({ ...situations[situation].keys }, { class: kind, covered: tomlValue(covered), kind: conflict });
   },
 );
 
-Then("the worker's system prompt holds none of {string}, {string} or {string}", function (this: Context, ...words: string[]) {
+Then("the worker's system prompt holds none of {string}, {string} or {string}", function (this: Context, first: string, second: string, third: string) {
+  const words = [first, second, third];
   const prompt = loadedWorkplace(this).systemPrompts.get(WORKER) ?? "";
   assert.ok(prompt !== "", "the worker has no system prompt");
   const held = words.filter((word) => prompt.includes(word));

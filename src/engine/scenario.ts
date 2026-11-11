@@ -40,6 +40,11 @@ export interface Scenario<State> {
   describeRhythm: (configuration: Configuration, agent: string) => string;
   /** The base configuration, in TOML. */
   baseConfiguration: string;
+  /**
+   * The ids of the situations the resolved configuration chooses, for a scenario that seeds situations; the inventory
+   * lists them by id only (FR-WORKPLACE-01).
+   */
+  situations?: (configuration: Configuration) => readonly string[];
 }
 
 /** A named change over a scenario's base configuration. */

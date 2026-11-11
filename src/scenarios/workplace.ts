@@ -126,6 +126,14 @@ export const workplaceScenario: Partial<Scenario<Workplace>> = {
     const { min_ms: minMs, max_ms: maxMs } = configuration.rhythm as { min_ms: number; max_ms: number };
     return (random) => minMs + random.next() * (maxMs - minMs);
   },
+  describeDuration: (_configuration, tool) => {
+    throw new Error(`The workplace has no tool "${tool}"`);
+  },
+  describeRhythm: (configuration) => {
+    const { min_ms: minMs, max_ms: maxMs } = configuration.rhythm as { min_ms: number; max_ms: number };
+    return `An interval drawn uniformly between ${minMs} and ${maxMs} ms before each activation.`;
+  },
+  situations: (configuration) => configuration.chosen_situations as string[],
   baseConfiguration: [
     'identity = "You work here."',
     'world_rules = ""',
