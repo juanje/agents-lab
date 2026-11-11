@@ -46,6 +46,13 @@ export type TargetAsSensed = "free" | "held" | "outside" | "not_sensed";
 /** A tool that changes the world through the arbiter. */
 export interface Effector<State> extends Declared<State> {
   kind: "effector";
+  /**
+   * For an effector under way in the world, such as crossing a passage, the change its call makes as it starts, through
+   * the arbiter, once its duration is taken from the state before it (FR-TOOL-04, FR-SPACE-03). It cannot fail: a start
+   * the world refuses is a defect of the scenario, and stops the run.
+   */
+  start?: Action<State, AgentCall>;
+  /** The change the call makes when it lands, checked then against the world as it is (FR-TOOL-04). */
   action: Action<State, AgentCall>;
   /**
    * The text the agent receives for each outcome of its call's effect, success included, by the outcome; an outcome

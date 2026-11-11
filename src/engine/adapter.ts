@@ -30,7 +30,7 @@ import { SCRIPT_EXHAUSTED_MESSAGE } from "./scripted-model.ts";
 import type { Sensing, Sensings } from "./sensings.ts";
 import type { Stimuli, Stimulus } from "./stimuli.ts";
 import type { AgentCall, Effector, Sensor, TargetAsSensed, Tool } from "./tools.ts";
-import type { World } from "./world.ts";
+import type { Action, World } from "./world.ts";
 
 /**
  * The model an agent works with, and the provider that serves it when Pi's model runtime does not already: a scripted
@@ -508,7 +508,8 @@ function undeclared<State>(tool: Tool<State>, args: Record<string, unknown>): Ca
 
 /**
  * Runs a call the tool takes. It lasts the duration the tool gives for the call and the state as it starts (FR-TOOL-03,
- * FR-TOOL-04); then a sensor reads the world, or an effector's effect goes to the arbiter. A call the run's time limit
+ * FR-TOOL-04); an effector under way applies its start once that duration is taken (FR-SPACE-03); then a sensor reads
+ * the world, or an effector's effect goes to the arbiter. A call the run's time limit
  * cuts short reads and applies nothing: the run has ended, and an effect would change a world already measured
  * (FR-CLOCK-02). For an effector's call, what the agent last sensed of its target is read as the call starts, beside
  * its outcome, and never reaches the arbiter (NFR-11).
@@ -522,13 +523,25 @@ async function perform<State>(
   runEnd: AbortSignal,
 ): Promise<CallResult> {
   const targetAsSensed = tool.kind === "effector" ? (sensing === undefined ? "not_sensed" : tool.readTarget(sensing, call, world.state)) : undefined;
-  await waitAtLeast(tool.durationMs(world.state, call), runEnd);
+  const durationMs = tool.durationMs(world.state, call);
+  if (tool.kind === "effector" && tool.start !== undefined) start(world, tool.start, call, changes);
+  await waitAtLeast(durationMs, runEnd);
   const result = runEnd.aborted
     ? { outcome: CUT_OFF, text: CUT_OFF }
     : tool.kind === "sensor"
       ? sense(world, tool, call)
       : effect(world, tool, call, changes);
   return targetAsSensed === undefined ? result : { ...result, targetAsSensed };
+}
+
+/**
+ * Applies the start of an effector's call under way through the arbiter, as the call starts (FR-SPACE-03), and counts it
+ * among the changes other agents see since they sensed. A start the world refuses throws: it is the scenario's defect.
+ */
+function start<State>(world: World<State>, action: Action<State, AgentCall>, call: AgentCall, changes: ChangesSinceSensing): void {
+  const result = world.apply(action, call);
+  if (!result.applied) throw new Error(`its start was refused with "${result.reason}"`);
+  changes.applied(call.agent);
 }
 
 /** Reads the world for a sensor's call, which then always succeeds. */

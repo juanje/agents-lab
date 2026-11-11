@@ -10,7 +10,7 @@ function goCall({ agent, arguments: args }: AgentCall) {
 
 /**
  * The test place world's effector "go <place>": it moves the calling agent to a place one passage away, taking
- * `msPerUnit` for each unit of the passage's length.
+ * `msPerUnit` for each unit of the passage's length: it leaves its place as the call starts, and arrives when it ends.
  */
 export function goTool(msPerUnit: number): Effector<Places> {
   return {
@@ -25,9 +25,14 @@ export function goTool(msPerUnit: number): Effector<Places> {
       if (exit === undefined) throw new Error(`the test place world has no passage for agent ${entity} to go to ${towards}`);
       return msPerUnit * exit.length;
     },
-    action: {
+    // The agent leaves its place as the call starts, and is in the passage until it arrives, when the call lands.
+    start: {
       precondition: (space, call) => leave.precondition(space, goCall(call)),
-      effect: (space, call) => arrive.effect(leave.effect(space, goCall(call)), { entity: call.agent }),
+      effect: (space, call) => leave.effect(space, goCall(call)),
+    },
+    action: {
+      precondition: (space, { agent }) => arrive.precondition(space, { entity: agent }),
+      effect: (space, { agent }) => arrive.effect(space, { entity: agent }),
     },
     // The test place world has no sensor, so an agent never has a sensing to read the target in.
     readTarget: () => "not_sensed",
