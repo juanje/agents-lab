@@ -242,6 +242,24 @@ class = "control"
     expect(scenario.systemPrompt(configuration({ ...texts, norms: "N." }), "worker")).toBe("I.\n\nW.\n\nN.\n\nR.");
   });
 
+  describe("places each of its texts in the system prompt or in the person's first message", () => {
+    const texts = { identity: "I.", world_rules: "W.", norms: "N.", rules: "R.", task: "T.", task_giver: "Ada" };
+    /** The texts with these places over the base's placement. */
+    const placed = (placement: Record<string, string>) => configuration({ ...texts, placement: { ...(configuration({}).placement as object), ...placement } });
+
+    it("by default, all but the task in the system prompt", () => {
+      expect(scenario.systemPrompt(configuration(texts), "worker")).toBe("I.\n\nW.\n\nN.\n\nR.");
+    });
+
+    it("leaves a text placed with the person out of the system prompt, and keeps the others' order", () => {
+      expect(scenario.systemPrompt(placed({ identity: "person", rules: "person" }), "worker")).toBe("W.\n\nN.");
+    });
+
+    it("puts the task in the system prompt, last, when it is placed there", () => {
+      expect(scenario.systemPrompt(placed({ task: "system" }), "worker")).toBe("I.\n\nW.\n\nN.\n\nR.\n\nT.");
+    });
+  });
+
   it("has no metrics yet", () => {
     expect(scenario.metrics).toEqual({});
   });
