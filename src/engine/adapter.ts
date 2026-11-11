@@ -102,6 +102,8 @@ export interface ToolCall {
   /** When the call started and ended, by performance.now(). */
   startedAtMs: number;
   endedAtMs: number;
+  /** For a sensor call that succeeded, what it returned: the text the agent received. */
+  result?: string;
   /** For an effector call the tool ran, what the agent last sensed of its target before the call (FR-TOOL-04). */
   targetAsSensed?: TargetAsSensed;
 }
@@ -349,8 +351,15 @@ function definition<State>(
       const { outcome, text, targetAsSensed } =
         undeclared(tool, args) ?? (await perform(world, tool, { agent, arguments: args }, sensings.last(agent), timeLimit));
       const endedAtMs = performance.now();
-      executed.set(id, { outcome, startedAtMs, endedAtMs, ...(targetAsSensed === undefined ? {} : { targetAsSensed }) });
-      if (tool.kind === "sensor" && outcome === "success") sensings.record(agent, { tool: tool.name, result: text, atMs: endedAtMs });
+      const sensed = tool.kind === "sensor" && outcome === "success";
+      executed.set(id, {
+        outcome,
+        startedAtMs,
+        endedAtMs,
+        ...(sensed ? { result: text } : {}),
+        ...(targetAsSensed === undefined ? {} : { targetAsSensed }),
+      });
+      if (sensed) sensings.record(agent, { tool: tool.name, result: text, atMs: endedAtMs });
       // A failure is marked as one: an agent told that a failure succeeded would act on a world it misreads.
       return { content: [{ type: "text", text }], details: undefined, isError: outcome !== "success" };
     },
@@ -360,8 +369,8 @@ function definition<State>(
 /** The outcome of a tool call or a model turn still running when the run's time limit passes (FR-CLOCK-02). */
 const CUT_OFF = "cut_off" as const;
 
-/** A call the tool ran: its outcome, when it started and ended, and for an effector, its target as sensed. */
-type Executed = Pick<ToolCall, "outcome" | "startedAtMs" | "endedAtMs" | "targetAsSensed">;
+/** A call the tool ran: its outcome, when it started and ended, a sensor's result and an effector's target as sensed. */
+type Executed = Pick<ToolCall, "outcome" | "startedAtMs" | "endedAtMs" | "result" | "targetAsSensed">;
 
 /** What a call gives: its outcome, the text the agent receives, and for an effector's call, its target as sensed. */
 interface CallResult {

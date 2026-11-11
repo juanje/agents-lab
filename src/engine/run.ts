@@ -98,7 +98,10 @@ async function runAgents<State>(
       recorder.record({ type: "model_turn", ...turn });
       turns.push(turn);
     },
-    toolCall: (call) => toolCalls.push(call),
+    toolCall: (call) => {
+      recorder.record({ type: "tool_call", ...call });
+      toolCalls.push(call);
+    },
   };
   const sensings = new Sensings();
   const messages = new Map<string, AgentSession["messages"]>();
