@@ -79,11 +79,24 @@ export const slotsScenario: Scenario<Slots> = {
     return Array.from({ length: count }, (_, index) => (index < held ? START_HOLDER : null));
   },
   tools: slotTools,
-  channels: [rhythmChannel],
+  channels: (configuration) => {
+    const { source, text } = configuration.rhythm as { source: string; text: string };
+    return [{ name: "rhythm", source, stimulus: text }];
+  },
   metrics: { held: (slots) => slots.filter((holder) => holder !== null).length },
   // It names the agent it describes, quoted, so each agent's prompt can be told from another's.
   systemPrompt: (_configuration, agent) => `You are agent "${agent}", in a world of slots.`,
-  baseConfiguration: 'agents = ["a"]\n[slots]\ncount = 3\nheld = 0\n[rhythm]\nsource = "rhythm"\ntext = "You wake up."\n',
+  // Its [rhythm] table gives the rhythm channel's source and text, the same as the test world's rhythm channel.
+  baseConfiguration: [
+    'agents = ["a"]',
+    "[slots]",
+    "count = 3",
+    "held = 0",
+    "[rhythm]",
+    `source = ${JSON.stringify(rhythmChannel.source)}`,
+    `text = ${JSON.stringify(rhythmChannel.stimulus)}`,
+    "",
+  ].join("\n"),
 };
 
 /** The name the placing scenario gives its n-th agent, from 1. */
@@ -99,6 +112,8 @@ export const placingScenario: Scenario<Slots> = {
   ...slotsScenario,
   agents: (configuration) =>
     Array.from({ length: (configuration.slots as { agents: number }).agents }, (_, index) => placedAgent(index + 1)),
+  // Its base configuration does not give the rhythm channel, so it declares the test world's.
+  channels: () => [rhythmChannel],
   initialState: (configuration, random) => {
     const { count, agents } = configuration.slots as { count: number; agents: number };
     const slots: (string | null)[] = Array.from({ length: count }, () => null);

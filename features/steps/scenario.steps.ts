@@ -80,8 +80,8 @@ Given(
   function (this: Context, name: string, channel: string) {
     assert.equal(slotsScenario.name, name);
     // Another channel stays, so the scenario still declares stimulus channels and lacks only the named one.
-    const channels = [
-      ...slotsScenario.channels.filter((declared) => declared.name !== channel),
+    const channels = (configuration: TomlTable) => [
+      ...slotsScenario.channels(configuration).filter((declared) => declared.name !== channel),
       { name: "notice", source: "board", stimulus: "A notice is posted." },
     ];
     this.scenario = { ...slotsScenario, channels };
@@ -190,7 +190,7 @@ Then("the system prompt agent {string}'s model received is exactly the scenario'
 });
 
 Then("agent {string}'s activation began with the scenario's rhythm stimulus", function (this: Context, agent: string) {
-  const rhythm = loadedOf(this).scenario.channels.find((channel) => channel.name === RHYTHM_CHANNEL);
+  const rhythm = loadedOf(this).channels.find((channel) => channel.name === RHYTHM_CHANNEL);
   assert.ok(rhythm !== undefined, "the loaded scenario declares no rhythm channel");
   const [first] = userTexts(modelOf(this, agent).received[0] ?? []);
   assert.equal(first, asRead(rhythm.source, rhythm.stimulus), `agent "${agent}"'s activation began with another message`);

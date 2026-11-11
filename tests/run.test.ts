@@ -73,7 +73,7 @@ describe("run", () => {
     const model = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
     const logDirectory = newLogDirectory();
 
-    const { runId } = await run(slots({ channels: [rhythmChannel, bell] }), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, {
+    const { runId } = await run(slots({ channels: () => [rhythmChannel, bell] }), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, {
       ...settings,
       logDirectory,
       onStart: (stimuli) => stimuli.deliver("a", "bell"),
@@ -292,7 +292,7 @@ describe("run", () => {
   it("hands the run's stimuli to onStart before any agent wakes, so what it delivers reaches the first activation", async () => {
     const model = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
 
-    await run(slots({ channels: [rhythmChannel, bell] }), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, {
+    await run(slots({ channels: () => [rhythmChannel, bell] }), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, {
       ...settings,
       onStart: (stimuli) => stimuli.deliver("a", "bell"),
     });
@@ -314,7 +314,7 @@ describe("run", () => {
     // The agent wakes at once, then rests 100 ms, and the bell rings halfway through that rest.
     const restsOnceWithBell = () => (rests++ === 0 ? 0 : (setTimeout(() => stimuli?.deliver("a", "bell"), 50), 100));
 
-    await run(slots({ channels: [rhythmChannel, bell] }), [{ name: "a", model, activations: 2, rhythm: restsOnceWithBell }], seed, {
+    await run(slots({ channels: () => [rhythmChannel, bell] }), [{ name: "a", model, activations: 2, rhythm: restsOnceWithBell }], seed, {
       ...settings,
       onStart: (started) => (stimuli = started),
     });
@@ -332,7 +332,7 @@ describe("run", () => {
     // The rhythm is called as the agent starts to wait, and with no wait the agent wakes as it returns.
     const ringsAfter50 = () => (setTimeout(() => stimuli?.deliver("a", "bell"), 50), 0);
 
-    await run(slots({ channels: [rhythmChannel, bell] }), [{ name: "a", model, activations: 1, rhythm: ringsAfter50 }], seed, {
+    await run(slots({ channels: () => [rhythmChannel, bell] }), [{ name: "a", model, activations: 1, rhythm: ringsAfter50 }], seed, {
       ...settings,
       onStart: (started) => (stimuli = started),
     });
@@ -426,7 +426,9 @@ describe("run", () => {
 
     await run(loaded, [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
 
-    expect(model.received[0]?.filter((message) => message.role === "user").map((message) => message.content)).toEqual(["clock: Later."]);
+    expect(model.received[0]?.filter((message) => message.role !== "system")).toMatchObject([
+      { role: "user", content: [{ type: "text", text: "clock: Later." }] },
+    ]);
   });
 
   it("opens its sessions in the lab's Pi directory, and leaves the person's as it was", async () => {

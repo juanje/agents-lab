@@ -45,7 +45,7 @@ export function gridScenario(start: Grid, tools: readonly Tool<Grid>[], agents: 
     agents: () => agents,
     initialState: () => start,
     tools,
-    channels: [rhythmChannel],
+    channels: () => [rhythmChannel],
     metrics: {},
     systemPrompt: () => "You are an agent on a grid.",
     baseConfiguration: "",

@@ -16,8 +16,8 @@ export interface Scenario<State> {
   initialState: (configuration: Configuration, random: Random) => State;
   /** The agents' only interface with the world: its sensors and effectors. */
   tools: readonly Tool<State>[];
-  /** The declared paths by which stimuli reach agents. */
-  channels: readonly Channel[];
+  /** The declared paths by which stimuli reach agents, from the resolved configuration. */
+  channels: (configuration: Configuration) => readonly Channel[];
   /** Each metric by its name, computed from the world's state. */
   metrics: Readonly<Record<string, (state: State) => number>>;
   /** What an agent is told it is, from the resolved configuration and the agent's name; never the world's state. */
@@ -43,6 +43,8 @@ export interface LoadedScenario<State> {
   world: World<State>;
   /** The scenario's agents, in the order it names them, each with its system prompt. */
   systemPrompts: ReadonlyMap<string, string>;
+  /** The scenario's stimulus channels, as its configuration gives them. */
+  channels: readonly Channel[];
 }
 
 /** Each part a scenario must provide, and how an error names it. */
@@ -70,10 +72,6 @@ export function loadScenario<State>(
     if (parts[property] === undefined) throw lacks(part);
   }
   const scenario = parts as Scenario<State>;
-  // Each agent wakes by its rhythm's stimulus: without that channel the run would fail at the first wake.
-  if (!scenario.channels.some((channel) => channel.name === RHYTHM_CHANNEL)) {
-    throw new Error(`Scenario "${scenario.name}" declares no stimulus channel named "${RHYTHM_CHANNEL}", which wakes each agent`);
-  }
   const base = parse(scenario.baseConfiguration);
   // A text part that holds nothing gives the agents nothing, so it counts as missing.
   if (Object.keys(base).length === 0) throw lacks("base configuration");
@@ -81,6 +79,11 @@ export function loadScenario<State>(
     condition === undefined
       ? base
       : applyChange(base, parse(condition.change), [], { condition: condition.name, scenario: scenario.name });
+  const channels = scenario.channels(configuration);
+  // Each agent wakes by its rhythm's stimulus: without that channel the run would fail at the first wake.
+  if (!channels.some((channel) => channel.name === RHYTHM_CHANNEL)) {
+    throw new Error(`Scenario "${scenario.name}" declares no stimulus channel named "${RHYTHM_CHANNEL}", which wakes each agent`);
+  }
   const systemPrompts = new Map<string, string>();
   for (const agent of scenario.agents(configuration)) {
     const systemPrompt = scenario.systemPrompt(configuration, agent);
@@ -88,7 +91,7 @@ export function loadScenario<State>(
     systemPrompts.set(agent, systemPrompt);
   }
   const initial = scenario.initialState(configuration, Random.derive(seed, "initial state"));
-  return { scenario, configuration, world: new World(initial), systemPrompts };
+  return { scenario, configuration, world: new World(initial), systemPrompts, channels };
 }
 
 /** The names of the condition being applied and of the scenario whose base configuration it changes, for errors. */

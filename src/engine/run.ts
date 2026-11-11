@@ -76,7 +76,7 @@ export async function run<State>(
     runEnd.abort();
   };
   try {
-    const stimuli = new Stimuli(loaded.scenario.channels, (agent, stimulus) =>
+    const stimuli = new Stimuli(loaded.channels, (agent, stimulus) =>
       recorder.record({ type: "stimulus", agent, ...stimulus, deliveredAtMs: performance.now() }),
     );
     settings.onStart?.(stimuli);

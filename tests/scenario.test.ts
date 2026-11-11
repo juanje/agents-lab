@@ -1,12 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { type Scenario, loadScenario } from "../src/engine/scenario.ts";
-import { START_HOLDER, type Slots, slotsScenario } from "./fixtures/slots.ts";
+import { START_HOLDER, type Slots, rhythmChannel, slotsScenario } from "./fixtures/slots.ts";
 
 /** Any seed: the slots test scenario draws nothing from it. */
 const seed = 1;
 
-/** The slots test scenario with another base configuration, which need not name its agents: the scenario names "a". */
-const withBase = (baseConfiguration: string): Partial<Scenario<Slots>> => ({ ...slotsScenario, agents: () => ["a"], baseConfiguration });
+/**
+ * The slots test scenario with another base configuration, which need not name its agents or its rhythm channel's
+ * source and text: the scenario names agent "a" and declares the test world's rhythm channel itself.
+ */
+const withBase = (baseConfiguration: string): Partial<Scenario<Slots>> => ({
+  ...slotsScenario,
+  agents: () => ["a"],
+  channels: () => [rhythmChannel],
+  baseConfiguration,
+});
 
 describe("loadScenario", () => {
   it("builds the world's initial state from the scenario's base configuration", () => {
@@ -21,8 +29,7 @@ describe("loadScenario", () => {
   it("gives each of the scenario's agents, named from the configuration, its own system prompt from the configuration and the agent", () => {
     const loaded = loadScenario(
       {
-        ...slotsScenario,
-        baseConfiguration: "agents = ['a', 'b']\n[slots]\ncount = 2\nheld = 0\n",
+        ...withBase("agents = ['a', 'b']\n[slots]\ncount = 2\nheld = 0\n"),
         agents: (configuration) => configuration.agents as string[],
         systemPrompt: (configuration, agent) => `You are "${agent}", among ${(configuration.slots as { count: number }).count} slots.`,
       },
@@ -98,7 +105,7 @@ describe("loadScenario", () => {
   });
 
   it("refuses a scenario whose stimulus channels include none named rhythm, which wakes each agent", () => {
-    const channels = [{ name: "notice", source: "board", stimulus: "A notice is posted." }];
+    const channels = () => [{ name: "notice", source: "board", stimulus: "A notice is posted." }];
 
     expect(() => loadScenario({ ...slotsScenario, channels }, seed)).toThrow(
       'Scenario "slots" declares no stimulus channel named "rhythm", which wakes each agent',

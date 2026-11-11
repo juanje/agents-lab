@@ -72,7 +72,7 @@ function endsActivation(message: { role: string; content?: unknown }): boolean {
 }
 
 Then("each agent's activations began with its rhythm stimulus", function (this: Context) {
-  const rhythm = this.loaded?.scenario.channels.find((channel) => channel.name === RHYTHM_CHANNEL);
+  const rhythm = this.loaded?.channels.find((channel) => channel.name === RHYTHM_CHANNEL);
   assert.ok(rhythm !== undefined, "the loaded scenario declares no rhythm channel");
   for (const agent of this.realModels.keys()) {
     // The session's system message holds its prompt and tools; it comes before any activation.

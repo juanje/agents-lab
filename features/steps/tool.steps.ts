@@ -88,7 +88,7 @@ export async function runTheScenario(context: Context): Promise<void> {
     ...slotsScenario,
     agents: () => agents,
     tools: context.tools,
-    channels: context.channels,
+    channels: () => context.channels,
     systemPrompt: () => context.systemPrompt,
   };
   await runScenario(context, context.loaded ?? assembled(scenario, context.world));
@@ -97,7 +97,7 @@ export async function runTheScenario(context: Context): Promise<void> {
 /** A scenario assembled around a world as loading would give it, with no configuration. */
 function assembled<State>(scenario: Scenario<State>, world: World<State>): LoadedScenario<State> {
   const systemPrompts = new Map(scenario.agents({}).map((agent) => [agent, scenario.systemPrompt({}, agent)]));
-  return { scenario, configuration: {}, world, systemPrompts };
+  return { scenario, configuration: {}, world, systemPrompts, channels: scenario.channels({}) };
 }
 
 /** Runs the scenario's agents in a loaded scenario, watching its arbiter, and keeps what the run gave. */
