@@ -55,3 +55,20 @@ Feature: Everything an agent does is recorded
     When the run stops on that error
     Then the last line of the run's log says the run stopped and names agent "b"
     And agent "a"'s session is closed
+
+  Scenario: An effector call made without an earlier sensing says so
+    Given agent "a" runs on a scripted model that calls "take" with slot 1, then ends without a tool call
+    When the run ends
+    Then the log's tool call line for agent "a"'s "take" call gives the target as sensed "not_sensed" and no count of changes since sensing
+
+  Scenario: A call the harness rejects for its arguments is recorded as invalid_arguments
+    Given agent "a" runs on a scripted model that calls "take" with slot "one", then ends without a tool call
+    When the run ends
+    Then the log's tool call line for agent "a"'s "take" call gives the outcome "invalid_arguments"
+
+  Scenario: A call left unrun when the time limit cuts its turn is recorded as cut_off
+    Given agent "a" runs on a scripted model whose first turn calls "look" and then "take" with slot 1
+    And the sensor "look" takes 300 milliseconds
+    And the run's time limit is 100 milliseconds
+    When the run ends
+    Then the log's tool call line for agent "a"'s "take" call gives the outcome "cut_off"

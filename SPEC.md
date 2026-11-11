@@ -215,7 +215,7 @@ Each run writes one new JSONL file, named with the run id. It adds one line for 
   - the agent, the tool and the call exactly as the model made it;
   - when it started and ended, and its outcome;
   - its result, for a sensor;
-  - for an effector that ran, what the agent last sensed of its target when the call started (a call rejected before running has no target to read), and the number of changes other agents applied between the agent's last sensor call and the moment its effect was applied.
+  - for an effector that ran, what the agent last sensed of its target when the call started (a call rejected before running has no target to read), and the number of changes other agents applied between the agent's last sensor call and the moment its effect was applied; a call made before any sensing records `not_sensed` and no count.
 
 When a run stops on an error, its log ends with a line that says the run stopped and gives the error. A session that fails to open stops the run with an error that names the agent, and the sessions already open are closed.
 *Why:* every analysis of an experiment is done from this log, and a field not recorded cannot be recovered later. A run that stops on an error must say so, or its log reads as a run that simply ended.
@@ -223,7 +223,7 @@ When a run stops on an error, its log ends with a line that says the run stopped
 #### FR-CLOCK-02: A run ends at its budget or its time limit
 A run ends when every agent has used its activation budget or when its time limit passes, whichever comes first. The time limit counts from the moment the agents can start, once every session is open. When it passes, everything stops:
 - a tool call still running is recorded with the outcome `cut_off` and applies nothing;
-- a model turn still running, or still waiting for a model slot, is aborted and recorded with the outcome `cut_off`; a turn still waiting never calls the model;
+- a model turn still running, or still waiting for a model slot, is aborted and recorded with the outcome `cut_off`; a turn still waiting never calls the model, and a tool call the turn left unrun is recorded with the outcome `cut_off`;
 - no agent starts another model turn or another activation.
 *Why:* a run must end in a known state, and an effect applied after the end would change a world that was already measured.
 
@@ -407,4 +407,4 @@ Every outcome comes from the world's rules applied to the world's state. What an
 - Open: whether real time is enough for E16's vote deadlines to be repeatable, or simulated time is needed.
 - Later: sensors that return partial or wrong information, and stimuli an agent may not notice (by distance or attention), both declared in the inventory; the world stays as it is, only what reaches the agent changes.
 - Open: whether an agent can make several tool calls at once in one model turn, or they run one after another. Until decided, they run one after another.
-- FR-RECORD-01: `invalid_arguments` must be recognised from the harness's validation failure, not inferred because a call did not run; a call that did not run for another reason (a message cut at the token limit, an abort in the middle of a batch) needs its own outcome.
+- A call left unrun because its message was cut at the token limit needs its own outcome.
