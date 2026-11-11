@@ -6,7 +6,7 @@ import type { ThinkingLevel } from "./experiment.ts";
 import { failure } from "./failure.ts";
 import { ParallelismLimit } from "./parallelism.ts";
 import { Random } from "./random.ts";
-import { Recorder, type RunSetup, type Sampling } from "./recorder.ts";
+import { type LogLine, Recorder, type RunSetup, type Sampling } from "./recorder.ts";
 import type { LoadedScenario, Rhythm, Scenario } from "./scenario.ts";
 import { Sensings } from "./sensings.ts";
 import { Stimuli } from "./stimuli.ts";
@@ -40,6 +40,8 @@ export interface RunSettings {
   timeLimitMs: number;
   /** How long the run waits between metric samples; without it, the metrics are sampled only at the start and the end (FR-METRIC-02). */
   metricIntervalMs?: number;
+  /** Called with each line of the run's log as it is written, so a caller follows the run from what it records (FR-RUN-04). */
+  onRecord?: (line: LogLine) => void;
   /**
    * Called with the run's stimuli once every session is open, before any agent wakes, so a caller can deliver stimuli while the run goes on. A seam
    * until the world's processes deliver them (FR-PROCESS-01).
@@ -77,7 +79,7 @@ export async function run<State>(
 ): Promise<RunResult> {
   // Refused before its log opens, as a scenario that fails to load is: nothing has run.
   assertScenarioAgents(loaded, agents);
-  const recorder = Recorder.open(settings.logDirectory, settings.runId);
+  const recorder = Recorder.open(settings.logDirectory, settings.runId, settings.onRecord);
   // Aborts when the run ends before its agents are done: its time limit passes (FR-CLOCK-02) or it stops on an error.
   const runEnd = new AbortController();
   let stoppedOn: Error | undefined;
