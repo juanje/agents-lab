@@ -66,10 +66,10 @@ interface Given {
 /**
  * The file's conditions, in the order they run: when it declares factors, the baseline, which takes no level, unless
  * the file turns it off, then every combination of levels, the first factor's changing slowest; then the file's own
- * conditions (FR-EXPERIMENT-02). A change's keys are checked when the scenario is loaded with it, against the
+ * conditions (FR-EXPERIMENT-02). Each gets the change common to all, when the file gives one. A change's keys are checked when the scenario is loaded with it, against the
  * scenario's base configuration.
  */
-function conditionsOf(file: { conditions?: TomlTable; factors?: TomlTable; baseline?: boolean }): Condition[] {
+function conditionsOf(file: { conditions?: TomlTable; factors?: TomlTable; baseline?: boolean; common?: TomlTable }): Condition[] {
   const own = file.conditions ?? {};
   const baseline: Given[] = file.baseline === false ? [] : [{ name: "baseline", change: {} }];
   const given: Given[] = [
@@ -82,7 +82,8 @@ function conditionsOf(file: { conditions?: TomlTable; factors?: TomlTable; basel
     if (names.has(name)) throw new Error(`The experiment file gives two conditions named "${name}"`);
     names.add(name);
   }
-  return given.map(({ change, ...rest }) => ({ ...rest, change: stringify(change) }));
+  const common = file.common === undefined ? {} : { common: stringify(file.common) };
+  return given.map(({ change, ...rest }) => ({ ...rest, change: stringify(change), ...common }));
 }
 
 /** A level of a factor, with its change. */
@@ -230,6 +231,7 @@ const optionalFileSchema = {
   conditions: namedConditions,
   factors: namedFactors,
   baseline: trueOrFalse,
+  common: table,
 } satisfies Schema;
 
 const limitsSchema = {

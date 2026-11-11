@@ -47,6 +47,8 @@ export interface Condition {
   name: string;
   /** The change, in TOML. */
   change: string;
+  /** The change common to every condition of its experiment, in TOML, applied before its own (FR-EXPERIMENT-02). */
+  common?: string;
   /** The level of each factor, by the factor's name, when the condition is a combination of levels; otherwise none (FR-EXPERIMENT-02). */
   levels?: Readonly<Record<string, string>>;
   /** Where the materials the change refers to are read from (FR-EXPERIMENT-04). */
@@ -101,11 +103,7 @@ export function loadScenario<State>(
   const base = parse(scenario.baseConfiguration);
   // A text part that holds nothing gives the agents nothing, so it counts as missing.
   if (Object.keys(base).length === 0) throw lacks("base configuration");
-  const materials: Material[] = [];
-  const configuration =
-    condition === undefined
-      ? base
-      : applyChange(base, parse(condition.change), [], { condition: condition.name, scenario: scenario.name, read: condition.materials, materials });
+  const { configuration, materials } = condition === undefined ? { configuration: base, materials: [] } : applyCondition(base, condition, scenario.name);
   const channels = scenario.channels(configuration);
   // Each agent wakes by its rhythm's stimulus: without that channel the run would fail at the first wake.
   if (!channels.some((channel) => channel.name === RHYTHM_CHANNEL)) {
@@ -121,6 +119,28 @@ export function loadScenario<State>(
   }
   const initial = scenario.initialState(configuration, Random.derive(seed, "initial state"));
   return { scenario, configuration, world: new World(initial), systemPrompts, channels, rhythms, materials };
+}
+
+/**
+ * A condition applied over a base configuration: the change common to every condition first, when it has one, then its
+ * own, whose values win; and each material whose text reached the configuration, the common change's first.
+ */
+function applyCondition(base: TomlTable, condition: Condition, scenario: string): { configuration: Configuration; materials: Material[] } {
+  const applying = (materials: Material[]): Applying => ({ condition: condition.name, scenario, read: condition.materials, materials });
+  const common: Material[] = [];
+  const own: Material[] = [];
+  const change = parse(condition.change);
+  const withCommon = condition.common === undefined ? base : applyChange(base, parse(condition.common), [], applying(common));
+  const configuration = applyChange(withCommon, change, [], applying(own));
+  // A common material whose key the condition sets again never reached its configuration.
+  return { configuration, materials: [...common.filter(({ key }) => !setsKey(change, key.split("."))), ...own] };
+}
+
+/** Whether a change sets the key at a path of keys, or a key on that path, which replaces it whole. */
+function setsKey(change: TomlTable, [key, ...rest]: readonly string[]): boolean {
+  if (!Object.hasOwn(change, key)) return false;
+  const value = change[key];
+  return rest.length === 0 || !isTable(value) || setsKey(value, rest);
 }
 
 /**
