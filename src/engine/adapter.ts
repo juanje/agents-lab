@@ -391,6 +391,10 @@ function definition<State>(
   };
 }
 
+export function unrunOutcome<State>(_offered: Tool<State> | undefined, _call: { tool: string; arguments: unknown }, _answer: string, _runEnded: boolean): string {
+  return _offered === undefined ? "unknown_tool" : "invalid_arguments";
+}
+
 /** The outcome of a tool call or a model turn still running when the run's time limit passes (FR-CLOCK-02). */
 const CUT_OFF = "cut_off" as const;
 
