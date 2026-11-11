@@ -20,7 +20,8 @@ export function emptyGrid(width: number, height: number, capacity: number): Grid
   return { width, height, capacity, cells: Array.from({ length: width * height }, () => []) };
 }
 
-function inside(grid: Grid, { x, y }: Position): boolean {
+/** Whether a cell lies inside the grid. */
+export function inside(grid: Grid, { x, y }: Position): boolean {
   return x >= 0 && x < grid.width && y >= 0 && y < grid.height;
 }
 

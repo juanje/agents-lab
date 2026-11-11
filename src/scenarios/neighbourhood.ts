@@ -1,4 +1,4 @@
-import { type Grid, type Position, distance, emptyGrid, entitiesAt, move as moveOnGrid, place, position, randomEmptyCell, window } from "../engine/grid.ts";
+import { type Grid, type Position, distance, emptyGrid, entitiesAt, inside, move as moveOnGrid, place, position, randomEmptyCell, window } from "../engine/grid.ts";
 import type { Configuration, Scenario } from "../engine/scenario.ts";
 import { RHYTHM_CHANNEL } from "../engine/stimuli.ts";
 import type { AgentCall, Effector, Sensor } from "../engine/tools.ts";
@@ -69,6 +69,9 @@ const look: Sensor<Neighbourhood> = {
   },
 };
 
+/** Why a move fails when its target is outside the grid: the resident's choice, not a defect (FR-SPACE-01). */
+export const INVALID_TARGET = "invalid_target";
+
 /** A call of "move" as the grid's move reads it: the resident, from where it is, to the cell at the call's offset. */
 function moveCall(state: Neighbourhood, { agent, arguments: args }: AgentCall): { entity: string; from: Position; to: Position } {
   const from = whereIs(state, agent);
@@ -93,7 +96,11 @@ const move: Effector<Neighbourhood> = {
     return state.msPerCell * distance(from, to);
   },
   action: {
-    precondition: (state, call) => moveOnGrid.precondition(state.grid, moveCall(state, call)),
+    precondition: (state, call) => {
+      const onGrid = moveCall(state, call);
+      if (!inside(state.grid, onGrid.to)) return { holds: false, reason: INVALID_TARGET };
+      return moveOnGrid.precondition(state.grid, onGrid);
+    },
     effect: (state, call) => ({ ...state, grid: moveOnGrid.effect(state.grid, moveCall(state, call)) }),
   },
   // Its target is the cell at the call's offset in the resident's last look, whose middle is the resident's cell.
