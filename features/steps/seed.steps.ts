@@ -99,6 +99,7 @@ async function runReplica(context: Context, seed: number, condition?: Condition)
   });
   // The placing scenario's agents only rest: they call none of its tools.
   await run(loaded, runningAgents, seed, {
+    logDirectory: context.logDirectory,
     modelTurnTimeoutMs: context.modelTurnTimeoutMs,
     parallelismLimit: context.parallelismLimit,
     timeLimitMs: context.timeLimitMs,

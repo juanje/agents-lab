@@ -3,6 +3,7 @@ import { type AgentModel, type ModelTurn, type ToolCall, openRuntime, openSessio
 import { waitAtLeast } from "./clock.ts";
 import { ParallelismLimit } from "./parallelism.ts";
 import { Random } from "./random.ts";
+import { Recorder } from "./recorder.ts";
 import type { LoadedScenario } from "./scenario.ts";
 import { Sensings } from "./sensings.ts";
 import { Stimuli } from "./stimuli.ts";
@@ -18,6 +19,8 @@ export interface Agent {
 
 /** What a run takes besides the scenario: the limits on its model calls. */
 export interface RunSettings {
+  /** The directory the run writes its log into, as a new file named with its run id (FR-RECORD-01). */
+  logDirectory: string;
   /** How long a model turn may run before it is aborted. */
   modelTurnTimeoutMs: number;
   /** The maximum number of model calls running at once, across all agents. */
@@ -36,6 +39,8 @@ export interface RunSettings {
  * session held at its end, and what each agent last sensed.
  */
 export interface RunResult {
+  /** The run's id, which names its log. */
+  runId: string;
   turns: ModelTurn[];
   toolCalls: ToolCall[];
   messages: ReadonlyMap<string, AgentSession["messages"]>;
@@ -57,9 +62,25 @@ export async function run<State>(
   seed: number,
   settings: RunSettings,
 ): Promise<RunResult> {
-  const { world, scenario } = loaded;
-  const stimuli = new Stimuli(scenario.channels);
+  const stimuli = new Stimuli(loaded.scenario.channels);
   settings.onStart?.(stimuli);
+  const recorder = Recorder.open(settings.logDirectory);
+  try {
+    return { runId: recorder.runId, ...(await runAgents(loaded, agents, seed, settings, stimuli, recorder)) };
+  } finally {
+    recorder.close();
+  }
+}
+
+/** Runs the agents of a run whose log is open. */
+async function runAgents<State>(
+  { world, scenario }: LoadedScenario<State>,
+  agents: readonly Agent[],
+  seed: number,
+  settings: RunSettings,
+  stimuli: Stimuli,
+  recorder: Recorder,
+): Promise<Omit<RunResult, "runId">> {
   const timeLimit = new AbortController();
   const sessionSettings = {
     systemPrompt: scenario.systemPrompt,
@@ -85,7 +106,7 @@ export async function run<State>(
         try {
           // Each agent's rhythm has its own sequence, from the seed and the agent's name: sharing one would make an
           // agent's intervals depend on when the others' models answer, and deriving by order on which other agents run.
-          await loop(session, agent, stimuli, Random.derive(seed, `rhythm of ${agent.name}`), timeLimit.signal);
+          await loop(session, agent, stimuli, Random.derive(seed, `rhythm of ${agent.name}`), timeLimit.signal, recorder);
         } finally {
           // Copied: disposing the session may clear what it holds.
           messages.set(agent.name, [...session.messages]);
@@ -105,10 +126,19 @@ export async function run<State>(
  * stimulus starts and in which the agent's session runs model turns and tool calls until a turn makes no tool call. It
  * ends when the agent has used its activation budget or the run's time limit passes, even while it rests (FR-CLOCK-02).
  */
-async function loop(session: AgentSession, agent: Agent, stimuli: Stimuli, random: Random, timeLimit: AbortSignal): Promise<void> {
+async function loop(
+  session: AgentSession,
+  agent: Agent,
+  stimuli: Stimuli,
+  random: Random,
+  timeLimit: AbortSignal,
+  recorder: Recorder,
+): Promise<void> {
   for (let count = 0; count < agent.activations; count += 1) {
     await waitAtLeast(agent.rhythm(random), timeLimit);
     if (timeLimit.aborted) return;
+    const wokeAtMs = performance.now();
     await wake(session, stimuli.wake(agent.name));
+    recorder.record({ type: "activation", agent: agent.name, wokeAtMs, endedAtMs: performance.now() });
   }
 }

@@ -162,6 +162,7 @@ Then("no model was called", function (this: Context) {
 When("the loaded scenario runs", async function (this: Context) {
   const agents = [...this.models].map(([name, model]) => ({ name, model, activations: 1, rhythm: () => 0 }));
   await run(loadedOf(this), agents, this.seed, {
+    logDirectory: this.logDirectory,
     modelTurnTimeoutMs: this.modelTurnTimeoutMs,
     parallelismLimit: this.parallelismLimit,
     timeLimitMs: this.timeLimitMs,
