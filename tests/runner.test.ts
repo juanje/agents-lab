@@ -336,6 +336,7 @@ describe("runExperiment, with runs in parallel", () => {
 
     const seeds = (directory: string) => new Map(indexOf(directory).map(({ condition, model, replica, seed }) => [`${condition} ${model} ${replica}`, seed]));
     expect(seeds(other)).toEqual(seeds(one));
+    for (const { replica, seed } of indexOf(other)) expect(seed).toBe(replicaSeed(7, replica as number));
   });
 
   it("stops the runs in progress when one stops on an error, each saying the experiment stopped, starts no other, and fails with that run's error", async () => {
