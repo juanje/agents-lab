@@ -133,6 +133,33 @@ describe("run", () => {
     ]);
   });
 
+  it("records with an effector call the changes other agents applied since its agent last sensed, when it has sensed", async () => {
+    // "b" takes slot 2 at once, and its effect lands at 100 ms, while "a", which wakes at 50 ms and looks, takes slot 1.
+    const a = new ScriptedModel([
+      { toolCalls: [{ name: "look", arguments: {} }], delayMs: 0 },
+      { toolCalls: [{ name: "take", arguments: { slot: 1 } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+    const b = new ScriptedModel([
+      { toolCalls: [{ name: "take", arguments: { slot: 2 } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+
+    const { toolCalls } = await run(
+      slots({ tools: withTakeTaking(100) }),
+      [
+        { name: "a", model: a, activations: 1, rhythm: () => 50 },
+        { name: "b", model: b, activations: 1, rhythm: noWait },
+      ],
+      seed,
+      settings,
+    );
+
+    const takes = toolCalls.filter((call) => call.tool === "take");
+    expect(takes.find((call) => call.agent === "a")).toMatchObject({ outcome: "success", changesSinceSensing: 1 });
+    expect(takes.find((call) => call.agent === "b")).not.toHaveProperty("changesSinceSensing");
+  });
+
   it("starts an activation with the rhythm channel's stimulus, which the model reads with its source", async () => {
     const model = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
 
