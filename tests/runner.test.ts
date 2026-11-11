@@ -39,6 +39,20 @@ function indexOf(directory: string): Record<string, unknown>[] {
 }
 
 describe("runExperiment", () => {
+  it("samples each run's metrics at the experiment's interval", async () => {
+    const directory = newRunsDirectory();
+    const models = new Map([["scripted/one", new ScriptedModel([{ text: "Waiting.", delayMs: 250 }])]]);
+    const once = { ...experiment, models: ["scripted/one"], replicas: 1, conditions: [{ name: "baseline", change: "" }], metricIntervalMs: 50 };
+
+    await runExperiment(once, slotsScenario, models, directory);
+
+    const [{ runId }] = indexOf(directory);
+    const samples = readFileSync(join(directory, `${String(runId)}.jsonl`), "utf8")
+      .split("\n")
+      .filter((line) => line !== "" && JSON.parse(line).type === "metric_sample");
+    expect(samples.length).toBeGreaterThanOrEqual(5);
+  });
+
   it("runs each condition with each model for each replica, in that order, and lists each run in the index as it completes", async () => {
     const directory = newRunsDirectory();
     const models = scriptedModels();

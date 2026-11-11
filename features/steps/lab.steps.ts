@@ -139,7 +139,7 @@ function completedIndex(context: Context): IndexLine[] {
 }
 
 /** The file names of the run logs in the experiment's runs directory: every JSONL file but the index. */
-function runLogs(context: Context): string[] {
+export function runLogs(context: Context): string[] {
   const directory = runsDirectory(context);
   if (!existsSync(directory)) return [];
   return readdirSync(directory).filter((file) => file.endsWith(".jsonl") && file !== "index.jsonl");
@@ -149,7 +149,7 @@ function runLogs(context: Context): string[] {
 type LogLine = Record<string, unknown> & { type: string };
 
 /** The lines of a run's log, by its run id. */
-function logOf(context: Context, runId: string): LogLine[] {
+export function logOf(context: Context, runId: string): LogLine[] {
   const text = readFileSync(join(runsDirectory(context), `${runId}.jsonl`), "utf8");
   return text.slice(0, -1).split("\n").map((line) => JSON.parse(line) as LogLine);
 }

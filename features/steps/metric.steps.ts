@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import { Given, Then } from "@cucumber/cucumber";
+import { ScriptedModel } from "../../src/engine/scripted-model.ts";
 import { World } from "../../src/engine/world.ts";
+import { scenarioLibrary } from "../../src/scenarios/library.ts";
 import { emptySlots, slotsScenario } from "../../tests/fixtures/slots.ts";
 import type { Context } from "../support/context.ts";
+import { logOf, runLogs } from "./lab.steps.ts";
 import { logLines } from "./record.steps.ts";
 
 /** A metric sample line of a run's log, as JSON gives it back. */
@@ -101,4 +104,32 @@ export function checkSamplesBetween(samples: readonly Sample[], count: number): 
 
 Then("the log has at least {int} metric samples between its first and its last", function (this: Context, count: number) {
   checkSamplesBetween(samplesOf(this), count);
+});
+
+Given(
+  "an experiment file {string} for the test scenario {string}, with 1 model, 1 replica, a time limit of {int} milliseconds and {string} set to {int}",
+  function (this: Context, id: string, scenario: string, timeLimitMs: number, key: string, value: number) {
+    assert.equal(slotsScenario.name, scenario);
+    this.library = new Map([...scenarioLibrary, [scenario, slotsScenario]]);
+    // Its agent's only turn outlasts the time limit, so the run lasts until the limit passes.
+    const name = "faux/waiting";
+    this.labModels.set(name, new ScriptedModel([{ text: "Waiting.", delayMs: 10 * timeLimitMs }], "waiting"));
+    this.experimentFile = {
+      id,
+      scenario,
+      models: [name],
+      replicas: 1,
+      seed: 1,
+      limits: { time_limit_ms: timeLimitMs, activations_per_agent: 1, parallelism_limit: 10, model_turn_timeout_ms: 10_000 },
+      [key]: value,
+      conditions: { baseline: {} },
+    };
+  },
+);
+
+Then("the run's log has at least {int} metric samples between its first and its last", function (this: Context, count: number) {
+  assert.equal(this.labError, undefined, `"lab run" failed: ${this.labError?.message}`);
+  const logs = runLogs(this);
+  assert.equal(logs.length, 1, `the experiment wrote ${logs.length} run logs`);
+  checkSamplesBetween(samplesIn(logOf(this, logs[0].replace(/\.jsonl$/, ""))), count);
 });

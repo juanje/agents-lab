@@ -33,6 +33,11 @@ describe("readExperiment", () => {
     });
   });
 
+  it("gives the interval between metric samples when the file gives metric_interval_ms, and none when it does not", () => {
+    expect(readExperiment(withSet("metric_interval_ms", 100)).metricIntervalMs).toBe(100);
+    expect(readExperiment(valid).metricIntervalMs).toBeUndefined();
+  });
+
   it("gives each condition its name and its change, in TOML, in the order the file gives them", () => {
     const { conditions } = readExperiment(valid);
     expect(conditions.map(({ name }) => name)).toEqual(["baseline", "five-slots"]);
@@ -79,6 +84,8 @@ describe("readExperiment", () => {
     ["limits.model_turn_timeout_ms", -500, atLeastOne],
     ["conditions", ["baseline"], "a table of named conditions"],
     ["conditions.baseline", 5, "a table"],
+    ["metric_interval_ms", 0, atLeastOne],
+    ["metric_interval_ms", "100", atLeastOne],
   ])("refuses %s set to %j, naming it and what was expected", (path, value, expected) => {
     expect(() => readExperiment(withSet(path, value))).toThrow(
       `The experiment file's field "${path}" must be ${expected}`,
