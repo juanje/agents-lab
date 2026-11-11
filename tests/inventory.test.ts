@@ -100,6 +100,33 @@ describe("inventory", () => {
     expect(listed.slice(listed.indexOf('## Condition "crowded"'))).toContain(tools(5));
   });
 
+  it("lists each stimulus channel with its source and what it delivers, as the scenario declares them in each condition", () => {
+    const experiment = experimentOf(["[conditions.baseline]", "[conditions.loud]", 'rhythm.text = "Wake up!"']);
+
+    const listed = inventory(experiment, slotsWith());
+
+    const channels = (text: string) => ["### Stimulus channels", "", '#### Channel "rhythm"', "", "- Source: rhythm", "", "Delivers:", "", "```text", text, "```", ""].join("\n");
+    expect(listed.slice(listed.indexOf('## Condition "baseline"'), listed.indexOf('## Condition "loud"'))).toContain(channels("You wake up."));
+    expect(listed.slice(listed.indexOf('## Condition "loud"'))).toContain(channels("Wake up!"));
+  });
+
+  it("gives the experiment's models and limits in each condition", () => {
+    const listed = inventory(experimentOf(["[conditions.baseline]"]), slotsWith());
+
+    expect(listed).toContain(
+      [
+        "### Model and limits",
+        "",
+        "- Models: scripted/one",
+        "- Activations per agent: 3",
+        "- Time limit: 1000 ms",
+        "- Parallelism limit: 2",
+        "- Model turn timeout: 500 ms",
+        "",
+      ].join("\n"),
+    );
+  });
+
   it("fences a system prompt that holds a fence with a longer one, so the prompt is given whole", () => {
     const experiment = experimentOf(["[conditions.baseline]"]);
     const scenario = slotsWith({ systemPrompt: () => "Answer like this:\n```\ndone\n```" });
