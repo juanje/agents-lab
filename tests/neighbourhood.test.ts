@@ -196,6 +196,22 @@ describe("the neighbourhood scenario", () => {
     expect(move.readTarget({ ...sensing, tool: "another sensor" }, { agent: "r1", arguments: { dx: 1, dy: 1 } }, state)).toBe("not_sensed");
   });
 
+  it("reads a move's target as the cell the last look showed, wherever the resident looked from", () => {
+    const look = toolNamed("look");
+    const move = toolNamed("move");
+    if (look.kind !== "sensor" || move.kind !== "effector") throw new Error("look is not a sensor or move is not an effector");
+    const looked = residentsAt(5, 5, { lookRadius: 1, msPerCell: 100 });
+    expect(look.takenFrom?.(looked, "r1")).toEqual({ x: 0, y: 0 });
+    const sensing = { tool: "look", result: look.sense(looked, "r1"), takenFrom: { x: 0, y: 0 }, atMs: 0 };
+    // "r1" has since moved from 0, 0 to 0, 2.
+    const moved = { ...looked, grid: place(emptyGrid(5, 5, 1), "r1", { x: 0, y: 2 }) };
+    const target = (dx: number, dy: number) => move.readTarget(sensing, { agent: "r1", arguments: { dx, dy } }, moved);
+
+    expect(target(1, -2)).toBe("held");
+    expect(target(1, -1)).toBe("free");
+    expect([target(1, 0), target(0, 1)]).toEqual(["not_sensed", "not_sensed"]);
+  });
+
   it("reads a move's target that the last look showed outside the grid as not sensed, as it is neither free nor held", () => {
     const look = toolNamed("look");
     const move = toolNamed("move");
