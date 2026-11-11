@@ -5,7 +5,7 @@ import { Then } from "@cucumber/cucumber";
 import { rhythmChannel } from "../../tests/fixtures/slots.ts";
 import type { Context } from "../support/context.ts";
 import { turnsOf } from "./adapter.steps.ts";
-import { modelOf } from "./tool.steps.ts";
+import { modelOf, returned } from "./tool.steps.ts";
 
 /** The log files in the scenario's log directory, by name, in no particular order. */
 function logFiles(context: Context): string[] {
@@ -109,5 +109,24 @@ Then(
     assert.ok(tokens.output > 0, "Pi reported no output tokens to compare with");
     assert.deepEqual(turn.tokens, tokens);
     assert.deepEqual(turn.cost, cost);
+  },
+);
+
+/** The scripted arguments of an agent's only call of a tool, exactly as its script makes it. */
+function scriptedArguments(context: Context, agent: string, tool: string): unknown {
+  const calls = (context.scripts.get(agent) ?? []).flatMap((answer) => answer.toolCalls ?? []).filter((call) => call.name === tool);
+  assert.equal(calls.length, 1, `agent "${agent}"'s script calls "${tool}" ${calls.length} times`);
+  return calls[0].arguments;
+}
+
+Then(
+  "the log has a tool call line for agent {string}'s {string} call, with the call as the model made it, when it started and ended, the outcome {string} and its result",
+  function (this: Context, agent: string, tool: string, outcome: string) {
+    const call = lineOf(this, "tool_call", agent, { tool });
+    assert.deepEqual(call.arguments, scriptedArguments(this, agent, tool));
+    assert.ok(timeIn(call, "startedAtMs") <= timeIn(call, "endedAtMs"), "the call ended before it started");
+    assert.equal(call.outcome, outcome);
+    // Its result is what the agent's model received back.
+    assert.equal(call.result, returned(this, agent, tool));
   },
 );
