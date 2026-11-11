@@ -70,4 +70,32 @@ describe("the workplace scenario", () => {
     expect(state.inside).toEqual({ key: "cupboard" });
     expect(state.people).toEqual({ ana: { name: "Ana", description: "A visitor." } });
   });
+
+  it("has one agent, the worker", () => {
+    expect(scenario.agents(configuration({ world: WORLD }))).toEqual(["worker"]);
+  });
+
+  it("wakes the worker by the rhythm channel, with the configured source and text", () => {
+    const rhythm = { source: "a bell", text: "The bell rings.", min_ms: 0, max_ms: 10 };
+
+    expect(scenario.channels(configuration({ rhythm }))).toEqual([{ name: "rhythm", source: "a bell", stimulus: "The bell rings." }]);
+  });
+
+  it("draws each of the worker's intervals uniformly between the configured bounds", () => {
+    const rhythm = scenario.rhythm(configuration({ rhythm: { source: "", text: "", min_ms: 100, max_ms: 200 } }), "worker");
+    const random = { next: () => 0.25 } as Random;
+
+    expect(rhythm(random)).toBe(125);
+  });
+
+  it("joins identity, world rules, norms and rules into the system prompt, in that order, skipping empty ones", () => {
+    const texts = { identity: "I.", world_rules: "W.", norms: "", rules: "R." };
+
+    expect(scenario.systemPrompt(configuration(texts), "worker")).toBe("I.\n\nW.\n\nR.");
+    expect(scenario.systemPrompt(configuration({ ...texts, norms: "N." }), "worker")).toBe("I.\n\nW.\n\nN.\n\nR.");
+  });
+
+  it("has no tools and no metrics yet", () => {
+    expect({ tools: scenario.tools, metrics: scenario.metrics }).toEqual({ tools: [], metrics: {} });
+  });
 });
