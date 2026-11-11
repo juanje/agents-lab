@@ -78,3 +78,10 @@ Feature: Everything an agent does is recorded
     And agent "b" runs on a scripted model whose "take" of slot 1 lands while agent "a"'s "take" is under way
     When the run ends
     Then the log's tool call line for agent "a"'s "take" call gives 1 change since its last sensing, applied by agent "b"
+
+  Scenario: An effector call records the text its agent received
+    Given the effector "take" declares the text "Someone already holds that slot." for "slot_taken"
+    And agent "b" holds slot 1
+    And agent "a" runs on a scripted model that calls "take" with slot 1, then ends without a tool call
+    When the run ends
+    Then the log's tool call line for agent "a"'s "take" call gives the outcome "slot_taken" and the text "Someone already holds that slot."
