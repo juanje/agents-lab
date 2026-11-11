@@ -108,7 +108,7 @@ interface Applying {
 }
 
 /** Whether a TOML value is a table: an object that is neither an array nor a date and time. */
-function isTable(value: TomlValue): value is TomlTable {
+export function isTable(value: TomlValue): value is TomlTable {
   return typeof value === "object" && !Array.isArray(value) && !(value instanceof Date);
 }
 
