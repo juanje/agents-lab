@@ -420,6 +420,15 @@ describe("run", () => {
     expect([a.received.map(getCurrentSystemPrompt), b.received.map(getCurrentSystemPrompt)]).toEqual([['You are "a".'], ['You are "b".']]);
   });
 
+  it("wakes each agent with the rhythm channel the loaded scenario built from its configuration", async () => {
+    const model = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
+    const loaded = slots({ channels: () => [{ name: "rhythm", source: "clock", stimulus: "Later." }] });
+
+    await run(loaded, [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+
+    expect(model.received[0]?.filter((message) => message.role === "user").map((message) => message.content)).toEqual(["clock: Later."]);
+  });
+
   it("opens its sessions in the lab's Pi directory, and leaves the person's as it was", async () => {
     const persons = join(homedir(), ".pi", "agent");
     mkdirSync(persons, { recursive: true });

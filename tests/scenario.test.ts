@@ -37,6 +37,19 @@ describe("loadScenario", () => {
     );
   });
 
+  it("builds the scenario's stimulus channels from the resolved configuration", () => {
+    const loaded = loadScenario(
+      {
+        ...slotsScenario,
+        channels: (configuration) => [{ name: "rhythm", source: "clock", stimulus: (configuration.rhythm as { text: string }).text }],
+      },
+      seed,
+      { name: "slow", change: "[rhythm]\ntext = 'Later.'\n" },
+    );
+
+    expect(loaded.channels).toEqual([{ name: "rhythm", source: "clock", stimulus: "Later." }]);
+  });
+
   it("applies the condition's change over the base configuration, keeping what the change does not set", () => {
     const loaded = loadScenario(
       withBase("label = 'base'\nmode = 'plain'\n[slots]\ncount = 2\nheld = 0\n"),
