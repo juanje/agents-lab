@@ -49,8 +49,26 @@ describe("Progress", () => {
       "Run 1 of 2 completed in 1.5 s: 2 activations, 1 model turn, cost $0.0012\n",
       'Run 2 of 2 started: condition "baseline", model "scripted/one", replica 2, seed 12\n',
       "Run 2 of 2 completed in 2.5 s: 0 activations, 2 model turns, cost $0.0003\n",
-      "2 runs completed in 4.0 s, cost $0.0015\n",
+      "2 runs completed and 0 stopped in 4.0 s, cost $0.0015\n",
     ]);
+  });
+
+  it("counts, when the experiment ends, the runs that stopped apart from those that completed", () => {
+    const printed: string[] = [];
+    let nowMs = 0;
+    const progress = new Progress((text) => printed.push(text), { intervalMs: 30_000, now: () => nowMs });
+
+    progress.runStarted(starting(1));
+    progress.recorded(turnCosting(0.0012));
+    nowMs = 1_000;
+    progress.runEnded("completed");
+    progress.runStarted(starting(2));
+    progress.recorded(turnCosting(0.0002));
+    nowMs = 1_500;
+    progress.runEnded("stopped");
+    progress.experimentEnded();
+
+    expect(printed.at(-1)).toBe("1 run completed and 1 stopped in 1.5 s, cost $0.0014\n");
   });
 
   it("prints, at its interval while a run goes, the time since it started, its activations out of its budget, its model turns and its cost so far, and nothing once it ends", () => {

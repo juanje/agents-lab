@@ -120,24 +120,42 @@ Then(
   },
 );
 
+/**
+ * Checks that the last line printed says how many runs completed and how many stopped, as the index lists them, with a
+ * total cost that is what the runs' logs record and a total duration no shorter than the runs' own.
+ */
+function assertTotalLine(context: Context, lines: readonly string[], completed: number, stopped: number): void {
+  const last = lines.at(-1) ?? "";
+  const match = last.match(new RegExp(`^${completed} runs? completed and ${stopped} stopped in ${NUMBER} s, cost \\$${NUMBER}$`));
+  assert.ok(match !== null, `the last line it printed is: ${last}`);
+  const [, seconds, cost] = match.map(Number);
+  const index = indexOf(context);
+  assert.equal(index.filter((run) => run.status === "completed").length, completed, "the index lists another count of completed runs");
+  assert.equal(index.filter((run) => run.status === "stopped").length, stopped, "the index lists another count of stopped runs");
+  const totalCost = index.reduce((sum, { runId }) => sum + recorded(context, runId).cost, 0);
+  assert.equal(cost, Number(totalCost.toFixed(4)), `the experiment was said to cost ${cost}; its logs record ${totalCost}`);
+  const runSeconds = lines.flatMap((line) => {
+    const run = line.match(new RegExp(`^Run \\d+ of \\d+ (?:completed|stopped) in ${NUMBER} s`));
+    return run === null ? [] : [Number(run[1])];
+  });
+  assert.equal(runSeconds.length, completed + stopped, `it printed ${runSeconds.length} run ends`);
+  const sum = runSeconds.reduce((total, one) => total + one, 0);
+  // Each duration is printed to a tenth of a second.
+  assert.ok(seconds >= sum - 0.05 * (runSeconds.length + 1), `the experiment was said to last ${seconds} s; its runs lasted ${sum} s`);
+}
+
 Then(
   "it printed, last, a line saying {int} runs completed, with the total duration and the total cost",
   function (this: Context, count: number) {
-    const lines = completedLines(this);
-    const last = lines.at(-1) ?? "";
-    const match = last.match(new RegExp(`^${count} runs completed in ${NUMBER} s, cost \\$${NUMBER}$`));
-    assert.ok(match !== null, `the last line it printed is: ${last}`);
-    const [, seconds, cost] = match.map(Number);
-    const index = indexOf(this);
-    const totalCost = index.reduce((sum, { runId }) => sum + recorded(this, runId).cost, 0);
-    assert.equal(cost, Number(totalCost.toFixed(4)), `the experiment was said to cost ${cost}; its logs record ${totalCost}`);
-    const runSeconds = lines.flatMap((line) => {
-      const run = line.match(new RegExp(`^Run \\d+ of \\d+ completed in ${NUMBER} s`));
-      return run === null ? [] : [Number(run[1])];
-    });
-    const sum = runSeconds.reduce((total, one) => total + one, 0);
-    // Each duration is printed to a tenth of a second.
-    assert.ok(seconds >= sum - 0.05 * (runSeconds.length + 1), `the experiment was said to last ${seconds} s; its runs lasted ${sum} s`);
+    assertTotalLine(this, completedLines(this), count, 0);
+  },
+);
+
+Then(
+  "it printed, last, a line saying {int} runs completed and {int} stopped, with the total duration and the total cost",
+  function (this: Context, completed: number, stopped: number) {
+    assert.ok(this.labError !== undefined, '"lab run" did not fail');
+    assertTotalLine(this, printedLines(this), completed, stopped);
   },
 );
 
