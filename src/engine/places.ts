@@ -20,12 +20,21 @@ export function layout(places: readonly string[], passages: readonly Passage[]):
   return { places, passages, whereabouts: {} };
 }
 
-/** The space with one more entity in a place, for building a world's initial state. */
-export function put(space: Places, _entity: string, _place: string): Places {
-  return space;
+/** Refuses a place the space does not declare, saying what was attempted (`where`). */
+function assertPlace(space: Places, place: string, where: string): void {
+  if (!space.places.includes(place)) throw new Error(`${where}: the space has no place "${place}"`);
+}
+
+/**
+ * The space with one more entity in a place, for building a world's initial state. Once the world runs, entities
+ * change places only through the arbiter, with `leave` and `arrive`.
+ */
+export function put(space: Places, entity: string, place: string): Places {
+  assertPlace(space, place, `cannot put entity "${entity}" in place "${place}"`);
+  return { ...space, whereabouts: { ...space.whereabouts, [entity]: { place } } };
 }
 
 /** The place or passage an entity is in, or none when the space does not hold it. */
-export function where(_space: Places, _entity: string): Where | undefined {
-  return undefined;
+export function where(space: Places, entity: string): Where | undefined {
+  return Object.hasOwn(space.whereabouts, entity) ? space.whereabouts[entity] : undefined;
 }
