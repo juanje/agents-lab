@@ -22,7 +22,7 @@ Experiments (their designs, experiment files, materials and results) live in a s
 
 ## Status
 
-Early development, toward v0.1: what a first pilot of a Schelling experiment needs. `SPEC.md` lists the requirements and the order they are built in. `lab run` runs an experiment file; summaries across replicas are not built yet.
+Early development, toward v0.1: what a first pilot of a Schelling experiment needs. `SPEC.md` lists the requirements and the order they are built in. `lab run` runs an experiment file and `lab inventory` lists what its agents meet in each condition; summaries across replicas are not built yet.
 
 ## Setup
 
@@ -64,6 +64,12 @@ Then run an experiment from the directory its results go under. It writes each r
 
 ```bash
 lab run <experiment.toml>
+```
+
+To review what each condition's agents meet before running it (their system prompts, rhythms, tools, channels, the models and the limits), print its environment inventory as Markdown. It runs nothing and calls no model:
+
+```bash
+lab inventory <experiment.toml>
 ```
 
 ## Documentation
