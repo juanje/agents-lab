@@ -525,8 +525,17 @@ The world's `[day]` gives the counter's opening hours; rooms and passages can be
 
 
 #### FR-ANALYSIS-02: A reserved judge classifies what agents said
-`lab judge <runs-dir> <rubric>` asks a model, after the runs, to classify texts from the logs (such as an agent's justification in a situation) against a rubric the agents never saw. The judge sees no condition names. Each classification is written to its own file next to the logs, with the judge's model, its settings and the rubric's hash.
-*Why:* whether an agent stretched the nearest rule or reasoned from a value (A18) is in its words, not in the world; a judge that knows the condition would read the condition into them.
+`lab judge <runs-dir> <judge.toml>` asks a model, after the runs, to classify what agents wrote against statements they never saw. The judge file gives the judge's `model`, its `thinking_level` and its `instructions` (a material, FR-EXPERIMENT-04); every one is required.
+
+A scenario declares what can be judged in a run. The workplace declares, for each chosen situation whose reserved keys give `said` or `not_said`, the worker's texts on that key's channel (`note`: its notes; `book`: its book entries; `either`: both), with when each was written:
+- for `said`, whether one of the texts says what `about` states;
+- for `not_said`, whether one of them reveals what it states.
+
+The judge reads the reserved keys from the material file the run's setup line names, and refuses, naming it, a file whose hash differs from the one the run recorded. Each question is one model call, through Pi, with the instructions as its system prompt and one tool, `verdict`, with a yes or no, the words it rests on (quoted from the texts) and a short reason; a question with no texts is answered "no" without a model call. The judge sees the statement and the texts only: no condition, model, replica, class or other key.
+
+Each verdict is a line in `judgements/<judge run id>.jsonl` under the runs directory: the run id, the situation, the key, the verdict, the quoted words, the reason, and the judge's model, thinking level, the instructions' hash and the call's tokens and cost. A judge run never overwrites an earlier one.
+*Why:* whether the worker told the keeper, or kept a confidence, is in its words, not in the world; a judge that knew the condition, or anything else about the run, would read it into them. Recording the quoted words keeps each verdict checkable by a person.
+
 ### Non-functional
 
 #### NFR-01: No turns, and no imposed pace
