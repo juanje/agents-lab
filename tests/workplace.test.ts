@@ -319,11 +319,11 @@ describe("the workplace's tools", () => {
     ]);
   });
 
-  it("keep the book, the carry limit and the durations the configuration sets, an empty book and no notes", () => {
-    const state = start();
+  it("keep the book, the carry limit, the durations and the task giver the configuration sets, an empty book and no notes", () => {
+    const state = start({ task_giver: "Ada" });
 
     expect({ book: state.book, notes: state.notes, held: state.held }).toEqual({ book: [], notes: [], held: {} });
-    expect(state.settings).toEqual({ book: "sign", carryLimit: 1, durations: DURATIONS });
+    expect(state.settings).toEqual({ book: "sign", carryLimit: 1, durations: DURATIONS, taskGiver: "Ada" });
   });
 
   it("refuse a book that names no thing of the world, naming it", () => {
@@ -503,10 +503,10 @@ describe("the workplace's tools", () => {
 
   describe("note", () => {
     it("keeps a note to the person who gave the task, with the moment it lands, wherever the worker is; it takes the time per word", () => {
-      const sent = land(inPlace(start(), "office"), "note", { text: "The key is here." }, 99);
+      const sent = land(inPlace(start({ task_giver: "Ada" }), "office"), "note", { text: "The key is here." }, 99);
 
       expect(sent.result).toEqual({ applied: true });
-      expect(sent.state.notes).toEqual([{ text: "The key is here.", atMs: 99 }]);
+      expect(sent.state.notes).toEqual([{ text: "The key is here.", to: "Ada", atMs: 99 }]);
       expect(effector("note").durationMs(start(), call({ text: "The key is here." }))).toBe(20);
     });
   });
