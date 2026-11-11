@@ -206,6 +206,43 @@ describe("runExperiment", () => {
     await expect(running).rejects.toThrow("stopped");
     expect(events).toEqual([{ started: 1 }, { line: "run_setup" }, { line: "run_stopped" }, { ended: "stopped" }]);
   });
+
+  it("stops the run in progress when it is interrupted: its index line says it stopped, no run starts after it, and it fails saying so", async () => {
+    const directory = newRunsDirectory();
+    const slow = new ScriptedModel(Array.from({ length: 10 }, () => ({ text: "Nothing to do.", delayMs: 500 })));
+    const interruption = new AbortController();
+    const observer: ExperimentObserver = {
+      // Interrupted while the first run's first model turn is running.
+      runStarted: () => setTimeout(() => interruption.abort(), 100),
+      recorded: () => {},
+      runEnded: () => {},
+    };
+
+    const running = runExperiment({ ...experiment, models: ["scripted/one"] }, slotsScenario, new Map([["scripted/one", slow]]), directory, observer, interruption.signal);
+
+    await expect(running).rejects.toThrow("the run was interrupted");
+    const index = indexOf(directory);
+    expect(index.map(({ condition, replica, status }) => ({ condition, replica, status }))).toEqual([{ condition: "baseline", replica: 1, status: "stopped" }]);
+    expect(readdirSync(directory).sort()).toEqual([`${String(index[0].runId)}.jsonl`, "index.jsonl"].sort());
+  });
+
+  it("starts no run once it is interrupted between runs, and fails saying so", async () => {
+    const directory = newRunsDirectory();
+    const interruption = new AbortController();
+    const started: number[] = [];
+    const observer: ExperimentObserver = {
+      runStarted: ({ number }) => started.push(number),
+      recorded: () => {},
+      // Interrupted as the first run ends, before the next starts.
+      runEnded: () => interruption.abort(),
+    };
+
+    const running = runExperiment(experiment, slotsScenario, scriptedModels(), directory, observer, interruption.signal);
+
+    await expect(running).rejects.toThrow("interrupted");
+    expect(started).toEqual([1]);
+    expect(indexOf(directory).map(({ status }) => status)).toEqual(["completed"]);
+  });
 });
 
 /** The lines of a run's log, parsed. */
