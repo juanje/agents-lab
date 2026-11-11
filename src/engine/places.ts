@@ -19,15 +19,20 @@ export interface Places {
 
 /**
  * A space with these places and passages, holding no entity. A passage that names a place the layout does not declare,
- * or whose length is not greater than zero, is refused with an error that names it.
+ * whose length is not greater than zero, or that joins two places an earlier passage joins, is refused with an error
+ * that names it.
  */
 export function layout(places: readonly string[], passages: readonly Passage[]): Places {
   const space = { places, passages, whereabouts: {} };
-  for (const { between, length } of passages) {
+  passages.forEach(({ between, length }, index) => {
     const where = `cannot lay out a passage between "${between[0]}" and "${between[1]}"`;
     for (const place of between) assertPlace(space, place, where);
     if (!(length > 0)) throw new Error(`${where}: its length ${length} is not greater than zero`);
-  }
+    const earlier = passages.slice(0, index).find((passage) => joins(passage.between, ...between));
+    if (earlier !== undefined) {
+      throw new Error(`${where}: a passage already joins the places "${earlier.between[0]}" and "${earlier.between[1]}"`);
+    }
+  });
   return space;
 }
 
