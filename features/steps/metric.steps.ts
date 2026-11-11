@@ -133,3 +133,15 @@ Then("the run's log has at least {int} metric samples between its first and its 
   assert.equal(logs.length, 1, `the experiment wrote ${logs.length} run logs`);
   checkSamplesBetween(samplesIn(logOf(this, logs[0].replace(/\.jsonl$/, ""))), count);
 });
+
+Then(
+  "no two consecutive metric samples before the last were taken less than {int} milliseconds apart",
+  function (this: Context, intervalMs: number) {
+    // The last is the end's sample, taken when the run ends, not at the interval.
+    const scheduled = samplesOf(this).slice(0, -1);
+    for (let index = 1; index < scheduled.length; index += 1) {
+      const apartMs = scheduled[index].atMs - scheduled[index - 1].atMs;
+      assert.ok(apartMs >= intervalMs, `metric samples ${index} and ${index + 1} were taken ${apartMs} ms apart`);
+    }
+  },
+);
