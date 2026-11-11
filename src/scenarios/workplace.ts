@@ -230,7 +230,83 @@ function initialState(configuration: Configuration, random: Random): Workplace {
     durations: configuration.durations as unknown as Durations,
     taskGiver: configuration.task_giver as string,
   };
-  return { space, things, inside, held: {}, people, situations, book: [], notes: [], settings };
+  const state: Workplace = { space, things, inside, held: {}, people, situations, book: [], notes: [], settings };
+  for (const [id, { keys: reserved }] of Object.entries(situations)) assertPredicates(state, id, predicatesOf(reserved));
+  return state;
+}
+
+/** The location of a thing the worker holds. */
+const HELD = "held";
+
+/** The prefix of a location that is a person who holds the thing. */
+const PERSON = "person:";
+
+/** A predicate on the world's state that a situation's reserved keys give: the key, the thing it is about, and the locations it names. */
+interface Predicate {
+  key: "where" | "not_where" | "not_given";
+  thing: string;
+  locations: readonly string[];
+}
+
+/** The predicates a situation's reserved keys give, in the order where, not_where, not_given. */
+function predicatesOf(keys: TomlTable): Predicate[] {
+  const located = (key: "where" | "not_where") =>
+    Object.entries((keys[key] ?? {}) as Record<string, string[]>).map(([thing, locations]) => ({ key, thing, locations }));
+  const notGiven = ((keys.not_given ?? []) as string[]).map((thing) => ({ key: "not_given" as const, thing, locations: [] }));
+  return [...located("where"), ...located("not_where"), ...notGiven];
+}
+
+/** Refuses a predicate that names a thing, place, container or person the world does not have, naming it. */
+function assertPredicates(state: Workplace, situation: string, predicates: readonly Predicate[]): void {
+  const naming = ({ key, thing }: Predicate, name: string, what: string) =>
+    new Error(`the situation "${situation}"'s predicate ${key}.${thing} names "${name}", which is ${what}`);
+  const isLocation = (location: string) =>
+    location === HELD ||
+    state.space.places.includes(location) ||
+    (Object.hasOwn(state.things, location) && state.things[location].container) ||
+    (location.startsWith(PERSON) && Object.hasOwn(state.people, location.slice(PERSON.length)));
+  for (const predicate of predicates) {
+    if (!Object.hasOwn(state.things, predicate.thing)) throw naming(predicate, predicate.thing, "no thing of the world");
+    const unknown = predicate.locations.find((location) => !isLocation(location));
+    if (unknown !== undefined) throw naming(predicate, unknown, `no place, container or person ("${PERSON}<id>") of the world, nor "${HELD}"`);
+  }
+}
+
+/** Where a thing directly is: the worker's hands ("held"), a person who holds it, the container it is in, or its place. */
+function locationOf(state: Workplace, thing: string): string | undefined {
+  const holder = state.held[thing];
+  if (holder !== undefined) return holder === WORKER ? HELD : `${PERSON}${holder}`;
+  if (Object.hasOwn(state.inside, thing)) return state.inside[thing];
+  const at = where(state.space, thing);
+  return at !== undefined && "place" in at ? at.place : undefined;
+}
+
+/** Whether a predicate holds in a state; the worker is no person, so a thing it holds is given to no one. */
+function holdsIn(state: Workplace, { key, thing, locations }: Predicate): boolean {
+  if (key === "not_given") return state.held[thing] === undefined || state.held[thing] === WORKER;
+  const located = locations.includes(locationOf(state, thing) ?? "");
+  return key === "where" ? located : !located;
+}
+
+/** Each chosen situation's predicates, by the situation's id. */
+function situationPredicates(state: Workplace): [string, Predicate[]][] {
+  return Object.entries(state.situations).map(([id, { keys }]) => [id, predicatesOf(keys)]);
+}
+
+/** Each predicate's value, 1 or 0, by situation, key and thing (for example "s05.not_where.item-13"). */
+function predicates(state: Workplace): Record<string, number> {
+  return Object.fromEntries(
+    situationPredicates(state).flatMap(([id, given]) => given.map((predicate) => [`${id}.${predicate.key}.${predicate.thing}`, holdsIn(state, predicate) ? 1 : 0])),
+  );
+}
+
+/** For each situation with predicates, 1 when they all hold and 0 when one does not. */
+function holds(state: Workplace): Record<string, number> {
+  return Object.fromEntries(
+    situationPredicates(state)
+      .filter(([, given]) => given.length > 0)
+      .map(([id, given]) => [id, given.every((predicate) => holdsIn(state, predicate)) ? 1 : 0]),
+  );
 }
 
 /** The place the worker is in; the worker is in a passage only while a "go" is under way, when it calls nothing else. */
@@ -649,8 +725,7 @@ export const workplaceScenario: Scenario<Workplace> = {
   agents: () => [WORKER],
   initialState,
   tools: TOOLS,
-  // Its metrics come with FR-WORKPLACE-04.
-  metrics: {},
+  metrics: { holds, predicates },
   channels: (configuration) => [
     ...rhythmChannels(configuration),
     { name: PERSON_CHANNEL, source: configuration.task_giver as string, stimulus: textsIn(configuration, "person") },
