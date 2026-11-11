@@ -52,3 +52,11 @@ Feature: Only tool calls act
     And agent "a" runs on a scripted model that calls "take" with slot 1, then ends without a tool call
     When the run ends
     Then the result agent "a"'s model received for its "take" call is marked as an error and says "slot_taken"
+
+  Scenario: An effector's result is the text its scenario declares for the outcome
+    Given the effector "take" declares the text "Someone already holds that slot; you have not taken it." for "slot_taken" and "You took the slot." for "success"
+    And agent "b" holds slot 1
+    And agent "a" runs on a scripted model that calls "take" with slot 1, then calls "take" with slot 2, then ends without a tool call
+    When the run ends
+    Then the result agent "a"'s model received for its first "take" call is marked as an error and says "Someone already holds that slot; you have not taken it."
+    And the result it received for its second "take" call is not marked as an error and says "You took the slot."
