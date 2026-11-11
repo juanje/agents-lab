@@ -122,6 +122,8 @@ export interface ToolCall {
    * and that moment; null, no count, when the agent had not sensed.
    */
   changesSinceSensing?: number | null;
+  /** For the same call, the agent that applied each of those effects, in the order applied; null when it had not sensed. */
+  changesSinceSensingBy?: string[] | null;
 }
 
 /** Where a session's model turns and tool calls go as each ends: the run's log and what the run gives. */
@@ -455,17 +457,18 @@ function rejection<State>(tool: Tool<State>, call: { tool: string; arguments: un
 const CUT_OFF = "cut_off" as const;
 
 /** A call the tool ran: its outcome, when it started and ended, a sensor's result and an effector's target as sensed. */
-type Executed = Pick<ToolCall, "outcome" | "startedAtMs" | "endedAtMs" | "result" | "targetAsSensed" | "changesSinceSensing">;
+type Executed = Pick<ToolCall, "outcome" | "startedAtMs" | "endedAtMs" | "result" | "targetAsSensed" | "changesSinceSensing" | "changesSinceSensingBy">;
 
 /**
  * What a call gives: its outcome, the text the agent receives, and for an effector's call, its target as sensed and the
- * changes since its agent last sensed.
+ * changes since its agent last sensed, with who applied them.
  */
 interface CallResult {
   outcome: string;
   text: string;
   targetAsSensed?: TargetAsSensed;
   changesSinceSensing?: number | null;
+  changesSinceSensingBy?: string[] | null;
 }
 
 /**
@@ -513,12 +516,14 @@ function sense<State>(world: World<State>, sensor: Sensor<State>, call: AgentCal
 
 /**
  * Applies an effector's call through the arbiter, against the world as it is now; the agent receives its outcome:
- * "success" or the failure's reason. The changes since the agent last sensed are counted at this moment, beside it.
+ * "success" or the failure's reason. The changes since the agent last sensed, and who applied them, are read at this
+ * moment, beside it.
  */
 function effect<State>(world: World<State>, effector: Effector<State>, call: AgentCall, changes: ChangesSinceSensing): CallResult {
   const changesSinceSensing = changes.since(call.agent);
+  const changesSinceSensingBy = changes.appliedBy(call.agent);
   const result = world.apply(effector.action, call);
   if (result.applied) changes.applied(call.agent);
   const outcome = result.applied ? "success" : result.reason;
-  return { outcome, text: outcome, changesSinceSensing };
+  return { outcome, text: outcome, changesSinceSensing, changesSinceSensingBy };
 }
