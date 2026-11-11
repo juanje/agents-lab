@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { entitiesIn, exits, layout, put, where } from "../src/engine/places.ts";
+import { arrive, entitiesIn, exits, layout, leave, put, where } from "../src/engine/places.ts";
+import { World } from "../src/engine/world.ts";
 
 /** Three places: a passage of length 2 joins "hall" and "store", and one of length 5 "hall" and "yard". */
 const building = () =>
@@ -46,5 +47,26 @@ describe("entitiesIn", () => {
     expect(entitiesIn(space, "hall")).toEqual(["a", "c"]);
     expect(entitiesIn(space, "store")).toEqual(["b"]);
     expect(entitiesIn(space, "yard")).toEqual([]);
+  });
+});
+
+describe("leave and arrive", () => {
+  it("puts an entity that leaves a place in the passage towards the other place, in neither place, until it arrives there", () => {
+    const world = new World(put(put(building(), "a", "hall"), "b", "store"));
+    expect(world.apply(leave, { entity: "a", towards: "yard" })).toEqual({ applied: true });
+    expect(where(world.state, "a")).toEqual({ passage: ["hall", "yard"], towards: "yard" });
+    expect(entitiesIn(world.state, "hall")).toEqual([]);
+    expect(entitiesIn(world.state, "yard")).toEqual([]);
+    expect(world.apply(arrive, { entity: "a" })).toEqual({ applied: true });
+    expect(where(world.state, "a")).toEqual({ place: "yard" });
+    expect(where(world.state, "b")).toEqual({ place: "store" });
+  });
+
+  it("crosses a passage both ways, naming the passage as the layout declares it", () => {
+    const world = new World(put(building(), "a", "store"));
+    world.apply(leave, { entity: "a", towards: "hall" });
+    expect(where(world.state, "a")).toEqual({ passage: ["hall", "store"], towards: "hall" });
+    world.apply(arrive, { entity: "a" });
+    expect(where(world.state, "a")).toEqual({ place: "hall" });
   });
 });
