@@ -8,6 +8,7 @@ import { type Experiment, replicaSeed } from "./experiment.ts";
 import { failure } from "./failure.ts";
 import { inventory } from "./inventory.ts";
 import { JsonlFile } from "./jsonl.ts";
+import type { LogLine } from "./recorder.ts";
 import { run } from "./run.ts";
 import { type Scenario, loadScenario } from "./scenario.ts";
 
@@ -22,17 +23,39 @@ export interface IndexLine {
   status: "completed" | "stopped";
 }
 
+/** A run of an experiment as it starts: its number, from 1, out of the experiment's runs, what it runs, and its activation budget. */
+export interface StartingRun {
+  number: number;
+  total: number;
+  condition: string;
+  model: string;
+  /** The replica, from 1. */
+  replica: number;
+  seed: number;
+  /** The activations of all its agents. */
+  activations: number;
+}
+
+/** Who follows an experiment as it runs (FR-RUN-04): each run's start, each line its log records, and how it ends. */
+export interface ExperimentObserver {
+  runStarted(run: StartingRun): void;
+  recorded(line: LogLine): void;
+  runEnded(status: IndexLine["status"]): void;
+}
+
 /**
  * Runs an experiment: each condition with each of its models, given by name in the experiment's order, for each
  * replica, one run after another. Every agent of a run works with that run's model. Each run writes its log into the
  * runs directory, and the directory's index gets a line for each run as it ends. A run that stops on an error stops
- * the experiment there.
+ * the experiment there. An observer, when given, is told when each run starts, each line its log records, and how it
+ * ends.
  */
 export async function runExperiment<State>(
   experiment: Experiment,
   scenario: Partial<Scenario<State>>,
   models: ReadonlyMap<string, AgentModel>,
   runsDirectory: string,
+  observer?: ExperimentObserver,
 ): Promise<void> {
   // Each condition is loaded once before the first run, so one the scenario refuses fails before any model call.
   for (const condition of experiment.conditions) loadScenario(scenario, experiment.seed, condition);
@@ -49,6 +72,8 @@ export async function runExperiment<State>(
   const code = codeVersion();
   mkdirSync(runsDirectory, { recursive: true });
   const index = JsonlFile.create(join(runsDirectory, "index.jsonl"));
+  const total = experiment.conditions.length * models.size * experiment.replicas;
+  let number = 0;
   try {
     for (const [at, condition] of experiment.conditions.entries()) {
       for (const [modelName, model] of models) {
@@ -59,6 +84,9 @@ export async function runExperiment<State>(
           // Chosen here, so the index can list a run that stops as well as one that completes.
           const runId = randomUUID();
           const listed = { runId, condition: condition.name, model: modelName, replica, seed };
+          number += 1;
+          const activations = agents.reduce((sum, agent) => sum + agent.activations, 0);
+          observer?.runStarted({ number, total, condition: condition.name, model: modelName, replica, seed, activations });
           try {
             await run(loaded, agents, seed, {
               logDirectory: runsDirectory,
@@ -78,12 +106,14 @@ export async function runExperiment<State>(
               parallelismLimit: experiment.limits.parallelismLimit,
               timeLimitMs: experiment.limits.timeLimitMs,
               metricIntervalMs: experiment.metricIntervalMs,
+              onRecord: observer === undefined ? undefined : (line) => observer.recorded(line),
             });
           } catch (error) {
             index.write({ ...listed, status: "stopped" } satisfies IndexLine);
             throw failure(`the run of condition "${condition.name}", model "${modelName}", replica ${replica} stopped`, error);
           }
           index.write({ ...listed, status: "completed" } satisfies IndexLine);
+          observer?.runEnded("completed");
         }
       }
     }
