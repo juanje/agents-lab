@@ -80,6 +80,7 @@ describe("refusals", () => {
     ["of an entity in a passage", { entity: "e", towards: "yard" }, 'entity "e"'],
     ["towards a place the space does not declare", { entity: "a", towards: "garden" }, 'place "garden"'],
     ["towards a place not one passage away", { entity: "b", towards: "yard" }, 'place "yard"'],
+    ["towards the place it is in", { entity: "a", towards: "hall" }, 'place "hall"'],
   ])("refuses a leave %s, naming it, and applies nothing", (_case, args, named) => {
     const space = world();
     const before = space.state;
