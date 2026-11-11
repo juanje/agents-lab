@@ -1,4 +1,5 @@
 import { type TomlTable, type TomlValue, parse, stringify } from "smol-toml";
+import { Random } from "./random.ts";
 import { type Condition, isTable } from "./scenario.ts";
 
 /** The limits every run of an experiment runs under. */
@@ -46,6 +47,14 @@ export function readExperiment(toml: string): Experiment {
       change: stringify(field(file.conditions, ["conditions", name], table)),
     })),
   };
+}
+
+/**
+ * The seed of replica r, from 1: derived from the base seed and r alone, so a replica has the same seed in every
+ * condition and model, and its runs differ only by what the condition changes and how the model answers.
+ */
+export function replicaSeed(seed: number, replica: number): number {
+  return Math.floor(Random.derive(seed, `replica ${replica}`).next() * 2 ** 32);
 }
 
 /** What a field must hold, as an error names it, and the check that its value holds it. */
