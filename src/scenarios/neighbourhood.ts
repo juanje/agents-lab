@@ -1,6 +1,7 @@
-import { type Grid, emptyGrid, place, randomEmptyCell } from "../engine/grid.ts";
+import { type Grid, emptyGrid, entitiesAt, place, position, randomEmptyCell, window } from "../engine/grid.ts";
 import type { Configuration, Scenario } from "../engine/scenario.ts";
 import { RHYTHM_CHANNEL } from "../engine/stimuli.ts";
+import type { Sensor } from "../engine/tools.ts";
 
 /** The two kinds a resident can be of. */
 export const KINDS = ["teal", "amber"] as const;
@@ -35,6 +36,39 @@ function kindOf(configuration: Configuration, resident: string): Kind {
   return KINDS[index % KINDS.length];
 }
 
+/** How a look marks a cell: the resident itself, a resident of its kind or of the other, empty, or outside the grid. */
+export type Mark = "you" | "same" | "other" | "empty" | "outside";
+
+/** Where the neighbourhood holds a resident; a resident it does not hold is a defect in the run, not a choice. */
+function whereIs({ grid }: Neighbourhood, resident: string): { x: number; y: number } {
+  const at = position(grid, resident);
+  if (at === undefined) throw new Error(`The neighbourhood holds no resident "${resident}"`);
+  return at;
+}
+
+/** "look": the resident's window of the configured radius, each cell marked as the resident sees it. */
+const look: Sensor<Neighbourhood> = {
+  kind: "sensor",
+  name: "look",
+  description:
+    'See the cells around you, as a JSON array of rows from the top, each row from the left, with you in the middle: "you" is your cell, "same" a resident of your kind, "other" a resident of the other kind, "empty" an empty cell and "outside" beyond the edge of the neighbourhood.',
+  parameters: { type: "object", properties: {} },
+  durationMs: () => 0,
+  sense: (state, resident) => {
+    const at = whereIs(state, resident);
+    const mark = (cell: { x: number; y: number; outside: boolean }): Mark => {
+      if (cell.outside) return "outside";
+      const held = entitiesAt(state.grid, cell)[0];
+      if (held === undefined) return "empty";
+      if (held === resident) return "you";
+      return state.kinds[held] === state.kinds[resident] ? "same" : "other";
+    };
+    const side = 2 * state.lookRadius + 1;
+    const cells = window(state.grid, at, state.lookRadius).map(mark);
+    return JSON.stringify(Array.from({ length: side }, (_, row) => cells.slice(row * side, (row + 1) * side)));
+  },
+};
+
 /** The neighbourhood scenario. */
 export const neighbourhoodScenario: Scenario<Neighbourhood> = {
   name: "neighbourhood",
@@ -53,7 +87,7 @@ export const neighbourhoodScenario: Scenario<Neighbourhood> = {
     const { look_radius: lookRadius, ms_per_cell: msPerCell } = configuration as { look_radius: number; ms_per_cell: number };
     return { grid, kinds, lookRadius, msPerCell };
   },
-  tools: [],
+  tools: [look],
   channels: (configuration) => {
     const { source, text } = configuration.rhythm as { source: string; text: string };
     return [{ name: RHYTHM_CHANNEL, source, stimulus: text }];
