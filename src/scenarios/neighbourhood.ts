@@ -1,4 +1,4 @@
-import { type Grid, type Position, distance, emptyGrid, entitiesAt, inside, move as moveOnGrid, neighbours, place, position, randomEmptyCell, window } from "../engine/grid.ts";
+import { CELL_FULL, type Grid, type Position, distance, emptyGrid, entitiesAt, inside, move as moveOnGrid, neighbours, place, position, randomEmptyCell, window } from "../engine/grid.ts";
 import type { Configuration, Scenario } from "../engine/scenario.ts";
 import { RHYTHM_CHANNEL } from "../engine/stimuli.ts";
 import type { AgentCall, Effector, Sensor } from "../engine/tools.ts";
@@ -107,6 +107,12 @@ const move: Effector<Neighbourhood> = {
       return moveOnGrid.precondition(state.grid, onGrid);
     },
     effect: (state, call) => ({ ...state, grid: moveOnGrid.effect(state.grid, moveCall(state, call)), moves: state.moves + 1 }),
+  },
+  // What happened to the resident: that it moved, or why it did not, and that it has not (FR-NEIGHBOURHOOD-02).
+  texts: {
+    success: "You moved.",
+    [CELL_FULL]: "Someone already lives in that cell; you have not moved.",
+    [INVALID_TARGET]: "That cell is beyond the edge of the neighbourhood; you have not moved.",
   },
   // Its target is the cell at the call's offset from where the resident is now, as its last look showed it, wherever it
   // looked from.

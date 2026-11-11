@@ -136,6 +136,10 @@ Then("the call recorded its target as sensed: {string}", function (this: Context
   assert.equal(this.lastToolCall.targetAsSensed, sensed);
 });
 
+Then("the result {string}'s model received for its {string} call says {string}", function (this: Context, resident: string, tool: string, text: string) {
+  assert.equal(returned(this, resident, tool), text);
+});
+
 Then(
   "{string}'s {string} call ended at least {int} milliseconds after it started",
   function (this: Context, resident: string, tool: string, durationMs: number) {
