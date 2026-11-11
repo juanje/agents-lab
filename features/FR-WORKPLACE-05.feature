@@ -7,10 +7,13 @@ Feature: The depot's day goes on: time, the porter and visitors
     And the world's "[porter]" is "piet", named "Piet, the porter", who enters "yard", drops in "store" and has the rounds ["09:10"]
     And the world has the thing "crate", named "a wooden crate", that arrives "09:10"
 
-  Scenario: Look gives the time the clocks show
-    Given the worker's scripted turns wait 140 milliseconds, then call "look", which takes 10 milliseconds, then end
+  Scenario: The worker learns the time only by checking it
+    Given the configuration's "check_time_ms" is 10
+    And the worker's scripted turns call "look", then wait 130 milliseconds, then call "check_time", then end
     When the run ends
-    Then the look's result gives the time "09:15"
+    Then the "check_time" call's result is "09:15"
+    And the look's result gives no time
+    And the worker's system prompt and stimuli give no time
 
   Scenario: The porter brings his round's arrivals, walking through the passages, and leaves
     Given the worker's scripted turns end at once, for 1 activation
@@ -71,3 +74,4 @@ Feature: The depot's day goes on: time, the porter and visitors
       | the porter's rounds are ["9.10"]                                             | "9.10"              |
       | the visitor "ferrer" arrives between "10:00" and "09:00"                     | "ferrer"            |
       | the porter's id is "worker"                                                  | "worker"            |
+      | the thing "crate" also gives the place "counter"                             | "crate" and "counter" |
