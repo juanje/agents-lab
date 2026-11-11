@@ -89,6 +89,7 @@ Experiments are written outside this repository, in the experiment language (FR-
 - A grid cell never holds more entities than its capacity.
 - An agent's energy never goes below zero.
 - Nothing reaches an agent except a tool's result or a stimulus from a declared channel.
+- An agent's tool calls never overlap: the calls of one model turn run one after another, each starting when the previous one ends.
 - A run never writes to an existing file.
 - Every recorded tool call has exactly one outcome, from the declared set.
 - Every metric is computed from the world's state, never by a model.
@@ -406,5 +407,4 @@ Every outcome comes from the world's rules applied to the world's state. What an
 - v0.3 will need memory across runs: a workspace for each agent's memory files. `@earendil-works/pi-durable` (experimental in Pi 1.5.0) may help with long runs.
 - Open: whether real time is enough for E16's vote deadlines to be repeatable, or simulated time is needed.
 - Later: sensors that return partial or wrong information, and stimuli an agent may not notice (by distance or attention), both declared in the inventory; the world stays as it is, only what reaches the agent changes.
-- Open: whether an agent can make several tool calls at once in one model turn, or they run one after another. Until decided, they run one after another.
 - A call left unrun because its message was cut at the token limit needs its own outcome.
