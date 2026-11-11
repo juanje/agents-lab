@@ -8,7 +8,7 @@ import { RHYTHM_CHANNEL } from "../../src/engine/stimuli.ts";
 import { type Slots, slotsScenario } from "../../tests/fixtures/slots.ts";
 import type { Context } from "../support/context.ts";
 import { asRead, userTexts } from "./stimulus.steps.ts";
-import { modelOf } from "./tool.steps.ts";
+import { modelOf, script } from "./tool.steps.ts";
 
 Given(
   "the test scenario {string}, whose base configuration has {int} slots, none held",
@@ -159,14 +159,19 @@ Then("no model was called", function (this: Context) {
   }
 });
 
-When("the loaded scenario runs", async function (this: Context) {
-  const agents = [...this.models].map(([name, model]) => ({ name, model, activations: 1, rhythm: () => 0 }));
-  await run(loadedOf(this), agents, this.seed, {
-    logDirectory: this.logDirectory,
-    modelTurnTimeoutMs: this.modelTurnTimeoutMs,
-    parallelismLimit: this.parallelismLimit,
-    timeLimitMs: this.timeLimitMs,
+/** Runs the loaded scenario with the scenario's scripted agents, each for one activation that starts at once. */
+async function runLoaded(context: Context): Promise<void> {
+  const agents = [...context.models].map(([name, model]) => ({ name, model, activations: 1, rhythm: () => 0 }));
+  await run(loadedOf(context), agents, context.seed, {
+    logDirectory: context.logDirectory,
+    modelTurnTimeoutMs: context.modelTurnTimeoutMs,
+    parallelismLimit: context.parallelismLimit,
+    timeLimitMs: context.timeLimitMs,
   });
+}
+
+When("the loaded scenario runs", async function (this: Context) {
+  await runLoaded(this);
 });
 
 Then("agent {string}'s model was offered exactly the scenario's tools", function (this: Context, agent: string) {
@@ -188,4 +193,45 @@ Then("agent {string}'s activation began with the scenario's rhythm stimulus", fu
   assert.ok(rhythm !== undefined, "the loaded scenario declares no rhythm channel");
   const [first] = userTexts(modelOf(this, agent).received[0] ?? []);
   assert.equal(first, asRead(rhythm.source, rhythm.stimulus), `agent "${agent}"'s activation began with another message`);
+});
+
+Given(
+  "the test scenario {string}, whose system prompt names the agent it describes",
+  function (this: Context, name: string) {
+    // The fixture's prompt names its agent; the steps that read what each agent received check that it does.
+    assert.equal(slotsScenario.name, name);
+    this.scenario = slotsScenario;
+  },
+);
+
+/** The scenario with its base configuration declaring these agents, so a run of exactly them is the scenario's. */
+function declaring(scenario: Partial<Scenario<Slots>>, agents: readonly string[]): Partial<Scenario<Slots>> {
+  const base = parse(scenario.baseConfiguration ?? "");
+  return { ...scenario, baseConfiguration: stringify({ ...base, agents: [...agents] }) };
+}
+
+When(
+  "agents {string} and {string} run on scripted models that end their first turn without a tool call",
+  async function (this: Context, first: string, second: string) {
+    for (const agent of [first, second]) script(this, agent, [{ text: "Nothing to do.", delayMs: 0 }]);
+    this.loaded = loadScenario(declaring(this.scenario, [first, second]), this.seed, this.condition);
+    await runLoaded(this);
+  },
+);
+
+/** The system prompt agent's model received on each of its turns, which must be one and the same. */
+function systemPromptOf(context: Context, agent: string): string | undefined {
+  const prompts = new Set(modelOf(context, agent).received.map(getCurrentSystemPrompt));
+  assert.equal(prompts.size, 1, `agent "${agent}"'s turns received different system prompts`);
+  return [...prompts][0];
+}
+
+Then("agent {string}'s system prompt names {string}", function (this: Context, agent: string, name: string) {
+  const prompt = systemPromptOf(this, agent) ?? "";
+  // A name is quoted where a prompt names it, so a name that is also a word (such as "a") is not found by chance.
+  if (!prompt.includes(`"${name}"`)) assert.fail(`expected agent "${agent}"'s system prompt to name "${name}", got: ${prompt}`);
+  for (const other of this.models.keys()) {
+    if (other === name) continue;
+    if (prompt.includes(`"${other}"`)) assert.fail(`expected agent "${agent}"'s system prompt not to name "${other}", got: ${prompt}`);
+  }
 });
