@@ -323,12 +323,9 @@ An experiment file gives:
 *Why:* the lab's protocol requires the prediction and its refutation to be written before running. The commit of the file, together with the logs, shows that they came first.
 
 #### FR-EXPERIMENT-04: Materials are files, referenced and fingerprinted
-An experiment or a condition can reference materials by path, relative to the experiment file:
-- texts for the system prompt or for stimuli;
-- seeded memory;
-- held-out keys.
+Any value of a scenario's configuration can be given, in the experiment file, as a material: a file named by its path relative to the experiment file (`{ file = "materials/character.md" }`), whose text becomes the value. A material can be marked as held out (`held_out = true`): the scenario reads it, for example as the reserved keys of its situations, but its text never reaches the inventory or the run's setup line.
 
-The engine reads them at run time, writes each path with a content hash to the run's log, and lists them in the inventory, except files marked as held out, which are listed by name only. A referenced file that does not exist fails the run before it starts.
+The engine reads every material before the first run, writes each path with a hash of its content to each run's setup line, and lists them in the inventory with their paths and hashes; a held-out material is listed by its path only. A material whose file does not exist fails the experiment before any model call, with an error that names the path. Seeded memory is a later use of materials (v0.4).
 *Why:* texts are reviewed and changed as files, and a result must say exactly which version of each text produced it.
 
 
