@@ -556,6 +556,16 @@ describe("run", () => {
     expect(world.state).toEqual(["a", "b", null]);
   });
 
+  it("names its log with the run id it is given, so its caller knows the id before the run starts or stops", async () => {
+    const model = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
+    const logDirectory = newLogDirectory();
+
+    const { runId } = await run(slots(), [{ name: "a", model, activations: 1 }], seed, { ...settings, logDirectory, runId: "replica-1" });
+
+    expect(runId).toBe("replica-1");
+    expect(readdirSync(logDirectory)).toEqual(["replica-1.jsonl"]);
+  });
+
   it("waits before each agent's activation the interval the loaded scenario's rhythm draws for that agent", async () => {
     const a = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
     const b = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
