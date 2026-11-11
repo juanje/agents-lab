@@ -96,7 +96,15 @@ const move: Effector<Neighbourhood> = {
     precondition: (state, call) => moveOnGrid.precondition(state.grid, moveCall(state, call)),
     effect: (state, call) => ({ ...state, grid: moveOnGrid.effect(state.grid, moveCall(state, call)) }),
   },
-  readTarget: () => "not_sensed",
+  // Its target is the cell at the call's offset in the resident's last look, whose middle is the resident's cell.
+  readTarget: (sensing, { arguments: args }) => {
+    if (sensing.tool !== look.name) return "not_sensed";
+    const rows = JSON.parse(sensing.result) as Mark[][];
+    const middle = (rows.length - 1) / 2;
+    const mark = rows[middle + (args.dy as number)]?.[middle + (args.dx as number)];
+    if (mark === undefined) return "not_sensed";
+    return mark === "empty" ? "free" : "held";
+  },
 };
 
 /** The neighbourhood scenario. */

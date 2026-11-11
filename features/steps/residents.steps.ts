@@ -62,6 +62,16 @@ Given(
   },
 );
 
+Given(
+  "resident {string} runs on a scripted model that calls {string}, then calls {string} with dx {int} and dy {int}, then ends without a tool call",
+  function (this: Context, resident: string, first: string, second: string, dx: number, dy: number) {
+    script(this, resident, [
+      { toolCalls: [{ name: first, arguments: {} }], delayMs: 0 },
+      ...callWithThenEnd(second, { dx, dy }, 0),
+    ]);
+  },
+);
+
 /** Where the neighbourhood holds a resident once the run has ended. */
 function assertAt(context: Context, resident: string, at: Position): void {
   assert.ok(context.neighbourhoodWorld !== undefined, "the neighbourhood did not run");
@@ -71,6 +81,23 @@ function assertAt(context: Context, resident: string, at: Position): void {
 
 Then("resident {string} is at {int}, {int}", function (this: Context, resident: string, x: number, y: number) {
   assertAt(this, resident, { x, y });
+});
+
+Then("resident {string} is still at {int}, {int}", function (this: Context, resident: string, x: number, y: number) {
+  const placed = this.residents.find(({ name }) => name === resident);
+  assert.deepEqual(placed && { x: placed.x, y: placed.y }, { x, y }, `resident "${resident}" did not start at ${x}, ${y}`);
+  assertAt(this, resident, { x, y });
+});
+
+Then("{string}'s {string} call failed with {string}", function (this: Context, resident: string, tool: string, reason: string) {
+  const call = callOf(this, resident, tool);
+  assert.equal(call.outcome, reason);
+  this.lastToolCall = call;
+});
+
+Then("the call recorded its target as sensed: {string}", function (this: Context, sensed: string) {
+  assert.ok(this.lastToolCall !== undefined, "no call was checked before");
+  assert.equal(this.lastToolCall.targetAsSensed, sensed);
 });
 
 Then(
