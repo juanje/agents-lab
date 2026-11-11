@@ -85,10 +85,11 @@ Experiments are written outside this repository, in the experiment language (FR-
 7. FR-WORKPLACE-02
 8. FR-WORKPLACE-03
 9. FR-WORKPLACE-04
-10. FR-PROCESS-01 (components with their own cycles, such as the porter's rounds, change the workplace)
-11. FR-ADAPTER-03
-12. FR-RUN-02
-13. FR-ANALYSIS-02
+10. FR-PROCESS-01 (components with their own life cycles, in the engine)
+11. FR-WORKPLACE-05 (the depot's porter and visitors, as components)
+12. FR-ADAPTER-03
+13. FR-RUN-02
+14. FR-ANALYSIS-02
 
 **Not yet ordered:** FR-EFFORT-01, FR-METRIC-01, FR-EXPERIMENT-03, FR-RUN-03, FR-ANALYSIS-01.
 
@@ -229,8 +230,12 @@ A scenario's effector that moves an agent to another place takes, as its duratio
 *Why:* worlds such as a building or a village are made of rooms and paths, not cells; the space keeps their layout, the time to cross it and what can be seen from where the same across scenarios. An agent that stayed in its place until it arrived would be seen where it no longer is, and would reach its new place at once for everyone else. What an agent can see depends on where it is, so the layout shapes what each agent can know (NFR-12). An agent's choice of a place it cannot reach is the scenario's to name; a leave that reaches the space with it is a defect in the scenario.
 
 #### FR-PROCESS-01: Components with their own life cycles change the world
-A scenario can declare components besides its agents: parts of the world that follow their own life cycle and goals (for example, a porter on his rounds bringing arrivals, or visitors who come and go for their own reasons) and change the world through the arbiter, as agents do, whether or not any agent acts. A scenario can also declare an external perturbation, scheduled at a given moment; it is declared as such, and it is neither required nor the main way the world changes.
-*Why:* a world does not change by itself: it changes because agents and components, each with its own cycle and goals, make it change. A world that changes only when the agents under study act is a laboratory artefact; one that changes through scheduled events added for their own sake is another.
+A scenario can declare, from its configuration, components besides its agents: parts of the world that follow their own life cycle and goals (a porter on his rounds, a visitor on an errand). A component calls no model. Its cycle chooses, from the world's state and the component's own random sequence, its next step: an action, which takes its duration and changes the world through the arbiter as an effector does (checked when it lands, with an optional start, FR-TOOL-04), or a wait. It learns each action's outcome before it chooses again, and its cycle can end. Components run alongside the agents from the moment the agents can start, without turns.
+
+Each component's random sequence is derived from the replica's seed and the component's name (FR-SEED-01), so a condition that adds a component leaves the others' sequences as they were. Each action is recorded in the log as a line of its own: the component, the action, when it started and ended, its outcome, and its start's change when it has one. The changes components apply count among the changes an agent's effector records since its last sensing, named by the component (FR-RECORD-01). When the run ends, an action still running is recorded `cut_off` and applies nothing (FR-CLOCK-02).
+
+A component is either part of the world or an external perturbation, which the configuration declares as such; the inventory lists each component with its kind and a description of its cycle that the scenario gives.
+*Why:* a world does not change by itself: it changes because agents and components, each with its own cycle and goals, make it change. A world that changes only when the agents under study act is a laboratory artefact; one that changes through scheduled events added for their own sake is another. Components act under the same physics as agents, so what agents perceive of them is as situated and as delayed as what they perceive of each other.
 
 #### FR-EFFORT-01: Doing things spends energy
 Each agent has energy, up to a maximum the scenario sets. Each tool call spends its declared effort when it starts. A call the agent cannot afford fails with `no_energy`, takes no time and spends nothing. Energy recovers through a process the scenario declares. An agent learns its energy only through a sensor or a tool result the scenario declares.
@@ -485,6 +490,10 @@ A situation's things are the things its `situations` text brings and the things 
 
 The metrics read the world's state and the worker's tool calls so far; the engine gives them both. They are sampled like every metric (FR-METRIC-02). What a note or an entry says (`said`, `not_said`) is left to the reserved judge (FR-ANALYSIS-02); the other reserved keys (class, kind, rule, owner…) are carried to the analysis as they are.
 *Why:* A18, A19 and I4 are judged on actions in situations; reading them from the world keeps the measure objective, keeps what the worker did apart from what it said, and leaves a judge only for what it wrote. A18 predicts that rules change how much the worker explores; I4 reads the worker's scope from predicates on other people's parts; E4 looks for drift across the day.
+
+#### FR-WORKPLACE-05: The depot's porter and visitors are components
+The workplace can declare, in its world, a porter who brings the day's arrivals to the intake room on his rounds, and visitors who come to the counter on their own errands and leave, as components (FR-PROCESS-01) under the space's physics (FR-SPACE-03). Their cycles, errands and arrivals come from the world's text.
+*Why:* E4's drift and A19's load need a working day that fills the context; it should come from the work arriving, not from padding, and the people in it should come and go for their own reasons.
 
 ### Analysis
 
