@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -55,5 +55,17 @@ describe("runExperiment", () => {
     );
     expect(readdirSync(directory).sort()).toEqual([...index.map(({ runId }) => `${String(runId)}.jsonl`), "index.jsonl"].sort());
     for (const model of models.values()) expect(model.received).toHaveLength(4);
+  });
+
+  it("refuses a condition the scenario's configuration refuses, naming it, before any run, even when it comes last", async () => {
+    const directory = newRunsDirectory();
+    const models = scriptedModels();
+    const typo = { name: "typo", change: "[slots]\ncuont = 5\n" };
+
+    const running = runExperiment({ ...experiment, conditions: [...experiment.conditions, typo] }, slotsScenario, models, directory);
+
+    await expect(running).rejects.toThrow("slots.cuont");
+    expect(existsSync(directory)).toBe(false);
+    for (const model of models.values()) expect(model.received).toHaveLength(0);
   });
 });
