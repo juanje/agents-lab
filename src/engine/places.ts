@@ -64,11 +64,20 @@ export function entitiesIn(space: Places, place: string): string[] {
 /** An entity in a place enters the passage towards a place one passage away. */
 export const leave: Action<Places, { entity: string; towards: string }> = {
   precondition: () => ({ holds: true }),
-  effect: (space) => space,
+  effect: (space, { entity, towards }) => {
+    const from = (where(space, entity) as { place: string }).place;
+    const passage = space.passages.find(({ between }) => between.includes(from) && between.includes(towards)) as Passage;
+    return moved(space, entity, { passage: passage.between, towards });
+  },
 };
 
 /** An entity in a passage reaches the place it was heading for. */
 export const arrive: Action<Places, { entity: string }> = {
   precondition: () => ({ holds: true }),
-  effect: (space) => space,
+  effect: (space, { entity }) => moved(space, entity, { place: (where(space, entity) as { towards: string }).towards }),
 };
+
+/** The space with an entity it holds somewhere else. */
+function moved(space: Places, entity: string, to: Where): Places {
+  return { ...space, whereabouts: { ...space.whereabouts, [entity]: to } };
+}
