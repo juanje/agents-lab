@@ -75,7 +75,8 @@ export const START_HOLDER = "start";
 
 /**
  * The test world as a scenario. Its base configuration names its agents, and its [slots] table gives the number of
- * slots and how many of them, from slot 1, are held at the start.
+ * slots, how many of them, from slot 1, are held at the start, and keys that the scenario reads but no agent meets, as
+ * a held-out material would give them (FR-EXPERIMENT-04).
  */
 export const slotsScenario: Scenario<Slots> = {
   name: "slots",
@@ -107,6 +108,7 @@ export const slotsScenario: Scenario<Slots> = {
     "[slots]",
     "count = 3",
     "held = 0",
+    'keys = ""',
     "[rhythm]",
     `source = ${JSON.stringify(rhythmChannel.source)}`,
     `text = ${JSON.stringify(rhythmChannel.stimulus)}`,
