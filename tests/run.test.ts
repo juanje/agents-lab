@@ -6,13 +6,18 @@ import { AgentSession } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it, vi } from "vitest";
 import { type RunSettings, run } from "../src/engine/run.ts";
 import { ScriptedModel } from "../src/engine/scripted-model.ts";
-import { type Scenario, loadScenario } from "../src/engine/scenario.ts";
+import { type Rhythm, type Scenario, loadScenario } from "../src/engine/scenario.ts";
 import type { Stimuli } from "../src/engine/stimuli.ts";
 import type { AgentCall, Effector, Sensor } from "../src/engine/tools.ts";
 import { type Slots, emptySlots, rhythmChannel, slotTools, slotsScenario, take } from "./fixtures/slots.ts";
 
 /** A rhythm with no waiting: the agent wakes again as soon as its previous activation ends. */
 const noWait = () => 0;
+
+/** The part of the slots test scenario that gives each agent its rhythm: these, by agent, and no wait for any other. */
+const rhythms = (byAgent: Readonly<Record<string, Rhythm>>): Pick<Scenario<Slots>, "rhythm"> => ({
+  rhythm: (_configuration, agent) => byAgent[agent] ?? noWait,
+});
 
 /** A replica's seed, for a run whose rhythms draw nothing from it. */
 const seed = 1;
@@ -57,7 +62,7 @@ describe("run", () => {
     const model = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }, { text: "Nothing to do.", delayMs: 0 }]);
     const logDirectory = newLogDirectory();
 
-    const { runId } = await run(slots(), [{ name: "a", model, activations: 2, rhythm: noWait }], seed, { ...settings, logDirectory });
+    const { runId } = await run(slots(), [{ name: "a", model, activations: 2 }], seed, { ...settings, logDirectory });
 
     const activations = logOf(logDirectory, runId).filter((line) => (line as { type: string }).type === "activation");
     expect(activations).toEqual([
@@ -73,7 +78,7 @@ describe("run", () => {
     const model = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
     const logDirectory = newLogDirectory();
 
-    const { runId } = await run(slots({ channels: () => [rhythmChannel, bell] }), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, {
+    const { runId } = await run(slots({ channels: () => [rhythmChannel, bell] }), [{ name: "a", model, activations: 1 }], seed, {
       ...settings,
       logDirectory,
       onStart: (stimuli) => stimuli.deliver("a", "bell"),
@@ -95,7 +100,7 @@ describe("run", () => {
     const model = new ScriptedModel([{ text: "Nothing to do.", delayMs: 20 }]);
     const logDirectory = newLogDirectory();
 
-    const { runId, messages } = await run(slots(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, { ...settings, logDirectory });
+    const { runId, messages } = await run(slots(), [{ name: "a", model, activations: 1 }], seed, { ...settings, logDirectory });
 
     const answer = messages.get("a")?.find((message) => message.role === "assistant");
     if (answer?.role !== "assistant") throw new Error("the session kept no answer");
@@ -129,7 +134,7 @@ describe("run", () => {
     ]);
     const logDirectory = newLogDirectory();
 
-    const { runId } = await run(slots(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, { ...settings, logDirectory });
+    const { runId } = await run(slots(), [{ name: "a", model, activations: 1 }], seed, { ...settings, logDirectory });
 
     expect(logOf(logDirectory, runId).filter((line) => (line as { type: string }).type === "tool_call")).toEqual([
       { type: "tool_call", agent: "a", tool: "look", arguments: {}, outcome: "success", result: '["empty","empty","empty"]', ...timed },
@@ -150,10 +155,10 @@ describe("run", () => {
     ]);
 
     const { toolCalls } = await run(
-      slots({ tools: withTakeTaking(100), ...agentsNamed("a", "b") }),
+      slots({ tools: withTakeTaking(100), ...agentsNamed("a", "b"), ...rhythms({ a: () => 50 }) }),
       [
-        { name: "a", model: a, activations: 1, rhythm: () => 50 },
-        { name: "b", model: b, activations: 1, rhythm: noWait },
+        { name: "a", model: a, activations: 1 },
+        { name: "b", model: b, activations: 1 },
       ],
       seed,
       settings,
@@ -187,10 +192,10 @@ describe("run", () => {
     const startedAtMs = performance.now();
 
     const running = run(
-      slots({ tools: [...slotTools, jam], ...agentsNamed("a", "b") }),
+      slots({ tools: [...slotTools, jam], ...agentsNamed("a", "b"), ...rhythms({ b: () => 3_000 }) }),
       [
-        { name: "a", model: a, activations: 1, rhythm: noWait },
-        { name: "b", model: b, activations: 1, rhythm: () => 3_000 },
+        { name: "a", model: a, activations: 1 },
+        { name: "b", model: b, activations: 1 },
       ],
       seed,
       { ...settings, logDirectory },
@@ -224,8 +229,8 @@ describe("run", () => {
       const running = run(
         slots(agentsNamed("a", "b")),
         [
-          { name: "a", model: a, activations: 1, rhythm: noWait },
-          { name: "b", model: unopenable, activations: 1, rhythm: noWait },
+          { name: "a", model: a, activations: 1 },
+          { name: "b", model: unopenable, activations: 1 },
         ],
         seed,
         { ...settings, logDirectory },
@@ -255,7 +260,7 @@ describe("run", () => {
     ]);
     const loaded = slots({ tools: withLookTaking(300) });
 
-    const { toolCalls } = await run(loaded, [{ name: "a", model, activations: 1, rhythm: noWait }], seed, { ...settings, timeLimitMs: 100 });
+    const { toolCalls } = await run(loaded, [{ name: "a", model, activations: 1 }], seed, { ...settings, timeLimitMs: 100 });
 
     const [look, take] = toolCalls;
     expect(look).toMatchObject({ tool: "look", outcome: "cut_off" });
@@ -267,7 +272,7 @@ describe("run", () => {
   it("starts an activation with the rhythm channel's stimulus, which the model reads with its source", async () => {
     const model = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
 
-    await run(slots(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+    await run(slots(), [{ name: "a", model, activations: 1 }], seed, settings);
 
     const [first] = model.received[0]?.filter((message) => message.role !== "system") ?? [];
     expect(first).toMatchObject({ role: "user", content: [{ type: "text", text: "rhythm: You wake up." }] });
@@ -276,7 +281,7 @@ describe("run", () => {
   it("gives what each agent's session held at the end: its stimuli, keeping their channel and source, and its model turns", async () => {
     const model = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
 
-    const { messages } = await run(slots(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+    const { messages } = await run(slots(), [{ name: "a", model, activations: 1 }], seed, settings);
 
     expect(messages.get("a")?.filter((message) => message.role !== "system")).toMatchObject([
       {
@@ -292,7 +297,7 @@ describe("run", () => {
   it("hands the run's stimuli to onStart before any agent wakes, so what it delivers reaches the first activation", async () => {
     const model = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
 
-    await run(slots({ channels: () => [rhythmChannel, bell] }), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, {
+    await run(slots({ channels: () => [rhythmChannel, bell] }), [{ name: "a", model, activations: 1 }], seed, {
       ...settings,
       onStart: (stimuli) => stimuli.deliver("a", "bell"),
     });
@@ -314,7 +319,7 @@ describe("run", () => {
     // The agent wakes at once, then rests 100 ms, and the bell rings halfway through that rest.
     const restsOnceWithBell = () => (rests++ === 0 ? 0 : (setTimeout(() => stimuli?.deliver("a", "bell"), 50), 100));
 
-    await run(slots({ channels: () => [rhythmChannel, bell] }), [{ name: "a", model, activations: 2, rhythm: restsOnceWithBell }], seed, {
+    await run(slots({ channels: () => [rhythmChannel, bell], ...rhythms({ a: restsOnceWithBell }) }), [{ name: "a", model, activations: 2 }], seed, {
       ...settings,
       onStart: (started) => (stimuli = started),
     });
@@ -332,7 +337,7 @@ describe("run", () => {
     // The rhythm is called as the agent starts to wait, and with no wait the agent wakes as it returns.
     const ringsAfter50 = () => (setTimeout(() => stimuli?.deliver("a", "bell"), 50), 0);
 
-    await run(slots({ channels: () => [rhythmChannel, bell] }), [{ name: "a", model, activations: 1, rhythm: ringsAfter50 }], seed, {
+    await run(slots({ channels: () => [rhythmChannel, bell], ...rhythms({ a: ringsAfter50 }) }), [{ name: "a", model, activations: 1 }], seed, {
       ...settings,
       onStart: (started) => (stimuli = started),
     });
@@ -346,7 +351,7 @@ describe("run", () => {
   it("offers the agent's model exactly the scenario's tools, with their descriptions and arguments", async () => {
     const model = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
 
-    await run(slots(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+    await run(slots(), [{ name: "a", model, activations: 1 }], seed, settings);
 
     expect(model.received.map(getCurrentTools)).toEqual([
       slotTools.map(({ name, description, parameters }) => ({ name, description, parameters })),
@@ -362,7 +367,7 @@ describe("run", () => {
       { text: "Done.", delayMs: 0 },
     ]);
 
-    await run(loaded, [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+    await run(loaded, [{ name: "a", model, activations: 1 }], seed, settings);
 
     const [, next] = model.received;
     const call = next?.find((message) => message.role === "assistant")?.content[0];
@@ -384,7 +389,7 @@ describe("run", () => {
       { text: "Done.", delayMs: 0 },
     ]);
 
-    await run(loaded, [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+    await run(loaded, [{ name: "a", model, activations: 1 }], seed, settings);
 
     expect(world.state).toEqual(["a", null, null]);
     expect(world.version).toBe(1);
@@ -397,7 +402,7 @@ describe("run", () => {
       { text: "Nothing to do.", delayMs: 0 },
     ]);
 
-    await run(slots(), [{ name: "a", model, activations: 2, rhythm: noWait }], seed, settings);
+    await run(slots(), [{ name: "a", model, activations: 2 }], seed, settings);
 
     expect(model.sessions).toEqual([expect.any(String), model.sessions[0], model.sessions[0]]);
   });
@@ -405,7 +410,7 @@ describe("run", () => {
   it("gives the agent's model the scenario's system prompt and nothing else", async () => {
     const model = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
 
-    await run(slots({ systemPrompt: () => "You live in a row of slots." }), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+    await run(slots({ systemPrompt: () => "You live in a row of slots." }), [{ name: "a", model, activations: 1 }], seed, settings);
 
     expect(model.received.map(getCurrentSystemPrompt)).toEqual(["You live in a row of slots."]);
   });
@@ -415,7 +420,7 @@ describe("run", () => {
     const b = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
     const loaded = slots({ ...agentsNamed("a", "b"), systemPrompt: (_configuration, agent) => `You are "${agent}".` });
 
-    await run(loaded, [{ name: "a", model: a, activations: 1, rhythm: noWait }, { name: "b", model: b, activations: 1, rhythm: noWait }], seed, settings);
+    await run(loaded, [{ name: "a", model: a, activations: 1 }, { name: "b", model: b, activations: 1 }], seed, settings);
 
     expect([a.received.map(getCurrentSystemPrompt), b.received.map(getCurrentSystemPrompt)]).toEqual([['You are "a".'], ['You are "b".']]);
   });
@@ -424,7 +429,7 @@ describe("run", () => {
     const model = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
     const loaded = slots({ channels: () => [{ name: "rhythm", source: "clock", stimulus: "Later." }] });
 
-    await run(loaded, [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+    await run(loaded, [{ name: "a", model, activations: 1 }], seed, settings);
 
     expect(model.received[0]?.filter((message) => message.role !== "system")).toMatchObject([
       { role: "user", content: [{ type: "text", text: "clock: Later." }] },
@@ -437,7 +442,7 @@ describe("run", () => {
     [["a", "b", "c"], 'The run\'s agents are not those of scenario "slots": "c" is not declared'],
   ])("refuses a run of agents %j in a scenario of agents a and b before any model call, naming the difference", async (names, message) => {
     const models = names.map(() => new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]));
-    const agents = names.map((name, index) => ({ name, model: models[index], activations: 1, rhythm: noWait }));
+    const agents = names.map((name, index) => ({ name, model: models[index], activations: 1 }));
 
     await expect(run(slots(agentsNamed("a", "b")), agents, seed, settings)).rejects.toThrow(message);
 
@@ -450,7 +455,7 @@ describe("run", () => {
     writeFileSync(join(persons, "settings.json"), JSON.stringify({ defaultProvider: "openai", defaultModel: "gpt-6-luna" }));
     const model = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
 
-    await run(slots(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+    await run(slots(), [{ name: "a", model, activations: 1 }], seed, settings);
 
     expect(readdirSync(persons, { recursive: true })).toEqual(["settings.json"]);
     expect(existsSync(join(homedir(), ".agents-lab", "pi"))).toBe(true);
@@ -463,7 +468,7 @@ describe("run", () => {
       { text: "Nothing to do.", delayMs: 0 },
     ]);
 
-    const { turns } = await run(slots(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+    const { turns } = await run(slots(), [{ name: "a", model, activations: 1 }], seed, settings);
 
     expect(turns).toEqual([expect.objectContaining({ agent: "a", outcome: "model_error", message: "overloaded" })]);
     expect(model.received).toHaveLength(1);
@@ -472,7 +477,7 @@ describe("run", () => {
   it("records the turn past the end of the script as script_exhausted, and ends the activation there", async () => {
     const model = new ScriptedModel([{ toolCalls: [{ name: "look", arguments: {} }], delayMs: 0 }]);
 
-    const { turns, messages } = await run(slots(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+    const { turns, messages } = await run(slots(), [{ name: "a", model, activations: 1 }], seed, settings);
 
     expect(turns.map(({ outcome, message }) => ({ outcome, message }))).toEqual([
       { outcome: "success", message: undefined },
@@ -489,7 +494,7 @@ describe("run", () => {
       { text: "Done.", delayMs: 0 },
     ]);
 
-    const { turns } = await run(loaded, [{ name: "a", model, activations: 1, rhythm: noWait }], seed, {
+    const { turns } = await run(loaded, [{ name: "a", model, activations: 1 }], seed, {
       ...settings,
       modelTurnTimeoutMs: 50,
     });
@@ -503,7 +508,7 @@ describe("run", () => {
     const model = new ScriptedModel([{ text: "Nothing to do.", delayMs: 50 }]);
     const before = performance.now();
 
-    const { turns } = await run(slots(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+    const { turns } = await run(slots(), [{ name: "a", model, activations: 1 }], seed, settings);
     const [turn] = turns;
 
     expect(turn?.startedAtMs).toBeGreaterThanOrEqual(before);
@@ -516,7 +521,7 @@ describe("run", () => {
 
     const { turns } = await run(
       slots(agentsNamed("a", "b", "c")),
-      ["a", "b", "c"].map((name) => ({ name, model: answersAfter50(), activations: 1, rhythm: noWait })),
+      ["a", "b", "c"].map((name) => ({ name, model: answersAfter50(), activations: 1 })),
       seed,
       { ...settings, parallelismLimit: 2 },
     );
@@ -541,8 +546,8 @@ describe("run", () => {
     await run(
       loaded,
       [
-        { name: "a", model: takes(1), activations: 1, rhythm: noWait },
-        { name: "b", model: takes(2), activations: 1, rhythm: noWait },
+        { name: "a", model: takes(1), activations: 1 },
+        { name: "b", model: takes(2), activations: 1 },
       ],
       seed,
       settings,
@@ -582,10 +587,14 @@ describe("run", () => {
       const draws: number[] = [];
       const answers = (delayMs: number) => new ScriptedModel(Array.from({ length: 4 }, () => ({ text: "resting", delayMs })));
       await run(
-        slots({ tools: [], ...agentsNamed("a", "b") }),
+        slots({
+          tools: [],
+          ...agentsNamed("a", "b"),
+          ...rhythms({ a: (source) => (draws.push(source.next()), 5), b: (source) => source.next() * 5 }),
+        }),
         [
-          { name: "a", model: answers(0), activations: 4, rhythm: (source) => (draws.push(source.next()), 5) },
-          { name: "b", model: answers(bDelayMs), activations: 4, rhythm: (source) => source.next() * 5 },
+          { name: "a", model: answers(0), activations: 4 },
+          { name: "b", model: answers(bDelayMs), activations: 4 },
         ],
         42,
         settings,
@@ -604,12 +613,15 @@ describe("run", () => {
     async function drawsOfB(names: readonly string[]): Promise<number[]> {
       const draws: number[] = [];
       await run(
-        slots({ tools: [], ...agentsNamed(...names) }),
+        slots({
+          tools: [],
+          ...agentsNamed(...names),
+          rhythm: (_configuration, name) => (source) => (name === "b" ? (draws.push(source.next()), 0) : source.next()),
+        }),
         names.map((name) => ({
           name,
           model: new ScriptedModel(Array.from({ length: 3 }, () => ({ text: "resting", delayMs: 0 }))),
           activations: 3,
-          rhythm: (source) => (name === "b" ? (draws.push(source.next()), 0) : source.next()),
         })),
         42,
         settings,
@@ -631,7 +643,7 @@ describe("run", () => {
       { text: "Slot 2 is mine.", delayMs: 0 },
     ]);
 
-    const { turns } = await run(loaded, [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+    const { turns } = await run(loaded, [{ name: "a", model, activations: 1 }], seed, settings);
 
     expect(turns.map((turn) => turn.text)).toEqual(["I take slot 1.", "Slot 2 is mine."]);
     expect(world.version).toBe(0);
@@ -646,7 +658,7 @@ describe("run", () => {
         { text: "Done.", delayMs: 0 },
       ]);
 
-      const { toolCalls } = await run(loaded, [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+      const { toolCalls } = await run(loaded, [{ name: "a", model, activations: 1 }], seed, settings);
 
       expect(toolCalls).toEqual([{ agent: "a", tool: "take", arguments: args, outcome: "invalid_arguments", ...timed }]);
       expect(world.version).toBe(0);
@@ -661,7 +673,7 @@ describe("run", () => {
       { text: "Done.", delayMs: 0 },
     ]);
 
-    const { toolCalls } = await run(loaded, [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+    const { toolCalls } = await run(loaded, [{ name: "a", model, activations: 1 }], seed, settings);
 
     expect(toolCalls).toEqual([{ agent: "a", tool: "take", arguments: { slot: "2" }, outcome: "success", targetAsSensed: "not_sensed", changesSinceSensing: null, changesSinceSensingBy: null, ...timed }]);
     expect(world.state).toEqual([null, "a", null]);
@@ -674,7 +686,7 @@ describe("run", () => {
       { text: "Done.", delayMs: 0 },
     ]);
 
-    const { toolCalls } = await run(loaded, [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+    const { toolCalls } = await run(loaded, [{ name: "a", model, activations: 1 }], seed, settings);
 
     expect(toolCalls).toEqual([{ agent: "a", tool: "fly", arguments: { slot: 1 }, outcome: "unknown_tool", ...timed }]);
     expect(world.version).toBe(0);
@@ -693,7 +705,7 @@ describe("run", () => {
       { text: "Done.", delayMs: 0 },
     ]);
 
-    await run(loaded, [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+    await run(loaded, [{ name: "a", model, activations: 1 }], seed, settings);
 
     expect(world.state).toEqual(["a", null, null]);
   });
@@ -706,7 +718,7 @@ describe("run", () => {
       { text: "Done.", delayMs: 0 },
     ]);
 
-    const { toolCalls } = await run(loaded, [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+    const { toolCalls } = await run(loaded, [{ name: "a", model, activations: 1 }], seed, settings);
 
     expect(toolCalls).toEqual([{ agent: "a", tool: "take", arguments: { slot: 1 }, outcome: "slot_taken", targetAsSensed: "not_sensed", changesSinceSensing: null, changesSinceSensingBy: null, ...timed }]);
     expect(model.received[1]?.at(-1)).toMatchObject({ role: "toolResult", isError: true, content: [{ type: "text", text: "slot_taken" }] });
@@ -718,7 +730,7 @@ describe("run", () => {
       { text: "Done.", delayMs: 0 },
     ]);
 
-    await run(slots(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+    await run(slots(), [{ name: "a", model, activations: 1 }], seed, settings);
 
     expect(model.received[1]?.at(-1)).toMatchObject({ role: "toolResult", isError: false, content: [{ type: "text", text: "success" }] });
   });
@@ -730,7 +742,7 @@ describe("run", () => {
       { text: "Done.", delayMs: 0 },
     ]);
 
-    const { toolCalls } = await run(loaded, [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+    const { toolCalls } = await run(loaded, [{ name: "a", model, activations: 1 }], seed, settings);
 
     expect(toolCalls).toEqual([{ agent: "a", tool: "take", arguments: { slot: 1, x: 2 }, outcome: "invalid_arguments", ...timed }]);
     expect(world.version).toBe(0);
@@ -746,7 +758,7 @@ describe("run", () => {
       { text: "Done.", delayMs: 0 },
     ]);
 
-    const { toolCalls } = await run(slots(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+    const { toolCalls } = await run(slots(), [{ name: "a", model, activations: 1 }], seed, settings);
 
     expect(toolCalls).toEqual([{ agent: "a", tool: "look", arguments: { slot: 1 }, outcome: "invalid_arguments", ...timed }]);
     expect(model.received[1]?.at(-1)).toMatchObject({ role: "toolResult", isError: true });
@@ -758,7 +770,7 @@ describe("run", () => {
       { text: "Done.", delayMs: 0 },
     ]);
 
-    const { toolCalls } = await run(slots({ tools: withLookTaking(50) }), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+    const { toolCalls } = await run(slots({ tools: withLookTaking(50) }), [{ name: "a", model, activations: 1 }], seed, settings);
 
     const [{ startedAtMs, endedAtMs }] = toolCalls;
     expect(endedAtMs - startedAtMs).toBeGreaterThanOrEqual(50);
@@ -782,7 +794,7 @@ describe("run", () => {
         : tool,
     );
 
-    const { toolCalls } = await run(slots({ tools }), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+    const { toolCalls } = await run(slots({ tools }), [{ name: "a", model, activations: 1 }], seed, settings);
 
     expect(asked).toEqual([{ state: emptySlots(3), call: { agent: "a", arguments: {} } }]);
     const [{ outcome, startedAtMs, endedAtMs }] = toolCalls;
@@ -800,8 +812,8 @@ describe("run", () => {
       { text: "Done.", delayMs: 0 },
     ]);
     const agents = [
-      { name: "a", model: looking, activations: 1, rhythm: noWait },
-      { name: "b", model: taking, activations: 1, rhythm: noWait },
+      { name: "a", model: looking, activations: 1 },
+      { name: "b", model: taking, activations: 1 },
     ];
 
     const { toolCalls } = await run(slots({ tools: withLookTaking(100), ...agentsNamed("a", "b") }), agents, seed, settings);
@@ -819,7 +831,7 @@ describe("run", () => {
       { text: "Done.", delayMs: 0 },
     ]);
 
-    const { toolCalls, sensings } = await run(slots(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+    const { toolCalls, sensings } = await run(slots(), [{ name: "a", model, activations: 1 }], seed, settings);
 
     expect(sensings?.last("a")).toEqual({ tool: "look", result: '["empty","empty","empty"]', atMs: toolCalls[0]?.endedAtMs });
   });
@@ -831,7 +843,7 @@ describe("run", () => {
       { text: "Done.", delayMs: 0 },
     ]);
 
-    const { toolCalls, sensings } = await run(slots({ tools: [look, slotTools[1]] }), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+    const { toolCalls, sensings } = await run(slots({ tools: [look, slotTools[1]] }), [{ name: "a", model, activations: 1 }], seed, settings);
 
     expect(sensings.last("a")).toEqual({ tool: "look", result: "seen", takenFrom: { x: 1, y: 7 }, atMs: toolCalls[0]?.endedAtMs });
   });
@@ -847,7 +859,7 @@ describe("run", () => {
 
     const { toolCalls } = await run(
       slots({ tools: [slotTools[0], take], initialState: () => emptySlots(2) }),
-      [{ name: "a", model, activations: 1, rhythm: noWait }],
+      [{ name: "a", model, activations: 1 }],
       seed,
       settings,
     );
@@ -862,7 +874,7 @@ describe("run", () => {
       { text: "Done.", delayMs: 0 },
     ]);
 
-    const { sensings } = await run(slots(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+    const { sensings } = await run(slots(), [{ name: "a", model, activations: 1 }], seed, settings);
 
     expect(sensings.last("a")).toBeUndefined();
   });
@@ -880,7 +892,7 @@ describe("run", () => {
       return apply(action, args);
     };
 
-    const { toolCalls } = await run(loaded, [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+    const { toolCalls } = await run(loaded, [{ name: "a", model, activations: 1 }], seed, settings);
 
     const [{ outcome, startedAtMs, endedAtMs }] = toolCalls;
     expect(outcome).toBe("success");
@@ -907,7 +919,7 @@ describe("run", () => {
         : tool,
     );
 
-    const { toolCalls } = await run(slots({ tools }), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+    const { toolCalls } = await run(slots({ tools }), [{ name: "a", model, activations: 1 }], seed, settings);
 
     expect(asked).toEqual([{ state: emptySlots(3), call: { agent: "a", arguments: { slot: 2 } } }]);
     const [{ outcome, startedAtMs, endedAtMs }] = toolCalls;
@@ -927,11 +939,16 @@ describe("run", () => {
     ]);
     // "a" wakes halfway through "b"'s take: it sees slot 1 free, and "b" takes it while "a"'s take is under way.
     const agents = [
-      { name: "a", model: looking, activations: 1, rhythm: () => 50 },
-      { name: "b", model: taking, activations: 1, rhythm: noWait },
+      { name: "a", model: looking, activations: 1 },
+      { name: "b", model: taking, activations: 1 },
     ];
 
-    const { toolCalls } = await run(slots({ tools: withTakeTaking(100), ...agentsNamed("a", "b") }), agents, seed, settings);
+    const { toolCalls } = await run(
+      slots({ tools: withTakeTaking(100), ...agentsNamed("a", "b"), ...rhythms({ a: () => 50 }) }),
+      agents,
+      seed,
+      settings,
+    );
 
     const take = toolCalls.find((call) => call.agent === "a" && call.tool === "take");
     expect(take).toMatchObject({ outcome: "slot_taken", targetAsSensed: "free" });
@@ -943,7 +960,7 @@ describe("run", () => {
       { text: "Done.", delayMs: 0 },
     ]);
 
-    const { toolCalls } = await run(slots(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+    const { toolCalls } = await run(slots(), [{ name: "a", model, activations: 1 }], seed, settings);
 
     expect(toolCalls).toEqual([{ agent: "a", tool: "take", arguments: { slot: 1 }, outcome: "success", targetAsSensed: "not_sensed", changesSinceSensing: null, changesSinceSensingBy: null, ...timed }]);
   });
@@ -958,7 +975,7 @@ describe("run's time limit", () => {
     ]);
     let setUpEndedAtMs = 0;
 
-    const { toolCalls, startedAtMs } = await run(loaded, [{ name: "a", model, activations: 1, rhythm: noWait }], seed, {
+    const { toolCalls, startedAtMs } = await run(loaded, [{ name: "a", model, activations: 1 }], seed, {
       ...settings,
       timeLimitMs: 100,
       // Setting the run up, made slower than the time limit here, comes before the agents can start and uses none of it.
@@ -983,7 +1000,7 @@ describe("run's time limit", () => {
       { text: "Done.", delayMs: 0 },
     ]);
 
-    const { turns, toolCalls, startedAtMs } = await run(loaded, [{ name: "a", model, activations: 1, rhythm: noWait }], seed, {
+    const { turns, toolCalls, startedAtMs } = await run(loaded, [{ name: "a", model, activations: 1 }], seed, {
       ...settings,
       timeLimitMs: 100,
     });
@@ -1000,7 +1017,7 @@ describe("run's time limit", () => {
       { text: "Done.", delayMs: 0 },
     ]);
 
-    const { turns } = await run(slots({ tools: withTakeTaking(1000) }), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, {
+    const { turns } = await run(slots({ tools: withTakeTaking(1000) }), [{ name: "a", model, activations: 1 }], seed, {
       ...settings,
       timeLimitMs: 100,
     });
@@ -1013,7 +1030,7 @@ describe("run's time limit", () => {
     const model = new ScriptedModel(Array.from({ length: 3 }, () => ({ text: "Nothing to do.", delayMs: 0 })));
     const wokeAtMs: number[] = [];
 
-    const { startedAtMs } = await run(slots(), [{ name: "a", model, activations: 3, rhythm: () => 80 }], seed, {
+    const { startedAtMs } = await run(slots(rhythms({ a: () => 80 })), [{ name: "a", model, activations: 3 }], seed, {
       ...settings,
       timeLimitMs: 100,
       onStart: (stimuli) => {
@@ -1038,7 +1055,7 @@ describe("run's time limit", () => {
     ]);
 
     const runStartedAtMs = performance.now();
-    const { toolCalls, messages } = await run(loaded, [{ name: "a", model, activations: 1, rhythm: noWait }], seed, {
+    const { toolCalls, messages } = await run(loaded, [{ name: "a", model, activations: 1 }], seed, {
       ...settings,
       timeLimitMs: 100,
     });
@@ -1060,7 +1077,7 @@ describe("run's time limit", () => {
     ]);
 
     const runStartedAtMs = performance.now();
-    const { toolCalls, messages, sensings } = await run(slots({ tools: withLookTaking(1000) }), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, {
+    const { toolCalls, messages, sensings } = await run(slots({ tools: withLookTaking(1000) }), [{ name: "a", model, activations: 1 }], seed, {
       ...settings,
       timeLimitMs: 100,
     });

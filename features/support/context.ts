@@ -2,9 +2,9 @@ import { World as CucumberWorld, setWorldConstructor } from "@cucumber/cucumber"
 import type { Grid, Position, WindowCell } from "../../src/engine/grid.ts";
 import type { TomlTable } from "smol-toml";
 import type { Experiment } from "../../src/engine/experiment.ts";
-import type { Condition, LoadedScenario, Scenario } from "../../src/engine/scenario.ts";
+import type { Condition, LoadedScenario, Rhythm, Scenario } from "../../src/engine/scenario.ts";
 import type { AgentModel, ModelTurn } from "../../src/engine/adapter.ts";
-import type { Agent, RunResult } from "../../src/engine/run.ts";
+import type { RunResult } from "../../src/engine/run.ts";
 import type { ScriptedAnswer, ScriptedModel } from "../../src/engine/scripted-model.ts";
 import type { Channel, Stimuli } from "../../src/engine/stimuli.ts";
 import type { Action, ActionResult, World } from "../../src/engine/world.ts";
@@ -87,7 +87,7 @@ export class Context extends CucumberWorld {
   /** How long each agent waits before an activation. */
   waitBeforeActivationMs = 0;
   /** An agent's rhythm, when the scenario gives it one of its own; it is called each time the agent starts to rest. */
-  readonly rhythms = new Map<string, Agent["rhythm"]>();
+  readonly rhythms = new Map<string, Rhythm>();
   /** The replica's seed the run is given; any, unless the scenario says, for rhythms that draw nothing from it. */
   seed = 1;
   /** The intervals each agent's rhythm drew, in order, for an agent whose rhythm draws from its random sequence. */

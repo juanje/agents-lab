@@ -46,17 +46,17 @@ Given(
     for (const agent of [first, second]) this.realModels.set(agent, await labModel(name));
     const { condition } = this;
     assert.ok(condition !== undefined, "the scenario gives the slots world before its agents");
-    const declared = { ...condition, change: `agents = ${JSON.stringify([first, second])}\n${condition.change}` };
-    this.loaded = loadScenario(this.scenario, this.seed, declared);
-    this.world = this.loaded.world;
+    this.condition = { ...condition, change: `agents = ${JSON.stringify([first, second])}\n${condition.change}` };
   },
 );
 
 Given("each makes {int} activations, waiting {int} second(s) between them", function (this: Context, count: number, seconds: number) {
-  for (const agent of this.realModels.keys()) {
-    this.activations.set(agent, count);
-    this.rhythms.set(agent, () => seconds * 1000);
-  }
+  for (const agent of this.realModels.keys()) this.activations.set(agent, count);
+  const { condition } = this;
+  assert.ok(condition !== undefined, "the scenario names its agents before their activations");
+  // The slots scenario's [rhythm] table gives the interval every agent waits.
+  this.loaded = loadScenario(this.scenario, this.seed, { ...condition, change: `${condition.change}[rhythm]\ninterval_ms = ${seconds * 1000}\n` });
+  this.world = this.loaded.world;
 });
 
 /** The text of a message an agent's session held, when it is a stimulus or a user message. */

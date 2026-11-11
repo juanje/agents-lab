@@ -166,7 +166,7 @@ Then("no model was called", function (this: Context) {
 
 /** Runs the loaded scenario with the scenario's scripted agents, each for one activation that starts at once. */
 async function runLoaded(context: Context): Promise<void> {
-  const agents = [...context.models].map(([name, model]) => ({ name, model, activations: 1, rhythm: () => 0 }));
+  const agents = [...context.models].map(([name, model]) => ({ name, model, activations: 1 }));
   const { runId, startedAtMs } = await run(loadedOf(context), agents, context.seed, {
     logDirectory: context.logDirectory,
     modelTurnTimeoutMs: context.modelTurnTimeoutMs,

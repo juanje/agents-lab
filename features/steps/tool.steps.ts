@@ -131,7 +131,6 @@ async function runScenario<State>(context: Context, loaded: LoadedScenario<State
     name,
     model,
     activations: context.activations.get(name) ?? 1,
-    rhythm: context.rhythms.get(name) ?? (() => context.waitBeforeActivationMs),
   }));
   const { turns, messages, toolCalls, sensings, startedAtMs, runId } = await run(loaded, agents, context.seed, {
     logDirectory: context.logDirectory,

@@ -6,17 +6,15 @@ import { failure } from "./failure.ts";
 import { ParallelismLimit } from "./parallelism.ts";
 import { Random } from "./random.ts";
 import { Recorder } from "./recorder.ts";
-import type { LoadedScenario } from "./scenario.ts";
+import type { LoadedScenario, Rhythm } from "./scenario.ts";
 import { Sensings } from "./sensings.ts";
 import { Stimuli } from "./stimuli.ts";
 
-/** An agent in a run: its name, the model it works with, how many activations it has, and its rhythm. */
+/** An agent in a run: its name, the model it works with, and how many activations it has; its rhythm is the scenario's. */
 export interface Agent {
   name: string;
   model: AgentModel;
   activations: number;
-  /** Draws the agent's next waiting interval before it wakes, in milliseconds, from the agent's random source. */
-  rhythm: (random: Random) => number;
 }
 
 /** What a run takes besides the scenario: the limits on its model calls. */
@@ -114,7 +112,7 @@ function assertScenarioAgents<State>({ scenario, systemPrompts }: LoadedScenario
 
 /** Runs the agents of a run whose log is open. */
 async function runAgents<State>(
-  { world, scenario, systemPrompts }: LoadedScenario<State>,
+  { world, scenario, systemPrompts, rhythms }: LoadedScenario<State>,
   agents: readonly Agent[],
   seed: number,
   settings: RunSettings,
@@ -169,7 +167,8 @@ async function runAgents<State>(
         try {
           // Each agent's rhythm has its own sequence, from the seed and the agent's name: sharing one would make an
           // agent's intervals depend on when the others' models answer, and deriving by order on which other agents run.
-          await loop(session, agent, stimuli, Random.derive(seed, `rhythm of ${agent.name}`), runEnd.signal, recorder);
+          const rhythm = { draw: rhythmOf(rhythms, agent.name), random: Random.derive(seed, `rhythm of ${agent.name}`) };
+          await loop(session, agent, stimuli, rhythm, runEnd.signal, recorder);
         } finally {
           // Copied: disposing the session may clear what it holds.
           messages.set(agent.name, [...session.messages]);
@@ -182,6 +181,13 @@ async function runAgents<State>(
     clearTimeout(timer);
   }
   return { turns, toolCalls, messages, sensings, startedAtMs };
+}
+
+/** The rhythm the loaded scenario gives an agent. */
+function rhythmOf(rhythms: ReadonlyMap<string, Rhythm>, agent: string): Rhythm {
+  const rhythm = rhythms.get(agent);
+  if (rhythm === undefined) throw new Error(`the scenario gives no rhythm to agent "${agent}"`);
+  return rhythm;
 }
 
 /** The system prompt the loaded scenario gives an agent. */
@@ -201,12 +207,12 @@ async function loop(
   session: AgentSession,
   agent: Agent,
   stimuli: Stimuli,
-  random: Random,
+  rhythm: { draw: Rhythm; random: Random },
   runEnd: AbortSignal,
   recorder: Recorder,
 ): Promise<void> {
   for (let count = 0; count < agent.activations; count += 1) {
-    await waitAtLeast(agent.rhythm(random), runEnd);
+    await waitAtLeast(rhythm.draw(rhythm.random), runEnd);
     if (runEnd.aborted) return;
     const wokeAtMs = performance.now();
     await wake(session, stimuli.wake(agent.name));

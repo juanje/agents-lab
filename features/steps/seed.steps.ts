@@ -1,11 +1,10 @@
 import assert from "node:assert/strict";
 import { Given, Then, When } from "@cucumber/cucumber";
 import { parse } from "smol-toml";
-import type { Random } from "../../src/engine/random.ts";
 import { run } from "../../src/engine/run.ts";
-import { type Condition, loadScenario } from "../../src/engine/scenario.ts";
+import { type Condition, type Scenario, loadScenario } from "../../src/engine/scenario.ts";
 import { ScriptedModel } from "../../src/engine/scripted-model.ts";
-import { type Slots, placedAgent, placingScenario } from "../../tests/fixtures/slots.ts";
+import { type Slots, placingScenario } from "../../tests/fixtures/slots.ts";
 import type { Context } from "../support/context.ts";
 
 /** The placing scenario's [slots] table: how many slots it has and how many agents it places. */
@@ -77,26 +76,23 @@ const ACTIVATIONS = 3;
  * drew, in order.
  */
 async function runReplica(context: Context, seed: number, condition?: Condition): Promise<Map<string, number[]>> {
-  const loaded = loadScenario(context.scenario, seed, condition);
-  const { configuration } = loaded;
   const { minMs, maxMs } = context.rhythmRange;
-  const { agents } = configuration.slots as { agents: number };
   const drawn = new Map<string, number[]>();
-  const runningAgents = Array.from({ length: agents }, (_, index) => {
-    const name = placedAgent(index + 1);
+  const rhythm: Scenario<Slots>["rhythm"] = (_configuration, name) => {
     const intervals: number[] = [];
     drawn.set(name, intervals);
-    return {
-      name,
-      model: new ScriptedModel(Array.from({ length: ACTIVATIONS }, () => ({ text: "resting", delayMs: 0 }))),
-      activations: ACTIVATIONS,
-      rhythm: (agentRandom: Random) => {
-        const intervalMs = minMs + agentRandom.next() * (maxMs - minMs);
-        intervals.push(intervalMs);
-        return intervalMs;
-      },
+    return (agentRandom) => {
+      const intervalMs = minMs + agentRandom.next() * (maxMs - minMs);
+      intervals.push(intervalMs);
+      return intervalMs;
     };
-  });
+  };
+  const loaded = loadScenario({ ...context.scenario, rhythm }, seed, condition);
+  const runningAgents = [...loaded.systemPrompts.keys()].map((name) => ({
+    name,
+    model: new ScriptedModel(Array.from({ length: ACTIVATIONS }, () => ({ text: "resting", delayMs: 0 }))),
+    activations: ACTIVATIONS,
+  }));
   // The placing scenario's agents only rest: they call none of its tools.
   await run(loaded, runningAgents, seed, {
     logDirectory: context.logDirectory,
