@@ -33,16 +33,22 @@ export class ScriptedModel {
   readonly received: Message[][] = [];
   /** The Pi session each turn came from, in order; undefined for a call made outside a session. */
   readonly sessions: (string | undefined)[] = [];
+  /** The thinking level each turn asked for, in order; undefined for a call that asked for none. */
+  readonly reasoningLevels: (string | undefined)[] = [];
 
-  /** Gives the script's answers as the model `id`, or as the faux provider's default model when no id is given. */
-  constructor(script: readonly ScriptedAnswer[], id?: string) {
+  /**
+   * Gives the script's answers as the model `id`, or as the faux provider's default model when no id is given; a model
+   * made to reason lets Pi give its sessions a thinking level other than "off".
+   */
+  constructor(script: readonly ScriptedAnswer[], id?: string, { reasoning = false }: { reasoning?: boolean } = {}) {
     // Pi's model runtime keeps one provider per id: a shared id would hand one agent's turns to another's script.
     made += 1;
-    const faux = fauxProvider({ provider: `scripted-${made}`, ...(id === undefined ? {} : { models: [{ id }] }) });
+    const faux = fauxProvider({ provider: `scripted-${made}`, models: [{ id: id ?? "faux-1", reasoning }] });
     // Each answer is a response factory, so its delay starts when the call reaches the provider, as a real model's does.
     faux.setResponses(
       script.map(({ text, toolCalls = [], error, delayMs }) => async (context, options) => {
         this.sessions.push(options?.sessionId);
+        this.reasoningLevels.push(options?.reasoning);
         // Copied: the caller may go on adding to the same transcript after this turn.
         this.received.push([...context.messages]);
         // An aborted call stops waiting, so a timed-out turn frees its model slot at once; Pi's faux provider then
