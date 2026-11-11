@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, readdirSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -29,5 +29,13 @@ describe("Recorder", () => {
     const second = Recorder.open(directory);
 
     expect(first.runId).not.toBe(second.runId);
+  });
+
+  it("never writes to an existing file: a log whose file is already there is refused, and the file is left as it was", () => {
+    const directory = logDirectory();
+    writeFileSync(join(directory, "taken.jsonl"), "an earlier run's line\n");
+
+    expect(() => Recorder.open(directory, "taken")).toThrow(/taken\.jsonl/);
+    expect(readFileSync(join(directory, "taken.jsonl"), "utf8")).toBe("an earlier run's line\n");
   });
 });
