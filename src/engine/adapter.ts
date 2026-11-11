@@ -205,9 +205,7 @@ function recordToolCalls<State>(
       const call = { tool: event.toolName, arguments: made.get(event.toolCallId)?.args };
       let ran = executed.get(event.toolCallId);
       if (ran === undefined) {
-        const answer = (event.result as { content?: { type: string; text?: string }[] }).content
-          ?.flatMap((block) => (block.type === "text" ? [block.text ?? ""] : []))
-          .join("") ?? "";
+        const answer = textOf((event.result as { content?: readonly Block[] }).content ?? []);
         const offered = tools.find((tool) => tool.name === event.toolName);
         try {
           const outcome = unrunOutcome(offered, call, answer, runEnd.aborted);
@@ -220,6 +218,14 @@ function recordToolCalls<State>(
       records.toolCall({ agent, ...call, ...ran });
     }
   });
+}
+
+/** A block of a message's or a tool result's content, as far as its text goes. */
+type Block = { type: string; text?: string };
+
+/** The text a message's or a tool result's content holds, its text blocks joined. */
+function textOf(content: readonly Block[]): string {
+  return content.flatMap((block) => (block.type === "text" ? [block.text ?? ""] : [])).join("");
 }
 
 /**
@@ -296,7 +302,7 @@ function runTurns(
         : timeout.signal.aborted
           ? { outcome: "timeout" as const }
           : outcomeOf(message);
-      const text = message.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("");
+      const text = textOf(message.content);
       const { cost, ...tokens } = message.usage;
       records.turn({
         agent,
