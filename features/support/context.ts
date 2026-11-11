@@ -80,6 +80,8 @@ export class Context extends CucumberWorld {
   readonly channels: Channel[] = [rhythmChannel];
   /** The run's stimuli, from the moment the run starts, for what the scenario delivers while it runs. */
   stimuli!: Stimuli;
+  /** What the scenario does with the run's stimuli as the run starts, such as delivering one a while into it. */
+  readonly atRunStart: ((stimuli: Stimuli) => void)[] = [];
   /** The components the scenario declares besides its agents, in the test world (FR-PROCESS-01). */
   components: Component<Slots>[] = [];
   /** The tools the scenario declares: the test world's, as the scenario sets them. */

@@ -375,7 +375,10 @@ Then("it took at least {int} milliseconds", function (this: Context, durationMs:
 const NO_TIME_MS = 5;
 
 Then("it took no time", function (this: Context) {
-  const { durationMs: took } = lastCall(this);
+  // The worker's last call as the run recorded it, whether the scenario gave its calls one by one or scripted its turns.
+  const last = this.toolCalls?.filter((recorded) => recorded.agent === WORKER).at(-1);
+  assert.ok(last !== undefined, "the worker made no call");
+  const took = last.endedAtMs - last.startedAtMs;
   assert.ok(took < NO_TIME_MS, `the call took ${took} ms`);
 });
 

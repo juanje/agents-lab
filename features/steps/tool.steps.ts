@@ -154,6 +154,7 @@ export async function runScenario<State>(context: Context, loaded: LoadedScenari
         context.wokeAtMs.set(agent, [...(context.wokeAtMs.get(agent) ?? []), performance.now()]);
         return wake(agent);
       };
+      for (const starting of context.atRunStart) starting(stimuli);
     },
   });
   context.runEndedAtMs = performance.now();

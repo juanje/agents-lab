@@ -114,10 +114,20 @@ const ARGUMENTS: Readonly<Record<string, readonly string[]>> = {
   give: ["thing", "person"],
   record: ["entry"],
   note: ["text"],
+  wait: ["minutes"],
 };
 
-/** A call as the contract writes it, such as "go" to "store", "look", or "put" with "note" into "shelf". */
+/**
+ * A call as the contract writes it, such as "go" to "store", "look", "put" with "note" into "shelf", or "wait" with 20
+ * minutes, whose minutes are a number.
+ */
 function callOf(written: string): { tool: string; arguments: JsonObject } {
+  const minutes = /^"([^"]+)" with (\d+) minutes$/.exec(written.trim());
+  if (minutes !== null) {
+    const [, tool, value] = minutes;
+    assert.deepEqual(ARGUMENTS[tool], ["minutes"], `the workplace's "${tool}" takes no minutes`);
+    return { tool, arguments: { minutes: Number(value) } };
+  }
   const match = /^"([^"]+)"(?: (?:with|to) "([^"]+)")?(?: (?:into|to) "([^"]+)")?$/.exec(written.trim());
   assert.ok(match !== null, `the steps do not read the call ${written}`);
   const [, tool, first, second] = match;
