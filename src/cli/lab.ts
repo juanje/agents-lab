@@ -26,32 +26,49 @@ export interface LabEnvironment {
 const PROGRESS_INTERVAL_MS = 30_000;
 
 /** How the command is used, as an error for other arguments says. */
-const USAGE = "Usage: lab run <experiment.toml> or lab inventory <experiment.toml>";
+const USAGE = "Usage: lab run <experiment.toml> [--progress-interval-ms <ms>] or lab inventory <experiment.toml>";
 
 /**
- * The `lab` command, with its arguments: `lab run <experiment.toml>` runs the experiment; `lab inventory
- * <experiment.toml>` prints its environment inventory, without running it or resolving any model.
+ * The `lab` command, with its arguments: `lab run <experiment.toml>` runs the experiment, printing each run's progress
+ * every `--progress-interval-ms`, 30 seconds unless given; `lab inventory <experiment.toml>` prints its environment
+ * inventory, without running it or resolving any model.
  */
 export async function lab(args: readonly string[], environment: LabEnvironment): Promise<void> {
-  const [command, path, ...rest] = args;
-  if ((command !== "run" && command !== "inventory") || path === undefined || rest.length > 0) {
-    throw new Error(`lab was given ${JSON.stringify(args)}. ${USAGE}`);
-  }
-  const experiment = readExperiment(readFileSync(path, "utf8"));
+  const command = parse(args);
+  const experiment = readExperiment(readFileSync(command.path, "utf8"));
   const scenario = environment.scenarios.get(experiment.scenario);
   if (scenario === undefined) throw new Error(`The scenario library has no scenario "${experiment.scenario}"`);
-  if (command === "inventory") {
+  if (command.name === "inventory") {
     environment.print(inventoryMarkdown(inventory(experiment, scenario)));
     return;
   }
-  await run(experiment, scenario, environment);
+  await run(experiment, scenario, environment, command.progressIntervalMs);
 }
 
-/** Runs an experiment with its scenario, each of its models resolved by name first, into runs/<id>/ under the directory. */
-async function run(experiment: Experiment, scenario: LibraryScenario, environment: LabEnvironment): Promise<void> {
+/** A command `lab` was given, with what it takes. */
+type Command = { name: "inventory"; path: string } | { name: "run"; path: string; progressIntervalMs: number };
+
+/** The command the arguments give; it refuses any other arguments, saying how the command is used. */
+function parse(args: readonly string[]): Command {
+  const [name, path, ...options] = args;
+  if (path !== undefined && name === "inventory" && options.length === 0) return { name, path };
+  if (path !== undefined && name === "run") {
+    if (options.length === 0) return { name, path, progressIntervalMs: PROGRESS_INTERVAL_MS };
+    const [option, value] = options;
+    const ms = Number(value);
+    if (options.length === 2 && option === "--progress-interval-ms" && Number.isInteger(ms) && ms > 0) return { name, path, progressIntervalMs: ms };
+  }
+  throw new Error(`lab was given ${JSON.stringify(args)}. ${USAGE}`);
+}
+
+/**
+ * Runs an experiment with its scenario, each of its models resolved by name first, into runs/<id>/ under the directory,
+ * printing each run's progress at the interval.
+ */
+async function run(experiment: Experiment, scenario: LibraryScenario, environment: LabEnvironment, progressIntervalMs: number): Promise<void> {
   const models = new Map<string, AgentModel>();
   for (const name of experiment.models) models.set(name, await environment.model(name));
-  const progress = new Progress(environment.print, { intervalMs: PROGRESS_INTERVAL_MS });
+  const progress = new Progress(environment.print, { intervalMs: progressIntervalMs });
   await runExperiment(experiment, scenario, models, join(environment.directory, "runs", experiment.id), progress);
   progress.experimentEnded();
 }
