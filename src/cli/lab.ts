@@ -5,6 +5,7 @@ import { type Experiment, readExperiment } from "../engine/experiment.ts";
 import { inventory, inventoryMarkdown } from "../engine/inventory.ts";
 import { runExperiment } from "../engine/runner.ts";
 import type { LibraryScenario } from "../scenarios/library.ts";
+import { Progress } from "./progress.ts";
 
 /**
  * What the `lab` command works with: the directory it runs in, the scenario library, the models by name, and where it
@@ -20,6 +21,9 @@ export interface LabEnvironment {
   /** The model a name in Pi's provider/id form names; it fails, naming it, for a name it does not know. */
   model: (name: string) => Promise<AgentModel>;
 }
+
+/** How often `lab run` prints a run's progress, unless it is given another interval (FR-RUN-04). */
+const PROGRESS_INTERVAL_MS = 30_000;
 
 /** How the command is used, as an error for other arguments says. */
 const USAGE = "Usage: lab run <experiment.toml> or lab inventory <experiment.toml>";
@@ -47,5 +51,7 @@ export async function lab(args: readonly string[], environment: LabEnvironment):
 async function run(experiment: Experiment, scenario: LibraryScenario, environment: LabEnvironment): Promise<void> {
   const models = new Map<string, AgentModel>();
   for (const name of experiment.models) models.set(name, await environment.model(name));
-  await runExperiment(experiment, scenario, models, join(environment.directory, "runs", experiment.id));
+  const progress = new Progress(environment.print, { intervalMs: PROGRESS_INTERVAL_MS });
+  await runExperiment(experiment, scenario, models, join(environment.directory, "runs", experiment.id), progress);
+  progress.experimentEnded();
 }
