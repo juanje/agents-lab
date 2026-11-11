@@ -1,5 +1,5 @@
 import { CUT_OFF } from "./adapter.ts";
-import type { ChangesSinceSensing } from "./changes.ts";
+import { type ChangesSinceSensing, applyCounted } from "./changes.ts";
 import { waitAtLeast } from "./clock.ts";
 import type { Random } from "./random.ts";
 import type { Action, World } from "./world.ts";
@@ -20,8 +20,8 @@ export type Step<State> =
   | { kind: "end" };
 
 /**
- * A component's life cycle in one run: it chooses each next step from the world's state and the outcome of its last
- * action, undefined before its first.
+ * A component's life cycle in one run: it chooses each next step from the world's state and the outcome of the step
+ * before, when that was an action; undefined before its first step and after a wait.
  */
 export interface Cycle<State> {
   next(state: State, outcome: string | undefined): Step<State>;
@@ -78,13 +78,7 @@ export async function runComponent<State>(component: Component<State>, { world, 
     }
     const startedAtMs = performance.now();
     await waitAtLeast(step.durationMs, runEnd);
-    if (runEnd.aborted) {
-      outcome = CUT_OFF;
-    } else {
-      const result = world.apply(step.action, { component: component.name, atMs: performance.now() });
-      if (result.applied) changes.applied(component.name);
-      outcome = result.applied ? "success" : result.reason;
-    }
+    outcome = runEnd.aborted ? CUT_OFF : applyCounted(world, changes, component.name, step.action, { component: component.name, atMs: performance.now() });
     record({ component: component.name, action: step.name, startedAtMs, endedAtMs: performance.now(), outcome });
   }
 }

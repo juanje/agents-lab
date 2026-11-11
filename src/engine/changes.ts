@@ -1,3 +1,16 @@
+import type { Action, World } from "./world.ts";
+
+/**
+ * Applies an action through the arbiter, against the world as it is now, for an agent or a component, counting it by
+ * that name among the changes since sensing when it applies; its outcome is "success" or the failure's reason.
+ */
+export function applyCounted<State, Args>(world: World<State>, changes: ChangesSinceSensing, by: string, action: Action<State, Args>, args: Args): string {
+  const result = world.apply(action, args);
+  if (!result.applied) return result.reason;
+  changes.applied(by);
+  return "success";
+}
+
 /**
  * For each agent, the effects other agents applied since it last sensed the world (FR-RECORD-01). It keeps, in the
  * order applied, the agent each effect was applied for; an agent's sensing marks where its changes since sensing start.

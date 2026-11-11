@@ -20,7 +20,7 @@ import {
   getCurrentSystemMessage,
   validateToolArguments,
 } from "@earendil-works/pi-ai";
-import type { ChangesSinceSensing } from "./changes.ts";
+import { type ChangesSinceSensing, applyCounted } from "./changes.ts";
 import { waitAtLeast } from "./clock.ts";
 import type { ThinkingLevel } from "./experiment.ts";
 import { failure } from "./failure.ts";
@@ -583,8 +583,6 @@ function sense<State>(world: World<State>, sensor: Sensor<State>, call: AgentCal
 function effect<State>(world: World<State>, effector: Effector<State>, call: AgentCall, changes: ChangesSinceSensing): CallResult {
   const changesSinceSensing = changes.since(call.agent);
   const changesSinceSensingBy = changes.appliedBy(call.agent);
-  const result = world.apply(effector.action, { ...call, atMs: performance.now() });
-  if (result.applied) changes.applied(call.agent);
-  const outcome = result.applied ? "success" : result.reason;
+  const outcome = applyCounted(world, changes, call.agent, effector.action, { ...call, atMs: performance.now() });
   return { outcome, text: effector.texts?.[outcome] ?? outcome, changesSinceSensing, changesSinceSensingBy };
 }
