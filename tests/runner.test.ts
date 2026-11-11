@@ -87,6 +87,7 @@ describe("runExperiment", () => {
       inventory: inventory(once, slotsScenario).conditions[0],
       materials: [],
       compaction: { enabled: false },
+      parallelRuns: 1,
       sampling: { thinkingLevels: { a: "off" }, otherParameters: "the provider's defaults" },
     });
     expect(seed).toBe(replicaSeed(7, 1));
@@ -208,8 +209,8 @@ describe("runExperiment", () => {
     const events: unknown[] = [];
     const observer: ExperimentObserver = {
       runStarted: (started) => events.push({ started }),
-      recorded: (line) => events.push({ line }),
-      runEnded: (status) => events.push({ ended: status }),
+      recorded: (number, line) => events.push({ number, line }),
+      runEnded: (number, status) => events.push({ number, ended: status }),
     };
 
     await runExperiment(experiment, slotsScenario, scriptedModels(), directory, observer);
@@ -217,8 +218,8 @@ describe("runExperiment", () => {
     const expected = indexOf(directory).flatMap(({ runId, condition, model, replica, seed }, at) => [
       // The slots test scenario's one agent, "a", makes one activation in each run.
       { started: { number: at + 1, total: 8, condition, model, replica, seed, activations: 1 } },
-      ...logLinesOf(directory, String(runId)).map((line) => ({ line })),
-      { ended: "completed" },
+      ...logLinesOf(directory, String(runId)).map((line) => ({ number: at + 1, line })),
+      { number: at + 1, ended: "completed" },
     ]);
     expect(events).toEqual(expected);
   });
@@ -228,8 +229,8 @@ describe("runExperiment", () => {
     const events: unknown[] = [];
     const observer: ExperimentObserver = {
       runStarted: ({ number }) => events.push({ started: number }),
-      recorded: ({ type }) => events.push({ line: type }),
-      runEnded: (status) => events.push({ ended: status }),
+      recorded: (_, { type }) => events.push({ line: type }),
+      runEnded: (_, status) => events.push({ ended: status }),
     };
 
     const running = runExperiment({ ...experiment, models: ["scripted/one"] }, slotsScenario, new Map([["scripted/one", unopenable]]), directory, observer);
@@ -273,6 +274,108 @@ describe("runExperiment", () => {
     await expect(running).rejects.toThrow("interrupted");
     expect(started).toEqual([1]);
     expect(indexOf(directory).map(({ status }) => status)).toEqual(["completed"]);
+  });
+
+  it("gives parallel_runs in each run's setup line", async () => {
+    const directory = newRunsDirectory();
+
+    await runExperiment({ ...experiment, parallelRuns: 3 }, slotsScenario, scriptedModels(), directory);
+
+    for (const { runId } of indexOf(directory)) expect(logLinesOf(directory, String(runId))[0]).toMatchObject({ type: "run_setup", parallelRuns: 3 });
+  });
+});
+
+/** Each model of the experiment, by its name, in its order: a scripted model whose turns take this long and make no tool call. */
+function slowModels(delayMs: number): Map<string, ScriptedModel> {
+  return new Map(experiment.models.map((name) => [name, new ScriptedModel(Array.from({ length: 10 }, () => ({ text: "Nothing to do.", delayMs })))]));
+}
+
+/** An observer that keeps which runs started and ended, in order, and how many were in progress at most. */
+function watching() {
+  const events: string[] = [];
+  const inProgress = new Set<number>();
+  let most = 0;
+  const observer: ExperimentObserver = {
+    runStarted: ({ number }) => {
+      events.push(`started ${number}`);
+      inProgress.add(number);
+      most = Math.max(most, inProgress.size);
+    },
+    recorded: (number) => expect(inProgress.has(number), `run ${number} recorded a line while not in progress`).toBe(true),
+    runEnded: (number, status) => {
+      events.push(`${status} ${number}`);
+      inProgress.delete(number);
+    },
+  };
+  return { observer, events, most: () => most };
+}
+
+describe("runExperiment, with runs in parallel", () => {
+  it("keeps up to parallel_runs runs in progress at once, starting them in the experiment's order, each next one as one ends", async () => {
+    const directory = newRunsDirectory();
+    const { observer, events, most } = watching();
+
+    await runExperiment({ ...experiment, parallelRuns: 3 }, slotsScenario, slowModels(50), directory, observer);
+
+    expect(events.filter((event) => event.startsWith("started"))).toEqual(Array.from({ length: 8 }, (_, at) => `started ${at + 1}`));
+    expect(events.slice(0, 3)).toEqual(["started 1", "started 2", "started 3"]);
+    // Each next run starts as soon as one ends.
+    expect(events[3]).toMatch(/^completed \d$/);
+    expect(events[4]).toBe("started 4");
+    expect(most()).toBe(3);
+    const index = indexOf(directory);
+    expect(index).toHaveLength(8);
+    expect(index.every(({ status }) => status === "completed")).toBe(true);
+  });
+
+  it("gives each run its replica's seed, as one after another", async () => {
+    const [one, other] = [newRunsDirectory(), newRunsDirectory()];
+
+    await runExperiment(experiment, slotsScenario, scriptedModels(), one);
+    await runExperiment({ ...experiment, parallelRuns: 8 }, slotsScenario, scriptedModels(), other);
+
+    const seeds = (directory: string) => new Map(indexOf(directory).map(({ condition, model, replica, seed }) => [`${condition} ${model} ${replica}`, seed]));
+    expect(seeds(other)).toEqual(seeds(one));
+  });
+
+  it("stops the runs in progress when one stops on an error, each saying the experiment stopped, starts no other, and fails with that run's error", async () => {
+    const directory = newRunsDirectory();
+    const { observer, events } = watching();
+    // The third run, "baseline" with "scripted/two", cannot open its sessions while the first two are running.
+    const models = new Map<string, unknown>([...slowModels(500)].map(([name, model]) => [name, name === "scripted/two" ? unopenable : model]));
+
+    const running = runExperiment({ ...experiment, parallelRuns: 3 }, slotsScenario, models as Map<string, ScriptedModel>, directory, observer);
+
+    await expect(running).rejects.toThrow('the run of condition "baseline", model "scripted/two", replica 1 stopped');
+    expect(events.filter((event) => event.startsWith("started"))).toEqual(["started 1", "started 2", "started 3"]);
+    expect(events.filter((event) => !event.startsWith("started")).sort()).toEqual(["stopped 1", "stopped 2", "stopped 3"]);
+    const index = indexOf(directory);
+    expect(index.map(({ model, replica, status }) => `${model} ${replica} ${status}`).sort()).toEqual([
+      "scripted/one 1 stopped",
+      "scripted/one 2 stopped",
+      "scripted/two 1 stopped",
+    ]);
+    for (const { runId, model } of index) {
+      const last = logLinesOf(directory, String(runId)).at(-1) as { type: string; error: string };
+      expect(last.type).toBe("run_stopped");
+      if (model === "scripted/two") expect(last.error).toContain("this model cannot be given to a session");
+      else expect(last.error).toBe('the experiment stopped: the run of condition "baseline", model "scripted/two", replica 1 stopped');
+    }
+  });
+
+  it("stops every run in progress when it is interrupted, each saying it was interrupted, and starts no other", async () => {
+    const directory = newRunsDirectory();
+    const { observer, events } = watching();
+    const interruption = new AbortController();
+    setTimeout(() => interruption.abort(), 200);
+
+    const running = runExperiment({ ...experiment, parallelRuns: 2 }, slotsScenario, slowModels(1000), directory, observer, interruption.signal);
+
+    await expect(running).rejects.toThrow("the run was interrupted");
+    expect(events.filter((event) => event.startsWith("started"))).toEqual(["started 1", "started 2"]);
+    const index = indexOf(directory);
+    expect(index.map(({ status }) => status)).toEqual(["stopped", "stopped"]);
+    for (const { runId } of index) expect(logLinesOf(directory, String(runId)).at(-1)).toEqual({ type: "run_stopped", error: "the run was interrupted" });
   });
 });
 
