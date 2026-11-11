@@ -21,6 +21,8 @@ export interface Agent {
 export interface RunSettings {
   /** The directory the run writes its log into, as a new file named with its run id (FR-RECORD-01). */
   logDirectory: string;
+  /** The run's id, when its caller must know it before the run starts or stops; a new one otherwise. */
+  runId?: string;
   /** How long a model turn may run before it is aborted. */
   modelTurnTimeoutMs: number;
   /** The maximum number of model calls running at once, across all agents. */
@@ -64,7 +66,7 @@ export async function run<State>(
 ): Promise<RunResult> {
   // Refused before its log opens, as a scenario that fails to load is: nothing has run.
   assertScenarioAgents(loaded, agents);
-  const recorder = Recorder.open(settings.logDirectory);
+  const recorder = Recorder.open(settings.logDirectory, settings.runId);
   // Aborts when the run ends before its agents are done: its time limit passes (FR-CLOCK-02) or it stops on an error.
   const runEnd = new AbortController();
   let stoppedOn: Error | undefined;
