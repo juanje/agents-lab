@@ -2,7 +2,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFil
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { getCurrentSystemPrompt, getCurrentTools } from "@earendil-works/pi-ai";
-import { describe, expect, it } from "vitest";
+import { AgentSession } from "@earendil-works/pi-coding-agent";
+import { describe, expect, it, vi } from "vitest";
 import { type RunSettings, run } from "../src/engine/run.ts";
 import { ScriptedModel } from "../src/engine/scripted-model.ts";
 import { type Scenario, loadScenario } from "../src/engine/scenario.ts";
@@ -198,6 +199,44 @@ describe("run", () => {
     const lines = readFileSync(join(logDirectory, file), "utf8").trimEnd().split("\n").map((line) => JSON.parse(line));
     expect(lines.at(-1)).toEqual({ type: "run_stopped", error: 'agent "a"\'s "jam" call failed: the jam broke' });
     expect(b.received).toEqual([]);
+  });
+
+  it("stops when a session fails to open: it says so in its log, closes the sessions already open, and fails naming the agent", async () => {
+    const a = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
+    const unopenable = {
+      get model(): never {
+        throw new Error("no model to give");
+      },
+    };
+    // Each session's closing is watched, by its model's provider, and still closes it.
+    const closed: (string | undefined)[] = [];
+    const close = AgentSession.prototype.dispose;
+    const watch = vi.spyOn(AgentSession.prototype, "dispose").mockImplementation(function (this: AgentSession) {
+      closed.push(this.model?.provider);
+      close.call(this);
+    });
+    const logDirectory = newLogDirectory();
+
+    try {
+      const running = run(
+        slots(),
+        [
+          { name: "a", model: a, activations: 1, rhythm: noWait },
+          { name: "b", model: unopenable, activations: 1, rhythm: noWait },
+        ],
+        seed,
+        { ...settings, logDirectory },
+      );
+
+      await expect(running).rejects.toThrow('the session of agent "b" failed to open: no model to give');
+    } finally {
+      watch.mockRestore();
+    }
+    const [file] = readdirSync(logDirectory);
+    const lines = readFileSync(join(logDirectory, file), "utf8").trimEnd().split("\n").map((line) => JSON.parse(line));
+    expect(lines.at(-1)).toEqual({ type: "run_stopped", error: 'the session of agent "b" failed to open: no model to give' });
+    expect(closed).toEqual([a.model.provider]);
+    expect(a.received).toEqual([]);
   });
 
   it("starts an activation with the rhythm channel's stimulus, which the model reads with its source", async () => {
