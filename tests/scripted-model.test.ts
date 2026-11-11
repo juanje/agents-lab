@@ -25,6 +25,18 @@ describe("ScriptedModel", () => {
     ]);
   });
 
+  it("answers a turn with its scripted reasoning before its text and tool calls", async () => {
+    const scripted = new ScriptedModel([{ reasoning: "I should look.", text: "Looking.", toolCalls: [{ name: "look", arguments: {} }], delayMs: 0 }]);
+
+    const answer = await complete(scripted, { messages: [], tools: [look] });
+
+    expect(answer.content).toEqual([
+      { type: "thinking", thinking: "I should look." },
+      { type: "text", text: "Looking." },
+      { type: "toolCall", id: expect.any(String), name: "look", arguments: {} },
+    ]);
+  });
+
   it("keeps the messages each turn received, with the tools it was offered", async () => {
     const scripted = new ScriptedModel([
       { text: "first", delayMs: 0 },

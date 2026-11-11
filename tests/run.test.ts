@@ -138,6 +138,20 @@ describe("run", () => {
     expect(turn.latencyMs).toBeGreaterThanOrEqual(20);
   });
 
+  it("records with a model turn the reasoning its provider returned, and no reasoning for a turn that returned none", async () => {
+    const model = new ScriptedModel([
+      { reasoning: "The slot may be taken; I should look first.", toolCalls: [{ name: "look", arguments: {} }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+    const logDirectory = newLogDirectory();
+
+    const { runId } = await run(slots(), [{ name: "a", model, activations: 1 }], seed, { ...settings, logDirectory });
+
+    const turns = logOf(logDirectory, runId).filter((line) => (line as { type: string }).type === "model_turn") as Record<string, unknown>[];
+    expect(turns.map((turn) => turn.reasoning)).toEqual(["The slot may be taken; I should look first.", undefined]);
+    expect(Object.hasOwn(turns[1], "reasoning")).toBe(false);
+  });
+
   it("records each tool call as the model made it, with when it started and ended, its outcome and, for a sensor, its result", async () => {
     const model = new ScriptedModel([
       { toolCalls: [{ name: "look", arguments: {} }], delayMs: 0 },

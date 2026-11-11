@@ -319,3 +319,19 @@ Given(
     });
   },
 );
+
+Given(
+  "agent {string} runs on a scripted model whose first turn has the reasoning {string} and calls {string}, then ends without a tool call",
+  function (this: Context, agent: string, reasoning: string, tool: string) {
+    script(this, agent, [
+      { reasoning, toolCalls: [{ name: tool, arguments: {} }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+  },
+);
+
+Then("the log's first model turn line for agent {string} gives the reasoning {string}", function (this: Context, agent: string, reasoning: string) {
+  const first = logLines(this).find((line) => line.type === "model_turn" && line.agent === agent);
+  assert.ok(first !== undefined, `the log has no model turn line for agent "${agent}"`);
+  assert.equal(first.reasoning, reasoning, `the line does not give the reasoning: ${JSON.stringify(first)}`);
+});
