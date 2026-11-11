@@ -191,6 +191,12 @@ export const neighbourhoodScenario: Scenario<Neighbourhood> = {
     const { min_ms: minMs, max_ms: maxMs } = configuration.rhythm as { min_ms: number; max_ms: number };
     return (random) => minMs + random.next() * (maxMs - minMs);
   },
+  describeDuration: (configuration, tool) => {
+    const settings = configuration as { ms_per_look: number; ms_per_cell: number };
+    if (tool === look.name) return `${settings.ms_per_look} ms.`;
+    if (tool === move.name) return `${settings.ms_per_cell} ms for each cell of distance to the target.`;
+    throw new Error(`The neighbourhood has no tool "${tool}"`);
+  },
   describeRhythm: (configuration) => {
     const { min_ms: minMs, max_ms: maxMs } = configuration.rhythm as { min_ms: number; max_ms: number };
     return `An interval drawn uniformly between ${minMs} and ${maxMs} ms before each activation.`;

@@ -33,6 +33,8 @@ export interface Scenario<State> {
   systemPrompt: (configuration: Configuration, agent: string) => string;
   /** How an agent's waits between activations are drawn, from the resolved configuration and the agent's name. */
   rhythm: (configuration: Configuration, agent: string) => Rhythm;
+  /** How a tool's duration is computed, as text from the resolved configuration, by the tool's name (FR-INVENTORY-01). */
+  describeDuration: (configuration: Configuration, tool: string) => string;
   /** How an agent's rhythm is computed, as text from the resolved configuration and the agent's name (FR-INVENTORY-01). */
   describeRhythm: (configuration: Configuration, agent: string) => string;
   /** The base configuration, in TOML. */

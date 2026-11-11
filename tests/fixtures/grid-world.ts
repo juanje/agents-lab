@@ -50,6 +50,7 @@ export function gridScenario(start: Grid, tools: readonly Tool<Grid>[], agents: 
     systemPrompt: () => "You are an agent on a grid.",
     // Its agents wake at once: a test that needs another rhythm gives it.
     rhythm: () => () => 0,
+    describeDuration: () => "As each tool gives it.",
     describeRhythm: () => "No wait before any activation.",
     baseConfiguration: "",
   };
