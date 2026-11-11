@@ -13,7 +13,7 @@ import { callOf, callWithThenEnd, modelOf, returned, script } from "./tool.steps
 Given(
   "the neighbourhood scenario with a grid {int} cells wide and {int} cells high, a look radius of {int}, looking taking {int} milliseconds, and moving taking {int} milliseconds per cell",
   function (this: Context, width: number, height: number, radius: number, msPerLook: number, msPerCell: number) {
-    this.neighbourhood = withBase(neighbourhoodScenario, {
+    this.libraryScenario = withBase(neighbourhoodScenario, {
       width,
       height,
       look_radius: radius,
@@ -29,7 +29,7 @@ Given(
  * rather than on cells drawn from a seed, and the residents that have a model as its agents.
  */
 export function assembled(context: Context, agents: readonly string[]): LoadedScenario<Neighbourhood> {
-  const configuration = parse(context.neighbourhood.baseConfiguration ?? "");
+  const configuration = parse(context.libraryScenario.baseConfiguration ?? "");
   // The scenario's own initial state with no residents gives the grid and the settings the configuration sets.
   const empty = neighbourhoodScenario.initialState({ ...configuration, residents: 0 }, new Random(context.seed));
   let grid = empty.grid;
@@ -160,7 +160,7 @@ Then(
     modelOf(this, resident);
     const at = this.residents.find(({ name }) => name === resident);
     assert.ok(at !== undefined, `the scenario places no resident "${resident}"`);
-    const radius = parse(this.neighbourhood.baseConfiguration ?? "").look_radius as number;
+    const radius = parse(this.libraryScenario.baseConfiguration ?? "").look_radius as number;
     // The window as rows from the top, each from the left, the resident's cell in the middle: every cell the step
     // names is marked as it says, and every other cell of the window lies to the left of or above the grid.
     const expected: string[][] = [];

@@ -143,10 +143,10 @@ export class Context extends CucumberWorld {
   placesWorld?: World<Places>;
   /** The error a refused action on the space, or a refused layout, gave. */
   spaceError?: Error;
-  /** The neighbourhood scenario as the scenario configures it. */
-  neighbourhood!: Partial<Scenario<Neighbourhood>>;
-  /** Each neighbourhood the engine loaded, in order. */
-  readonly neighbourhoodLoads: LoadedScenario<Neighbourhood>[] = [];
+  /** The library's scenario (the neighbourhood, the workplace) as the scenario configures it. */
+  libraryScenario!: LibraryScenario;
+  /** Each library scenario the engine loaded, in order; a refused one leaves its error in `loadingError`. */
+  readonly libraryLoads: LoadedScenario<any>[] = [];
   /** The residents the scenario places, each with its kind and the cell it starts on, in the order it names them. */
   readonly residents: { name: string; kind: string; x: number; y: number }[] = [];
   /** The neighbourhood's world the run acted on, for a scenario that runs residents. */

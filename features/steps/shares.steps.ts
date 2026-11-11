@@ -9,7 +9,7 @@ import { assembled } from "./residents.steps.ts";
 import { callWithThenEnd, script } from "./tool.steps.ts";
 
 Given("the neighbourhood scenario with a grid {int} cells wide and {int} cells high", function (this: Context, width: number, height: number) {
-  this.neighbourhood = withBase(neighbourhoodScenario, { width, height });
+  this.libraryScenario = withBase(neighbourhoodScenario, { width, height });
   this.assembleRun = (agents) => assembled(this, agents) as LoadedScenario<unknown>;
 });
 

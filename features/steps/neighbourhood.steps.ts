@@ -3,22 +3,24 @@ import { Given, Then, When } from "@cucumber/cucumber";
 import { type TomlTable, parse, stringify } from "smol-toml";
 import { entitiesAt } from "../../src/engine/grid.ts";
 import { Random } from "../../src/engine/random.ts";
-import { type Condition, type LoadedScenario, type Scenario, loadScenario } from "../../src/engine/scenario.ts";
+import { type Condition, type LoadedScenario, isTable, loadScenario } from "../../src/engine/scenario.ts";
 import { RHYTHM_CHANNEL, Stimuli, type Stimulus } from "../../src/engine/stimuli.ts";
+import type { LibraryScenario } from "../../src/scenarios/library.ts";
 import { KINDS, type Neighbourhood, neighbourhoodScenario } from "../../src/scenarios/neighbourhood.ts";
 import type { Context } from "../support/context.ts";
 
 /**
- * The neighbourhood scenario with these values over its base configuration. Each key must be one the base configuration
- * already has, so the steps set the scenario's own configuration rather than keys it never reads.
+ * A library scenario (the neighbourhood, the workplace) with these values over its base configuration; a table is
+ * merged into the table it replaces. Each key must be one the base configuration already has, so the steps set the
+ * scenario's own configuration rather than keys it never reads.
  */
-export function withBase(scenario: Partial<Scenario<Neighbourhood>>, values: TomlTable): Partial<Scenario<Neighbourhood>> {
+export function withBase<Scenario extends LibraryScenario>(scenario: Scenario, values: TomlTable): Scenario {
   const base = parse(scenario.baseConfiguration ?? "");
   const merged: TomlTable = { ...base };
   for (const [key, value] of Object.entries(values)) {
-    assert.ok(Object.hasOwn(base, key), `the neighbourhood scenario's base configuration has no key "${key}"`);
+    assert.ok(Object.hasOwn(base, key), `the ${scenario.name} scenario's base configuration has no key "${key}"`);
     const current = base[key];
-    merged[key] = typeof value === "object" && typeof current === "object" ? { ...(current as TomlTable), ...(value as TomlTable) } : value;
+    merged[key] = isTable(value) && isTable(current) ? { ...current, ...value } : value;
   }
   return { ...scenario, baseConfiguration: stringify(merged) };
 }
@@ -26,24 +28,38 @@ export function withBase(scenario: Partial<Scenario<Neighbourhood>>, values: Tom
 Given(
   "the neighbourhood scenario with a grid {int} cells wide and {int} cells high and {int} residents of two kinds",
   function (this: Context, width: number, height: number, residents: number) {
-    this.neighbourhood = withBase(neighbourhoodScenario, { width, height, residents });
+    this.libraryScenario = withBase(neighbourhoodScenario, { width, height, residents });
   },
 );
 
-/** Loads the neighbourhood scenario with a seed, and a condition if one is given, keeping what loading gave. */
+/**
+ * Loads the library's scenario with a seed, and a condition if one is given, keeping what loading gave: the loaded
+ * scenario, or the error it was refused with.
+ */
+export function loadLibraryScenario(context: Context, seed: number, condition?: Condition): LoadedScenario<any> | undefined {
+  try {
+    const loaded = loadScenario(context.libraryScenario, seed, condition);
+    context.libraryLoads.push(loaded);
+    return loaded;
+  } catch (error) {
+    context.loadingError = error as Error;
+    return undefined;
+  }
+}
+
+/** Loads the neighbourhood with a seed, and a condition if one is given; it must load. */
 function loadNeighbourhood(context: Context, seed: number, condition?: Condition): LoadedScenario<Neighbourhood> {
-  const loaded = loadScenario(context.neighbourhood, seed, condition);
-  context.neighbourhoodLoads.push(loaded);
-  return loaded;
+  loadLibraryScenario(context, seed, condition);
+  return lastLoaded(context);
 }
 
 When("the engine loads it with the seed {int}", function (this: Context, seed: number) {
-  loadNeighbourhood(this, seed);
+  loadLibraryScenario(this, seed);
 });
 
 When("the engine loads it twice with the seed {int}", function (this: Context, seed: number) {
-  loadNeighbourhood(this, seed);
-  loadNeighbourhood(this, seed);
+  loadLibraryScenario(this, seed);
+  loadLibraryScenario(this, seed);
 });
 
 Given("a condition {string} that adds the text {string}", function (this: Context, name: string, text: string) {
@@ -60,30 +76,36 @@ When("the engine loads it with the seed {int} and the condition {string}", funct
 Given(
   "the configuration sets the rhythm channel's source to {string} and its text to {string}",
   function (this: Context, source: string, text: string) {
-    this.neighbourhood = withBase(this.neighbourhood, { rhythm: { source, text } });
+    this.libraryScenario = withBase(this.libraryScenario, { rhythm: { source, text } });
   },
 );
+
+/** Values at paths of the form "table.key", as the tables that hold them. */
+export function inTables(values: readonly (readonly [string, number])[]): TomlTable {
+  const tables: TomlTable = {};
+  for (const [path, value] of values) {
+    const [table, key, ...rest] = path.split(".");
+    assert.ok(key !== undefined && rest.length === 0, `"${path}" is not a key inside a table of the configuration`);
+    tables[table] = { ...((tables[table] as TomlTable | undefined) ?? {}), [key]: value };
+  }
+  return tables;
+}
 
 Given(
   "the configuration sets {string} to {int} and {string} to {int}",
   function (this: Context, firstPath: string, first: number, secondPath: string, second: number) {
-    const values: TomlTable = {};
-    for (const [path, value] of [[firstPath, first], [secondPath, second]] as const) {
-      const [table, key, ...rest] = path.split(".");
-      assert.ok(key !== undefined && rest.length === 0, `"${path}" is not a key inside a table of the configuration`);
-      values[table] = { ...((values[table] as TomlTable | undefined) ?? {}), [key]: value };
-    }
-    this.neighbourhood = withBase(this.neighbourhood, values);
+    this.libraryScenario = withBase(this.libraryScenario, inTables([[firstPath, first], [secondPath, second]]));
   },
 );
 
 Given("the configuration sets {string} to {string}", function (this: Context, key: string, value: string) {
-  this.neighbourhood = withBase(this.neighbourhood, { [key]: value });
+  this.libraryScenario = withBase(this.libraryScenario, { [key]: value });
 });
 
-/** The neighbourhood as the engine loaded it last. */
-function lastLoaded(context: Context): LoadedScenario<Neighbourhood> {
-  const loaded = context.neighbourhoodLoads.at(-1);
+/** The library's scenario as the engine loaded it last; it must have loaded. */
+export function lastLoaded(context: Context): LoadedScenario<any> {
+  assert.equal(context.loadingError, undefined, `expected the scenario to load, but it failed: ${context.loadingError?.message}`);
+  const loaded = context.libraryLoads.at(-1);
   assert.ok(loaded !== undefined, "the scenario was not loaded");
   return loaded;
 }
@@ -119,7 +141,7 @@ Then("{int} of them are of one kind and {int} of the other", function (this: Con
 });
 
 Then("the residents start on the same cells, with the same kinds, both times", function (this: Context) {
-  const [first, second] = this.neighbourhoodLoads;
+  const [first, second] = this.libraryLoads;
   assert.ok(first !== undefined && second !== undefined, "the scenario was not loaded twice");
   assert.deepEqual(second.world.state, first.world.state);
   assert.ok(residentsByCell(first.world.state).length > 0, "the neighbourhood holds no residents to compare");
