@@ -248,10 +248,10 @@ The engine computes the scenario's metrics from the world's state at the start o
 
 #### FR-RECORD-02: A run records what it ran
 The first line of each run's log holds:
-- the resolved configuration and the condition's name;
-- the seeds, the model and its sampling settings;
-- the commit of the code;
-- the environment inventory.
+- the run id, the experiment's id, the condition's name and the resolved configuration;
+- the replica, its seed, the model and the sampling settings its sessions use;
+- the commit of the code, and whether the working tree had changes not committed;
+- the environment inventory of the run's condition (FR-INVENTORY-01).
 
 *Why:* a result cannot be reproduced or checked without the exact setup that produced it.
 
