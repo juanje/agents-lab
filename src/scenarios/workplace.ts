@@ -45,6 +45,8 @@ export interface Settings {
   carryLimit: number;
   durations: Readonly<Durations>;
   taskGiver: string;
+  /** The most depot minutes the worker can wait at once (FR-WORKPLACE-07). */
+  waitMaxMinutes: number;
 }
 
 /**
@@ -368,6 +370,7 @@ function initialState(configuration: Configuration, random: Random): Workplace {
     carryLimit: configuration.carry_limit as number,
     durations: configuration.durations as unknown as Durations,
     taskGiver: configuration.task_giver as string,
+    waitMaxMinutes: configuration.wait_max_minutes as number,
   };
   const clock = { startSeconds: secondsOf(clockOf(configuration).start, "the world's \"[day] start\""), timeScale: configuration.time_scale as number };
   const state: Workplace = { space, things, inside, held: {}, people, situations, book: [], notes: [], moves: [], settings, clock, visitors, ...(porter === undefined ? {} : { porter }) };
@@ -987,6 +990,48 @@ const note: Effector<Workplace> = {
   readTarget: () => "not_sensed",
 };
 
+/** The milliseconds of the run a depot minute lasts, at a time scale (FR-WORKPLACE-05). */
+const minuteMs = (timeScale: number) => (60 * 1000) / timeScale;
+
+/** Whether an entity is in a place, not in a passage or out of the space. */
+function isIn(space: Places, entity: string, place: string): boolean {
+  const at = where(space, entity);
+  return at !== undefined && "place" in at && at.place === place;
+}
+
+/** The outcome of a wait that something happening where the worker is ended early. */
+const INTERRUPTED = "interrupted";
+
+/**
+ * "wait minutes": the worker does nothing for that many depot minutes, from 1 to the configuration's
+ * `wait_max_minutes`, and changes nothing in the world (FR-WORKPLACE-07). It ends early, interrupted, when a person
+ * enters the worker's place, whether from a passage or appearing there, or when a stimulus reaches the worker.
+ */
+const wait: Effector<Workplace> = {
+  kind: "effector",
+  name: "wait",
+  description: "Wait for a number of minutes, doing nothing. If something happens where you are, you stop waiting.",
+  parameters: { type: "object", properties: { minutes: { type: "integer" } }, required: ["minutes"] },
+  durationMs: (state, call) => (call.arguments.minutes as number) * minuteMs(state.clock.timeScale),
+  refuses: (state, call) => {
+    const minutes = call.arguments.minutes as number;
+    const max = state.settings.waitMaxMinutes;
+    return minutes >= 1 && minutes <= max ? undefined : `"wait" takes from 1 to ${max} minutes`;
+  },
+  endsEarly: {
+    outcome: INTERRUPTED,
+    byChange: (before, after, call) => {
+      const here = where(after.space, call.agent);
+      if (here === undefined || !("place" in here)) return false;
+      return Object.keys(after.people).some((person) => isIn(after.space, person, here.place) && !isIn(before.space, person, here.place));
+    },
+    byStimulus: () => true,
+  },
+  texts: { success: "You have waited.", [INTERRUPTED]: "Something happened where you are; you stopped waiting." },
+  // It has no target.
+  readTarget: () => "not_sensed",
+};
+
 /** The worker's texts each channel of a `said` gives: its notes, its book entries, or both. */
 const CHANNELS: Readonly<Record<string, readonly string[]>> = { note: ["note"], book: ["record"], either: ["note", "record"] };
 
@@ -1247,7 +1292,7 @@ function components(configuration: Configuration): Component<Workplace>[] {
 }
 
 /** The worker's tools, in the order the SPEC gives them: its sensors, then its effectors. */
-const TOOLS: readonly Tool<Workplace>[] = [look, read, examine, checkTime, go, take, putDown, give, record, note];
+const TOOLS: readonly Tool<Workplace>[] = [look, read, examine, checkTime, go, take, putDown, give, record, note, wait];
 
 /** Each tool's duration as the inventory describes it, from the configuration's durations. */
 function describeDuration(configuration: Configuration, tool: string): string {
@@ -1263,6 +1308,7 @@ function describeDuration(configuration: Configuration, tool: string): string {
     give: `${durations.give_ms} ms.`,
     record: `${durations.ms_per_word} ms for each word of the entry.`,
     note: `${durations.ms_per_word} ms for each word of the note.`,
+    wait: `One depot minute (${minuteMs(configuration.time_scale as number)} ms) for each minute it is given, up to ${configuration.wait_max_minutes}; it ends early when a person enters the worker's place or a stimulus reaches the worker.`,
   };
   if (!Object.hasOwn(described, tool)) throw new Error(`The workplace has no tool "${tool}"`);
   return described[tool];
@@ -1314,6 +1360,7 @@ export const workplaceScenario: Scenario<Workplace> = {
     'book = "book"',
     "carry_limit = 1",
     "time_scale = 1",
+    "wait_max_minutes = 60",
     'arrivals = ""',
     "[durations]",
     "look_ms = 100",
