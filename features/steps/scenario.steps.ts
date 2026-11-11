@@ -46,6 +46,7 @@ Given(
 /** The scenario's words for each part, and the scenario's property that holds it. */
 const parts: Readonly<Record<string, keyof Scenario<Slots>>> = {
   "initial state": "initialState",
+  agents: "agents",
   tools: "tools",
   "stimulus channels": "channels",
   metrics: "metrics",
@@ -134,6 +135,8 @@ Then("its world starts with {int} slots, {int} of them held", function (this: Co
 function assertRefusedNaming(context: Context, names: readonly string[]): void {
   const error = context.loadingError;
   if (error === undefined) assert.fail("expected loading to fail, but it loaded");
+  // A refusal says why; a TypeError is the engine tripping over what it was given, whatever words its message holds.
+  if (error instanceof TypeError) assert.fail(`expected the engine to refuse the scenario, but it failed on: ${error.message}`);
   const unnamed = names.filter((name) => !error.message.includes(name));
   if (unnamed.length > 0) {
     assert.fail(`expected the error to name ${unnamed.map((name) => `"${name}"`).join(", ")}, got: ${error.message}`);
