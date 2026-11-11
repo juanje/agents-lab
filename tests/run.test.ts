@@ -1198,3 +1198,21 @@ describe("run's metric samples of a metric with a value per agent", () => {
     expect(samples).toMatchObject([{ metrics: { "slot of": {} } }, { metrics: { "slot of": { a: 2 } } }]);
   });
 });
+
+describe("run's metric samples at an interval", () => {
+  it("samples the metrics at the interval it is given, between the start and the end, waiting at least the interval each time", async () => {
+    const model = new ScriptedModel([{ text: "Waiting.", delayMs: 450 }]);
+    const logDirectory = newLogDirectory();
+
+    const { runId } = await run(slots(), [{ name: "a", model, activations: 1 }], seed, { ...settings, logDirectory, metricIntervalMs: 100 });
+
+    const samples = logOf(logDirectory, runId).filter((line) => (line as { type: string }).type === "metric_sample") as { atMs: number }[];
+    expect(samples.length).toBeGreaterThanOrEqual(6);
+    // The start's sample and each one at the interval; the end's comes when the run ends.
+    const scheduled = samples.slice(0, -1);
+    for (let index = 1; index < scheduled.length; index += 1) {
+      expect(scheduled[index].atMs - scheduled[index - 1].atMs).toBeGreaterThanOrEqual(100);
+    }
+    expect(samples.at(-1)!.atMs).toBeGreaterThanOrEqual(scheduled.at(-1)!.atMs);
+  });
+});

@@ -138,6 +138,7 @@ async function runScenario<State>(context: Context, loaded: LoadedScenario<State
     modelTurnTimeoutMs: context.modelTurnTimeoutMs,
     parallelismLimit: context.parallelismLimit,
     timeLimitMs: context.timeLimitMs,
+    metricIntervalMs: context.metricIntervalMs,
     onStart: (stimuli) => {
       context.stimuli = stimuli;
       // Watched too: an agent wakes when its session takes its rhythm's stimulus.

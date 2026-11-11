@@ -78,6 +78,8 @@ export class Context extends CucumberWorld {
   tools: readonly Tool<Slots>[] = slotTools;
   /** The metrics the scenario declares: the test world's, and any the scenario adds. */
   metrics: Scenario<Slots>["metrics"] = slotsScenario.metrics;
+  /** How long the run waits between metric samples, when the scenario gives an interval. */
+  metricIntervalMs?: number;
   /** The system prompt the scenario declares. */
   systemPrompt = "";
   /** How long a model turn may run, unless the scenario says: long enough for any scripted turn here. */

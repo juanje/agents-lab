@@ -88,3 +88,17 @@ Then(
     assert.deepEqual(last?.metrics[metric], { [agent]: value });
   },
 );
+
+Given("the metric interval is {int} milliseconds", function (this: Context, intervalMs: number) {
+  this.metricIntervalMs = intervalMs;
+});
+
+/** Checks that a log has at least this many metric samples between its first and its last. */
+export function checkSamplesBetween(samples: readonly Sample[], count: number): void {
+  const between = samples.length - 2;
+  assert.ok(between >= count, `the log has ${between} metric samples between its first and its last`);
+}
+
+Then("the log has at least {int} metric samples between its first and its last", function (this: Context, count: number) {
+  checkSamplesBetween(samplesOf(this), count);
+});
