@@ -9,12 +9,14 @@ export type LogLine =
   | { type: "activation"; agent: string; wokeAtMs: number; endedAtMs: number }
   | ({ type: "stimulus"; agent: string; deliveredAtMs: number } & Stimulus)
   | ({ type: "model_turn" } & ModelTurn)
-  | ({ type: "tool_call" } & ToolCall);
+  | ({ type: "tool_call" } & ToolCall)
+  | { type: "run_stopped"; error: string };
 
 /** Writes a run's log: one new JSONL file, named with the run's id, with a line for each event (FR-RECORD-01). */
 export class Recorder {
   readonly runId: string;
   readonly #file: number;
+  #stopped = false;
 
   private constructor(runId: string, file: number) {
     this.runId = runId;
@@ -40,10 +42,17 @@ export class Recorder {
    * is all an experiment is read from.
    */
   record(line: LogLine): void {
-    writeSync(this.#file, `${JSON.stringify(line)}\n`);
+    if (!this.#stopped) writeSync(this.#file, `${JSON.stringify(line)}\n`);
   }
 
-  stop(_error: Error): void {}
+  /**
+   * Ends the log of a run that stopped on an error with a line that says so and gives the error; nothing is written
+   * after it, so a stopped run's log never reads as a run that simply ended. Only the first error is the run's.
+   */
+  stop(error: Error): void {
+    this.record({ type: "run_stopped", error: error.message });
+    this.#stopped = true;
+  }
 
   close(): void {
     closeSync(this.#file);
