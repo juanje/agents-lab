@@ -1,5 +1,5 @@
 import { type TomlTable, type TomlValue, parse, stringify } from "smol-toml";
-import { Materials } from "./materials.ts";
+import { Materials, materialReference } from "./materials.ts";
 import { Random } from "./random.ts";
 import { type Condition, isTable } from "./scenario.ts";
 
@@ -64,42 +64,89 @@ interface Given {
 }
 
 /**
- * The file's conditions, in the order they run: when it declares factors, the baseline, which takes no level, then
- * every combination of levels, the first factor's changing slowest; then the file's own conditions (FR-EXPERIMENT-02).
- * A change's keys are checked when the scenario is loaded with it, against the scenario's base configuration.
+ * The file's conditions, in the order they run: when it declares factors, the baseline, which takes no level, unless
+ * the file turns it off, then every combination of levels, the first factor's changing slowest; then the file's own
+ * conditions (FR-EXPERIMENT-02). A change's keys are checked when the scenario is loaded with it, against the
+ * scenario's base configuration.
  */
-function conditionsOf(file: { conditions?: TomlTable; factors?: TomlTable }): Condition[] {
+function conditionsOf(file: { conditions?: TomlTable; factors?: TomlTable; baseline?: boolean }): Condition[] {
   const own = file.conditions ?? {};
+  const baseline: Given[] = file.baseline === false ? [] : [{ name: "baseline", change: {} }];
   const given: Given[] = [
-    ...(file.factors === undefined ? [] : [{ name: "baseline", change: {} }, ...combinations(file.factors)]),
+    ...(file.factors === undefined ? [] : [...baseline, ...combinations(file.factors)]),
     ...Object.keys(own).map((name) => ({ name, change: field(own, ["conditions", name], table) })),
   ];
   if (given.length === 0) throw new Error('The experiment file gives no condition: it must give "conditions", "factors" or both');
+  const names = new Set<string>();
+  for (const { name } of given) {
+    if (names.has(name)) throw new Error(`The experiment file gives two conditions named "${name}"`);
+    names.add(name);
+  }
   return given.map(({ change, ...rest }) => ({ ...rest, change: stringify(change) }));
 }
 
-/** Every combination of the factors' levels, as a condition named after its levels, the first factor's changing slowest. */
-function combinations(factors: TomlTable): Required<Given>[] {
-  let combined: Required<Given>[] = [{ name: "", change: {}, levels: {} }];
-  for (const factor of Object.keys(factors)) {
-    const levels = field(factors, ["factors", factor], namedLevels);
-    combined = combined.flatMap((partial) =>
-      Object.keys(levels).map((level) => ({
-        name: `${partial.name}${partial.name === "" ? "" : ","}${factor}=${level}`,
-        change: merged(partial.change, field(levels, ["factors", factor, level], table)),
-        levels: { ...partial.levels, [factor]: level },
-      })),
-    );
-  }
-  return combined;
+/** A level of a factor, with its change. */
+interface Level {
+  factor: string;
+  level: string;
+  change: TomlTable;
 }
 
-/** Two changes as one: a table both give is merged the same way inside them. */
+/**
+ * Every combination of the factors' levels, as a condition named after its levels, the first factor's changing
+ * slowest, whose change is its levels' changes as one. Two levels of a combination that set the same key are refused.
+ */
+function combinations(factors: TomlTable): Required<Given>[] {
+  let combined: Level[][] = [[]];
+  for (const factor of Object.keys(factors)) {
+    const levels = field(factors, ["factors", factor], namedLevels);
+    combined = combined.flatMap((chosen) =>
+      Object.keys(levels).map((level) => [...chosen, { factor, level, change: field(levels, ["factors", factor, level], table) }]),
+    );
+  }
+  return combined.map((chosen) => {
+    const name = chosen.map(({ factor, level }) => `${factor}=${level}`).join(",");
+    for (const [at, one] of chosen.entries()) {
+      for (const other of chosen.slice(at + 1)) {
+        const key = sharedKey(one.change, other.change);
+        if (key !== undefined) {
+          throw new Error(
+            `The levels "${one.level}" of factor "${one.factor}" and "${other.level}" of factor "${other.factor}" both set ${key}, so the condition "${name}" cannot be formed`,
+          );
+        }
+      }
+    }
+    return {
+      name,
+      change: chosen.reduce<TomlTable>((change, { change: level }) => merged(change, level), {}),
+      levels: Object.fromEntries(chosen.map(({ factor, level }) => [factor, level])),
+    };
+  });
+}
+
+/** Whether a change's value is a table of keys it sets inside, rather than a value, as a material's reference is. */
+function setsInside(value: TomlValue): value is TomlTable {
+  return isTable(value) && materialReference(value) === undefined;
+}
+
+/** The first key two changes both set, as a dotted path, or undefined when they set none in common. */
+function sharedKey(one: TomlTable, other: TomlTable, path: readonly string[] = []): string | undefined {
+  for (const [key, value] of Object.entries(other)) {
+    if (!Object.hasOwn(one, key)) continue;
+    const current = one[key];
+    if (!setsInside(current) || !setsInside(value)) return [...path, key].join(".");
+    const inside = sharedKey(current, value, [...path, key]);
+    if (inside !== undefined) return inside;
+  }
+  return undefined;
+}
+
+/** Two changes that set no key in common as one: a table both set keys inside is merged the same way. */
 function merged(one: TomlTable, other: TomlTable): TomlTable {
   const changed: TomlTable = { ...one };
   for (const [key, value] of Object.entries(other)) {
     const current = changed[key];
-    changed[key] = current !== undefined && isTable(current) && isTable(value) ? merged(current, value) : value;
+    changed[key] = current !== undefined && setsInside(current) && setsInside(value) ? merged(current, value) : value;
   }
   return changed;
 }
@@ -119,6 +166,8 @@ interface Kind<T extends TomlValue> {
 }
 
 const text: Kind<string> = { expected: "a text", holds: (value) => typeof value === "string" };
+
+const trueOrFalse: Kind<boolean> = { expected: "true or false", holds: (value) => typeof value === "boolean" };
 
 const table: Kind<TomlTable> = { expected: "a table", holds: isTable };
 
@@ -180,6 +229,7 @@ const optionalFileSchema = {
   metric_interval_ms: atLeastOne,
   conditions: namedConditions,
   factors: namedFactors,
+  baseline: trueOrFalse,
 } satisfies Schema;
 
 const limitsSchema = {
