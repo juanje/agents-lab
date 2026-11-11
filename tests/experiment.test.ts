@@ -54,6 +54,36 @@ describe("readExperiment", () => {
   ])("refuses a file without %s, naming it", (path) => {
     expect(() => readExperiment(withSet(path, undefined))).toThrow(`The experiment file lacks the field "${path}"`);
   });
+
+  const text = "a text";
+  const models = "a list of at least one model id";
+  const atLeastOne = "a whole number of at least 1";
+  const seed = "a whole number from 0 to 4294967295";
+  it.each<[string, TomlValue, string]>([
+    ["id", 3, text],
+    ["scenario", ["slots"], text],
+    ["models", "scripted/one", models],
+    ["models", [], models],
+    ["models", ["scripted/one", 3], models],
+    ["replicas", "2", atLeastOne],
+    ["replicas", 0, atLeastOne],
+    ["replicas", 1.5, atLeastOne],
+    ["seed", "7", seed],
+    ["seed", 4294967296, seed],
+    ["seed", -1, seed],
+    ["seed", 1.5, seed],
+    ["limits", 3, "a table"],
+    ["limits.time_limit_ms", 0, atLeastOne],
+    ["limits.activations_per_agent", "3", atLeastOne],
+    ["limits.parallelism_limit", 2.5, atLeastOne],
+    ["limits.model_turn_timeout_ms", -500, atLeastOne],
+    ["conditions", ["baseline"], "a table of named conditions"],
+    ["conditions.baseline", 5, "a table"],
+  ])("refuses %s set to %j, naming it and what was expected", (path, value, expected) => {
+    expect(() => readExperiment(withSet(path, value))).toThrow(
+      `The experiment file's field "${path}" must be ${expected}`,
+    );
+  });
 });
 
 /** The valid file with the value at a dotted path set, or left out when the value is undefined. */
