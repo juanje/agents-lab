@@ -53,6 +53,8 @@ export function exits(space: Places, place: string): Exit[] {
 }
 
 /** The entities in a place, in the order the space first held them. */
-export function entitiesIn(_space: Places, _place: string): string[] {
-  return [];
+export function entitiesIn(space: Places, place: string): string[] {
+  return Object.entries(space.whereabouts)
+    .filter(([, at]) => "place" in at && at.place === place)
+    .map(([entity]) => entity);
 }
