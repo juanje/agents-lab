@@ -137,7 +137,7 @@ describe("run", () => {
     ]);
   });
 
-  it("records with an effector call the changes other agents applied since its agent last sensed, when it has sensed", async () => {
+  it("records with an effector call the changes other agents applied since its agent last sensed, and who applied them, when it has sensed", async () => {
     // "b" takes slot 2 at once, and its effect lands at 100 ms, while "a", which wakes at 50 ms and looks, takes slot 1.
     const a = new ScriptedModel([
       { toolCalls: [{ name: "look", arguments: {} }], delayMs: 0 },
@@ -160,8 +160,8 @@ describe("run", () => {
     );
 
     const takes = toolCalls.filter((call) => call.tool === "take");
-    expect(takes.find((call) => call.agent === "a")).toMatchObject({ outcome: "success", changesSinceSensing: 1 });
-    expect(takes.find((call) => call.agent === "b")).toMatchObject({ targetAsSensed: "not_sensed", changesSinceSensing: null });
+    expect(takes.find((call) => call.agent === "a")).toMatchObject({ outcome: "success", changesSinceSensing: 1, changesSinceSensingBy: ["b"] });
+    expect(takes.find((call) => call.agent === "b")).toMatchObject({ targetAsSensed: "not_sensed", changesSinceSensing: null, changesSinceSensingBy: null });
   });
 
   it("stops on an error a tool throws: it ends its log saying so, stops every agent, and fails with the error", async () => {
@@ -638,7 +638,7 @@ describe("run", () => {
 
     const { toolCalls } = await run(loaded, [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
 
-    expect(toolCalls).toEqual([{ agent: "a", tool: "take", arguments: { slot: "2" }, outcome: "success", targetAsSensed: "not_sensed", changesSinceSensing: null, ...timed }]);
+    expect(toolCalls).toEqual([{ agent: "a", tool: "take", arguments: { slot: "2" }, outcome: "success", targetAsSensed: "not_sensed", changesSinceSensing: null, changesSinceSensingBy: null, ...timed }]);
     expect(world.state).toEqual([null, "a", null]);
   });
   it("records a call to a tool the session does not offer as unknown_tool, applies nothing, and goes on", async () => {
@@ -683,7 +683,7 @@ describe("run", () => {
 
     const { toolCalls } = await run(loaded, [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
 
-    expect(toolCalls).toEqual([{ agent: "a", tool: "take", arguments: { slot: 1 }, outcome: "slot_taken", targetAsSensed: "not_sensed", changesSinceSensing: null, ...timed }]);
+    expect(toolCalls).toEqual([{ agent: "a", tool: "take", arguments: { slot: 1 }, outcome: "slot_taken", targetAsSensed: "not_sensed", changesSinceSensing: null, changesSinceSensingBy: null, ...timed }]);
     expect(model.received[1]?.at(-1)).toMatchObject({ role: "toolResult", isError: true, content: [{ type: "text", text: "slot_taken" }] });
   });
 
@@ -889,7 +889,7 @@ describe("run", () => {
 
     const { toolCalls } = await run(slots(), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
 
-    expect(toolCalls).toEqual([{ agent: "a", tool: "take", arguments: { slot: 1 }, outcome: "success", targetAsSensed: "not_sensed", changesSinceSensing: null, ...timed }]);
+    expect(toolCalls).toEqual([{ agent: "a", tool: "take", arguments: { slot: 1 }, outcome: "success", targetAsSensed: "not_sensed", changesSinceSensing: null, changesSinceSensingBy: null, ...timed }]);
   });
 });
 
