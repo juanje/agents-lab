@@ -1,6 +1,7 @@
 import { type TomlTable, type TomlValue, parse } from "smol-toml";
 import { type Passage, type Places, layout, put } from "../engine/places.ts";
 import type { Configuration, Scenario } from "../engine/scenario.ts";
+import { RHYTHM_CHANNEL } from "../engine/stimuli.ts";
 
 /** A thing in the workplace, as anyone in its place sees it. */
 export interface Thing {
@@ -33,6 +34,9 @@ export interface Workplace {
 
 /** The worker, the workplace's one agent. */
 const WORKER = "worker";
+
+/** The configuration's texts the worker's system prompt joins, in order. */
+const PROMPT_TEXTS = ["identity", "world_rules", "norms", "rules"] as const;
 
 /** A thing as a world's text declares it: where it is, in a place or inside a container, and what it is. */
 interface ThingText {
@@ -81,7 +85,24 @@ function initialState(configuration: Configuration): Workplace {
 /** The workplace scenario: one worker in a world of places, things and people that its configuration gives as texts in TOML. */
 export const workplaceScenario: Partial<Scenario<Workplace>> = {
   name: "workplace",
+  agents: () => [WORKER],
   initialState,
+  // Its tools come with FR-WORKPLACE-02 and its metrics with FR-WORKPLACE-04.
+  tools: [],
+  metrics: {},
+  channels: (configuration) => {
+    const { source, text } = configuration.rhythm as { source: string; text: string };
+    return [{ name: RHYTHM_CHANNEL, source, stimulus: text }];
+  },
+  // The configured texts, in this order, each that holds something; nothing else, so the reserved keys never reach it.
+  systemPrompt: (configuration) =>
+    PROMPT_TEXTS.map((key) => configuration[key] as string)
+      .filter((text) => text !== "")
+      .join("\n\n"),
+  rhythm: (configuration) => {
+    const { min_ms: minMs, max_ms: maxMs } = configuration.rhythm as { min_ms: number; max_ms: number };
+    return (random) => minMs + random.next() * (maxMs - minMs);
+  },
   baseConfiguration: [
     'identity = "You work here."',
     'world_rules = ""',
