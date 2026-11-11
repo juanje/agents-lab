@@ -14,7 +14,7 @@ Everything an agent does is written to a log, and every analysis is computed fro
 ## What is in this repository
 
 - `src/engine/`: the world, tools, stimuli, activations, the Pi adapter and the recorder.
-- `src/scenarios/`: reusable scenarios, such as the neighbourhood (Schelling with LLM agents).
+- `src/scenarios/`: reusable scenarios: the neighbourhood (Schelling with LLM agents) and the workplace (a worker in an invented place of rooms and passages).
 - `src/analysis/`: analysis of run logs.
 - `src/cli/`: the `lab` command.
 
@@ -22,7 +22,7 @@ Experiments (their designs, experiment files, materials and results) live in a s
 
 ## Status
 
-Early development, toward v0.1: what a first pilot of a Schelling experiment needs. `SPEC.md` lists the requirements and the order they are built in. `lab run` runs an experiment file and `lab inventory` lists what its agents meet in each condition; summaries across replicas are not built yet.
+Early development. v0.1, what E13 (Schelling with LLM agents) needs, is built and ran three technical pilots; E13 is parked. v0.2 is under way: E1–E4 in an invented workplace, where a worker meets seeded situations and what it did is read from the world. Experiment files already take materials (texts as files, fingerprinted) and factors, and the engine has a space of places joined by passages; the workplace scenario is being built. `SPEC.md` lists the requirements and the order they are built in. Summaries across replicas are not built yet.
 
 ## Setup
 
