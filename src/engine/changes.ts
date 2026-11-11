@@ -18,10 +18,10 @@ export class ChangesSinceSensing {
     this.#atSensing.set(agent, this.#byOthers(agent));
   }
 
-  /** The effects other agents applied since the agent last sensed, or undefined when it has not sensed. */
-  since(agent: string): number | undefined {
+  /** The effects other agents applied since the agent last sensed, or null, no count, when it has not sensed. */
+  since(agent: string): number | null {
     const atSensing = this.#atSensing.get(agent);
-    return atSensing === undefined ? undefined : this.#byOthers(agent) - atSensing;
+    return atSensing === undefined ? null : this.#byOthers(agent) - atSensing;
   }
 
   #byOthers(agent: string): number {

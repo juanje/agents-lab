@@ -110,9 +110,9 @@ export interface ToolCall {
   targetAsSensed?: TargetAsSensed;
   /**
    * For an effector call whose effect was checked, the effects other agents applied between its agent's last sensing
-   * and that moment; absent when the agent had not sensed.
+   * and that moment; null, no count, when the agent had not sensed.
    */
-  changesSinceSensing?: number;
+  changesSinceSensing?: number | null;
 }
 
 /** Where a session's model turns and tool calls go as each ends: the run's log and what the run gives. */
@@ -405,7 +405,7 @@ interface CallResult {
   outcome: string;
   text: string;
   targetAsSensed?: TargetAsSensed;
-  changesSinceSensing?: number;
+  changesSinceSensing?: number | null;
 }
 
 /**
@@ -460,5 +460,5 @@ function effect<State>(world: World<State>, effector: Effector<State>, call: Age
   const result = world.apply(effector.action, call);
   if (result.applied) changes.applied(call.agent);
   const outcome = result.applied ? "success" : result.reason;
-  return { outcome, text: outcome, ...(changesSinceSensing === undefined ? {} : { changesSinceSensing }) };
+  return { outcome, text: outcome, changesSinceSensing };
 }
