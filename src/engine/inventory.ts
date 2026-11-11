@@ -1,5 +1,6 @@
 import type { Experiment, Limits, ThinkingLevel } from "./experiment.ts";
 import { type LoadedScenario, type Scenario, loadScenario } from "./scenario.ts";
+import { Stimuli, type Stimulus } from "./stimuli.ts";
 import type { Tool } from "./tools.ts";
 
 /**
@@ -16,7 +17,8 @@ export interface Inventory {
 /** What the agents meet in one condition of an experiment. */
 export interface ConditionInventory {
   condition: string;
-  agents: { name: string; rhythm: string; systemPrompt: string }[];
+  /** Each agent with its rhythm, its system prompt and the stimuli it receives once, as it first wakes. */
+  agents: { name: string; rhythm: string; systemPrompt: string; firstStimuli: Stimulus[] }[];
   tools: ToolInventory[];
   /** The outcomes the engine itself gives a call, whatever its tool, with the text the agent receives for each. */
   engineOutcomes: Record<string, string>;
@@ -90,11 +92,18 @@ export function inventory<State>(experiment: Experiment, scenario: Partial<Scena
 function conditionInventory<State>(
   { models, thinkingLevel, limits }: Experiment,
   condition: string,
-  { scenario, configuration, systemPrompts, channels, materials }: LoadedScenario<State>,
+  { scenario, configuration, systemPrompts, channels, firstStimuli, materials }: LoadedScenario<State>,
 ): ConditionInventory {
+  // Each agent's first wake, as a run's stimuli give it, without the rhythm's stimulus, which every wake starts with.
+  const stimuli = new Stimuli(channels, undefined, firstStimuli);
   return {
     condition,
-    agents: [...systemPrompts].map(([name, systemPrompt]) => ({ name, rhythm: scenario.describeRhythm(configuration, name), systemPrompt })),
+    agents: [...systemPrompts].map(([name, systemPrompt]) => ({
+      name,
+      rhythm: scenario.describeRhythm(configuration, name),
+      systemPrompt,
+      firstStimuli: stimuli.wake(name).slice(1),
+    })),
     tools: scenario.tools.map((tool) => ({
       name: tool.name,
       kind: tool.kind,
@@ -148,8 +157,14 @@ export function inventoryMarkdown({ experiment, scenario, conditions }: Inventor
 }
 
 function agentsMarkdown({ agents }: ConditionInventory): string {
-  const listed = agents.map(({ name, rhythm, systemPrompt }) =>
-    [`#### Agent "${name}"\n`, `- Rhythm: ${rhythm}\n`, "System prompt:\n", fenced(systemPrompt, "text")].join("\n"),
+  const listed = agents.map(({ name, rhythm, systemPrompt, firstStimuli }) =>
+    [
+      `#### Agent "${name}"\n`,
+      `- Rhythm: ${rhythm}\n`,
+      "System prompt:\n",
+      fenced(systemPrompt, "text"),
+      ...firstStimuli.flatMap(({ channel, source, content }) => [`First stimulus on the channel "${channel}", from ${source}:\n`, fenced(content, "text")]),
+    ].join("\n"),
   );
   return ["### Agents\n", ...listed].join("\n");
 }
