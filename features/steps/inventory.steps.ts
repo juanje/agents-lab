@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Given, Then, When } from "@cucumber/cucumber";
-import { type TomlTable, stringify } from "smol-toml";
+import { type TomlTable, parse, stringify } from "smol-toml";
 import { lab } from "../../src/cli/lab.ts";
 import { type LoadedScenario, type Scenario, loadScenario } from "../../src/engine/scenario.ts";
 import { ScriptedModel } from "../../src/engine/scripted-model.ts";
@@ -212,4 +212,56 @@ Then("each section gives the model {string} and the limits", function (this: Con
     assert.equal(itemOf(part, "Parallelism limit"), String(limits.parallelism_limit), where);
     assert.equal(itemOf(part, "Model turn timeout"), `${limits.model_turn_timeout_ms} ms`, where);
   }
+});
+
+Given(
+  "the test scenario {string} describes the duration of {string} from {string} in its configuration",
+  function (this: Context, scenario: string, tool: string, path: string) {
+    const declared = this.library?.get(scenario) as Partial<Scenario<Slots>> | undefined;
+    assert.ok(declared?.baseConfiguration !== undefined && declared.describeDuration !== undefined, `the library has no test scenario "${scenario}"`);
+    const describeOthers = declared.describeDuration;
+    // The base configuration gets the key, with a value no condition here sets, so a condition can change it.
+    const base = parse(declared.baseConfiguration);
+    const keys = path.split(".");
+    const holder = keys.slice(0, -1).reduce((table, key) => table[key] as TomlTable, base);
+    holder[keys[keys.length - 1]] = 100;
+    const describeDuration = (configuration: TomlTable, name: string) => {
+      if (name !== tool) return describeOthers(configuration, name);
+      const value = keys.reduce<unknown>((table, key) => (table as TomlTable)[key], configuration);
+      return `${String(value)} ms.`;
+    };
+    this.library = new Map([...this.library!, [scenario, { ...declared, baseConfiguration: stringify(base), describeDuration }]]);
+  },
+);
+
+Given("the condition {string} also sets {string} to {int}", function (this: Context, condition: string, path: string, value: number) {
+  const conditions = this.experimentFile.conditions as TomlTable;
+  assert.ok(Object.hasOwn(conditions, condition), `the experiment file has no condition "${condition}"`);
+  const keys = path.split(".");
+  let table = conditions[condition] as TomlTable;
+  for (const key of keys.slice(0, -1)) {
+    if (!Object.hasOwn(table, key)) table[key] = {};
+    table = table[key] as TomlTable;
+  }
+  table[keys[keys.length - 1]] = value;
+});
+
+/** Whether the inventory's section for a condition describes a tool's duration with that number of milliseconds. */
+function describesDuration(context: Context, condition: string, tool: string, ms: number): boolean {
+  const part = under(under(sectionOf(context, condition), "### Tools"), `#### Tool "${tool}"`);
+  return new RegExp(`(^|[^0-9])${ms} ms`).test(itemOf(part, "Duration"));
+}
+
+Then(
+  "the section for {string} describes the duration of {string} with {int} milliseconds",
+  function (this: Context, condition: string, tool: string, ms: number) {
+    assert.ok(describesDuration(this, condition, tool, ms), `the section for "${condition}" does not describe "${tool}"'s duration with ${ms} ms`);
+    this.lastDurationRead = { tool, ms };
+  },
+);
+
+Then("the section for {string} does not", function (this: Context, condition: string) {
+  const read = this.lastDurationRead;
+  assert.ok(read !== undefined, "no duration was read before");
+  assert.ok(!describesDuration(this, condition, read.tool, read.ms), `the section for "${condition}" describes "${read.tool}"'s duration with ${read.ms} ms`);
 });

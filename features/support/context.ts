@@ -157,6 +157,8 @@ export class Context extends CucumberWorld {
   labError?: Error;
   /** What "lab inventory" printed, if it ran. */
   labOutput?: string;
+  /** The tool and the milliseconds the scenario last found its duration described with, for a step that says "does not". */
+  lastDurationRead?: { tool: string; ms: number };
 }
 
 setWorldConstructor(Context);
