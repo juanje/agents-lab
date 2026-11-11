@@ -4,9 +4,9 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { Given, Then, When } from "@cucumber/cucumber";
 import type { TomlTable, TomlValue } from "smol-toml";
-import type { Configuration, Scenario } from "../../src/engine/scenario.ts";
+import type { Scenario } from "../../src/engine/scenario.ts";
 import type { Context } from "../support/context.ts";
-import { tableAt } from "./experiment.steps.ts";
+import { tableAt, valueAt } from "./experiment.steps.ts";
 import { experimentFileOf, indexOf, logOf, runLab } from "./lab.steps.ts";
 
 Given(
@@ -139,11 +139,6 @@ Then("the inventory lists {string} by its path only", function (this: Context, p
   const line = inventoryLineOf(this, path);
   assert.ok(!line.includes("sha256:"), `the inventory lists "${path}" with a hash: ${line}`);
 });
-
-/** The value at a dotted path of a configuration, or undefined when it has none there. */
-function valueAt(configuration: Configuration, path: string): unknown {
-  return path.split(".").reduce<unknown>((table, key) => (table as Record<string, unknown> | undefined)?.[key], configuration);
-}
 
 Then("the scenario was given {string} as {string}", function (this: Context, text: string, path: string) {
   assert.equal(this.labError, undefined, `"lab run" failed: ${this.labError?.message}`);

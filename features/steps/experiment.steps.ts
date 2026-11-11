@@ -11,7 +11,7 @@ export function tableAt(path: string, value: TomlValue): TomlTable {
 }
 
 /** The value at a dotted path of a table, or undefined when the table has none there. */
-function valueAt(table: TomlTable, path: string): TomlValue | undefined {
+export function valueAt(table: TomlTable, path: string): TomlValue | undefined {
   let value: TomlValue | undefined = table;
   for (const key of path.split(".")) {
     if (typeof value !== "object" || value === null || Array.isArray(value) || value instanceof Date) return undefined;
