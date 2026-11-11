@@ -1,3 +1,5 @@
+import type { Action } from "./world.ts";
+
 /** A passage between two places, which can be crossed both ways, and its length. */
 export interface Passage {
   between: readonly [string, string];
@@ -58,3 +60,15 @@ export function entitiesIn(space: Places, place: string): string[] {
     .filter(([, at]) => "place" in at && at.place === place)
     .map(([entity]) => entity);
 }
+
+/** An entity in a place enters the passage towards a place one passage away. */
+export const leave: Action<Places, { entity: string; towards: string }> = {
+  precondition: () => ({ holds: true }),
+  effect: (space) => space,
+};
+
+/** An entity in a passage reaches the place it was heading for. */
+export const arrive: Action<Places, { entity: string }> = {
+  precondition: () => ({ holds: true }),
+  effect: (space) => space,
+};

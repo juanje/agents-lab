@@ -139,6 +139,8 @@ export class Context extends CucumberWorld {
   places!: Places;
   /** A world whose state is the space of places, for what goes through its arbiter. */
   placesWorld?: World<Places>;
+  /** The error a refused action on the space, or a refused layout, gave. */
+  spaceError?: Error;
   /** The neighbourhood scenario as the scenario configures it. */
   neighbourhood!: Partial<Scenario<Neighbourhood>>;
   /** Each neighbourhood the engine loaded, in order. */

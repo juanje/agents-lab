@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
-import { BeforeStep, Given, Then } from "@cucumber/cucumber";
-import { type Places, entitiesIn, exits, layout, put, where } from "../../src/engine/places.ts";
+import { BeforeStep, Given, Then, When } from "@cucumber/cucumber";
+import { type Places, arrive, entitiesIn, exits, layout, leave, put, where } from "../../src/engine/places.ts";
+import { type Action, World } from "../../src/engine/world.ts";
 import type { Context } from "../support/context.ts";
 
 Given(
@@ -73,4 +74,50 @@ Then("the entities in {string} are {string}", function (this: Context, place: st
 
 Then("{string} holds no entities", function (this: Context, place: string) {
   assertHolds(this, place, []);
+});
+
+/**
+ * Applies an action to the space through the arbiter, which holds the space from the first action on. A refused action
+ * is kept for the steps that check the refusal.
+ */
+function act<Args>(context: Context, action: Action<Places, Args>, args: Args): void {
+  context.placesWorld ??= new World(context.places);
+  context.versionBefore = context.placesWorld.version;
+  try {
+    context.result = context.placesWorld.apply(action, args);
+  } catch (error) {
+    context.spaceError = error as Error;
+  }
+}
+
+When("entity {string} leaves {string} towards {string}", function (this: Context, entity: string, from: string, towards: string) {
+  // The step names where the entity leaves from; it must be there when the space holds it, or the step would say
+  // something the space does not.
+  const at = where(current(this), entity);
+  if (at !== undefined) assert.deepEqual(at, { place: from }, `entity "${entity}" is not in "${from}" to leave it`);
+  act(this, leave, { entity, towards });
+});
+
+When("entity {string} arrives", function (this: Context, entity: string) {
+  act(this, arrive, { entity });
+});
+
+/** Whether a place or passage is the passage between two places, whichever way it is named. */
+function isPassageBetween(at: ReturnType<typeof where>, one: string, other: string): boolean {
+  if (at === undefined || !("passage" in at)) return false;
+  return [...at.passage].sort().join("\n") === [one, other].sort().join("\n");
+}
+
+Then(
+  "entity {string} is in the passage between {string} and {string}",
+  function (this: Context, entity: string, one: string, other: string) {
+    const at = where(current(this), entity);
+    assert.ok(isPassageBetween(at, one, other), `entity "${entity}" is ${JSON.stringify(at)}`);
+  },
+);
+
+Then("neither {string} nor {string} holds entity {string}", function (this: Context, one: string, other: string, entity: string) {
+  for (const place of [one, other]) {
+    assert.ok(!entitiesIn(current(this), place).includes(entity), `"${place}" holds entity "${entity}"`);
+  }
 });
