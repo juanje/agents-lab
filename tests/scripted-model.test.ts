@@ -1,6 +1,7 @@
 import { type Context, type ModelsApiStreamOptions, createModels, getCurrentTools } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "vitest";
-import { ScriptedModel } from "../src/engine/scripted-model.ts";
+import { summaryInstructions } from "../src/engine/compaction.ts";
+import { SCRIPT_EXHAUSTED_MESSAGE, ScriptedModel } from "../src/engine/scripted-model.ts";
 
 const look = { name: "look", description: "Look.", parameters: { type: "object", properties: {} } };
 
@@ -113,5 +114,38 @@ describe("ScriptedModel", () => {
 
     expect(performance.now() - started).toBeLessThan(500);
     expect(answer).toMatchObject({ stopReason: "aborted", content: [] });
+  });
+
+  it("answers as a model with the context window it is given", () => {
+    expect(new ScriptedModel([], "small", { contextWindow: 4000 }).model.contextWindow).toBe(4000);
+  });
+
+  it("answers Pi's request to write a summary with its summary, keeping the request apart, and takes no answer of its script for it", async () => {
+    const scripted = new ScriptedModel([{ text: "first", delayMs: 0 }], "small", { summary: "Summary: I looked." });
+    const request = { systemPrompt: summaryInstructions.systemPrompt, messages: [{ role: "user" as const, content: "Summarize.", timestamp: 0 }] };
+
+    const summary = await complete(scripted, request);
+    const turn = await complete(scripted, { messages: [] });
+
+    expect(summary.content).toEqual([{ type: "text", text: "Summary: I looked." }]);
+    expect(turn.content).toEqual([{ type: "text", text: "first" }]);
+    expect(scripted.summaryRequests).toHaveLength(1);
+    expect(scripted.received).toHaveLength(1);
+  });
+
+  it("gives each Pi session its script from the start when made to, and answers a session past its script as the script running out", async () => {
+    const scripted = new ScriptedModel([{ text: "first", delayMs: 0 }, { text: "second", delayMs: 0 }], "shared", { perSession: true });
+    const turn = (sessionId: string) => complete(scripted, { messages: [] }, { sessionId });
+
+    const answers = [await turn("a"), await turn("b"), await turn("a"), await turn("b"), await turn("a")];
+
+    expect(answers.slice(0, 4).map((answer) => answer.content)).toEqual([
+      [{ type: "text", text: "first" }],
+      [{ type: "text", text: "first" }],
+      [{ type: "text", text: "second" }],
+      [{ type: "text", text: "second" }],
+    ]);
+    expect(answers[4]).toMatchObject({ stopReason: "error", errorMessage: SCRIPT_EXHAUSTED_MESSAGE, content: [] });
+    expect(scripted.sessions).toEqual(["a", "b", "a", "b"]);
   });
 });
