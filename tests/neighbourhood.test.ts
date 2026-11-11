@@ -223,6 +223,14 @@ describe("the neighbourhood scenario", () => {
     expect(move.readTarget(sensing, { agent: "r1", arguments: { dx: 1, dy: -1 } }, state)).toBe("outside");
   });
 
+  it("gives each resident with an occupied neighbouring cell the share of its neighbours of its own kind, by its name", () => {
+    const state = residentsAt(5, 5, { lookRadius: 1, msPerCell: 100 });
+    // "r4" (amber), alone in a corner, has no neighbour and so no share.
+    const withLoner = { ...state, grid: place(state.grid, "r4", { x: 4, y: 4 }), kinds: { ...state.kinds, r4: "amber" as const } };
+
+    expect(neighbourhoodScenario.metrics.shares(withLoner)).toEqual({ r1: 0.5, r2: 0, r3: 0.5 });
+  });
+
   it("draws the cells from the random sequence it is given", () => {
     const cellsOf = (seed: number) => neighbourhoodScenario.initialState(configuration(6, 6, 10), new Random(seed)).grid;
     const where = (seed: number) =>
