@@ -411,15 +411,16 @@ Then("the run's log has the porter's actions, each with when it started and ende
 });
 
 /** The worker's calls of a tool, as the run gave them. */
-function workerCalls(context: Context, tool: string) {
+function workerCalls(context: Context, tool: string | undefined) {
   assert.ok(context.toolCalls !== undefined, "the worker did not run");
-  return context.toolCalls.filter((call) => call.agent === WORKER && call.tool === tool);
+  return context.toolCalls.filter((call) => call.agent === WORKER && (tool === undefined || call.tool === tool));
 }
 
 Then("the {string} call's result is {string}", function (this: Context, tool: string, result: string) {
   const calls = workerCalls(this, tool);
   assert.equal(calls.length, 1, `the worker made ${calls.length} "${tool}" calls`);
-  assert.deepEqual({ outcome: calls[0].outcome, result: calls[0].result }, { outcome: "success", result });
+  const timeline = workerCalls(this, undefined).map((call) => `${call.tool} ${Math.round(call.startedAtMs - (this.runStartedAtMs ?? 0))}–${Math.round(call.endedAtMs - (this.runStartedAtMs ?? 0))} ms`);
+  assert.deepEqual({ outcome: calls[0].outcome, result: calls[0].result }, { outcome: "success", result }, `the worker's calls, into the run: ${timeline.join(", ")}`);
 });
 
 Then("the {string} call succeeded", function (this: Context, tool: string) {
