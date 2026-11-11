@@ -79,6 +79,14 @@ describe("the neighbourhood scenario", () => {
     expect(neighbourhoodScenario.channels(base)).toEqual([{ name: "rhythm", source, stimulus: text }]);
   });
 
+  it("keeps the configured look radius and time per cell of distance in its state, for its tools to read", () => {
+    const base = parse(neighbourhoodScenario.baseConfiguration);
+    const state = neighbourhoodScenario.initialState({ ...configuration(3, 2, 2), look_radius: 2, ms_per_cell: 40 }, new Random(1));
+
+    expect([typeof base.look_radius, typeof base.ms_per_cell]).toEqual(["number", "number"]);
+    expect({ lookRadius: state.lookRadius, msPerCell: state.msPerCell }).toEqual({ lookRadius: 2, msPerCell: 40 });
+  });
+
   it("draws the cells from the random sequence it is given", () => {
     const cellsOf = (seed: number) => neighbourhoodScenario.initialState(configuration(6, 6, 10), new Random(seed)).grid;
     const where = (seed: number) =>
