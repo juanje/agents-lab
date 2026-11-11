@@ -23,7 +23,7 @@ Feature: Residents look and move
     When the run ends
     Then "r1"'s "move" call failed with "cell_full"
     And resident "r1" is still at 0, 0
-    And the call recorded its target as sensed: the other kind
+    And the call recorded its target as sensed: "held"
 
   Scenario: Moving outside the grid is an invalid target
     Given resident "r1" runs on a scripted model that calls "move" with dx -1 and dy 0, then ends without a tool call
