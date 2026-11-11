@@ -1,0 +1,12 @@
+// The `lab` command as a process: `npx tsx src/cli/main.ts run <experiment.toml>`, from the directory its runs go under.
+import { labModel } from "../engine/adapter.ts";
+import { scenarioLibrary } from "../scenarios/library.ts";
+import { lab } from "./lab.ts";
+
+try {
+  await lab(process.argv.slice(2), { directory: process.cwd(), scenarios: scenarioLibrary, model: labModel });
+} catch (error) {
+  // The message says what failed and why; a stack would only bury it.
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exitCode = 1;
+}
