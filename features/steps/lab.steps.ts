@@ -60,20 +60,37 @@ Given("the scripted model {string}, which cannot reason", function (this: Contex
   idleModels(this, [name]);
 });
 
+/** What an experiment file run by "lab" here gives. */
+export interface ExperimentFileOf {
+  id: string;
+  scenario: string;
+  models: string[];
+  replicas: number;
+  seed: number;
+  activationsPerAgent: number;
+  conditions: TomlTable;
+  /** "off" unless given: the scripted models cannot reason. */
+  thinkingLevel?: string;
+}
+
+/** An experiment file with limits no run here reaches but its activations. */
+export function experimentFileOf({ id, scenario, models, replicas, seed, activationsPerAgent, conditions, thinkingLevel = "off" }: ExperimentFileOf): TomlTable {
+  return {
+    id,
+    scenario,
+    models,
+    thinking_level: thinkingLevel,
+    replicas,
+    seed,
+    limits: { time_limit_ms: 60_000, activations_per_agent: activationsPerAgent, parallelism_limit: 10, model_turn_timeout_ms: 10_000 },
+    conditions,
+  };
+}
+
 Given(
   "an experiment file {string} for the scenario {string}, with the model {string}, {int} replica, {int} activation per agent, the condition {string}, with no change, and the thinking level {string}",
   function (this: Context, id: string, scenario: string, model: string, replicas: number, activationsPerAgent: number, condition: string, thinkingLevel: string) {
-    this.experimentFile = {
-      id,
-      scenario,
-      models: [model],
-      thinking_level: thinkingLevel,
-      replicas,
-      seed: 1,
-      // Limits no run here reaches but its activations.
-      limits: { time_limit_ms: 60_000, activations_per_agent: activationsPerAgent, parallelism_limit: 10, model_turn_timeout_ms: 10_000 },
-      conditions: { [condition]: {} },
-    };
+    this.experimentFile = experimentFileOf({ id, scenario, models: [model], replicas, seed: 1, activationsPerAgent, conditions: { [condition]: {} }, thinkingLevel });
   },
 );
 
@@ -94,18 +111,7 @@ Given("the experiment file sets the thinking level to {string}", function (this:
 Given(
   "an experiment file {string} for the scenario {string}, with the model {string}, {int} replica, the base seed {int}, {int} activation per agent, and the condition {string}, which sets {string} to {int}",
   function (this: Context, id: string, scenario: string, model: string, replicas: number, seed: number, activationsPerAgent: number, condition: string, path: string, value: number) {
-    this.experimentFile = {
-      id,
-      scenario,
-      models: [model],
-      // The scripted model cannot reason.
-      thinking_level: "off",
-      replicas,
-      seed,
-      // Limits no run here reaches but its activations.
-      limits: { time_limit_ms: 60_000, activations_per_agent: activationsPerAgent, parallelism_limit: 10, model_turn_timeout_ms: 10_000 },
-      conditions: { [condition]: tableAt(path, value) },
-    };
+    this.experimentFile = experimentFileOf({ id, scenario, models: [model], replicas, seed, activationsPerAgent, conditions: { [condition]: tableAt(path, value) } });
   },
 );
 
@@ -125,18 +131,15 @@ Given(
     path: string,
     value: number,
   ) {
-    this.experimentFile = {
+    this.experimentFile = experimentFileOf({
       id,
       scenario,
       models: [first, second],
-      // The scripted models cannot reason.
-      thinking_level: "off",
       replicas,
       seed,
-      // Limits no run here reaches but its activations.
-      limits: { time_limit_ms: 60_000, activations_per_agent: activationsPerAgent, parallelism_limit: 10, model_turn_timeout_ms: 10_000 },
+      activationsPerAgent,
       conditions: { [unchanged]: {}, [changed]: tableAt(path, value) },
-    };
+    });
   },
 );
 

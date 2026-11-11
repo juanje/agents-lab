@@ -4,23 +4,12 @@ import { join } from "node:path";
 import { Given, Then } from "@cucumber/cucumber";
 import { Progress } from "../../src/cli/progress.ts";
 import type { Context } from "../support/context.ts";
-import { idleModels, indexOf, logOf, runLogs } from "./lab.steps.ts";
+import { experimentFileOf, idleModels, indexOf, logOf, runLogs } from "./lab.steps.ts";
 
 Given(
   "an experiment file {string} for the scenario {string}, with the model {string}, {int} replicas, the base seed {int}, {int} activation per agent, and the condition {string}, with no change",
   function (this: Context, id: string, scenario: string, model: string, replicas: number, seed: number, activationsPerAgent: number, condition: string) {
-    this.experimentFile = {
-      id,
-      scenario,
-      models: [model],
-      // The scripted model cannot reason.
-      thinking_level: "off",
-      replicas,
-      seed,
-      // Limits no run here reaches but its activations.
-      limits: { time_limit_ms: 60_000, activations_per_agent: activationsPerAgent, parallelism_limit: 10, model_turn_timeout_ms: 10_000 },
-      conditions: { [condition]: {} },
-    };
+    this.experimentFile = experimentFileOf({ id, scenario, models: [model], replicas, seed, activationsPerAgent, conditions: { [condition]: {} } });
   },
 );
 

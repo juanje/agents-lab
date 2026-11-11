@@ -3,7 +3,7 @@ import { Given, Then, When } from "@cucumber/cucumber";
 import { waitAtLeast } from "../../src/engine/clock.ts";
 import type { ScriptedModel } from "../../src/engine/scripted-model.ts";
 import type { Context } from "../support/context.ts";
-import { idleModels, indexOf, logOf, runLogs } from "./lab.steps.ts";
+import { experimentFileOf, idleModels, indexOf, logOf, runLogs } from "./lab.steps.ts";
 import { watchSessionsClose } from "./record.steps.ts";
 
 Given(
@@ -16,18 +16,7 @@ Given(
 Given(
   "an experiment file {string} for the scenario {string}, with the model {string}, {int} replicas, {int} activations per agent, and the condition {string}, with no change",
   function (this: Context, id: string, scenario: string, model: string, replicas: number, activationsPerAgent: number, condition: string) {
-    this.experimentFile = {
-      id,
-      scenario,
-      models: [model],
-      // The scripted model cannot reason.
-      thinking_level: "off",
-      replicas,
-      seed: 7,
-      // Limits no run here reaches but its activations.
-      limits: { time_limit_ms: 60_000, activations_per_agent: activationsPerAgent, parallelism_limit: 10, model_turn_timeout_ms: 10_000 },
-      conditions: { [condition]: {} },
-    };
+    this.experimentFile = experimentFileOf({ id, scenario, models: [model], replicas, seed: 7, activationsPerAgent, conditions: { [condition]: {} } });
   },
 );
 

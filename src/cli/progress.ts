@@ -44,7 +44,7 @@ export class Progress implements ExperimentObserver {
   #printProgress(): void {
     const tally = this.#current();
     const done = `${tally.activations} of ${tally.run.activations} activations`;
-    this.#print(`${runName(tally.run)} running: ${seconds(this.#now() - tally.startedAtMs)}, ${done}, ${counted(tally.turns, "model turn")}, ${cost(tally.cost)}\n`);
+    this.#print(`${runName(tally.run)} running: ${duration(this.#now() - tally.startedAtMs)}, ${done}, ${counted(tally.turns, "model turn")}, ${cost(tally.cost)}\n`);
   }
 
   recorded(line: LogLine): void {
@@ -64,12 +64,12 @@ export class Progress implements ExperimentObserver {
     else this.#stopped += 1;
     this.#cost += tally.cost;
     const counts = `${counted(tally.activations, "activation")}, ${counted(tally.turns, "model turn")}, ${cost(tally.cost)}`;
-    this.#print(`${runName(tally.run)} ${status} in ${seconds(this.#now() - tally.startedAtMs)}: ${counts}\n`);
+    this.#print(`${runName(tally.run)} ${status} in ${duration(this.#now() - tally.startedAtMs)}: ${counts}\n`);
   }
 
   /** Prints how many runs completed and how many stopped, how long the experiment took and what it cost. */
   experimentEnded(): void {
-    this.#print(`${counted(this.#completed, "run")} completed and ${this.#stopped} stopped in ${seconds(this.#now() - this.#startedAtMs)}, ${cost(this.#cost)}\n`);
+    this.#print(`${counted(this.#completed, "run")} completed and ${this.#stopped} stopped in ${duration(this.#now() - this.#startedAtMs)}, ${cost(this.#cost)}\n`);
   }
 
   #current(): Tally {
@@ -88,7 +88,7 @@ const counted = (count: number, noun: string) => `${count} ${noun}${count === 1 
  * Milliseconds as a duration: seconds to a tenth under a minute; from a minute on, whole seconds after the minutes,
  * and the hours before them from an hour on.
  */
-function seconds(ms: number): string {
+function duration(ms: number): string {
   const tenths = Math.round(ms / 100);
   if (tenths < 600) return `${(tenths / 10).toFixed(1)} s`;
   const whole = Math.round(ms / 1000);
