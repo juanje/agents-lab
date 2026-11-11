@@ -116,6 +116,8 @@ export interface ToolCall {
   endedAtMs: number;
   /** For a sensor call that succeeded, what it returned: the text the agent received. */
   result?: string;
+  /** For an effector call the tool ran, the text the agent received (FR-RECORD-01). */
+  text?: string;
   /** For an effector call the tool ran, what the agent last sensed of its target before the call (FR-TOOL-04). */
   targetAsSensed?: TargetAsSensed;
   /**
@@ -407,11 +409,14 @@ function definition<State>(
       const { outcome, text, takenFrom, ...perceived } = called;
       const endedAtMs = performance.now();
       const sensed = tool.kind === "sensor" && outcome === "success";
+      // An effector call the tool ran is one that read its target; its record keeps the text its agent received.
+      const effected = tool.kind === "effector" && perceived.targetAsSensed !== undefined;
       executed.set(id, {
         outcome,
         startedAtMs,
         endedAtMs,
         ...(sensed ? { result: text } : {}),
+        ...(effected ? { text } : {}),
         ...perceived,
       });
       if (sensed) {
@@ -458,7 +463,7 @@ function rejection<State>(tool: Tool<State>, call: { tool: string; arguments: un
 const CUT_OFF = "cut_off" as const;
 
 /** A call the tool ran: its outcome, when it started and ended, a sensor's result and an effector's target as sensed. */
-type Executed = Pick<ToolCall, "outcome" | "startedAtMs" | "endedAtMs" | "result" | "targetAsSensed" | "changesSinceSensing" | "changesSinceSensingBy">;
+type Executed = Pick<ToolCall, "outcome" | "startedAtMs" | "endedAtMs" | "result" | "text" | "targetAsSensed" | "changesSinceSensing" | "changesSinceSensingBy">;
 
 /**
  * What a call gives: its outcome, the text the agent receives, and for an effector's call, its target as sensed and the

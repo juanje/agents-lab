@@ -8,7 +8,7 @@ import { rhythmChannel } from "../../tests/fixtures/slots.ts";
 import type { Context } from "../support/context.ts";
 import { landsWhileUnderWay } from "./acting.steps.ts";
 import { turnsOf } from "./adapter.steps.ts";
-import { callOf, callWithThenEnd, modelOf, returned, runTheScenario, script } from "./tool.steps.ts";
+import { callOf, callWithThenEnd, declareTexts, modelOf, returned, runTheScenario, script } from "./tool.steps.ts";
 
 /** The log files in the scenario's log directory, by name, in no particular order. */
 function logFiles(context: Context): string[] {
@@ -288,6 +288,19 @@ Given(
 Then("the log's tool call line for agent {string}'s {string} call gives the outcome {string}", function (this: Context, agent: string, tool: string, outcome: string) {
   assert.equal(lineOf(this, "tool_call", agent, { tool }).outcome, outcome);
 });
+
+Given("the effector {string} declares the text {string} for {string}", function (this: Context, name: string, text: string, outcome: string) {
+  declareTexts(this, name, { [outcome]: text });
+});
+
+Then(
+  "the log's tool call line for agent {string}'s {string} call gives the outcome {string} and the text {string}",
+  function (this: Context, agent: string, tool: string, outcome: string, text: string) {
+    const call = lineOf(this, "tool_call", agent, { tool });
+    assert.equal(call.outcome, outcome);
+    assert.equal(call.text, text, `the line does not give the text the agent received: ${JSON.stringify(call)}`);
+  },
+);
 
 Given(
   "agent {string} runs on a scripted model whose first turn calls {string} and then {string} with slot {int}",

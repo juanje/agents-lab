@@ -294,12 +294,16 @@ Then(
   },
 );
 
+/** Makes the test world's effector of a name declare these texts for its outcomes, keeping what the scenario set before. */
+export function declareTexts(context: Context, name: string, texts: Readonly<Record<string, string>>): void {
+  fixtureTool("effector", name);
+  context.tools = context.tools.map((tool) => (tool.name === name && tool.kind === "effector" ? { ...tool, texts } : tool));
+}
+
 Given(
   "the effector {string} declares the text {string} for {string} and {string} for {string}",
   function (this: Context, name: string, firstText: string, firstOutcome: string, secondText: string, secondOutcome: string) {
-    const declared = fixtureTool("effector", name);
-    const texts = { [firstOutcome]: firstText, [secondOutcome]: secondText };
-    this.tools = this.tools.map((tool) => (tool.name === name ? { ...declared, texts } : tool));
+    declareTexts(this, name, { [firstOutcome]: firstText, [secondOutcome]: secondText });
   },
 );
 
