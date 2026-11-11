@@ -188,6 +188,19 @@ class = "control"
       const parcel = situations('[[situations.parcel.things]]\nid = "label"\nname = "a label"\nin = "box"');
       expect(refusal({ situations: parcel })).toThrow('the thing "label" is inside the thing "box", which nothing declares');
     });
+
+    it("a situation's thing that gives its own place, chosen or not", () => {
+      const parcel = situations('[[situations.parcel.things]]\nid = "label"\nname = "a label"\nplace = "hall"');
+      expect(refusal({ situations: parcel })).toThrow(
+        'the thing "label" of the situation "parcel" gives its own place "hall"; a situation\'s thing is in the situation\'s place',
+      );
+    });
+
+    it("reserved keys for a situation that is not declared", () => {
+      expect(refusal({ situations: situations(""), situation_keys: '[parcel]\nclass = "a"\n[flood]\nclass = "b"' })).toThrow(
+        'the configuration\'s "situation_keys" gives keys for the situation "flood", which is not declared',
+      );
+    });
   });
 
   it("gives the inventory the chosen situations by id", () => {

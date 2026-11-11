@@ -304,3 +304,26 @@ Then("loading fails with an error that names the id {string}", function (this: C
 Then("loading fails with an error that names the situation {string}", function (this: Context, id: string) {
   assertRefusedNaming(this, [`situation "${id}"`]);
 });
+
+Given(
+  "the thing {string} of the situation {string} also gives the place {string}",
+  function (this: Context, id: string, situation: string, place: string) {
+    editText(this, "situations", (text) => {
+      const declared = ((text.situations ?? {}) as Record<string, TomlTable>)[situation];
+      assert.ok(declared !== undefined, `no situation "${situation}" is declared`);
+      const thing = ((declared.things ?? []) as TomlTable[]).find((held) => held.id === id);
+      assert.ok(thing !== undefined, `the situation "${situation}" declares no thing "${id}"`);
+      thing.place = place;
+    });
+  },
+);
+
+Given('"situation_keys" also gives keys for the situation {string}', function (this: Context, situation: string) {
+  editText(this, "situation_keys", (text) => {
+    text[situation] = { class: "honesty", covered: false, kind: "conflict" };
+  });
+});
+
+Then("loading fails with an error that names the thing {string} and its place", function (this: Context, id: string) {
+  assertRefusedNaming(this, [`thing "${id}"`, "place"]);
+});
