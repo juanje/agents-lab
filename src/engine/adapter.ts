@@ -509,9 +509,8 @@ function undeclared<State>(tool: Tool<State>, args: Record<string, unknown>): Ca
 /**
  * Runs a call the tool takes. It lasts the duration the tool gives for the call and the state as it starts (FR-TOOL-03,
  * FR-TOOL-04); an effector under way applies its start once that duration is taken (FR-SPACE-03); then a sensor reads
- * the world, or an effector's effect goes to the arbiter. A call the run's time limit
- * cuts short reads and applies nothing: the run has ended, and an effect would change a world already measured
- * (FR-CLOCK-02). For an effector's call, what the agent last sensed of its target is read as the call starts, beside
+ * the world, or an effector's effect goes to the arbiter. A call the run's time limit cuts short reads nothing and
+ * applies no effect: the run has ended, and an effect would change a world already measured (FR-CLOCK-02). For an effector's call, what the agent last sensed of its target is read as the call starts, beside
  * its outcome, and never reaches the arbiter (NFR-11).
  */
 async function perform<State>(
