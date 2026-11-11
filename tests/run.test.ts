@@ -444,6 +444,19 @@ describe("run", () => {
     expect(model.received[1]?.slice(-2)).toMatchObject([text("rhythm: You wake up."), text("town bell: The bell rings.")]);
   });
 
+  it("gives each agent its first stimuli as it first wakes, after the rhythm's, and not at its next wake", async () => {
+    const model = new ScriptedModel([
+      { text: "Nothing to do.", delayMs: 0 },
+      { text: "Nothing to do.", delayMs: 0 },
+    ]);
+
+    await run(slots({ channels: () => [rhythmChannel, bell], firstStimuli: () => ["bell"] }), [{ name: "a", model, activations: 2 }], seed, settings);
+
+    const text = (value: string) => ({ role: "user", content: [{ type: "text", text: value }] });
+    expect(model.received[0]?.slice(-2)).toMatchObject([text("rhythm: You wake up."), text("town bell: The bell rings.")]);
+    expect(model.received[1]?.slice(-2)).toMatchObject([{ role: "assistant" }, text("rhythm: You wake up.")]);
+  });
+
   it("delivers a stimulus that arrives during a model turn at the agent's next model turn", async () => {
     let stimuli: Stimuli | undefined;
     const model = new ScriptedModel([
