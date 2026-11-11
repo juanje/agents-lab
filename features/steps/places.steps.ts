@@ -256,3 +256,24 @@ Then(
 Then("the passage between {string} and {string} holds no entities", function (this: Context, one: string, other: string) {
   assert.deepEqual(entitiesInPassage(current(this), one, other), []);
 });
+
+When(
+  "a space is built with the places {string} and {string}, a passage of length {int} between {string} and {string}, and a passage of length {int} between {string} and {string}",
+  function (this: Context, first: string, second: string, length1: number, from1: string, to1: string, length2: number, from2: string, to2: string) {
+    try {
+      this.places = layout(
+        [first, second],
+        [
+          { between: [from1, to1], length: length1 },
+          { between: [from2, to2], length: length2 },
+        ],
+      );
+    } catch (error) {
+      this.spaceError = error as Error;
+    }
+  },
+);
+
+Then("it is refused with an error that names the places {string} and {string}", function (this: Context, one: string, other: string) {
+  assertRefused(this, `places "${one}" and "${other}"`);
+});
