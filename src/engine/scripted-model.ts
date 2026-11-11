@@ -1,4 +1,4 @@
-import { type FauxResponseFactory, type JsonObject, type Message, type Model, type Provider, fauxAssistantMessage, fauxProvider, fauxText, fauxThinking, fauxToolCall } from "@earendil-works/pi-ai";
+import { type AssistantMessage, type FauxResponseFactory, type JsonObject, type Message, type Model, type Provider, fauxAssistantMessage, fauxProvider, fauxText, fauxThinking, fauxToolCall } from "@earendil-works/pi-ai";
 import { waitAtLeast } from "./clock.ts";
 import { isSummaryRequest } from "./compaction.ts";
 
@@ -23,14 +23,31 @@ export interface ScriptedAnswer {
   delayMs: number;
 }
 
+/**
+ * A scripted answer as the model gives it, once its delay has passed. An aborted call stops waiting, so a timed-out
+ * call frees its model slot at once; Pi's faux provider then answers it as aborted, whatever the script says.
+ */
+async function answered({ reasoning, text, toolCalls = [], error, delayMs }: ScriptedAnswer, signal: AbortSignal | undefined): Promise<AssistantMessage> {
+  await waitAtLeast(delayMs, signal);
+  if (error !== undefined) return fauxAssistantMessage([], { stopReason: "error", errorMessage: error });
+  return fauxAssistantMessage([
+    ...(reasoning === undefined ? [] : [fauxThinking(reasoning)]),
+    ...(text === undefined ? [] : [fauxText(text)]),
+    ...toolCalls.map((call) => fauxToolCall(call.name, call.arguments)),
+  ]);
+}
+
 /** What a scripted model is besides its script. */
 export interface ScriptedModelOptions {
   /** Whether it can reason, so Pi can give its sessions a thinking level other than "off". */
   reasoning?: boolean;
   /** Its context window, in tokens; the faux provider's own otherwise. */
   contextWindow?: number;
-  /** The summary it writes whenever Pi asks it to write one for a compaction (FR-ADAPTER-03); none otherwise. */
-  summary?: string;
+  /**
+   * How it answers whenever Pi asks it to write a compaction's summary (FR-ADAPTER-03): with the summary, after its
+   * delay, or with a provider error. Without it, a summary call takes the script's next answer.
+   */
+  summary?: ScriptedAnswer;
   /** Whether each Pi session takes the script from its start, rather than all sessions sharing one. */
   perSession?: boolean;
 }
@@ -71,27 +88,18 @@ export class ScriptedModel {
       faux.appendResponses([answer]);
       if (summary !== undefined && isSummaryRequest(context.messages)) {
         this.summaryRequests.push([...context.messages]);
-        return fauxAssistantMessage([fauxText(summary)]);
+        return answered(summary, options?.signal);
       }
       const key = perSession ? options?.sessionId : undefined;
       const at = next.get(key) ?? 0;
       const scripted = script[at];
       if (scripted === undefined) return fauxAssistantMessage([], { stopReason: "error", errorMessage: SCRIPT_EXHAUSTED_MESSAGE });
       next.set(key, at + 1);
-      const { reasoning, text, toolCalls = [], error, delayMs } = scripted;
       this.sessions.push(options?.sessionId);
       this.reasoningLevels.push(options?.reasoning);
       // Copied: the caller may go on adding to the same transcript after this turn.
       this.received.push([...context.messages]);
-      // An aborted call stops waiting, so a timed-out turn frees its model slot at once; Pi's faux provider then
-      // answers it as aborted, whatever the script says.
-      await waitAtLeast(delayMs, options?.signal);
-      if (error !== undefined) return fauxAssistantMessage([], { stopReason: "error", errorMessage: error });
-      return fauxAssistantMessage([
-        ...(reasoning === undefined ? [] : [fauxThinking(reasoning)]),
-        ...(text === undefined ? [] : [fauxText(text)]),
-        ...toolCalls.map((call) => fauxToolCall(call.name, call.arguments)),
-      ]);
+      return answered(scripted, options?.signal);
     };
     faux.setResponses(Array.from({ length: READY }, () => answer));
     this.provider = faux.provider;

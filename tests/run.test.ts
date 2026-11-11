@@ -1690,7 +1690,7 @@ describe("run, with compaction", () => {
     new ScriptedModel(
       [...Array.from({ length: 8 }, () => ({ text: reflection, toolCalls: [{ name: "look", arguments: {} }], delayMs: 0 })), { text: "Done.", delayMs: 0 }],
       "small",
-      { contextWindow: 4000, summary: "Summary: I looked." },
+      { contextWindow: 4000, summary: { text: "Summary: I looked.", delayMs: 0 } },
     );
 
   const compactionOn = { enabled: true, triggerAt: 0.5, keepRecentTokens: 500 } as const;
