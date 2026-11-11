@@ -11,6 +11,7 @@ function experimentOf(conditions: readonly string[]) {
       'id = "e-test"',
       'scenario = "slots"',
       'models = ["scripted/one"]',
+      'thinking_level = "off"',
       "replicas = 1",
       "seed = 7",
       "[limits]",

@@ -35,6 +35,7 @@ describe("the lab command's process", () => {
       'id = "e-test"',
       'scenario = "slots"',
       'models = ["openai/any"]',
+      'thinking_level = "off"',
       "replicas = 1",
       "seed = 7",
       "[limits]",

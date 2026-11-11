@@ -17,6 +17,8 @@ export interface Experiment {
   scenario: string;
   /** The ids of the models its agents work with. */
   models: readonly string[];
+  /** The thinking level every session of every run uses (FR-EXPERIMENT-05). */
+  thinkingLevel: ThinkingLevel;
   replicas: number;
   /** The base seed, from which each replica's seed comes. */
   seed: number;
@@ -35,6 +37,7 @@ export function readExperiment(toml: string): Experiment {
     id: file.id,
     scenario: file.scenario,
     models: file.models,
+    thinkingLevel: file.thinking_level,
     replicas: file.replicas,
     seed: file.seed,
     limits: {
@@ -78,6 +81,17 @@ const modelIds: Kind<string[]> = {
     Array.isArray(value) && value.length > 0 && value.every((model) => typeof model === "string"),
 };
 
+/** The thinking levels Pi knows (pi-agent-core 1.5.0), in its order, from none to the most. */
+const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
+
+/** A thinking level Pi knows. */
+export type ThinkingLevel = (typeof THINKING_LEVELS)[number];
+
+const thinkingLevel: Kind<ThinkingLevel> = {
+  expected: `one of ${THINKING_LEVELS.slice(0, -1).join(", ")} or ${THINKING_LEVELS.at(-1)}`,
+  holds: (value): value is ThinkingLevel => (THINKING_LEVELS as readonly TomlValue[]).includes(value),
+};
+
 function wholeNumber(expected: string, min: number, max = Number.MAX_SAFE_INTEGER): Kind<number> {
   return {
     expected,
@@ -99,6 +113,7 @@ const fileSchema = {
   id: text,
   scenario: text,
   models: modelIds,
+  thinking_level: thinkingLevel,
   replicas: atLeastOne,
   seed,
   limits: table,

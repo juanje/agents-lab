@@ -12,6 +12,7 @@ function experimentFile(lines: { scenario?: string; models?: string } = {}): str
     'id = "e-test"',
     lines.scenario ?? 'scenario = "slots"',
     lines.models ?? 'models = ["scripted/one", "scripted/two"]',
+    'thinking_level = "off"',
     "replicas = 2",
     "seed = 7",
     "[limits]",

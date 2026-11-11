@@ -16,6 +16,7 @@ const experiment: Experiment = {
   id: "e-test",
   scenario: "slots",
   models: ["scripted/one", "scripted/two"],
+  thinkingLevel: "off",
   replicas: 2,
   seed: 7,
   limits: { timeLimitMs: 60_000, activationsPerAgent: 1, parallelismLimit: 10, modelTurnTimeoutMs: 10_000 },
