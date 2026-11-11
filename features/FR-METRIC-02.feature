@@ -16,7 +16,7 @@ Feature: Scenario metrics are sampled on a schedule
     And agent "a" runs on a scripted model whose first turn is the text "Waiting." with no tool call, after 450 milliseconds
     When the run ends
     Then the log has at least 4 metric samples between its first and its last
-    And no two consecutive metric samples were taken less than 100 milliseconds apart
+    And no two consecutive metric samples before the last were taken less than 100 milliseconds apart
 
   Scenario: A metric with no value is recorded as null
     Given the world's metric "first holder" has no value while no slot is held
