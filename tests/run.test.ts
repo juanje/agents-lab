@@ -407,6 +407,16 @@ describe("run", () => {
     expect(model.received.map(getCurrentSystemPrompt)).toEqual(["You live in a row of slots."]);
   });
 
+  it("gives each agent's model that agent's own system prompt", async () => {
+    const a = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
+    const b = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
+    const loaded = slots({ agents: () => ["a", "b"], systemPrompt: (_configuration, agent) => `You are "${agent}".` });
+
+    await run(loaded, [{ name: "a", model: a, activations: 1, rhythm: noWait }, { name: "b", model: b, activations: 1, rhythm: noWait }], seed, settings);
+
+    expect([a.received.map(getCurrentSystemPrompt), b.received.map(getCurrentSystemPrompt)]).toEqual([['You are "a".'], ['You are "b".']]);
+  });
+
   it("opens its sessions in the lab's Pi directory, and leaves the person's as it was", async () => {
     const persons = join(homedir(), ".pi", "agent");
     mkdirSync(persons, { recursive: true });
