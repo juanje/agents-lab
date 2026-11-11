@@ -73,3 +73,21 @@ Feature: A scenario plugs into the engine
     Then agent "a"'s model was offered exactly the scenario's tools
     And the system prompt agent "a"'s model received is exactly the scenario's
     And agent "a"'s activation began with the scenario's rhythm stimulus
+
+  Scenario: Each agent gets its own system prompt
+    Given the test scenario "slots", whose system prompt names the agent it describes
+    When agents "a" and "b" run on scripted models that end their first turn without a tool call
+    Then agent "a"'s system prompt names "a"
+    And agent "b"'s system prompt names "b"
+
+  Scenario: A channel's source and text come from the configuration
+    Given the test scenario "slots", whose rhythm channel's text is "rhythm.text" in its configuration
+    And a condition "slow" that sets "rhythm.text" to "A long while passes."
+    When agent "a" runs with the condition "slow" on a scripted model that ends its first turn without a tool call
+    Then agent "a"'s rhythm stimulus has the content "A long while passes."
+
+  Scenario: A run whose agents differ from the scenario's is refused before any model call
+    Given the test scenario "slots", whose configuration declares agents "a" and "b"
+    When a run is given agents "a" and "c"
+    Then the run fails with an error that names "b" and "c"
+    And no model was called

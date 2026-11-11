@@ -136,13 +136,14 @@ Each agent's rhythm wakes it with a stimulus from its rhythm channel. Awake, the
 #### FR-SCENARIO-01: A scenario plugs into the engine
 A scenario provides:
 - its world's initial state;
+- its agents, named from its configuration;
 - its tools (sensors and effectors);
-- its stimulus channels;
+- its stimulus channels, from its configuration;
 - its metrics;
-- its system prompt;
+- a system prompt for each agent, from its configuration and the agent;
 - a base configuration in TOML.
 
-A system prompt that holds nothing besides whitespace, or a base configuration that sets no key, counts as missing. The system prompt describes the agent, never the state of the world.
+A system prompt that holds nothing besides whitespace, or a base configuration that sets no key, counts as missing. A system prompt describes its agent, never the state of the world. A run whose agents are not exactly the scenario's agents is refused before any model call, with an error that names the agents missing and the agents not declared.
 
 A condition is a TOML change over that base configuration:
 - a value the condition gives replaces the base configuration's value under the same key;
