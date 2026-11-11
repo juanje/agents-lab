@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { parse } from "smol-toml";
-import { emptyGrid, entitiesAt, place } from "../src/engine/grid.ts";
+import { emptyGrid, entitiesAt, place, position } from "../src/engine/grid.ts";
 import { Random } from "../src/engine/random.ts";
 import type { Configuration } from "../src/engine/scenario.ts";
 import type { Tool } from "../src/engine/tools.ts";
+import { World } from "../src/engine/world.ts";
 import { type Neighbourhood, neighbourhoodScenario } from "../src/scenarios/neighbourhood.ts";
 
 const configuration = (width: number, height: number, residents: number): Configuration => ({
@@ -134,6 +135,24 @@ describe("the neighbourhood scenario", () => {
       ["outside", "outside", "empty", "empty", "empty"],
       ["outside", "outside", "empty", "empty", "empty"],
     ]);
+  });
+
+  it("lets a resident move to the empty cell at an offset, anywhere in the grid, through the arbiter", () => {
+    const move = toolNamed("move");
+    if (move.kind !== "effector") throw new Error("move is not an effector");
+    const world = new World(residentsAt(5, 5, { lookRadius: 1, msPerCell: 100 }));
+
+    expect(world.apply(move.action, { agent: "r1", arguments: { dx: 3, dy: 4 } })).toEqual({ applied: true });
+    expect(position(world.state.grid, "r1")).toEqual({ x: 3, y: 4 });
+    expect(world.version).toBe(1);
+  });
+
+  it("takes the configured time per cell for the distance from where the resident is to its target", () => {
+    const move = toolNamed("move");
+    const state = residentsAt(5, 5, { lookRadius: 1, msPerCell: 40 });
+
+    expect(move.durationMs(state, { agent: "r2", arguments: { dx: 2, dy: 3 } })).toBe(120);
+    expect(move.durationMs(state, { agent: "r2", arguments: { dx: -1, dy: 1 } })).toBe(40);
   });
 
   it("draws the cells from the random sequence it is given", () => {
