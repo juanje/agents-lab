@@ -512,6 +512,22 @@ describe("run", () => {
     expect(world.version).toBe(1);
   });
 
+  it("gives a sensor, as it reads the world, the time since the run started", async () => {
+    const clock: Sensor<Slots> = { kind: "sensor", name: "clock", description: "The time.", parameters: { type: "object", properties: {} }, durationMs: () => 20, sense: (_state, _agent, _args, sinceStartMs) => String(sinceStartMs) };
+    const model = new ScriptedModel([
+      { toolCalls: [{ name: "clock", arguments: {} }], delayMs: 30 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+
+    const { toolCalls, startedAtMs } = await run(slots({ tools: [clock] }), [{ name: "a", model, activations: 1 }], seed, settings);
+
+    const [call] = toolCalls;
+    const given = Number(call.result);
+    // Read when the call's duration ends, after the model's 30 ms and the call's 20 ms.
+    expect(given).toBeGreaterThanOrEqual(50);
+    expect(Math.abs(given - (call.endedAtMs - startedAtMs))).toBeLessThan(5);
+  });
+
   it("applies an effector the model calls through the arbiter, with the agent and the call's arguments", async () => {
     const loaded = slots();
     const { world } = loaded;
