@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Stimuli } from "../src/engine/stimuli.ts";
+import { Stimuli, type Stimulus } from "../src/engine/stimuli.ts";
 import { rhythmChannel } from "./fixtures/slots.ts";
 
 const bell = { name: "bell", source: "town bell", stimulus: "The bell rings." };
@@ -70,5 +70,20 @@ describe("Stimuli", () => {
     const stimuli = new Stimuli([rhythmChannel]);
 
     expect(() => stimuli.deliver("a", "bell")).toThrow('no channel named "bell" is declared');
+  });
+
+  it("tells a watcher of an agent each stimulus delivered to that agent, as it is delivered, and nothing once it stops watching", () => {
+    const stimuli = new Stimuli([bell, rhythmChannel]);
+    const seen: Stimulus[] = [];
+    const unwatch = stimuli.watch("a", (stimulus) => seen.push(stimulus));
+
+    stimuli.deliver("b", "bell");
+    stimuli.deliver("a", "bell");
+    unwatch();
+    stimuli.deliver("a", "bell");
+
+    expect(seen).toEqual([{ channel: "bell", source: "town bell", content: "The bell rings." }]);
+    // Watching takes nothing: the stimuli still wait for the agent's session.
+    expect(stimuli.take("a")).toHaveLength(2);
   });
 });
