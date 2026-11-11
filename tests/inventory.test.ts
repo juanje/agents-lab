@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readExperiment } from "../src/engine/experiment.ts";
-import { inventory } from "../src/engine/inventory.ts";
+import { inventory, inventoryMarkdown } from "../src/engine/inventory.ts";
 import type { Scenario } from "../src/engine/scenario.ts";
 import { type Slots, slotsScenario } from "./fixtures/slots.ts";
 
@@ -29,12 +29,70 @@ function slotsWith(parts: Partial<Scenario<Slots>> = {}): Scenario<Slots> {
   return { ...slotsScenario, baseConfiguration: slotsScenario.baseConfiguration.replace('agents = ["a"]', 'agents = ["a", "b"]'), ...parts };
 }
 
+/** The inventory of an experiment over a scenario, printed as Markdown. */
+function printed(experiment: ReturnType<typeof experimentOf>, scenario: Scenario<Slots>): string {
+  return inventoryMarkdown(inventory(experiment, scenario));
+}
+
 describe("inventory", () => {
+  it("is data: for each condition, its agents, tools, channels, what the engine does not provide, the outcomes the engine gives, and the model and limits", () => {
+    const [look, take] = slotsScenario.tools;
+    const texts = { success: "You took the slot.", slot_taken: "Someone holds that slot." };
+    const scenario = slotsWith({ tools: [look, { ...take, texts } as typeof take] });
+
+    const listed = inventory(experimentOf(["[conditions.baseline]", "[conditions.crowded]", "slots.count = 5"]), scenario);
+
+    const condition = (name: string) => ({
+      condition: name,
+      agents: ["a", "b"].map((agent) => ({
+        name: agent,
+        rhythm: "Every agent waits 0 ms before each activation.",
+        systemPrompt: `You are agent "${agent}", in a world of slots.`,
+      })),
+      tools: [
+        {
+          name: "look",
+          kind: "sensor",
+          description: look.description,
+          parameters: look.parameters,
+          duration: "0 ms.",
+          effort: "none",
+          texts: { success: "the part of the world it senses" },
+          otherOutcomes: "the outcome's name",
+        },
+        {
+          name: "take",
+          kind: "effector",
+          description: take.description,
+          parameters: take.parameters,
+          duration: "0 ms.",
+          effort: "none",
+          texts,
+          otherOutcomes: "the outcome's name",
+        },
+      ],
+      engineOutcomes: {
+        invalid_arguments: "the harness's explanation of the arguments it rejects",
+        unknown_tool: "the harness's explanation: Tool <name> not found",
+        cut_off: "the outcome's name",
+      },
+      channels: [{ name: "rhythm", source: "rhythm", delivers: "You wake up." }],
+      energyModel: "none",
+      environmentProcesses: "none",
+      informationSpeed: "Every sensor and channel is instant.",
+      models: ["scripted/one"],
+      limits: { activationsPerAgent: 3, timeLimitMs: 1000, parallelismLimit: 2, modelTurnTimeoutMs: 500 },
+    });
+    expect(listed).toEqual({ experiment: "e-test", scenario: "slots", conditions: [condition("baseline"), condition("crowded")] });
+    // As data, it goes into a log line whole.
+    expect(JSON.parse(JSON.stringify(listed))).toEqual(listed);
+  });
+
   it("gives each agent's rhythm, as the scenario describes it in each condition, and its system prompt", () => {
     const experiment = experimentOf(["[conditions.baseline]", "[conditions.slow]", "rhythm.interval_ms = 50"]);
     const scenario = slotsWith({ describeRhythm: (configuration, agent) => `"${agent}" waits ${(configuration.rhythm as { interval_ms: number }).interval_ms} ms.` });
 
-    const listed = inventory(experiment, scenario);
+    const listed = printed(experiment, scenario);
 
     const agent = (name: string, intervalMs: number) =>
       [`#### Agent "${name}"`, "", `- Rhythm: "${name}" waits ${intervalMs} ms.`, "", "System prompt:", "", "```text", `You are agent "${name}", in a world of slots.`, "```", ""].join("\n");
@@ -53,7 +111,7 @@ describe("inventory", () => {
       describeDuration: (configuration, tool) => `"${tool}" takes ${(configuration.slots as { count: number }).count} ms.`,
     });
 
-    const listed = inventory(experiment, scenario);
+    const listed = printed(experiment, scenario);
 
     const parameters = (tool: typeof look) => ["Parameters:", "", "```json", JSON.stringify(tool.parameters, null, 2), "```", ""];
     const tools = (count: number) =>
@@ -64,6 +122,7 @@ describe("inventory", () => {
         "",
         "- Kind: sensor",
         `- Duration: "look" takes ${count} ms.`,
+        "- Effort: none",
         "",
         "Description:",
         "",
@@ -81,6 +140,7 @@ describe("inventory", () => {
         "",
         "- Kind: effector",
         `- Duration: "take" takes ${count} ms.`,
+        "- Effort: none",
         "",
         "Description:",
         "",
@@ -103,7 +163,7 @@ describe("inventory", () => {
   it("lists each stimulus channel with its source and what it delivers, as the scenario declares them in each condition", () => {
     const experiment = experimentOf(["[conditions.baseline]", "[conditions.loud]", 'rhythm.text = "Wake up!"']);
 
-    const listed = inventory(experiment, slotsWith());
+    const listed = printed(experiment, slotsWith());
 
     const channels = (text: string) => ["### Stimulus channels", "", '#### Channel "rhythm"', "", "- Source: rhythm", "", "Delivers:", "", "```text", text, "```", ""].join("\n");
     expect(listed.slice(listed.indexOf('## Condition "baseline"'), listed.indexOf('## Condition "loud"'))).toContain(channels("You wake up."));
@@ -111,7 +171,7 @@ describe("inventory", () => {
   });
 
   it("gives the experiment's models and limits in each condition", () => {
-    const listed = inventory(experimentOf(["[conditions.baseline]"]), slotsWith());
+    const listed = printed(experimentOf(["[conditions.baseline]"]), slotsWith());
 
     expect(listed).toContain(
       [
@@ -128,9 +188,24 @@ describe("inventory", () => {
   });
 
   it("lists the energy model and the environment processes as none, and every sensor and channel as instant, in each condition", () => {
-    const listed = inventory(experimentOf(["[conditions.baseline]", "[conditions.crowded]", "slots.count = 5"]), slotsWith());
+    const listed = printed(experimentOf(["[conditions.baseline]", "[conditions.crowded]", "slots.count = 5"]), slotsWith());
 
     const engine = ["### Energy model", "", "none", "", "### Environment processes", "", "none", "", "### How fast information travels", "", "Every sensor and channel is instant.", ""].join("\n");
+    expect(listed.slice(listed.indexOf('## Condition "baseline"'), listed.indexOf('## Condition "crowded"'))).toContain(engine);
+    expect(listed.slice(listed.indexOf('## Condition "crowded"'))).toContain(engine);
+  });
+
+  it("prints the outcomes the engine gives, with the text the agent receives for each, in each condition", () => {
+    const listed = printed(experimentOf(["[conditions.baseline]", "[conditions.crowded]", "slots.count = 5"]), slotsWith());
+
+    const engine = [
+      "### Outcomes the engine gives",
+      "",
+      "- invalid_arguments: the harness's explanation of the arguments it rejects",
+      "- unknown_tool: the harness's explanation: Tool <name> not found",
+      "- cut_off: the outcome's name",
+      "",
+    ].join("\n");
     expect(listed.slice(listed.indexOf('## Condition "baseline"'), listed.indexOf('## Condition "crowded"'))).toContain(engine);
     expect(listed.slice(listed.indexOf('## Condition "crowded"'))).toContain(engine);
   });
@@ -149,6 +224,6 @@ describe("inventory", () => {
     const experiment = experimentOf(["[conditions.baseline]"]);
     const scenario = slotsWith({ systemPrompt: () => "Answer like this:\n```\ndone\n```" });
 
-    expect(inventory(experiment, scenario)).toContain("System prompt:\n\n````text\nAnswer like this:\n```\ndone\n```\n````\n");
+    expect(printed(experiment, scenario)).toContain("System prompt:\n\n````text\nAnswer like this:\n```\ndone\n```\n````\n");
   });
 });

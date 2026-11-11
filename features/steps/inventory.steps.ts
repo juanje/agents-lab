@@ -251,10 +251,14 @@ Then("the section for {string} does not", function (this: Context, condition: st
   assert.ok(!describesDuration(this, condition, read.tool, read.ms), `the section for "${condition}" describes "${read.tool}"'s duration with ${read.ms} ms`);
 });
 
-Then("each section lists the energy model and the environment processes as {string}", function (this: Context, none: string) {
-  for (const { name, section } of conditionsOf(this)) {
+Then("each section lists the energy model, the environment processes and each tool's effort as {string}", function (this: Context, none: string) {
+  for (const { name, section, loaded } of conditionsOf(this)) {
     assert.equal(under(section, "### Energy model").trim(), none, `condition "${name}"`);
     assert.equal(under(section, "### Environment processes").trim(), none, `condition "${name}"`);
+    const tools = under(section, "### Tools");
+    for (const tool of loaded.scenario.tools) {
+      assert.equal(itemOf(under(tools, `#### Tool "${tool.name}"`), "Effort"), none, `condition "${name}", tool "${tool.name}"`);
+    }
   }
 });
 
@@ -263,3 +267,23 @@ Then("each section says that every sensor and channel is instant", function (thi
     assert.equal(under(section, "### How fast information travels").trim(), "Every sensor and channel is instant.", `condition "${name}"`);
   }
 });
+
+Then(
+  "each section lists, besides each tool's own outcomes, the outcomes the engine gives: {string}, with the harness's explanation, {string} and {string}",
+  function (this: Context, invalidArguments: string, unknownTool: string, cutOff: string) {
+    for (const { name, section, loaded } of conditionsOf(this)) {
+      const where = `condition "${name}"`;
+      const engine = under(section, "### Outcomes the engine gives");
+      assert.match(itemOf(engine, invalidArguments), /the harness's explanation/, where);
+      itemOf(engine, unknownTool);
+      itemOf(engine, cutOff);
+      // Each tool still lists its own outcomes besides the engine's.
+      const tools = under(section, "### Tools");
+      for (const tool of loaded.scenario.tools) {
+        const part = under(tools, `#### Tool "${tool.name}"`);
+        const own = tool.kind === "effector" ? Object.keys(tool.texts ?? {}) : ["success"];
+        for (const outcome of own) itemOf(part, outcome);
+      }
+    }
+  },
+);
