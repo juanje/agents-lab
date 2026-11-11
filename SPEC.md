@@ -214,7 +214,7 @@ The grid gives the distance between two cells, counted in steps between neighbou
 
 
 #### FR-SPACE-03: A space of places connected by passages
-The engine provides a space of named places connected by passages. A passage joins two places, can be crossed both ways, and has a length greater than zero. A passage is space too: an entity crossing it is in the passage, in neither of its places. A layout that names a place it does not declare, or gives a passage a length of zero or less, is refused with an error that names it. Places and passages hold any number of entities. The space answers:
+The engine provides a space of named places connected by passages. A passage joins two places, can be crossed both ways, and has a length greater than zero. A passage is space too: an entity crossing it is in the passage, in neither of its places. A layout that names a place it does not declare, gives a passage a length of zero or less, or joins the same two places twice, is refused with an error that names it. Places and passages hold any number of entities. The space answers:
 - **where:** the place or passage an entity is in, or none when the space does not hold it;
 - **exits:** the places one passage away from a place, each with the passage's length;
 - **entities:** the entities in a place or a passage;
@@ -224,7 +224,7 @@ The engine provides a space of named places connected by passages. A passage joi
 
 A leave of an entity the space does not hold, or not in a place, or towards a place that is unknown or not one passage away, is refused with an error that names the entity or the place, and applies nothing; so is an arrive of an entity that is not in a passage.
 
-A scenario's effector that moves an agent to another place takes, as its duration (FR-TOOL-04), the scenario's time per unit of length multiplied by the passage's length. The agent leaves its place when the call starts and arrives when it ends: in between it is in the passage, where others can see it, and its old place no longer holds it.
+A scenario's effector that moves an agent to another place takes, as its duration (FR-TOOL-04), the scenario's time per unit of length multiplied by the passage's length. The agent leaves its place when the call starts and arrives when it ends: in between it is in the passage, where others can see it, and its old place no longer holds it. A start the space refuses stops the run, as a tool that throws does. A crossing cut off by the time limit (FR-CLOCK-02) leaves the agent in the passage, where it was when time ran out.
 *Why:* worlds such as a building or a village are made of rooms and paths, not cells; the space keeps their layout, the time to cross it and what can be seen from where the same across scenarios. An agent that stayed in its place until it arrived would be seen where it no longer is, and would reach its new place at once for everyone else. What an agent can see depends on where it is, so the layout shapes what each agent can know (NFR-12). An agent's choice of a place it cannot reach is the scenario's to name; a leave that reaches the space with it is a defect in the scenario.
 
 #### FR-PROCESS-01: The environment changes on its own
@@ -244,6 +244,7 @@ Each run writes one new JSONL file, named with the run id. It adds one line for 
   - the agent, the tool and the call exactly as the model made it;
   - when it started and ended, and its outcome;
   - its result, for a sensor, and the text the agent received, for an effector;
+  - for an effector that declares a start (FR-SPACE-03), a line of its own when the start is applied, with the agent, the tool, when it was applied, and the change it made, as the scenario describes it;
   - for an effector that ran, what the agent last sensed of its target when the call started (a call rejected before running has no target to read), and the number of changes other agents applied between the agent's last sensor call and the moment its effect was applied, with the agents that applied them; a call made before any sensing records `not_sensed` and no count.
 
 When a run stops on an error, its log ends with a line that says the run stopped and gives the error. A session that fails to open stops the run with an error that names the agent, and the sessions already open are closed.

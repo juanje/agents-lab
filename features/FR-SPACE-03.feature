@@ -90,3 +90,18 @@ Feature: A space of places connected by passages
     And agent "a" is in "hall" and runs on a scripted model that calls "go" to "yard", then ends without a tool call
     When the run ends
     Then 250 milliseconds after agent "a"'s "go" call started, agent "a" was in the passage between "hall" and "yard", neither "hall" nor "yard" held it, and agent "b" had it in sight
+
+  Scenario: The space says which entities are in a passage
+    When entity "a" leaves "hall" towards "yard"
+    Then the entities in the passage between "hall" and "yard" are "a"
+    And the passage between "hall" and "store" holds no entities
+
+  Scenario: A layout that joins the same two places twice is refused
+    When a space is built with the places "hall" and "store", a passage of length 2 between "hall" and "store", and a passage of length 3 between "store" and "hall"
+    Then it is refused with an error that names the places "hall" and "store"
+
+  Scenario: A start is recorded in the log when it is applied
+    Given a test place world with the same layout, where the effector "go" moves the calling agent to a place, taking 100 milliseconds per unit of length
+    And agent "a" is in "hall" and runs on a scripted model that calls "go" to "yard", then ends without a tool call
+    When the run ends
+    Then the run's log has, before the line of agent "a"'s "go" call, a line for its start, with agent "a", the tool "go", the moment it started, and that agent "a" left "hall" towards "yard"
