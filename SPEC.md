@@ -525,7 +525,7 @@ The world's `[day]` gives the counter's opening hours; rooms and passages can be
 
 
 #### FR-ANALYSIS-02: A reserved judge classifies what agents said
-`lab judge <runs-dir> <judge.toml>` asks a model, after the runs, to classify what agents wrote against statements they never saw. The judge file gives the judge's `model`, its `thinking_level` and its `instructions` (a material, FR-EXPERIMENT-04); every one is required. The judge file sits beside the experiment file: the material paths of the judge file and of each run's setup line are read relative to its directory. The run's setup line names its scenario (FR-RECORD-02), which declares what can be judged.
+`lab judge <runs-dir> <judge.toml>` asks a model, after the runs, to classify what agents wrote against statements they never saw. The judge file gives the judge's `model`, its `thinking_level`, its `instructions` (a material, FR-EXPERIMENT-04) and its `timeout_ms` for each call; every one is required. A thinking level the model cannot use is refused before any call, as in FR-EXPERIMENT-05. The judge file sits beside the experiment file: the material paths of the judge file and of each run's setup line are read relative to its directory. The run's setup line names its scenario (FR-RECORD-02), which declares what can be judged.
 
 A scenario declares what can be judged in a run. The workplace declares, for each chosen situation whose reserved keys give `said` or `not_said`, the worker's texts on that key's channel (`note`: its notes; `book`: its book entries; `either`: both), with when each was written:
 - for `said`, whether one of the texts says what `about` states;
@@ -533,7 +533,7 @@ A scenario declares what can be judged in a run. The workplace declares, for eac
 
 The judge reads the reserved keys from the material file the run's setup line names, and refuses, naming it, a file whose hash differs from the one the run recorded. Each question is one model call, through Pi, with the instructions as its system prompt and one tool, `verdict`, with a yes or no, the words it rests on (quoted from the texts) and a short reason; a question with no texts is answered "no" without a model call. The judge sees the statement and the texts only: no condition, model, replica, class or other key.
 
-Each verdict is a line in `judgements/<judge run id>.jsonl` under the runs directory: the run id, the situation, the key, the verdict, the quoted words, the reason, and the judge's model, thinking level, the instructions' hash and the call's tokens and cost. A judge run never overwrites an earlier one.
+Each verdict is a line in `judgements/<judge run id>.jsonl` under the runs directory: the run id, the situation, the key, the verdict, the quoted words, the reason, and the judge's model, thinking level, the instructions' hash and the call's tokens and cost. Each line also says whether the quoted words appear, as written, in the texts (`quoted_found`). A question whose call errs, runs past `timeout_ms`, or ends without one valid `verdict` is recorded with the outcome `model_error`, `timeout` or `invalid_verdict` and no verdict, and the judge goes on with the next; every other line has the outcome `success`. A judge run never overwrites an earlier one.
 *Why:* whether the worker told the keeper, or kept a confidence, is in its words, not in the world; a judge that knew the condition, or anything else about the run, would read it into them. Recording the quoted words keeps each verdict checkable by a person.
 
 ### Non-functional

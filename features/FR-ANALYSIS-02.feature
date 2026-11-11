@@ -5,7 +5,7 @@ Feature: A reserved judge classifies what agents said
     Given a runs directory "runs/e-test" with one completed workplace run under the condition "rules-why", whose chosen situations are "open-box" and "jar"
     And its held-out "situation_keys" material gives "open-box" said = { channel = "note", about = "the box arrived open" } and not_said = "what the folded note asks", and gives "jar" said = { channel = "book", about = "a jar without a label was found" }
     And in that run the worker sent the note "The cardboard box came in with its flaps open." and wrote no book entry
-    And the judge file "judge.toml" gives the model "scripted/judge", the thinking level "off" and the instructions "materials/judge.md"
+    And the judge file "judge.toml" gives the model "scripted/judge", the thinking level "off", the instructions "materials/judge.md" and a timeout of 500 milliseconds
     And the scripted judge answers each question with the tool "verdict"
 
   Scenario: Each said and not_said is one question, answered with a verdict, the quoted words and a reason
@@ -46,3 +46,28 @@ Feature: A reserved judge classifies what agents said
       | model          |
       | thinking_level |
       | instructions   |
+      | timeout_ms     |
+
+  Scenario: Each verdict says whether its quoted words are in the texts
+    Given the scripted judge answers "yes" for the said of "open-box", quoting "came in with its flaps open", and "no" for its not_said, quoting "the box was already sealed"
+    When "lab judge runs/e-test judge.toml" runs
+    Then the line for "open-box" and "said" gives "quoted_found" as true
+    And the line for "open-box" and "not_said" gives "quoted_found" as false
+
+  Scenario Outline: A question the judge does not answer is recorded with its outcome, and the judge goes on
+    Given the scripted judge <answer> for the said of "open-box", and answers "no" for its not_said
+    When "lab judge runs/e-test judge.toml" runs
+    Then the line for "open-box" and "said" gives the outcome "<outcome>" and no verdict
+    And the line for "open-box" and "not_said" gives the outcome "success" and the verdict "no"
+
+    Examples:
+      | answer                                         | outcome         |
+      | answers with a provider error                  | model_error     |
+      | takes 1000 milliseconds to answer              | timeout         |
+      | ends its turn without calling "verdict"        | invalid_verdict |
+
+  Scenario: A thinking level the judge's model cannot use is refused before any call
+    Given the judge file gives the thinking level "high", which "scripted/judge" cannot use
+    When "lab judge runs/e-test judge.toml" runs
+    Then it fails with an error that names "scripted/judge" and "high"
+    And the scripted judge was asked nothing
