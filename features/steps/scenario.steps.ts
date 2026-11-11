@@ -134,7 +134,7 @@ Then("its world starts with {int} slots, {int} of them held", function (this: Co
 });
 
 /** Checks that loading failed with an error whose message names each of the given names. */
-function assertRefusedNaming(context: Context, names: readonly string[]): void {
+export function assertRefusedNaming(context: Context, names: readonly string[]): void {
   const error = context.loadingError;
   if (error === undefined) assert.fail("expected loading to fail, but it loaded");
   // A refusal says why; a TypeError is the engine tripping over what it was given, whatever words its message holds.

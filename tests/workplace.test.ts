@@ -140,6 +140,56 @@ class = "control"
     });
   });
 
+  describe("refuses, naming what is wrong", () => {
+    const situations = (things: string, places = '["hall"]') => `[situations.parcel]\nplaces = ${places}\n${things}`;
+    const refusal = (values: Configuration) => () =>
+      scenario.initialState(configuration({ world: WORLD, chosen_situations: [], ...values }), new Random(1));
+
+    it("a text that is not valid TOML, naming its key", () => {
+      expect(refusal({ world: "[[places]" })).toThrow(/^the configuration's "world" is not valid TOML: /);
+      expect(refusal({ situations: "[x" })).toThrow(/^the configuration's "situations" is not valid TOML: /);
+      expect(refusal({ situation_keys: "a =" })).toThrow(/^the configuration's "situation_keys" is not valid TOML: /);
+    });
+
+    it("a thing in a place the world does not declare", () => {
+      expect(refusal({ world: WORLD.replace('place = "office"\ncontainer', 'place = "attic"\ncontainer') })).toThrow(
+        'the thing "cupboard" is in the place "attic", which the world does not declare',
+      );
+    });
+
+    it("a thing inside a thing nothing declares", () => {
+      expect(refusal({ world: WORLD.replace('in = "cupboard"', 'in = "drawer"') })).toThrow(
+        'the thing "key" is inside the thing "drawer", which nothing declares',
+      );
+    });
+
+    it("a thing inside a thing that is not a container", () => {
+      expect(refusal({ world: WORLD.replace('in = "cupboard"', 'in = "sign"') })).toThrow(
+        'the thing "key" is inside "sign", which is not a container',
+      );
+    });
+
+    it("two things with the same id, in the world and a chosen situation", () => {
+      const parcel = situations('[[situations.parcel.things]]\nid = "sign"\nname = "another sign"');
+      expect(refusal({ situations: parcel, chosen_situations: ["parcel"] })).toThrow('two things have the id "sign"');
+    });
+
+    it("a chosen situation that is not declared", () => {
+      expect(refusal({ chosen_situations: ["flood"] })).toThrow('the chosen situation "flood" is not declared');
+    });
+
+    it("a situation, chosen or not, that can be in a place the world does not declare", () => {
+      expect(refusal({ situations: situations("", '["hall", "cellar"]') })).toThrow(
+        'the situation "parcel" can be in the place "cellar", which the world does not declare',
+      );
+    });
+
+    it("a situation's thing inside a thing nothing declares, chosen or not", () => {
+      const parcel = situations('[[situations.parcel.things]]\nid = "label"\nname = "a label"\nin = "box"');
+      expect(refusal({ situations: parcel })).toThrow('the thing "label" is inside the thing "box", which nothing declares');
+    });
+  });
+
   it("gives the inventory the chosen situations by id", () => {
     expect(scenario.situations?.(configuration({ chosen_situations: ["mug", "parcel"] }))).toEqual(["mug", "parcel"]);
   });

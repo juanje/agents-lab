@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { Given, Then, When } from "@cucumber/cucumber";
-import { type TomlValue, parse, stringify } from "smol-toml";
+import { type TomlTable, type TomlValue, parse, stringify } from "smol-toml";
 import { exits, where } from "../../src/engine/places.ts";
 import type { LoadedScenario } from "../../src/engine/scenario.ts";
 import { scenarioLibrary } from "../../src/scenarios/library.ts";
 import { type Workplace, workplaceScenario } from "../../src/scenarios/workplace.ts";
 import type { Context } from "../support/context.ts";
 import { runLab } from "./lab.steps.ts";
+import { assertRefusedNaming } from "./scenario.steps.ts";
 import { assertRhythmWithin, assertWakeStimuli, inTables, lastLoaded, loadLibraryScenario, withBase } from "./neighbourhood.steps.ts";
 
 /** The worker, the workplace's one agent. */
@@ -221,4 +222,85 @@ Then("the inventory lists the chosen situation {string} by its id only", functio
   for (const text of ["a cardboard box", "a folded note", "honesty", "conflict"]) {
     assert.ok(!printed.includes(text), `the inventory holds "${text}"`);
   }
+});
+
+/** Changes the TOML text the workplace's configuration gives under a key, as a table. */
+function editText(context: Context, key: string, edit: (text: TomlTable) => void): void {
+  const text = parse(parse(context.libraryScenario.baseConfiguration ?? "")[key] as string);
+  edit(text);
+  context.libraryScenario = withBase(context.libraryScenario, { [key]: stringify(text) });
+}
+
+/** A thing as the world's or a situation's text declares it, by its id, with the key of the text that declares it. */
+function declaredThing(context: Context, id: string): { key: string; edit: (change: (thing: TomlTable) => void) => void } {
+  const base = parse(context.libraryScenario.baseConfiguration ?? "");
+  const holds = (things: unknown) => ((things ?? []) as TomlTable[]).some((thing) => thing.id === id);
+  const situations = (text: TomlTable) => Object.values((text.situations ?? {}) as Record<string, TomlTable>);
+  const key = holds(parse(base.world as string).things) ? "world" : "situations";
+  return {
+    key,
+    edit: (change) =>
+      editText(context, key, (text) => {
+        const lists = key === "world" ? [text.things] : situations(text).map((situation) => situation.things);
+        const thing = lists.flatMap((things) => (things ?? []) as TomlTable[]).find((declared) => declared.id === id);
+        assert.ok(thing !== undefined, `neither the world nor a situation declares the thing "${id}"`);
+        change(thing);
+      }),
+  };
+}
+
+Given("the thing {string} is in the place {string} instead", function (this: Context, id: string, place: string) {
+  declaredThing(this, id).edit((thing) => {
+    delete thing.in;
+    thing.place = place;
+  });
+});
+
+Given("the thing {string} is inside {string} instead", function (this: Context, id: string, container: string) {
+  declaredThing(this, id).edit((thing) => {
+    delete thing.place;
+    thing.in = container;
+  });
+});
+
+Given("the thing {string} has the id {string} instead", function (this: Context, id: string, other: string) {
+  declaredThing(this, id).edit((thing) => {
+    thing.id = other;
+  });
+});
+
+Given("{string} is [{}]", function (this: Context, key: string, items: string) {
+  this.libraryScenario = withBase(this.libraryScenario, { [key]: tomlValue(`[${items}]`) });
+});
+
+Given("{string} is {string}", function (this: Context, key: string, text: string) {
+  this.libraryScenario = withBase(this.libraryScenario, { [key]: text });
+});
+
+Given("the situation {string} can be in {string} instead", function (this: Context, id: string, place: string) {
+  editText(this, "situations", (text) => {
+    const situation = ((text.situations ?? {}) as Record<string, TomlTable>)[id];
+    assert.ok(situation !== undefined, `no situation "${id}" is declared`);
+    situation.places = [place];
+  });
+});
+
+Then("loading fails with an error that names the place {string}", function (this: Context, place: string) {
+  assertRefusedNaming(this, [`place "${place}"`]);
+});
+
+Then("loading fails with an error that names the thing {string}", function (this: Context, id: string) {
+  assertRefusedNaming(this, [`thing "${id}"`]);
+});
+
+Then("loading fails with an error that names {string}, which is no container", function (this: Context, id: string) {
+  assertRefusedNaming(this, [`"${id}"`, "not a container"]);
+});
+
+Then("loading fails with an error that names the id {string}", function (this: Context, id: string) {
+  assertRefusedNaming(this, [`id "${id}"`]);
+});
+
+Then("loading fails with an error that names the situation {string}", function (this: Context, id: string) {
+  assertRefusedNaming(this, [`situation "${id}"`]);
 });
