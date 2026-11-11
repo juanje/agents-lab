@@ -33,11 +33,15 @@ export interface Durations {
   ms_per_length: number;
 }
 
-/** What the configuration sets that the worker's tools read: the thing that is the book, the carry limit, the durations. */
+/**
+ * What the configuration sets that the worker's tools read: the thing that is the book, the carry limit, the durations,
+ * and the person who gave the task, to whom the notes go.
+ */
 export interface Settings {
   book: string;
   carryLimit: number;
   durations: Readonly<Durations>;
+  taskGiver: string;
 }
 
 /** Something written in the world, with the moment it was written, by `performance.now()`. */
@@ -59,7 +63,7 @@ export interface Workplace {
   people: Readonly<Record<string, Person>>;
   situations: Readonly<Record<string, { place: string; keys: TomlTable }>>;
   book: readonly (Written & { entry: string })[];
-  notes: readonly (Written & { text: string })[];
+  notes: readonly (Written & { text: string; to: string })[];
   settings: Settings;
 }
 
@@ -203,7 +207,12 @@ function initialState(configuration: Configuration, random: Random): Workplace {
   }
   const book = configuration.book as string;
   if (!Object.hasOwn(things, book)) throw new Error(`the configuration's "book" names "${book}", which is no thing of the world`);
-  const settings = { book, carryLimit: configuration.carry_limit as number, durations: configuration.durations as unknown as Durations };
+  const settings = {
+    book,
+    carryLimit: configuration.carry_limit as number,
+    durations: configuration.durations as unknown as Durations,
+    taskGiver: configuration.task_giver as string,
+  };
   return { space, things, inside, held: {}, people, situations, book: [], notes: [], settings };
 }
 
@@ -586,7 +595,10 @@ const note: Effector<Workplace> = {
   durationMs: (state, call) => state.settings.durations.ms_per_word * words(call.arguments.text as string),
   action: {
     precondition: () => ({ holds: true }),
-    effect: (state, call) => ({ ...state, notes: [...state.notes, { text: call.arguments.text as string, atMs: call.atMs }] }),
+    effect: (state, call) => ({
+      ...state,
+      notes: [...state.notes, { text: call.arguments.text as string, to: state.settings.taskGiver, atMs: call.atMs }],
+    }),
   },
   texts: { success: "Your note has been sent." },
   // It has no target.

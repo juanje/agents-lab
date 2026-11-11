@@ -203,7 +203,7 @@ Then("the world holds the note {string} to {string}", function (this: Context, t
   const state = this.workplaceLastState;
   assert.ok(state !== undefined, "no effect was applied in the workplace");
   assert.deepEqual(
-    state.notes.map((note) => ({ text: note.text, to: (note as { to?: string }).to })),
+    state.notes.map(({ text: written, to: addressee }) => ({ text: written, to: addressee })),
     [{ text, to }],
   );
 });
