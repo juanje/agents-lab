@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { Recorder } from "../src/engine/recorder.ts";
+import { type LogLine, Recorder } from "../src/engine/recorder.ts";
 
 /** A new, empty directory for a test's logs. */
 const logDirectory = () => mkdtempSync(join(tmpdir(), "agents-lab-logs-"));
@@ -52,5 +52,19 @@ describe("Recorder", () => {
     expect(readFileSync(join(directory, `${recorder.runId}.jsonl`), "utf8")).toBe(
       '{"type":"activation","agent":"a","wokeAtMs":1,"endedAtMs":2}\n{"type":"run_stopped","error":"the world broke"}\n',
     );
+  });
+
+  it("hands each line it writes, and only those, to whoever reads the run as it goes", () => {
+    const directory = logDirectory();
+    const read: LogLine[] = [];
+    const recorder = Recorder.open(directory, undefined, (line) => read.push(line));
+
+    recorder.record({ type: "activation", agent: "a", wokeAtMs: 1, endedAtMs: 2 });
+    recorder.stop(new Error("the world broke"));
+    recorder.record({ type: "activation", agent: "b", wokeAtMs: 3, endedAtMs: 4 });
+    recorder.close();
+
+    const written = readFileSync(join(directory, `${recorder.runId}.jsonl`), "utf8").slice(0, -1).split("\n").map((line) => JSON.parse(line));
+    expect(read).toEqual(written);
   });
 });
