@@ -8,7 +8,7 @@ import { rhythmChannel } from "../../tests/fixtures/slots.ts";
 import type { Context } from "../support/context.ts";
 import { landsWhileUnderWay } from "./acting.steps.ts";
 import { turnsOf } from "./adapter.steps.ts";
-import { callWithThenEnd, modelOf, returned, runTheScenario, script } from "./tool.steps.ts";
+import { callOf, callWithThenEnd, modelOf, returned, runTheScenario, script } from "./tool.steps.ts";
 
 /** The log files in the scenario's log directory, by name, in no particular order. */
 function logFiles(context: Context): string[] {
@@ -279,3 +279,21 @@ Given(
 Then("the log's tool call line for agent {string}'s {string} call gives the outcome {string}", function (this: Context, agent: string, tool: string, outcome: string) {
   assert.equal(lineOf(this, "tool_call", agent, { tool }).outcome, outcome);
 });
+
+Given(
+  "agent {string} runs on a scripted model whose first turn calls {string} and then {string} with slot {int}",
+  function (this: Context, agent: string, first: string, second: string, slot: number) {
+    script(this, agent, [
+      { toolCalls: [{ name: first, arguments: {} }, { name: second, arguments: { slot } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+    // The turn's calls run one after another: the second is left unrun when the first is cut off. It then starts no
+    // earlier than the first ends, and as it never ran, it read no target.
+    this.setupChecks.push(() => {
+      const before = callOf(this, agent, first);
+      const after = callOf(this, agent, second);
+      assert.ok(after.startedAtMs >= before.endedAtMs, `agent "${agent}"'s "${second}" started while its "${first}" was under way`);
+      assert.equal(after.targetAsSensed, undefined, `agent "${agent}"'s "${second}" read its target, so it ran`);
+    });
+  },
+);
