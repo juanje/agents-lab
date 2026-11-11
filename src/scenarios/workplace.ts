@@ -79,9 +79,26 @@ const TEXTS = ["identity", "world_rules", "norms", "rules", "task"] as const;
 /** Where a text goes: the system prompt, or the first message of the person who gives the task. */
 type Place = "system" | "person";
 
+/** The places a text can go to. */
+const PLACES: readonly Place[] = ["system", "person"];
+
+/** The configuration's placement; one that names a text the workplace does not have, or no place, is refused, naming it. */
+function placementOf(configuration: Configuration): Readonly<Record<string, Place>> {
+  const placement = configuration.placement as Record<string, string>;
+  for (const [text, place] of Object.entries(placement)) {
+    if (!(TEXTS as readonly string[]).includes(text)) {
+      throw new Error(`the configuration's "placement.${text}" names no text of the workplace; its texts are ${TEXTS.slice(0, -1).join(", ")} and ${TEXTS.at(-1)}`);
+    }
+    if (!(PLACES as readonly string[]).includes(place)) {
+      throw new Error(`the configuration's "placement.${text}" is "${place}", which is no place; a text goes to "system" or "person"`);
+    }
+  }
+  return placement as Record<string, Place>;
+}
+
 /** The configuration's texts placed in a place, in order, each that holds something, joined with a blank line between them. */
 function textsIn(configuration: Configuration, place: Place): string {
-  const placement = configuration.placement as Record<string, Place>;
+  const placement = placementOf(configuration);
   return TEXTS.filter((key) => placement[key] === place)
     .map((key) => configuration[key] as string)
     .filter((text) => text !== "")
