@@ -20,11 +20,21 @@ export class Stimuli {
   readonly #channels: readonly Channel[];
   readonly #waiting = new Map<string, Stimulus[]>();
   readonly #delivered: (agent: string, stimulus: Stimulus) => void;
+  /** The channels whose stimuli each agent still has to receive as it first wakes. */
+  readonly #first: Map<string, readonly string[]>;
 
-  /** Takes the scenario's channels, and what to do with each stimulus as it is delivered: the run records it. */
-  constructor(channels: readonly Channel[], delivered: (agent: string, stimulus: Stimulus) => void = () => {}) {
+  /**
+   * Takes the scenario's channels, what to do with each stimulus as it is delivered (the run records it), and the
+   * channels whose stimuli each agent receives once, as it first wakes.
+   */
+  constructor(
+    channels: readonly Channel[],
+    delivered: (agent: string, stimulus: Stimulus) => void = () => {},
+    first: ReadonlyMap<string, readonly string[]> = new Map(),
+  ) {
     this.#channels = channels;
     this.#delivered = delivered;
+    this.#first = new Map(first);
   }
 
   /** Delivers a channel's stimulus to an agent: it waits until the agent's session takes it. */
@@ -41,11 +51,15 @@ export class Stimuli {
     return waiting;
   }
 
-  /** What an agent receives when its rhythm wakes it: the rhythm's stimulus, then the stimuli waiting for it. */
+  /**
+   * What an agent receives when its rhythm wakes it: the rhythm's stimulus, then, the first time only, its first
+   * stimuli, then the stimuli waiting for it.
+   */
   wake(agent: string): Stimulus[] {
-    const rhythm = this.#stimulusOf(RHYTHM_CHANNEL);
-    this.#delivered(agent, rhythm);
-    return [rhythm, ...this.take(agent)];
+    const now = [RHYTHM_CHANNEL, ...(this.#first.get(agent) ?? [])].map((channel) => this.#stimulusOf(channel));
+    this.#first.delete(agent);
+    for (const stimulus of now) this.#delivered(agent, stimulus);
+    return [...now, ...this.take(agent)];
   }
 
   #stimulusOf(name: string): Stimulus {
