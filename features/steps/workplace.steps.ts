@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import { Given, Then } from "@cucumber/cucumber";
-import { type TomlValue, parse } from "smol-toml";
+import { Given, Then, When } from "@cucumber/cucumber";
+import { type TomlValue, parse, stringify } from "smol-toml";
 import { exits, where } from "../../src/engine/places.ts";
 import type { LoadedScenario } from "../../src/engine/scenario.ts";
 import { type Workplace, workplaceScenario } from "../../src/scenarios/workplace.ts";
 import type { Context } from "../support/context.ts";
-import { lastLoaded, withBase } from "./neighbourhood.steps.ts";
+import { lastLoaded, loadLibraryScenario, withBase } from "./neighbourhood.steps.ts";
 
 /** The worker, the workplace's one agent. */
 const WORKER = "worker";
@@ -96,6 +96,49 @@ Then(
     assert.equal(thing.portable, true);
   },
 );
+
+Then("the world holds the things {string} and {string}, with {string} inside {string}", function (this: Context, first: string, second: string, held: string, container: string) {
+  const state = loadedWorkplace(this).world.state;
+  thingOf(state, first);
+  thingOf(state, second);
+  assert.equal(state.inside[held], container, `"${held}" is not inside "${container}"`);
+});
+
+Then("{string} is in {string} or in {string}", function (this: Context, id: string, one: string, other: string) {
+  const place = placeOf(loadedWorkplace(this).world.state, id);
+  assert.ok([one, other].includes(place), `"${id}" is in "${place}"`);
+});
+
+Then("the world holds no thing {string}", function (this: Context, id: string) {
+  const { space, things } = loadedWorkplace(this).world.state;
+  assert.ok(!Object.hasOwn(things, id), `the workplace holds the thing "${id}"`);
+  assert.equal(where(space, id), undefined, `the workplace's space holds "${id}"`);
+});
+
+Then("{string} is in the same place both times", function (this: Context, id: string) {
+  const [first, second] = this.libraryLoads as LoadedScenario<Workplace>[];
+  assert.ok(first !== undefined && second !== undefined, "the scenario was not loaded twice");
+  assert.equal(placeOf(second.world.state, id), placeOf(first.world.state, id));
+});
+
+Given("a condition {string} that sets {string} to [{}]", function (this: Context, name: string, key: string, items: string) {
+  this.condition = { name, change: stringify({ [key]: tomlValue(`[${items}]`) }) };
+});
+
+When(
+  "the engine loads it with the seed {int} and the base configuration, and again with the seed {int} and the condition {string}",
+  function (this: Context, baseSeed: number, seed: number, name: string) {
+    assert.equal(this.condition?.name, name, "the scenario gives the condition before loading with it");
+    loadLibraryScenario(this, baseSeed);
+    loadLibraryScenario(this, seed, this.condition);
+  },
+);
+
+Then("under the condition {string} the thing {string} is in {string}", function (this: Context, name: string, id: string, place: string) {
+  assert.equal(this.condition?.name, name, "the scenario loaded with another condition");
+  assert.equal(this.libraryLoads.length, 2, "the scenario was not loaded without and with the condition");
+  assert.equal(placeOf(loadedWorkplace(this).world.state, id), place);
+});
 
 Then("the person {string} is in {string}, and is not an agent", function (this: Context, id: string, place: string) {
   const { world, systemPrompts } = loadedWorkplace(this);

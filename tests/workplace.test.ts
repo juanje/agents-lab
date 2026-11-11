@@ -71,6 +71,75 @@ describe("the workplace scenario", () => {
     expect(state.people).toEqual({ ana: { name: "Ana", description: "A visitor." } });
   });
 
+  describe("its situations", () => {
+    const SITUATIONS = `
+[situations.parcel]
+places = ["hall", "office"]
+[[situations.parcel.things]]
+id = "parcel"
+name = "a parcel"
+container = true
+[[situations.parcel.things]]
+id = "label"
+name = "a label"
+in = "parcel"
+text = "Fragile."
+
+[situations.mug]
+places = ["office"]
+[[situations.mug.things]]
+id = "mug"
+name = "a mug"
+`;
+    const KEYS = `
+[parcel]
+class = "honesty"
+covered = true
+
+[mug]
+class = "control"
+`;
+    const withSituations = (chosen: string[]) =>
+      configuration({ world: WORLD, situations: SITUATIONS, situation_keys: KEYS, chosen_situations: chosen });
+
+    it("brings the chosen situations' things into the world, in the situation's place unless inside another of its things", () => {
+      const state = scenario.initialState(withSituations(["parcel"]), new Random(1));
+
+      expect(state.things.parcel).toEqual({ name: "a parcel", properties: {}, container: true, portable: true });
+      expect(state.things.label).toEqual({ name: "a label", properties: {}, text: "Fragile.", container: false, portable: true });
+      expect(state.inside.label).toBe("parcel");
+      const placed = state.situations.parcel.place;
+      expect(["hall", "office"]).toContain(placed);
+      expect(state.space.whereabouts.parcel).toEqual({ place: placed });
+      expect(state.space.whereabouts.label).toBeUndefined();
+    });
+
+    it("brings no thing of a situation that is not chosen", () => {
+      const state = scenario.initialState(withSituations(["parcel"]), new Random(1));
+
+      expect(Object.hasOwn(state.things, "mug")).toBe(false);
+      expect(state.space.whereabouts.mug).toBeUndefined();
+      expect(Object.keys(state.situations)).toEqual(["parcel"]);
+    });
+
+    it("holds each chosen situation's reserved keys", () => {
+      const state = scenario.initialState(withSituations(["mug", "parcel"]), new Random(1));
+
+      expect(state.situations.parcel.keys).toEqual({ class: "honesty", covered: true });
+      expect(state.situations.mug).toEqual({ place: "office", keys: { class: "control" } });
+    });
+
+    it("places a situation by the seed, the same for the same seed whichever others are chosen", () => {
+      const placesBySeed = (chosen: string[]) =>
+        Array.from({ length: 40 }, (_, seed) => scenario.initialState(withSituations(chosen), new Random(seed)).situations.parcel.place);
+      const alone = placesBySeed(["parcel"]);
+
+      expect(placesBySeed(["parcel"])).toEqual(alone);
+      expect(placesBySeed(["mug", "parcel"])).toEqual(alone);
+      expect(new Set(alone)).toEqual(new Set(["hall", "office"]));
+    });
+  });
+
   it("has one agent, the worker", () => {
     expect(scenario.agents(configuration({ world: WORLD }))).toEqual(["worker"]);
   });
