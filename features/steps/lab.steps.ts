@@ -3,21 +3,17 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import { join } from "node:path";
 import { Given, Then, When } from "@cucumber/cucumber";
 import type { Api, Model } from "@earendil-works/pi-ai";
-import { type TomlTable, type TomlValue, stringify } from "smol-toml";
+import { type TomlTable, stringify } from "smol-toml";
 import { lab } from "../../src/cli/lab.ts";
 import { ScriptedModel } from "../../src/engine/scripted-model.ts";
 import { scenarioLibrary } from "../../src/scenarios/library.ts";
 import { slotsScenario } from "../../tests/fixtures/slots.ts";
 import type { Context } from "../support/context.ts";
+import { tableAt } from "./experiment.steps.ts";
 import { declaring } from "./scenario.steps.ts";
 
 /** How many answers each scripted model holds: more than all the turns of an experiment here. */
 const ANSWERS = 50;
-
-/** A table that sets one value at a dotted path such as "slots.count". */
-function tableAt(path: string, value: TomlValue): TomlTable {
-  return path.split(".").reduceRight<TomlValue>((inner, key) => ({ [key]: inner }), value) as TomlTable;
-}
 
 Given(
   "the test scenario {string} is in the scenario library, with agents {string} and {string}",
@@ -163,7 +159,7 @@ function timesOf(line: LogLine): number[] {
   return ["wokeAtMs", "endedAtMs", "startedAtMs", "deliveredAtMs"].flatMap((field) => (typeof line[field] === "number" ? [line[field]] : []));
 }
 
-/** The experiment file's list of a field, such as its models or the names of its conditions. */
+/** The names of the experiment file's conditions. */
 function conditionNames(context: Context): string[] {
   return Object.keys(context.experimentFile.conditions as TomlTable);
 }

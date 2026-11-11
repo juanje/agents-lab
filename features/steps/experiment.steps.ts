@@ -6,7 +6,7 @@ import { slotsScenario } from "../../tests/fixtures/slots.ts";
 import type { Context } from "../support/context.ts";
 
 /** A table that sets one value at a dotted path such as "slots.count". */
-function tableAt(path: string, value: TomlValue): TomlTable {
+export function tableAt(path: string, value: TomlValue): TomlTable {
   return path.split(".").reduceRight<TomlValue>((inner, key) => ({ [key]: inner }), value) as TomlTable;
 }
 
