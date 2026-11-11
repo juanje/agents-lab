@@ -12,7 +12,7 @@ const OTHER_OUTCOME = "- any other outcome: the outcome's name";
 export function inventory<State>(experiment: Experiment, scenario: Partial<Scenario<State>>): string {
   const sections = experiment.conditions.map((condition) => {
     const loaded = loadScenario(scenario, experiment.seed, condition);
-    return [`## Condition "${condition.name}"\n`, agentsOf(loaded), toolsOf(loaded)].join("\n");
+    return [`## Condition "${condition.name}"\n`, agentsOf(loaded), toolsOf(loaded), channelsOf(loaded), modelsAndLimitsOf(experiment)].join("\n");
   });
   return [`# Environment inventory of experiment "${experiment.id}", scenario "${scenario.name}"\n`, ...sections].join("\n");
 }
@@ -52,6 +52,27 @@ function toolsOf<State>({ scenario, configuration }: LoadedScenario<State>): str
 function textsOf<State>(tool: Tool<State>): string[] {
   if (tool.kind === "sensor") return ["- success: the part of the world it senses"];
   return Object.entries(tool.texts ?? {}).map(([outcome, text]) => `- ${outcome}: ${text}`);
+}
+
+/** Each stimulus channel of a loaded scenario, with its source and what it delivers. */
+function channelsOf<State>({ channels }: LoadedScenario<State>): string {
+  const listed = channels.map((channel) =>
+    [`#### Channel "${channel.name}"\n`, `- Source: ${channel.source}\n`, "Delivers:\n", fenced(channel.stimulus, "text")].join("\n"),
+  );
+  return ["### Stimulus channels\n", ...listed].join("\n");
+}
+
+/** The models an experiment's agents work with, and the limits its runs run under. */
+function modelsAndLimitsOf({ models, limits }: Experiment): string {
+  return [
+    "### Model and limits\n",
+    `- Models: ${models.join(", ")}`,
+    `- Activations per agent: ${limits.activationsPerAgent}`,
+    `- Time limit: ${limits.timeLimitMs} ms`,
+    `- Parallelism limit: ${limits.parallelismLimit}`,
+    `- Model turn timeout: ${limits.modelTurnTimeoutMs} ms`,
+    "",
+  ].join("\n");
 }
 
 /** A text as a fenced block, with a fence longer than any run of backticks in it, so the text is given whole. */
