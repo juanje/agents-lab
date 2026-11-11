@@ -1,5 +1,6 @@
 import type { Scenario } from "../engine/scenario.ts";
 import { neighbourhoodScenario } from "./neighbourhood.ts";
+import { workplaceScenario } from "./workplace.ts";
 
 /**
  * A scenario as the library holds it. Its state's type is left open: the library holds scenarios whose states differ,
@@ -10,5 +11,5 @@ export type LibraryScenario = Partial<Scenario<any>>;
 
 /** The scenario library: each reusable scenario, by its name. */
 export const scenarioLibrary: ReadonlyMap<string, LibraryScenario> = new Map(
-  [neighbourhoodScenario].map((scenario) => [scenario.name, scenario]),
+  [neighbourhoodScenario, workplaceScenario].map((scenario) => [scenario.name, scenario]),
 );
