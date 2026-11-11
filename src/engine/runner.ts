@@ -21,6 +21,8 @@ export interface IndexLine {
   /** The replica, from 1. */
   replica: number;
   seed: number;
+  /** The level of each factor, by the factor's name, when the condition is a combination of levels; otherwise none (FR-EXPERIMENT-02). */
+  levels?: Readonly<Record<string, string>>;
   status: "completed" | "stopped";
 }
 
@@ -85,7 +87,8 @@ export async function runExperiment<State>(
           const agents = [...loaded.systemPrompts.keys()].map((name) => ({ name, model, activations: experiment.limits.activationsPerAgent }));
           // Chosen here, so the index can list a run that stops as well as one that completes.
           const runId = randomUUID();
-          const listed = { runId, condition: condition.name, model: modelName, replica, seed };
+          const levels = condition.levels === undefined ? {} : { levels: condition.levels };
+          const listed = { runId, condition: condition.name, model: modelName, replica, seed, ...levels };
           number += 1;
           if (interruption?.aborted) throw new Error(`the experiment was interrupted before run ${number} of ${total} started`);
           const activations = agents.reduce((sum, agent) => sum + agent.activations, 0);
@@ -104,6 +107,7 @@ export async function runExperiment<State>(
                 code,
                 inventory: inventories[at],
                 materials: loaded.materials,
+                ...levels,
               },
               modelTurnTimeoutMs: experiment.limits.modelTurnTimeoutMs,
               thinkingLevel: experiment.thinkingLevel,

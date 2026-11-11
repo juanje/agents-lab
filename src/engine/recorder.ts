@@ -25,6 +25,8 @@ export interface RunSetup {
   inventory: ConditionInventory;
   /** Each material the condition set a value to, by its path, with the hash of its content (FR-EXPERIMENT-04). */
   materials: readonly Material[];
+  /** The level of each factor, by the factor's name, when the condition is a combination of levels; otherwise none (FR-EXPERIMENT-02). */
+  levels?: Readonly<Record<string, string>>;
 }
 
 /**

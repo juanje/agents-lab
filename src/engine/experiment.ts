@@ -56,11 +56,11 @@ export function readExperiment(toml: string, directory?: string): Experiment {
   };
 }
 
-/** A condition as the file gives it, before its materials: its name, its change as a table, and its levels. */
+/** A condition as the file gives it, before its materials: its name, its change as a table, and its levels, if it is a combination. */
 interface Given {
   name: string;
   change: TomlTable;
-  levels: Readonly<Record<string, string>>;
+  levels?: Readonly<Record<string, string>>;
 }
 
 /**
@@ -68,19 +68,19 @@ interface Given {
  * every combination of levels, the first factor's changing slowest; then the file's own conditions (FR-EXPERIMENT-02).
  * A change's keys are checked when the scenario is loaded with it, against the scenario's base configuration.
  */
-function conditionsOf(file: { conditions?: TomlTable; factors?: TomlTable }): { name: string; change: string; levels: Readonly<Record<string, string>> }[] {
+function conditionsOf(file: { conditions?: TomlTable; factors?: TomlTable }): Condition[] {
   const own = file.conditions ?? {};
   const given: Given[] = [
-    ...(file.factors === undefined ? [] : [{ name: "baseline", change: {}, levels: {} }, ...combinations(file.factors)]),
-    ...Object.keys(own).map((name) => ({ name, change: field(own, ["conditions", name], table), levels: {} })),
+    ...(file.factors === undefined ? [] : [{ name: "baseline", change: {} }, ...combinations(file.factors)]),
+    ...Object.keys(own).map((name) => ({ name, change: field(own, ["conditions", name], table) })),
   ];
   if (given.length === 0) throw new Error('The experiment file gives no condition: it must give "conditions", "factors" or both');
-  return given.map(({ name, change, levels }) => ({ name, change: stringify(change), levels }));
+  return given.map(({ change, ...rest }) => ({ ...rest, change: stringify(change) }));
 }
 
 /** Every combination of the factors' levels, as a condition named after its levels, the first factor's changing slowest. */
-function combinations(factors: TomlTable): Given[] {
-  let combined: Given[] = [{ name: "", change: {}, levels: {} }];
+function combinations(factors: TomlTable): Required<Given>[] {
+  let combined: Required<Given>[] = [{ name: "", change: {}, levels: {} }];
   for (const factor of Object.keys(factors)) {
     const levels = field(factors, ["factors", factor], namedLevels);
     combined = combined.flatMap((partial) =>

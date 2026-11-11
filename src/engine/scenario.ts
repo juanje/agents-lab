@@ -47,7 +47,7 @@ export interface Condition {
   name: string;
   /** The change, in TOML. */
   change: string;
-  /** The level of each factor, by the factor's name, when the condition is a combination of levels (FR-EXPERIMENT-02). */
+  /** The level of each factor, by the factor's name, when the condition is a combination of levels; otherwise none (FR-EXPERIMENT-02). */
   levels?: Readonly<Record<string, string>>;
   /** Where the materials the change refers to are read from (FR-EXPERIMENT-04). */
   materials?: Materials;
