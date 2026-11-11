@@ -409,8 +409,16 @@ The neighbourhood scenario's metrics are:
 *Why:* experiments read the system-level pattern from the shares. A measure that depends on a rule given to the residents, such as how many fall below a threshold, is computed by that experiment's analysis from the shares and the tool calls.
 
 #### FR-WORKPLACE-01: A workplace from its materials
-The workplace scenario builds, from material files (FR-EXPERIMENT-04), a place of rooms and passages (FR-SPACE-03), the things in it and their properties, the texts on them (notes, labels, signs, letters), and the situations seeded in it. Each situation has reserved keys (its class, whether a rule covers it, whether it is a conflict or a control) that no agent can sense and the inventory lists by name only. The configuration chooses which situations a run holds, and the seed places them.
-*Why:* E1–E4 share one invented workplace; its norms, things and situations are written as material, reviewed as files and fingerprinted, so an experiment changes texts and situations, not code.
+The workplace scenario has one agent, `worker`, and builds its world from texts in TOML that its configuration gives, usually as materials (FR-EXPERIMENT-04):
+- **`world`:** its places and passages (FR-SPACE-03), the place where the worker starts, the things in it and the people in it. A thing has an id, a name (what anyone in its place sees), visible properties, an optional text written on it, whether it is a container, whether it can be carried, and where it is: a place, or inside a container. A person has an id, a name, a description and a place; people are entities of the space but not agents, and do not act unless a later FR makes them.
+- **`situations`:** each situation's id, the things it brings into the world (as the world's things, placed in the situation's place unless they are inside another of its things), and the places it can be in.
+- **`situation_keys`:** each situation's reserved keys (for example its class, whether a rule covers it, whether it is a conflict or a control), usually from a held-out material. The scenario keeps them apart from everything a tool or a prompt can give the worker.
+- **`chosen_situations`:** the ids of the situations a run holds.
+
+The seed places each chosen situation in one of its places; a situation's place depends only on the seed and its id, so a condition that chooses more situations leaves the others where they were. The worker's system prompt joins, in this order and skipping any that is empty, the configuration's `identity`, `world_rules`, `norms` and `rules`. Its rhythm and its rhythm channel come from the configuration, as in the neighbourhood (FR-NEIGHBOURHOOD-01). The inventory lists the chosen situations by id only.
+
+A text that is not valid TOML, or a world or situation that names a place, a container or a situation it does not declare, gives two things the same id, or puts a thing inside a thing that is not a container, fails before any model call with an error that names it. Its tools come with FR-WORKPLACE-02 and its metrics with FR-WORKPLACE-04.
+*Why:* E1–E4 share one invented workplace; its norms, things and situations are written as material, reviewed as files and fingerprinted, so an experiment changes texts and situations, not code. Placing each situation by its own id keeps conditions comparable on the same starting worlds (NFR-05).
 
 #### FR-WORKPLACE-02: The worker senses and acts through the workplace's tools
 The worker has these tools:
