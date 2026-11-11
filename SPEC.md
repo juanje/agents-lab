@@ -215,7 +215,7 @@ Each agent has energy, up to a maximum the scenario sets. Each tool call spends 
 Each run writes one new JSONL file, named with the run id. It adds one line for each:
 - **activation:** the agent, when it woke and when it ended;
 - **stimulus:** the agent, the channel, the source, the content, and when it was delivered;
-- **model turn:** the agent, its text, the model that answered, the wait for a model slot, the latency, and the tokens and cost Pi reports;
+- **model turn:** the agent, its text, the reasoning the provider returned with it, if any, the model that answered, the wait for a model slot, the latency, and the tokens and cost Pi reports;
 - **tool call:**
   - the agent, the tool and the call exactly as the model made it;
   - when it started and ended, and its outcome;
