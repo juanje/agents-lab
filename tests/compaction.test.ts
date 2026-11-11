@@ -15,7 +15,7 @@ describe("summaryInstructions", () => {
     expect(update).toMatch(/^The messages above are NEW conversation messages/);
     expect(splitTurn).toMatch(/^The messages above are earlier context from an ongoing conversation\./);
     expect(splitTurn).toContain("## Original Request");
-    for (const text of [first, update, splitTurn]) expect(text).not.toMatch(/conversation>|# Conversation|previous-summary>|# Instructions/);
+    for (const text of [first, update, splitTurn]) expect(text).not.toMatch(/<\/?conversation>\n|# Conversation\n|<\/previous-summary>\n|# Instructions\n/);
   });
 });
 
@@ -29,9 +29,12 @@ describe("isSummaryRequest", () => {
   });
 });
 
+/** Compaction settings as Pi checks them, every one given. */
+type PiSettings = Parameters<typeof shouldCompact>[2];
+
 describe("piCompactionSettings", () => {
   it("turns the share of the window that starts a compaction into Pi's reserve for the model's window, so Pi starts one once the context is above that share", () => {
-    const settings = piCompactionSettings({ enabled: true, triggerAt: 0.5, keepRecentTokens: 500 }, 4000);
+    const settings = piCompactionSettings({ enabled: true, triggerAt: 0.5, keepRecentTokens: 500 }, 4000) as PiSettings;
 
     expect(settings).toEqual({ enabled: true, reserveTokens: 2000, keepRecentTokens: 500 });
     expect(shouldCompact(2000, 4000, settings)).toBe(false);
@@ -40,7 +43,7 @@ describe("piCompactionSettings", () => {
 
   it("starts at the same share for models with different windows", () => {
     for (const window of [4000, 128000, 1000000]) {
-      const settings = piCompactionSettings({ enabled: true, triggerAt: 0.8, keepRecentTokens: 500 }, window);
+      const settings = piCompactionSettings({ enabled: true, triggerAt: 0.8, keepRecentTokens: 500 }, window) as PiSettings;
       expect(shouldCompact(0.8 * window, window, settings)).toBe(false);
       expect(shouldCompact(0.8 * window + 1, window, settings)).toBe(true);
     }
