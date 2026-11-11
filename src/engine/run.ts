@@ -96,8 +96,10 @@ export async function run<State>(
   if (settings.interruption?.aborted) interrupt();
   settings.interruption?.addEventListener("abort", interrupt, { once: true });
   try {
-    const stimuli = new Stimuli(loaded.channels, (agent, stimulus) =>
-      recorder.record({ type: "stimulus", agent, ...stimulus, deliveredAtMs: performance.now() }),
+    const stimuli = new Stimuli(
+      loaded.channels,
+      (agent, stimulus) => recorder.record({ type: "stimulus", agent, ...stimulus, deliveredAtMs: performance.now() }),
+      loaded.firstStimuli,
     );
     // The setup goes first: nothing is recorded before the sessions are open and onStart is called.
     const opened = (sampling: Sampling | null) => {
