@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { arrive, entitiesIn, exits, inSight, layout, leave, put, where } from "../src/engine/places.ts";
+import { arrive, entitiesIn, entitiesInPassage, exits, inSight, layout, leave, put, where } from "../src/engine/places.ts";
 import { World } from "../src/engine/world.ts";
 
 /** Three places: a passage of length 2 joins "hall" and "store", and one of length 5 "hall" and "yard". */
@@ -134,5 +134,16 @@ describe("inSight", () => {
 
   it("refuses an entity the space does not hold, naming it", () => {
     expect(() => inSight(peopled(), "z")).toThrow('entity "z"');
+  });
+});
+
+describe("entitiesInPassage", () => {
+  it("gives every entity in a passage, whichever way it crosses and whichever way the passage is named, and none for one that holds none", () => {
+    let space = put(put(put(building(), "a", "hall"), "d", "yard"), "b", "store");
+    space = leave.effect(space, { entity: "a", towards: "yard" });
+    space = leave.effect(space, { entity: "d", towards: "hall" });
+    expect(entitiesInPassage(space, "hall", "yard")).toEqual(["a", "d"]);
+    expect(entitiesInPassage(space, "yard", "hall")).toEqual(["a", "d"]);
+    expect(entitiesInPassage(space, "hall", "store")).toEqual([]);
   });
 });
