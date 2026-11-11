@@ -64,6 +64,8 @@ export async function run<State>(
   seed: number,
   settings: RunSettings,
 ): Promise<RunResult> {
+  // Refused before its log opens, as a scenario that fails to load is: nothing has run.
+  assertScenarioAgents(loaded, agents);
   const recorder = Recorder.open(settings.logDirectory);
   // Aborts when the run ends before its agents are done: its time limit passes (FR-CLOCK-02) or it stops on an error.
   const runEnd = new AbortController();
@@ -90,6 +92,24 @@ export async function run<State>(
   } finally {
     recorder.close();
   }
+}
+
+/**
+ * Refuses a run whose agents are not exactly the loaded scenario's, naming the agents missing and those not declared:
+ * an agent the scenario does not declare has no system prompt from it, and a missing one would leave the world with an
+ * entity no agent moves.
+ */
+function assertScenarioAgents<State>({ scenario, systemPrompts }: LoadedScenario<State>, agents: readonly Agent[]): void {
+  const names = new Set(agents.map((agent) => agent.name));
+  const missing = [...systemPrompts.keys()].filter((name) => !names.has(name));
+  const undeclared = [...names].filter((name) => !systemPrompts.has(name));
+  if (missing.length === 0 && undeclared.length === 0) return;
+  const quoted = (list: readonly string[]) => list.map((name) => `"${name}"`).join(", ");
+  const differences = [
+    ...(missing.length > 0 ? [`${quoted(missing)} ${missing.length === 1 ? "is" : "are"} missing`] : []),
+    ...(undeclared.length > 0 ? [`${quoted(undeclared)} ${undeclared.length === 1 ? "is" : "are"} not declared`] : []),
+  ];
+  throw new Error(`The run's agents are not those of scenario "${scenario.name}": ${differences.join("; ")}`);
 }
 
 /** Runs the agents of a run whose log is open. */
