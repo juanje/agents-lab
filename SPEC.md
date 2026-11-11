@@ -365,6 +365,9 @@ Durations are printed in hours, minutes and seconds (for example `30 min 0 s`), 
 What it prints is read from what the run records, and nothing it prints goes to the log.
 *Why:* a run of an experiment the size of E13 takes many minutes, and a silent terminal cannot tell a working run from a stuck one.
 
+#### FR-RUN-05: An interrupted experiment ends its run like a stopped one
+When `lab run` is interrupted (Ctrl-C, or a termination signal), it ends the run in progress the way a run that stops on an error ends: every agent stops, every session closes, the log's last line says the run stopped because it was interrupted, `index.jsonl` lists the run as stopped, and the experiment's total is printed. No later run starts.
+*Why:* a run stopped by hand is still a run of the experiment; without a trace, its partial log reads as a run that crashed or never existed.
 
 #### FR-ADAPTER-03: Context compaction is declared and recorded
 An experiment file says whether an agent's context is compacted and, if it is, when (the share of the context window that triggers it). Every session uses that setting; each compaction is recorded in the log with the agent, when it happened, and the context's size before and after it.
