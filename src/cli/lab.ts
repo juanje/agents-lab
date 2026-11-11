@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { summarizeRuns, summaryMarkdown } from "../analysis/replicas.ts";
 import type { AgentModel } from "../engine/adapter.ts";
 import { type Experiment, readExperiment } from "../engine/experiment.ts";
 import { inventory, inventoryMarkdown } from "../engine/inventory.ts";
@@ -12,7 +13,7 @@ import { Progress } from "./progress.ts";
  * prints what it lists.
  */
 export interface LabEnvironment {
-  /** The current directory, under which an experiment's runs are written. */
+  /** The current directory, under which an experiment's runs are written, and against which a runs directory to summarize is found. */
   directory: string;
   /** Prints a text the command gives, as it gives it. */
   print: (text: string) => void;
@@ -28,15 +29,21 @@ export interface LabEnvironment {
 const PROGRESS_INTERVAL_MS = 30_000;
 
 /** How the command is used, as an error for other arguments says. */
-const USAGE = "Usage: lab run <experiment.toml> [--progress-interval-ms <ms>] or lab inventory <experiment.toml>";
+const USAGE = "Usage: lab run <experiment.toml> [--progress-interval-ms <ms>], lab inventory <experiment.toml> or lab summarize <runs-dir> [--json]";
 
 /**
  * The `lab` command, with its arguments: `lab run <experiment.toml>` runs the experiment, printing each run's progress
  * every `--progress-interval-ms`, 30 seconds unless given; `lab inventory <experiment.toml>` prints its environment
- * inventory, without running it or resolving any model.
+ * inventory, without running it or resolving any model; `lab summarize <runs-dir>` prints the summary of an
+ * experiment's runs as Markdown, or as JSON with `--json`, from the directory's index and logs alone (FR-RUN-02).
  */
 export async function lab(args: readonly string[], environment: LabEnvironment): Promise<void> {
   const command = parse(args);
+  if (command.name === "summarize") {
+    const rows = summarizeRuns(resolve(environment.directory, command.path), command.path);
+    environment.print(command.json ? `${JSON.stringify(rows, null, 2)}\n` : summaryMarkdown(rows));
+    return;
+  }
   const experiment = readExperiment(readFileSync(command.path, "utf8"), dirname(command.path));
   const scenario = environment.scenarios.get(experiment.scenario);
   if (scenario === undefined) throw new Error(`The scenario library has no scenario "${experiment.scenario}"`);
@@ -48,12 +55,18 @@ export async function lab(args: readonly string[], environment: LabEnvironment):
 }
 
 /** A command `lab` was given, with what it takes. */
-type Command = { name: "inventory"; path: string } | { name: "run"; path: string; progressIntervalMs: number };
+type Command =
+  | { name: "inventory"; path: string }
+  | { name: "run"; path: string; progressIntervalMs: number }
+  | { name: "summarize"; path: string; json: boolean };
 
 /** The command the arguments give; it refuses any other arguments, saying how the command is used. */
 function parse(args: readonly string[]): Command {
   const [name, path, ...options] = args;
   if (path !== undefined && name === "inventory" && options.length === 0) return { name, path };
+  if (path !== undefined && name === "summarize" && options.length <= 1 && options.every((option) => option === "--json")) {
+    return { name, path, json: options.length === 1 };
+  }
   if (path !== undefined && name === "run") {
     if (options.length === 0) return { name, path, progressIntervalMs: PROGRESS_INTERVAL_MS };
     const [option, value] = options;

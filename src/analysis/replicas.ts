@@ -117,7 +117,26 @@ export function summarizeRuns(directory: string, name: string = directory): Summ
   });
 }
 
-/** A stub that gives nothing, for the test to fail on its assertions. */
-export function summaryMarkdown(_rows: readonly SummaryRow[]): string {
-  return "";
+/** The summary's columns, in order: each one's header and its cell in a row. */
+const COLUMNS: readonly [string, (row: SummaryRow) => string][] = [
+  ["Condition", (row) => row.condition],
+  ["Model", (row) => row.model],
+  ["Metric", (row) => row.metric],
+  ["Key", (row) => row.key ?? ""],
+  ["Completed", (row) => String(row.completed)],
+  ["Stopped", (row) => String(row.stopped)],
+  ["Values", (row) => row.values.join(", ")],
+  ["Replicas", (row) => row.replicas.join(", ")],
+  ["Nulls", (row) => String(row.nulls)],
+  ["Minimum", (row) => String(row.minimum ?? "-")],
+  ["Lower quartile", (row) => String(row.lowerQuartile ?? "-")],
+  ["Median", (row) => String(row.median ?? "-")],
+  ["Upper quartile", (row) => String(row.upperQuartile ?? "-")],
+  ["Maximum", (row) => String(row.maximum ?? "-")],
+];
+
+/** The summary's rows as a Markdown table, a row on each line; a quartile there is none of is a dash. */
+export function summaryMarkdown(rows: readonly SummaryRow[]): string {
+  const line = (cells: readonly string[]) => `| ${cells.join(" | ")} |\n`;
+  return [line(COLUMNS.map(([header]) => header)), line(COLUMNS.map(() => "---")), ...rows.map((row) => line(COLUMNS.map(([, cell]) => cell(row))))].join("");
 }
