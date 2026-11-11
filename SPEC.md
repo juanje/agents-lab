@@ -205,7 +205,7 @@ A sensor call takes its declared duration, which, like an effector's, may depend
 *Why:* perceiving is an act that takes time, and what an agent knows is what it last perceived, not the world's current state.
 
 #### FR-TOOL-04: Acting takes time, and its effect is checked when it lands
-An effector call takes its declared duration, which may depend on its arguments, the agent that calls it and the state (for example, distance or the agent's own speed). The agent is busy until it ends; its effect is checked and applied then, against the world as it is at that moment, and it fails only for a reason of the world (for example, the cell is held), whatever the agent perceived. Each effector call records, beside its outcome, what the agent last sensed of its target: `free`, `held`, `outside` (its last sensing showed the target is no place it can go) or `not_sensed`. The scenario declares, for each effector, how to read its target in the agent's last sensing.
+An effector call takes its declared duration, which may depend on its arguments, the agent that calls it and the state (for example, distance or the agent's own speed). The agent is busy until it ends; its effect is checked and applied then, against the world as it is at that moment (an effector that is under way in the world, such as crossing a passage, can also change the state when it starts: FR-SPACE-03), and it fails only for a reason of the world (for example, the cell is held), whatever the agent perceived. Each effector call records, beside its outcome, what the agent last sensed of its target: `free`, `held`, `outside` (its last sensing showed the target is no place it can go) or `not_sensed`. The scenario declares, for each effector, how to read its target in the agent's last sensing.
 *Why:* doing things takes time, and the world goes on changing meanwhile. A collision is a physical event that happens whether or not the agent looked (NFR-11); what the agent knew is what tells stale information from a misjudgement or from acting without perceiving, and it belongs in the record, not in the outcome.
 
 #### FR-SPACE-02: Moving across the grid takes time in proportion to distance
@@ -214,8 +214,19 @@ The grid gives the distance between two cells, counted in steps between neighbou
 
 
 #### FR-SPACE-03: A space of places connected by passages
-The engine provides a space of named places connected by passages, each passage with its length. It answers, for an entity: the place it is in, the places one passage away, and the entities in a place. Moving through a passage takes time in proportion to its length; moving to a place that is not one passage away is refused.
-*Why:* worlds such as a building or a village are made of rooms and paths, not cells; the space keeps their layout and the time to cross it the same across scenarios.
+The engine provides a space of named places connected by passages. A passage joins two places, can be crossed both ways, and has a length greater than zero. A passage is space too: an entity crossing it is in the passage, in neither of its places. A layout that names a place it does not declare, or gives a passage a length of zero or less, is refused with an error that names it. Places and passages hold any number of entities. The space answers:
+- **where:** the place or passage an entity is in, or none when the space does not hold it;
+- **exits:** the places one passage away from a place, each with the passage's length;
+- **entities:** the entities in a place or a passage;
+- **in sight:** the entities an entity can see. From a place, it sees the entities in that place and in the passages that leave it; from a passage, the entities in that passage and in the two places it joins. Nothing else is in sight: no one sees through walls, nor into a place from another place;
+- **leave:** an entity in a place enters the passage towards a place one passage away;
+- **arrive:** an entity in a passage reaches the place it was heading for.
+
+A leave of an entity the space does not hold, or not in a place, or towards a place that is unknown or not one passage away, is refused with an error that names the entity or the place, and applies nothing; so is an arrive of an entity that is not in a passage.
+
+A scenario's effector that moves an agent to another place takes, as its duration (FR-TOOL-04), the scenario's time per unit of length multiplied by the passage's length. The agent leaves its place when the call starts and arrives when it ends: in between it is in the passage, where others can see it, and its old place no longer holds it.
+*Why:* worlds such as a building or a village are made of rooms and paths, not cells; the space keeps their layout, the time to cross it and what can be seen from where the same across scenarios. An agent that stayed in its place until it arrived would be seen where it no longer is, and would reach its new place at once for everyone else. What an agent can see depends on where it is, so the layout shapes what each agent can know (NFR-12). An agent's choice of a place it cannot reach is the scenario's to name; a leave that reaches the space with it is a defect in the scenario.
+
 #### FR-PROCESS-01: The environment changes on its own
 A scenario can declare processes: changes the world applies at a given interval, through the arbiter, whether or not any agent acts (for example, energy recovering or a resource growing back).
 *Why:* real environments have their own dynamics; a world that changes only when agents act is a laboratory artefact.
