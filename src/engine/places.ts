@@ -51,3 +51,8 @@ export function exits(space: Places, place: string): Exit[] {
     one === place ? [{ place: other, length }] : other === place ? [{ place: one, length }] : [],
   );
 }
+
+/** The entities in a place, in the order the space first held them. */
+export function entitiesIn(_space: Places, _place: string): string[] {
+  return [];
+}

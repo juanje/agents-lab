@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { BeforeStep, Given, Then } from "@cucumber/cucumber";
-import { type Places, exits, layout, put, where } from "../../src/engine/places.ts";
+import { type Places, entitiesIn, exits, layout, put, where } from "../../src/engine/places.ts";
 import type { Context } from "../support/context.ts";
 
 Given(
@@ -55,4 +55,22 @@ Then(
 
 Then("{string} has the exit {string}, of length {int}", function (this: Context, place: string, exit: string, length: number) {
   assert.deepEqual(exits(current(this), place), [{ place: exit, length }]);
+});
+
+/** Checks that a place holds exactly these entities, in any order. */
+function assertHolds(context: Context, place: string, entities: readonly string[]): void {
+  const held = entitiesIn(current(context), place);
+  assert.deepEqual([...held].sort(), [...entities].sort(), `"${place}" holds ${JSON.stringify(held)}`);
+}
+
+Then("the entities in {string} are {string} and {string}", function (this: Context, place: string, first: string, second: string) {
+  assertHolds(this, place, [first, second]);
+});
+
+Then("the entities in {string} are {string}", function (this: Context, place: string, entity: string) {
+  assertHolds(this, place, [entity]);
+});
+
+Then("{string} holds no entities", function (this: Context, place: string) {
+  assertHolds(this, place, []);
 });
