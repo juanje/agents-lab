@@ -48,7 +48,7 @@ export interface ExperimentObserver {
  * replica, one run after another. Every agent of a run works with that run's model. Each run writes its log into the
  * runs directory, and the directory's index gets a line for each run as it ends. A run that stops on an error stops
  * the experiment there. An observer, when given, is told when each run starts, each line its log records, and how it
- * ends.
+ * ends. An interruption, when given, stops the run in progress as an error would, and no run starts after it (FR-RUN-05).
  */
 export async function runExperiment<State>(
   experiment: Experiment,
@@ -56,6 +56,7 @@ export async function runExperiment<State>(
   models: ReadonlyMap<string, AgentModel>,
   runsDirectory: string,
   observer?: ExperimentObserver,
+  interruption?: AbortSignal,
 ): Promise<void> {
   // Each condition is loaded once before the first run, so one the scenario refuses fails before any model call.
   for (const condition of experiment.conditions) loadScenario(scenario, experiment.seed, condition);
@@ -85,6 +86,7 @@ export async function runExperiment<State>(
           const runId = randomUUID();
           const listed = { runId, condition: condition.name, model: modelName, replica, seed };
           number += 1;
+          if (interruption?.aborted) throw new Error(`the experiment was interrupted before run ${number} of ${total} started`);
           const activations = agents.reduce((sum, agent) => sum + agent.activations, 0);
           observer?.runStarted({ number, total, condition: condition.name, model: modelName, replica, seed, activations });
           try {
@@ -107,6 +109,7 @@ export async function runExperiment<State>(
               timeLimitMs: experiment.limits.timeLimitMs,
               metricIntervalMs: experiment.metricIntervalMs,
               onRecord: observer === undefined ? undefined : (line) => observer.recorded(line),
+              interruption,
             });
           } catch (error) {
             index.write({ ...listed, status: "stopped" } satisfies IndexLine);
