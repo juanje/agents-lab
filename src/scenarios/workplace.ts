@@ -1,5 +1,6 @@
 import { type TomlTable, type TomlValue, parse } from "smol-toml";
 import { type Passage, type Places, arrive, entitiesIn, entitiesInPassage, exits, layout, leave, put, where } from "../engine/places.ts";
+import type { ToolCall } from "../engine/adapter.ts";
 import type { Configuration, Scenario } from "../engine/scenario.ts";
 import { Random } from "../engine/random.ts";
 import type { AgentCall, Effector, LastBy, Sensor, TargetAsSensed, Tool } from "../engine/tools.ts";
@@ -44,6 +45,13 @@ export interface Settings {
   taskGiver: string;
 }
 
+/** A chosen situation: the place the seed put it in, its reserved keys, and the ids of the things it brings. */
+export interface Situation {
+  place: string;
+  keys: TomlTable;
+  things: readonly string[];
+}
+
 /** Something written in the world, with the moment it was written, by `performance.now()`. */
 export interface Written {
   atMs: number;
@@ -61,7 +69,7 @@ export interface Workplace {
   inside: Readonly<Record<string, string>>;
   held: Readonly<Record<string, string>>;
   people: Readonly<Record<string, Person>>;
-  situations: Readonly<Record<string, { place: string; keys: TomlTable }>>;
+  situations: Readonly<Record<string, Situation>>;
   book: readonly (Written & { entry: string })[];
   notes: readonly (Written & { text: string; to: string })[];
   settings: Settings;
@@ -191,14 +199,14 @@ function initialState(configuration: Configuration, random: Random): Workplace {
   }
   let space = layout(places, world.passages ?? []);
   space = put(space, WORKER, world.worker.place);
-  const situations: Record<string, { place: string; keys: TomlTable }> = {};
+  const situations: Record<string, Situation> = {};
   const held: ThingText[] = [...(world.things ?? [])];
   for (const id of configuration.chosen_situations as string[]) {
     if (!Object.hasOwn(declared, id)) throw new Error(`the chosen situation "${id}" is not declared`);
     const situation = declared[id];
     const draw = Random.derive(situationsSeed, `situation ${id}`).next();
     const place = situation.places[Math.floor(draw * situation.places.length)];
-    situations[id] = { place, keys: (keys[id] ?? {}) as TomlTable };
+    situations[id] = { place, keys: (keys[id] ?? {}) as TomlTable, things: (situation.things ?? []).map((thing) => thing.id) };
     held.push(...(situation.things ?? []).map((thing) => (thing.in === undefined ? { ...thing, place } : thing)));
   }
   const things: Record<string, Thing> = {};
@@ -698,6 +706,45 @@ const note: Effector<Workplace> = {
   readTarget: () => "not_sensed",
 };
 
+/** The worker's calls among the run's, in the order it made them: one agent's calls never overlap, so the order they ended in. */
+function workerCalls(toolCalls: readonly ToolCall[]): ToolCall[] {
+  return toolCalls.filter(({ agent }) => agent === WORKER);
+}
+
+/** The thing a recorded call's arguments name, if any. */
+function namedThing(call: ToolCall): unknown {
+  return (call.arguments as Record<string, unknown> | undefined)?.thing;
+}
+
+/** Whether a call sensed one of these things: a look that showed one, or a read or examine of one the worker could reach. */
+function sensedOne(call: ToolCall, things: readonly string[]): boolean {
+  if (call.outcome !== "success" || call.result === undefined) return false;
+  if (call.tool === look.name) return shownIds(JSON.parse(call.result) as Seen).some((id) => things.includes(id));
+  return (call.tool === read.name || call.tool === examine.name) && call.result !== NOT_THERE && things.includes(namedThing(call) as string);
+}
+
+/** Whether a call took, put or gave one of these things. */
+function actedOn(call: ToolCall, things: readonly string[]): boolean {
+  return call.outcome === "success" && [take.name, putDown.name, give.name].includes(call.tool) && things.includes(namedThing(call) as string);
+}
+
+/** For each situation, the end of the worker's first call that meets a condition on its things; none until one does. */
+function firstEnd(state: Workplace, toolCalls: readonly ToolCall[], meets: (call: ToolCall, things: readonly string[]) => boolean): Record<string, number> {
+  const calls = workerCalls(toolCalls);
+  return Object.fromEntries(
+    Object.entries(state.situations).flatMap(([id, { things }]) => {
+      const first = calls.find((call) => meets(call, things));
+      return first === undefined ? [] : [[id, first.endedAtMs]];
+    }),
+  );
+}
+
+/** When the worker first sensed each situation. */
+const sensedAt = (state: Workplace, toolCalls: readonly ToolCall[]) => firstEnd(state, toolCalls, sensedOne);
+
+/** When the worker first took, put or gave one of each situation's things. */
+const actedAt = (state: Workplace, toolCalls: readonly ToolCall[]) => firstEnd(state, toolCalls, actedOn);
+
 /** The worker's tools, in the order the SPEC gives them. */
 const TOOLS: readonly Tool<Workplace>[] = [look, read, examine, go, take, putDown, give, record, note];
 
@@ -725,7 +772,7 @@ export const workplaceScenario: Scenario<Workplace> = {
   agents: () => [WORKER],
   initialState,
   tools: TOOLS,
-  metrics: { holds, predicates },
+  metrics: { holds, predicates, sensed_at_ms: sensedAt, acted_at_ms: actedAt },
   channels: (configuration) => [
     ...rhythmChannels(configuration),
     { name: PERSON_CHANNEL, source: configuration.task_giver as string, stimulus: textsIn(configuration, "person") },
