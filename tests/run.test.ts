@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { ToolCall } from "../src/engine/adapter.ts";
 import { type RunSettings, run } from "../src/engine/run.ts";
 import { ParallelismLimit } from "../src/engine/parallelism.ts";
-import { ScriptedModel } from "../src/engine/scripted-model.ts";
+import { type ScriptedAnswer, ScriptedModel } from "../src/engine/scripted-model.ts";
 import { type Rhythm, type Scenario, loadScenario } from "../src/engine/scenario.ts";
 import type { Stimuli } from "../src/engine/stimuli.ts";
 import type { AgentCall, Effector, Sensor } from "../src/engine/tools.ts";
@@ -1685,13 +1685,35 @@ describe("run, with compaction", () => {
   /** What the agent writes as it looks: about 500 tokens a turn, so its context fills a 4000-token window within 8 turns. */
   const reflection = "I look at the slots again, to see which of them are empty and which are held. ".repeat(26);
 
-  /** A model with a 4000-token window whose agent looks with a long reflection in 8 turns, then ends, and writes this summary. */
-  const filling = () =>
+  /**
+   * A model with a 4000-token window whose agent looks with a long reflection in 8 turns, each taking its delay, then
+   * ends, and which answers a summary call as given: by default, with a summary at once.
+   */
+  const filling = (summary: ScriptedAnswer = { text: "Summary: I looked.", delayMs: 0 }, turnDelayMs = 0) =>
     new ScriptedModel(
-      [...Array.from({ length: 8 }, () => ({ text: reflection, toolCalls: [{ name: "look", arguments: {} }], delayMs: 0 })), { text: "Done.", delayMs: 0 }],
+      [...Array.from({ length: 8 }, () => ({ text: reflection, toolCalls: [{ name: "look", arguments: {} }], delayMs: turnDelayMs })), { text: "Done.", delayMs: turnDelayMs }],
       "small",
-      { contextWindow: 4000, summary: { text: "Summary: I looked.", delayMs: 0 } },
+      { contextWindow: 4000, summary },
     );
+
+  /** The compaction lines of a run's only log. */
+  const compactionsIn = (logDirectory: string, runId: string) =>
+    (logOf(logDirectory, runId) as { type: string }[]).filter((line) => line.type === "compaction") as unknown as Record<string, unknown>[];
+
+  /** What a compaction that did not finish records: no context after it and no summary, but the tokens and cost spent. */
+  const unfinished = (outcome: string) => ({
+    type: "compaction",
+    agent: "a",
+    reason: "threshold",
+    outcome,
+    startedAtMs: expect.any(Number),
+    endedAtMs: expect.any(Number),
+    tokens: { input: expect.any(Number), output: expect.any(Number), cacheRead: expect.any(Number), cacheWrite: expect.any(Number), totalTokens: expect.any(Number) },
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+  });
+
+  /** Whether a turn received a summary of Pi's: the heading Pi gives the start of a turn a compaction cuts through. */
+  const heldASummary = (messages: unknown) => JSON.stringify(messages).includes("Turn Context (split turn)");
 
   const compactionOn = { enabled: true, triggerAt: 0.5, keepRecentTokens: 500 } as const;
 
@@ -1716,6 +1738,7 @@ describe("run, with compaction", () => {
       type: "compaction",
       agent: "a",
       reason: "threshold",
+      outcome: "success",
       startedAtMs: expect.any(Number),
       endedAtMs: expect.any(Number),
       contextTokensBefore: expect.any(Number),
@@ -1757,5 +1780,43 @@ describe("run, with compaction", () => {
     } finally {
       acquire.mockRestore();
     }
+  });
+
+  it("records a compaction whose summary call the provider answers with an error as model_error, with no summary, the tokens and cost spent, and the context as it was", async () => {
+    const model = filling({ error: "overloaded", delayMs: 0 });
+    const logDirectory = newLogDirectory();
+
+    const { runId } = await run(slots(), [{ name: "a", model, activations: 1 }], seed, { ...settings, logDirectory, compaction: compactionOn });
+
+    const compactions = compactionsIn(logDirectory, runId);
+    expect(compactions.length).toBeGreaterThanOrEqual(1);
+    for (const line of compactions) expect(line).toEqual(unfinished("model_error"));
+    expect(model.received.some(heldASummary)).toBe(false);
+  });
+
+  it("aborts a summary call that runs longer than the model turn timeout, records its compaction as timeout, and leaves the context as it was", async () => {
+    const model = filling({ text: "Summary: too late.", delayMs: 1_000 });
+    const logDirectory = newLogDirectory();
+
+    const { runId } = await run(slots(), [{ name: "a", model, activations: 1 }], seed, { ...settings, logDirectory, compaction: compactionOn, modelTurnTimeoutMs: 100 });
+
+    const compactions = compactionsIn(logDirectory, runId);
+    expect(compactions.length).toBeGreaterThanOrEqual(1);
+    for (const line of compactions) {
+      expect(line).toEqual(unfinished("timeout"));
+      expect((line.endedAtMs as number) - (line.startedAtMs as number)).toBeLessThan(1_000);
+    }
+    expect(model.received.some(heldASummary)).toBe(false);
+  });
+
+  it("cuts off a summary call still running when the run's time limit passes, records its compaction as cut_off, and leaves the context as it was", async () => {
+    // Six turns of 50 ms come before the first compaction; the summary would take a second.
+    const model = filling({ text: "Summary: too late.", delayMs: 1_000 }, 50);
+    const logDirectory = newLogDirectory();
+
+    const { runId, messages } = await run(slots(), [{ name: "a", model, activations: 1 }], seed, { ...settings, logDirectory, compaction: compactionOn, timeLimitMs: 450 });
+
+    expect(compactionsIn(logDirectory, runId)).toEqual([unfinished("cut_off")]);
+    expect(heldASummary(messages.get("a"))).toBe(false);
   });
 });
