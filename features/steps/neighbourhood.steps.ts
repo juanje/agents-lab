@@ -191,36 +191,48 @@ Then("without the condition, the system prompt holds no preference or rule", fun
   }
 });
 
+/** Checks that each of these agents, when it wakes, receives on the channel one stimulus, with this source and content. */
+export function assertWakeStimuli(context: Context, agents: readonly string[], channel: string, source: string, content: string): void {
+  assert.equal(channel, RHYTHM_CHANNEL, "the rhythm channel is the one each agent wakes by");
+  assert.ok(agents.length > 0, "the scenario has no agents to check");
+  // What each agent receives when it wakes, as the run's stimuli give it from the loaded scenario's channels.
+  const stimuli = new Stimuli(lastLoaded(context).channels);
+  for (const agent of agents) {
+    const received: Stimulus[] = stimuli.wake(agent).filter((stimulus) => stimulus.channel === channel);
+    assert.deepEqual(received, [{ channel, source, content }], `agent "${agent}" received other stimuli`);
+  }
+}
+
 Then(
   "each resident's stimuli on the channel {string} have the source {string} and the content {string}",
   function (this: Context, channel: string, source: string, content: string) {
-    assert.equal(channel, RHYTHM_CHANNEL, "the rhythm channel is the one each resident wakes by");
-    const { channels, systemPrompts } = lastLoaded(this);
-    assert.ok(systemPrompts.size > 0, "the neighbourhood has no residents");
-    // What each resident receives when it wakes, as the run's stimuli give it from the loaded scenario's channels.
-    const stimuli = new Stimuli(channels);
-    for (const resident of systemPrompts.keys()) {
-      const received: Stimulus[] = stimuli.wake(resident).filter((stimulus) => stimulus.channel === channel);
-      assert.deepEqual(received,[{ channel, source, content }], `resident "${resident}" received other stimuli`);
-    }
+    assertWakeStimuli(this, [...lastLoaded(this).systemPrompts.keys()], channel, source, content);
   },
 );
 
-/** How many intervals the steps draw from each resident's rhythm: enough to reach near both ends of its range. */
+/** How many intervals the steps draw from each agent's rhythm: enough to reach near both ends of its range. */
 const DRAWS = 1_000;
+
+/** Checks that every interval each of these agents' rhythms draws is within the bounds, in milliseconds. */
+export function assertRhythmWithin(context: Context, agents: readonly string[], minMs: number, maxMs: number): void {
+  const { rhythms } = lastLoaded(context);
+  assert.ok(agents.length > 0, "the scenario has no agents to check");
+  for (const agent of agents) {
+    const rhythm = rhythms.get(agent);
+    assert.ok(rhythm !== undefined, `agent "${agent}" has no rhythm`);
+    const random = Random.derive(42, `rhythm of ${agent}`);
+    for (let draw = 0; draw < DRAWS; draw += 1) {
+      const intervalMs = rhythm(random);
+      assert.ok(intervalMs >= minMs && intervalMs <= maxMs, `"${agent}"'s rhythm drew ${intervalMs} ms`);
+    }
+  }
+}
 
 Then(
   "every interval each resident's rhythm draws is from {int} to {int} milliseconds",
   function (this: Context, minMs: number, maxMs: number) {
     const loaded = lastLoaded(this);
-    assert.ok(loaded.rhythms !== undefined, "the loaded neighbourhood gives no rhythms");
     assert.deepEqual([...loaded.rhythms.keys()], [...loaded.systemPrompts.keys()], "not every resident has a rhythm");
-    for (const [resident, rhythm] of loaded.rhythms) {
-      const random = Random.derive(42, `rhythm of ${resident}`);
-      for (let draw = 0; draw < DRAWS; draw += 1) {
-        const intervalMs = rhythm(random);
-        assert.ok(intervalMs >= minMs && intervalMs <= maxMs, `"${resident}"'s rhythm drew ${intervalMs} ms`);
-      }
-    }
+    assertRhythmWithin(this, [...loaded.rhythms.keys()], minMs, maxMs);
   },
 );

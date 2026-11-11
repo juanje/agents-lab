@@ -5,7 +5,7 @@ import { exits, where } from "../../src/engine/places.ts";
 import type { LoadedScenario } from "../../src/engine/scenario.ts";
 import { type Workplace, workplaceScenario } from "../../src/scenarios/workplace.ts";
 import type { Context } from "../support/context.ts";
-import { lastLoaded, loadLibraryScenario, withBase } from "./neighbourhood.steps.ts";
+import { assertRhythmWithin, assertWakeStimuli, inTables, lastLoaded, loadLibraryScenario, withBase } from "./neighbourhood.steps.ts";
 
 /** The worker, the workplace's one agent. */
 const WORKER = "worker";
@@ -145,4 +145,31 @@ Then("the person {string} is in {string}, and is not an agent", function (this: 
   assert.ok(Object.hasOwn(world.state.people, id), `the workplace holds no person "${id}"`);
   assert.equal(placeOf(world.state, id), place);
   assert.deepEqual([...systemPrompts.keys()], [WORKER]);
+});
+
+Then(
+  "the worker's system prompt is {string}, then {string}, then {string}, each separated by a blank line",
+  function (this: Context, first: string, second: string, third: string) {
+    assert.equal(loadedWorkplace(this).systemPrompts.get(WORKER), [first, second, third].join("\n\n"));
+  },
+);
+
+Given(
+  "the configuration sets the rhythm channel's source to {string}, its text to {string}, {string} to {int} and {string} to {int}",
+  function (this: Context, source: string, text: string, minPath: string, minMs: number, maxPath: string, maxMs: number) {
+    const bounds = inTables([[minPath, minMs], [maxPath, maxMs]]);
+    assert.deepEqual(Object.keys(bounds), ["rhythm"], "the bounds are the rhythm's");
+    this.libraryScenario = withBase(this.libraryScenario, { rhythm: { source, text, ...(bounds.rhythm as object) } });
+  },
+);
+
+Then(
+  "the worker's stimuli on the channel {string} have the source {string} and the content {string}",
+  function (this: Context, channel: string, source: string, content: string) {
+    assertWakeStimuli(this, [WORKER], channel, source, content);
+  },
+);
+
+Then("every interval the worker's rhythm draws is from {int} to {int} milliseconds", function (this: Context, minMs: number, maxMs: number) {
+  assertRhythmWithin(this, [WORKER], minMs, maxMs);
 });
