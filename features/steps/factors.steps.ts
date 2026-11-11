@@ -4,7 +4,7 @@ import { type TomlTable, type TomlValue, parse } from "smol-toml";
 import { RHYTHM_CHANNEL } from "../../src/engine/stimuli.ts";
 import type { Context } from "../support/context.ts";
 import { tableAt, valueAt } from "./experiment.steps.ts";
-import { experimentFileOf, indexOf, logOf } from "./lab.steps.ts";
+import { completedIndex, experimentFileOf, failedNaming, logOf } from "./lab.steps.ts";
 
 Given(
   "an experiment file {string} for the scenario {string}, with the model {string}, {int} replica, the base seed {int} and {int} activation per agent, and no conditions",
@@ -80,12 +80,6 @@ Given("the condition {string}, with no change", function (this: Context, name: s
   addCondition(this, name, {});
 });
 
-/** The index of an experiment that completed: "lab run" did not fail. */
-function completedIndex(context: Context): ReturnType<typeof indexOf> {
-  assert.equal(context.labError, undefined, `"lab run" failed: ${context.labError?.message}`);
-  return indexOf(context);
-}
-
 Then(
   "{int} runs ran, with the conditions {string}, {string}, {string}, {string} and {string}, in that order",
   function (this: Context, count: number, first: string, second: string, third: string, fourth: string, fifth: string) {
@@ -115,7 +109,7 @@ Then("{int} runs ran, the last with the condition {string}", function (this: Con
 type LogLine = Record<string, unknown> & { type: string };
 
 /** The index line of the only run of a condition. */
-function indexLineOf(context: Context, condition: string): ReturnType<typeof indexOf>[number] {
+function indexLineOf(context: Context, condition: string): ReturnType<typeof completedIndex>[number] {
   const lines = completedIndex(context).filter((line) => line.condition === condition);
   assert.equal(lines.length, 1, `${lines.length} runs had the condition "${condition}"`);
   return lines[0];
@@ -193,7 +187,5 @@ Then("in every run agent {string}'s rhythm stimulus has the content {string}", f
 });
 
 Then("it fails with an error that names {string}, {string} and {string}", function (this: Context, first: string, second: string, third: string) {
-  const names = [first, second, third];
-  assert.ok(this.labError !== undefined, '"lab run" did not fail');
-  for (const name of names) assert.ok(this.labError.message.includes(name), `the error does not name "${name}": ${this.labError.message}`);
+  failedNaming(this, [first, second, third]);
 });

@@ -233,7 +233,7 @@ export function indexOf(context: Context, from = context.home): IndexLine[] {
 }
 
 /** The index of an experiment that completed: "lab run" did not fail. */
-function completedIndex(context: Context): IndexLine[] {
+export function completedIndex(context: Context): IndexLine[] {
   assert.equal(context.labError, undefined, `"lab run" failed: ${context.labError?.message}`);
   return indexOf(context);
 }
@@ -347,9 +347,14 @@ Then("each agent's log in every run has exactly {int} activation(s)", function (
   }
 });
 
+/** Checks that "lab" failed with an error that names each of the names. */
+export function failedNaming(context: Context, names: readonly string[]): void {
+  assert.ok(context.labError !== undefined, '"lab run" did not fail');
+  for (const name of names) assert.ok(context.labError.message.includes(name), `the error does not name "${name}": ${context.labError.message}`);
+}
+
 Then("it fails with an error that names {string} and {string}", function (this: Context, first: string, second: string) {
-  assert.ok(this.labError !== undefined, '"lab run" did not fail');
-  for (const name of [first, second]) assert.ok(this.labError.message.includes(name), `the error does not name "${name}": ${this.labError.message}`);
+  failedNaming(this, [first, second]);
 });
 
 Then("every session of the run used the thinking level {string}", function (this: Context, thinkingLevel: string) {
@@ -368,8 +373,7 @@ Then("the first line of the run's log gives the thinking level {string}", functi
 });
 
 Then("it fails with an error that names {string}", function (this: Context, name: string) {
-  assert.ok(this.labError !== undefined, '"lab run" did not fail');
-  assert.ok(this.labError.message.includes(name), `the error does not name "${name}": ${this.labError.message}`);
+  failedNaming(this, [name]);
 });
 
 Then("no run log was written", function (this: Context) {
