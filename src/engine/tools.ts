@@ -1,3 +1,4 @@
+import type { Position } from "./grid.ts";
 import type { Sensing } from "./sensings.ts";
 import type { Action } from "./world.ts";
 
@@ -29,6 +30,11 @@ export interface Sensor<State> extends Declared<State> {
   kind: "sensor";
   /** The text the agent receives. */
   sense(state: State, agent: string): string;
+  /**
+   * Where the agent senses from, read against the same state as what it receives, for a sensor whose result is relative
+   * to it; the engine keeps it with the sensing, so an effector can find its target in it later.
+   */
+  takenFrom?(state: State, agent: string): Position;
 }
 
 /** What an agent last sensed of an effector's target, recorded beside the call's outcome and never deciding it (NFR-11). */
@@ -38,8 +44,11 @@ export type TargetAsSensed = "free" | "held" | "not_sensed";
 export interface Effector<State> extends Declared<State> {
   kind: "effector";
   action: Action<State, AgentCall>;
-  /** What the agent's last sensing says of the call's target; "not_sensed" when that sensing does not show it. */
-  readTarget(sensing: Sensing, call: AgentCall): TargetAsSensed;
+  /**
+   * What the agent's last sensing says of the call's target, which it finds from the state as the call starts;
+   * "not_sensed" when that sensing does not show it.
+   */
+  readTarget(sensing: Sensing, call: AgentCall, state: State): TargetAsSensed;
 }
 
 /** An agent's only interface with the world (FR-TOOL-01). */

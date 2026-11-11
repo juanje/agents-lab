@@ -78,6 +78,17 @@ Given(
   },
 );
 
+Given(
+  "resident {string} runs on a scripted model that calls {string}, then calls {string} with dx {int} and dy {int}, then calls {string} with dx {int} and dy {int}, then ends without a tool call",
+  function (this: Context, resident: string, first: string, second: string, dx: number, dy: number, third: string, nextDx: number, nextDy: number) {
+    script(this, resident, [
+      { toolCalls: [{ name: first, arguments: {} }], delayMs: 0 },
+      { toolCalls: [{ name: second, arguments: { dx, dy } }], delayMs: 0 },
+      ...callWithThenEnd(third, { dx: nextDx, dy: nextDy }, 0),
+    ]);
+  },
+);
+
 /** Where the neighbourhood holds a resident once the run has ended. */
 function assertAt(context: Context, resident: string, at: Position): void {
   assert.ok(context.neighbourhoodWorld !== undefined, "the neighbourhood did not run");
@@ -107,6 +118,17 @@ Then("{string} made no {string} call", function (this: Context, resident: string
   const made = this.toolCalls.filter((call) => call.agent === resident && call.tool === tool);
   assert.equal(made.length, 0, `resident "${resident}" made ${made.length} "${tool}" calls`);
 });
+
+Then(
+  "{string}'s second {string} call recorded its target as sensed: {string}",
+  function (this: Context, resident: string, tool: string, sensed: string) {
+    assert.ok(this.toolCalls !== undefined, "the run gave no tool calls");
+    // The run gives the calls in the order they ended; one agent's calls never overlap, so that is the order it made them.
+    const made = this.toolCalls.filter((call) => call.agent === resident && call.tool === tool);
+    assert.equal(made.length, 2, `resident "${resident}" made ${made.length} "${tool}" calls`);
+    assert.equal(made[1].targetAsSensed, sensed);
+  },
+);
 
 Then("the call recorded its target as sensed: {string}", function (this: Context, sensed: string) {
   assert.ok(this.lastToolCall !== undefined, "no call was checked before");

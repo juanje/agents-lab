@@ -8,7 +8,7 @@ import { type RunSettings, run } from "../src/engine/run.ts";
 import { ScriptedModel } from "../src/engine/scripted-model.ts";
 import { type Scenario, loadScenario } from "../src/engine/scenario.ts";
 import type { Stimuli } from "../src/engine/stimuli.ts";
-import type { AgentCall } from "../src/engine/tools.ts";
+import type { AgentCall, Effector, Sensor } from "../src/engine/tools.ts";
 import { type Slots, emptySlots, rhythmChannel, slotTools, slotsScenario, take } from "./fixtures/slots.ts";
 
 /** A rhythm with no waiting: the agent wakes again as soon as its previous activation ends. */
@@ -800,7 +800,7 @@ describe("run", () => {
   });
 
   it("keeps where a sensor's call was taken from, when the sensor declares it, beside what it returned", async () => {
-    const look = { ...slotTools[0], kind: "sensor" as const, sense: () => "seen", takenFrom: (_state: Slots, agent: string) => ({ x: agent.length, y: 7 }) };
+    const look: Sensor<Slots> = { ...(slotTools[0] as Sensor<Slots>), sense: () => "seen", takenFrom: (_state: Slots, agent: string) => ({ x: agent.length, y: 7 }) };
     const model = new ScriptedModel([
       { toolCalls: [{ name: "look", arguments: {} }], delayMs: 0 },
       { text: "Done.", delayMs: 0 },
@@ -813,7 +813,7 @@ describe("run", () => {
 
   it("gives an effector's target reading the state as the call starts, beside the agent's last sensing", async () => {
     // This reading looks only at the state: two slots read as "held", whatever the look showed.
-    const take = { ...slotTools[1], kind: "effector" as const, readTarget: (_sensing: unknown, _call: AgentCall, state: Slots) => (state.length === 2 ? "held" as const : "free" as const) };
+    const take: Effector<Slots> = { ...(slotTools[1] as Effector<Slots>), readTarget: (_sensing: unknown, _call: AgentCall, state: Slots) => (state.length === 2 ? "held" as const : "free" as const) };
     const model = new ScriptedModel([
       { toolCalls: [{ name: "look", arguments: {} }], delayMs: 0 },
       { toolCalls: [{ name: "take", arguments: { slot: 1 } }], delayMs: 0 },

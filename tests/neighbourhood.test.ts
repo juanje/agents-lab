@@ -186,23 +186,25 @@ describe("the neighbourhood scenario", () => {
     const look = toolNamed("look");
     const move = toolNamed("move");
     if (look.kind !== "sensor" || move.kind !== "effector") throw new Error("look is not a sensor or move is not an effector");
-    const sensing = { tool: "look", result: look.sense(residentsAt(5, 5, { lookRadius: 1, msPerCell: 100 }), "r1"), atMs: 0 };
-    const target = (dx: number, dy: number) => move.readTarget(sensing, { agent: "r1", arguments: { dx, dy } });
+    const state = residentsAt(5, 5, { lookRadius: 1, msPerCell: 100 });
+    const sensing = { tool: "look", result: look.sense(state, "r1"), atMs: 0 };
+    const target = (dx: number, dy: number) => move.readTarget(sensing, { agent: "r1", arguments: { dx, dy } }, state);
 
     expect([target(1, 0), target(0, 1)]).toEqual(["held", "held"]);
     expect(target(1, 1)).toBe("free");
     expect([target(2, 0), target(3, 3)]).toEqual(["not_sensed", "not_sensed"]);
-    expect(move.readTarget({ ...sensing, tool: "another sensor" }, { agent: "r1", arguments: { dx: 1, dy: 1 } })).toBe("not_sensed");
+    expect(move.readTarget({ ...sensing, tool: "another sensor" }, { agent: "r1", arguments: { dx: 1, dy: 1 } }, state)).toBe("not_sensed");
   });
 
   it("reads a move's target that the last look showed outside the grid as not sensed, as it is neither free nor held", () => {
     const look = toolNamed("look");
     const move = toolNamed("move");
     if (look.kind !== "sensor" || move.kind !== "effector") throw new Error("look is not a sensor or move is not an effector");
-    const sensing = { tool: "look", result: look.sense(residentsAt(5, 5, { lookRadius: 1, msPerCell: 100 }), "r1"), atMs: 0 };
+    const state = residentsAt(5, 5, { lookRadius: 1, msPerCell: 100 });
+    const sensing = { tool: "look", result: look.sense(state, "r1"), atMs: 0 };
 
-    expect(move.readTarget(sensing, { agent: "r1", arguments: { dx: -1, dy: 0 } })).toBe("not_sensed");
-    expect(move.readTarget(sensing, { agent: "r1", arguments: { dx: 1, dy: -1 } })).toBe("not_sensed");
+    expect(move.readTarget(sensing, { agent: "r1", arguments: { dx: -1, dy: 0 } }, state)).toBe("not_sensed");
+    expect(move.readTarget(sensing, { agent: "r1", arguments: { dx: 1, dy: -1 } }, state)).toBe("not_sensed");
   });
 
   it("draws the cells from the random sequence it is given", () => {

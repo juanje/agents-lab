@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { Given, Then } from "@cucumber/cucumber";
 import type { Action } from "../../src/engine/world.ts";
-import { SLOT_TAKEN, type Seen, type Slots, holder } from "../../tests/fixtures/slots.ts";
+import { SLOT_TAKEN, type Seen, type Slots, emptySlots, holder } from "../../tests/fixtures/slots.ts";
 import type { Context } from "../support/context.ts";
 import { turnsOf } from "./adapter.steps.ts";
 import { callOf, callThenEnd, fixtureTool, script, takeTime } from "./tool.steps.ts";
@@ -33,7 +33,7 @@ Given(
       const seen: Seen[] = [1, 2, 3].map((slot) => (slot === held ? "held" : "empty"));
       const sensing = { tool: "look", result: JSON.stringify(seen), atMs: 0 };
       for (let slot = 1; slot <= 3; slot += 1) {
-        const read: string = effector.readTarget(sensing, { agent: "a", arguments: { slot } });
+        const read: string = effector.readTarget(sensing, { agent: "a", arguments: { slot } }, emptySlots(3));
         assert.equal(read, slot === held ? "held" : "free", `"${name}" of slot ${slot} reads "${read}" when slot ${held} is held`);
       }
     }

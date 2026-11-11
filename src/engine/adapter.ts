@@ -23,6 +23,7 @@ import {
 import type { ChangesSinceSensing } from "./changes.ts";
 import { waitAtLeast } from "./clock.ts";
 import { failure } from "./failure.ts";
+import type { Position } from "./grid.ts";
 import type { ParallelismLimit } from "./parallelism.ts";
 import { SCRIPT_EXHAUSTED_MESSAGE } from "./scripted-model.ts";
 import type { Sensing, Sensings } from "./sensings.ts";
@@ -403,7 +404,7 @@ function definition<State>(
         stop(failure(`agent "${agent}"'s "${tool.name}" call failed`, error));
         throw error;
       }
-      const { outcome, text, ...perceived } = called;
+      const { outcome, text, takenFrom, ...perceived } = called;
       const endedAtMs = performance.now();
       const sensed = tool.kind === "sensor" && outcome === "success";
       executed.set(id, {
@@ -414,7 +415,7 @@ function definition<State>(
         ...perceived,
       });
       if (sensed) {
-        sensings.record(agent, { tool: tool.name, result: text, atMs: endedAtMs });
+        sensings.record(agent, { tool: tool.name, result: text, ...(takenFrom === undefined ? {} : { takenFrom }), atMs: endedAtMs });
         changes.sensed(agent);
       }
       // A failure is marked as one: an agent told that a failure succeeded would act on a world it misreads.
@@ -466,6 +467,8 @@ type Executed = Pick<ToolCall, "outcome" | "startedAtMs" | "endedAtMs" | "result
 interface CallResult {
   outcome: string;
   text: string;
+  /** For a sensor's call that declares it, where the agent sensed from; kept with the sensing, not in the call's record. */
+  takenFrom?: Position;
   targetAsSensed?: TargetAsSensed;
   changesSinceSensing?: number | null;
   changesSinceSensingBy?: string[] | null;
@@ -499,7 +502,7 @@ async function perform<State>(
   changes: ChangesSinceSensing,
   runEnd: AbortSignal,
 ): Promise<CallResult> {
-  const targetAsSensed = tool.kind === "effector" ? (sensing === undefined ? "not_sensed" : tool.readTarget(sensing, call)) : undefined;
+  const targetAsSensed = tool.kind === "effector" ? (sensing === undefined ? "not_sensed" : tool.readTarget(sensing, call, world.state)) : undefined;
   await waitAtLeast(tool.durationMs(world.state, call), runEnd);
   const result = runEnd.aborted
     ? { outcome: CUT_OFF, text: CUT_OFF }
@@ -511,7 +514,9 @@ async function perform<State>(
 
 /** Reads the world for a sensor's call, which then always succeeds. */
 function sense<State>(world: World<State>, sensor: Sensor<State>, call: AgentCall): CallResult {
-  return { outcome: "success", text: sensor.sense(world.state, call.agent) };
+  const { state } = world;
+  const text = sensor.sense(state, call.agent);
+  return sensor.takenFrom === undefined ? { outcome: "success", text } : { outcome: "success", text, takenFrom: sensor.takenFrom(state, call.agent) };
 }
 
 /**

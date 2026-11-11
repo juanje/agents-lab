@@ -1,8 +1,12 @@
+import type { Position } from "./grid.ts";
+
 /** What one sensor call returned, and when: at the moment the call ended. */
 export interface Sensing {
   tool: string;
   /** The text the agent received. */
   result: string;
+  /** Where the agent sensed from, for a sensor that declares it. */
+  takenFrom?: Position;
   atMs: number;
 }
 
