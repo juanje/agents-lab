@@ -41,25 +41,26 @@ Experiments are written outside this repository, in the experiment language (FR-
 
 | Milestone | Needed by | FRs | State |
 |:--|:--|:--|:--|
-| v0.1 | E13 micro vs macro (Schelling) | below, in this build order | building |
-| v0.2 | E16 model monoculture and vote visibility | not written | later |
-| v0.3 | A single-agent experiment with tools and memory across runs (E15 or E7) | not written | later |
-| v0.4 | World and agent forks | not written | later |
+| v0.1 | E13 micro vs macro (Schelling): three technical pilots, then parked | below | built enough for E13's pilots |
+| v0.2 | E1–E4 in an invented workplace (A18, A19, A20, I4) | below, in this build order | next |
+| v0.3 | E16 model monoculture and vote visibility | not written | later |
+| v0.4 | A single-agent experiment with tools and memory across runs (E15 or E7) | not written | later |
+| v0.5 | World and agent forks | not written | later |
 
-**v0.1 build order.** The first slice is the thinnest end-to-end run. Each later FR deepens one piece. FRs marked *built* are done; FRs marked *rebuild* were built against an earlier version of this SPEC and must be rebuilt against their new contract.
-1. FR-WORLD-01 (built)
-2. FR-TOOL-01 (built)
-3. FR-ADAPTER-02 (built)
-4. FR-STIMULUS-01 (built)
-5. FR-TOOL-02 (built)
-6. FR-ADAPTER-01 (built)
-7. FR-CLOCK-01 (rebuild)
-8. FR-SCENARIO-01 (rebuild: its parts change)
-9. FR-SEED-01 (built)
-10. FR-SPACE-01 (built)
-11. FR-SMOKE-01 — the basic pieces run with a real model
+**v0.1, built.** Each FR below is built.
+1. FR-WORLD-01
+2. FR-TOOL-01
+3. FR-ADAPTER-02
+4. FR-STIMULUS-01
+5. FR-TOOL-02
+6. FR-ADAPTER-01
+7. FR-CLOCK-01
+8. FR-SCENARIO-01
+9. FR-SEED-01
+10. FR-SPACE-01
+11. FR-SMOKE-01
 12. FR-TOOL-03
-13. FR-TOOL-04 (was FR-ACTION-02)
+13. FR-TOOL-04
 14. FR-SPACE-02
 15. FR-CLOCK-02
 16. FR-RECORD-01
@@ -67,21 +68,28 @@ Experiments are written outside this repository, in the experiment language (FR-
 18. FR-NEIGHBOURHOOD-02
 19. FR-NEIGHBOURHOOD-03
 20. FR-EXPERIMENT-01
-21. FR-RUN-01 — a first pilot of E13 can run here; what follows makes it a valid experiment
-22. FR-PROCESS-01
-23. FR-EFFORT-01
-24. FR-METRIC-01
-25. FR-METRIC-02
-26. FR-RECORD-02
-27. FR-EXPERIMENT-05
-28. FR-RUN-04
-29. FR-INVENTORY-01
-30. FR-EXPERIMENT-02
-31. FR-EXPERIMENT-03
-32. FR-EXPERIMENT-04
-33. FR-RUN-02
-34. FR-RUN-03
-35. FR-ANALYSIS-01
+21. FR-RUN-01
+22. FR-METRIC-02
+23. FR-INVENTORY-01
+24. FR-RECORD-02
+25. FR-EXPERIMENT-05
+26. FR-RUN-04
+
+**v0.2 build order.** The thinnest slice that runs E1 in the workplace comes first; E2–E4 change texts and configuration, not code.
+1. FR-RUN-04 (its changes: the total when a run stops, readable durations)
+2. FR-RUN-05
+3. FR-EXPERIMENT-04
+4. FR-EXPERIMENT-02
+5. FR-SPACE-03
+6. FR-WORKPLACE-01
+7. FR-WORKPLACE-02
+8. FR-WORKPLACE-03
+9. FR-WORKPLACE-04
+10. FR-ADAPTER-03
+11. FR-RUN-02
+12. FR-ANALYSIS-02
+
+**Not yet ordered:** FR-PROCESS-01, FR-EFFORT-01, FR-METRIC-01, FR-EXPERIMENT-03, FR-RUN-03, FR-ANALYSIS-01.
 
 ## Invariants
 
@@ -204,6 +212,10 @@ An effector call takes its declared duration, which may depend on its arguments,
 The grid gives the distance between two cells, counted in steps between neighbouring cells (a diagonal step counts as one). A scenario's effector that moves an agent across the grid takes, as its duration (FR-TOOL-04), the scenario's time per cell multiplied by that distance. The agent stays in its cell until the move ends; the destination is checked when it arrives.
 *Why:* if moving costs nothing, space and distance stop shaping who meets whom and who arrives first, and the grid becomes decoration.
 
+
+#### FR-SPACE-03: A space of places connected by passages
+The engine provides a space of named places connected by passages, each passage with its length. It answers, for an entity: the place it is in, the places one passage away, and the entities in a place. Moving through a passage takes time in proportion to its length; moving to a place that is not one passage away is refused.
+*Why:* worlds such as a building or a village are made of rooms and paths, not cells; the space keeps their layout and the time to cross it the same across scenarios.
 #### FR-PROCESS-01: The environment changes on its own
 A scenario can declare processes: changes the world applies at a given interval, through the arbiter, whether or not any agent acts (for example, energy recovering or a resource growing back).
 *Why:* real environments have their own dynamics; a world that changes only when agents act is a laboratory artefact.
@@ -298,7 +310,7 @@ The engine validates the file against the experiment schema before anything runs
 *Why:* people write these files to design experiments, and an error found after model calls wastes the run.
 
 #### FR-EXPERIMENT-02: Factors expand into conditions
-An experiment file can declare factors, each a name with levels. Each level is a named change. The engine runs every combination of levels as one condition, named after its levels (for example `composition=mixed,votes=hidden`). A condition named `baseline`, with no change, is added unless the file turns it off.
+An experiment file can declare factors, each a name with levels. Each level is a named change. The engine runs every combination of levels as one condition, named after its levels (for example `composition=mixed,votes=hidden`). A condition named `baseline`, with no change, is added unless the file turns it off. The file can also give a change common to every condition (`[common]`), applied before each condition's own.
 *Why:* the lab's designs are factorial, and every experiment needs a condition without changes, repeated, as its noise baseline.
 
 #### FR-EXPERIMENT-03: An experiment states its prediction before it runs
@@ -351,6 +363,11 @@ While it runs, `lab run` prints to the terminal:
 What it prints is read from what the run records, and nothing it prints goes to the log.
 *Why:* a run of an experiment the size of E13 takes many minutes, and a silent terminal cannot tell a working run from a stuck one.
 
+
+#### FR-ADAPTER-03: Context compaction is declared and recorded
+An experiment file says whether an agent's context is compacted and, if it is, when (the share of the context window that triggers it). Every session uses that setting; each compaction is recorded in the log with the agent, when it happened, and the context's size before and after it.
+*Why:* long tasks fill the context on purpose; what the agent still has in view after a compaction changes its behaviour, so compaction is part of the setup, not a harness default.
+
 ### Scenario library
 
 #### FR-NEIGHBOURHOOD-01: A neighbourhood from a seed
@@ -375,12 +392,41 @@ The neighbourhood scenario's metrics are:
 
 *Why:* experiments read the system-level pattern from the shares. A measure that depends on a rule given to the residents, such as how many fall below a threshold, is computed by that experiment's analysis from the shares and the tool calls.
 
+#### FR-WORKPLACE-01: A workplace from its materials
+The workplace scenario builds, from material files (FR-EXPERIMENT-04), a place of rooms and passages (FR-SPACE-03), the things in it and their properties, the texts on them (notes, labels, signs, letters), and the situations seeded in it. Each situation has reserved keys (its class, whether a rule covers it, whether it is a conflict or a control) that no agent can sense and the inventory lists by name only. The configuration chooses which situations a run holds, and the seed places them.
+*Why:* E1–E4 share one invented workplace; its norms, things and situations are written as material, reviewed as files and fingerprinted, so an experiment changes texts and situations, not code.
+
+#### FR-WORKPLACE-02: The worker senses and acts through the workplace's tools
+The worker has these tools:
+- **look** (sensor): the room it is in, its passages, the things in it and what can be seen of them;
+- **read** (sensor): the text on a thing in its room;
+- **examine** (sensor): a thing's visible properties;
+- **go** (effector): to a room one passage away, taking the passage's time;
+- **take**, **put** and **give** (effectors): a thing in its room into its hands, from its hands into the room or a container, or to a person in its room;
+- **record** (effector): an entry in the workplace's book;
+- **note** (effector): a note to the person who gave the task, delivered to them, not to any agent.
+
+Each tool declares its duration and the text the worker receives for each outcome. A failed action says why and what did not happen.
+*Why:* in E1–E4 what the worker did in each situation is read from the world (where things ended up, what was recorded, what was said to the person), not judged from a text.
+
+#### FR-WORKPLACE-03: The task comes from a person, and each text has a declared place
+The workplace declares a channel from the person who gives the task, with that person as its source; the task arrives through it when the worker first wakes. The configuration says, for each block of text (identity and character, rules, the task, the workplace's norms), whether it goes in the system prompt or in the person's first message.
+*Why:* E4 tests whether the same text weighs differently in the system prompt and in the person's message; the place of each text must be a declared, recorded choice.
+
+#### FR-WORKPLACE-04: What the worker did in each situation is measured from the world
+For each seeded situation, the scenario's metrics give what the worker did, from the world's state and the run's tool calls: whether it sensed the situation, what it did with each thing the situation involves, what it recorded, and which notes it sent. They are sampled like every metric (FR-METRIC-02).
+*Why:* A18, A19 and I4 are judged on actions in situations; reading them from the world keeps the measure objective and leaves a judge only for the reasons the worker gives.
+
 ### Analysis
 
 #### FR-ANALYSIS-01: Logs export as CSV
 `lab export <runs-dir>` writes CSV files for activations, model turns, tool calls and metric samples, each row with the run's condition, model, replica and seed. The export reads only the logs.
 *Why:* an analysis that needs heavier statistics than the built-in summaries can use an outside tool without a second language in the repository (D-02).
 
+
+#### FR-ANALYSIS-02: A reserved judge classifies what agents said
+`lab judge <runs-dir> <rubric>` asks a model, after the runs, to classify texts from the logs (such as an agent's justification in a situation) against a rubric the agents never saw. The judge sees no condition names. Each classification is written to its own file next to the logs, with the judge's model, its settings and the rubric's hash.
+*Why:* whether an agent stretched the nearest rule or reasoned from a value (A18) is in its words, not in the world; a judge that knows the condition would read the condition into them.
 ### Non-functional
 
 #### NFR-01: No turns, and no imposed pace
