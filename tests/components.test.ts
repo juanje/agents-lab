@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ChangesSinceSensing } from "../src/engine/changes.ts";
+import { RunClock } from "../src/engine/clock.ts";
 import { type Component, type ComponentAction, type Step, runComponent } from "../src/engine/components.ts";
 import { Random } from "../src/engine/random.ts";
 import { World } from "../src/engine/world.ts";
@@ -10,7 +11,9 @@ async function runIn(component: Component<Slots>, world: World<Slots>, runEnd = 
   const actions: ComponentAction[] = [];
   const changes = new ChangesSinceSensing();
   changes.sensed("a");
-  await runComponent(component, { world, random: new Random(1), runEnd, changes, record: (action) => actions.push(action) });
+  const clock = new RunClock();
+  clock.start();
+  await runComponent(component, { world, random: new Random(1), runEnd, changes, clock, record: (action) => actions.push(action) });
   return { actions, changes };
 }
 
@@ -86,5 +89,52 @@ describe("runComponent", () => {
     expect(actions[0].endedAtMs - actions[0].startedAtMs).toBeLessThan(200);
     expect(world.version).toBe(0);
     expect(given).toEqual([undefined]);
+  });
+
+  it("gives its cycle the time since the run started each time it chooses a step", async () => {
+    const given: number[] = [];
+    const steps: Step<Slots>[] = [{ kind: "wait", ms: 30 }, { kind: "end" }];
+    const timed: Component<Slots> = {
+      name: "timed",
+      kind: "world",
+      description: "Waits, then ends.",
+      cycle: () => ({
+        next: (_state, _outcome, sinceStartMs) => {
+          given.push(sinceStartMs);
+          return steps[given.length - 1];
+        },
+      }),
+    };
+
+    await runIn(timed, new World(emptySlots(3)));
+
+    expect(given).toHaveLength(2);
+    expect(given[0]).toBeLessThan(5);
+    expect(given[1]).toBeGreaterThanOrEqual(30);
+  });
+
+  it("applies its action's start through the arbiter as the action starts, counted by its name, before the action lands", async () => {
+    const world = new World(emptySlots(3));
+    const seen: (string | null)[] = [];
+    const steps: Step<Slots>[] = [
+      {
+        kind: "action",
+        name: "carry",
+        durationMs: 30,
+        start: { precondition: () => ({ holds: true }), effect: (slots) => ["carrying", ...slots.slice(1)] },
+        action: { precondition: () => ({ holds: true }), effect: (slots) => [null, "crate", ...slots.slice(2)] },
+      },
+    ];
+    let index = 0;
+    const carrier: Component<Slots> = { name: "carrier", kind: "world", description: "Carries a crate.", cycle: () => ({ next: () => steps[index++] ?? { kind: "end" } }) };
+    setTimeout(() => seen.push(holder(world.state, 1)), 15);
+
+    const { actions, changes } = await runIn(carrier, world);
+
+    expect(seen).toEqual(["carrying"]);
+    expect(world.state).toEqual([null, "crate", null]);
+    expect(world.version).toBe(2);
+    expect(changes.appliedBy("a")).toEqual(["carrier", "carrier"]);
+    expect(actions.map((action) => action.outcome)).toEqual(["success"]);
   });
 });
