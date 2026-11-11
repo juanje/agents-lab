@@ -193,7 +193,7 @@ A sensor call takes its declared duration, which, like an effector's, may depend
 *Why:* perceiving is an act that takes time, and what an agent knows is what it last perceived, not the world's current state.
 
 #### FR-TOOL-04: Acting takes time, and its effect is checked when it lands
-An effector call takes its declared duration, which may depend on its arguments, the agent that calls it and the state (for example, distance or the agent's own speed). The agent is busy until it ends; its effect is checked and applied then, against the world as it is at that moment, and it fails only for a reason of the world (for example, the cell is held), whatever the agent perceived. Each effector call records, beside its outcome, what the agent last sensed of its target: `free`, `held` or `not_sensed`. The scenario declares, for each effector, how to read its target in the agent's last sensing.
+An effector call takes its declared duration, which may depend on its arguments, the agent that calls it and the state (for example, distance or the agent's own speed). The agent is busy until it ends; its effect is checked and applied then, against the world as it is at that moment, and it fails only for a reason of the world (for example, the cell is held), whatever the agent perceived. Each effector call records, beside its outcome, what the agent last sensed of its target: `free`, `held`, `outside` (its last sensing showed the target is no place it can go) or `not_sensed`. The scenario declares, for each effector, how to read its target in the agent's last sensing.
 *Why:* doing things takes time, and the world goes on changing meanwhile. A collision is a physical event that happens whether or not the agent looked (NFR-11); what the agent knew is what tells stale information from a misjudgement or from acting without perceiving, and it belongs in the record, not in the outcome.
 
 #### FR-SPACE-02: Moving across the grid takes time in proportion to distance
@@ -333,8 +333,8 @@ The neighbourhood scenario creates a grid of the configured width and height and
 
 #### FR-NEIGHBOURHOOD-02: Residents look and move
 A resident has two tools:
-- **look** (sensor): returns its window of the configured radius, with its own kind, the other kind, empty and outside the grid marked distinctly.
-- **move dx dy** (effector): moves it to the cell at that offset, anywhere in the grid, seen or not, taking the grid's time for the distance. It fails with `cell_full` when the cell is held when it arrives, and with `invalid_target` when the cell is outside the grid. Its target, for the record, is that cell in the resident's last look.
+- **look** (sensor): takes the configured time and returns its window of the configured radius, with its own kind, the other kind, empty and outside the grid marked distinctly.
+- **move dx dy** (effector): moves it to the cell at that offset, anywhere in the grid, seen or not, taking the grid's time for the distance. It fails with `cell_full` when the cell is held when it arrives, and with `invalid_target` when the cell is outside the grid. Its target, for the record, is that cell as the resident's last look showed it, wherever the resident looked from: a cell outside that look's window is `not_sensed`.
 
 Staying is not acting: a resident that does not want to move ends its activation.
 *Why:* a resident can walk towards a place it cannot see, and only what it finds there decides whether it can stay; whether it had looked, and what it saw, is recorded beside the outcome (FR-TOOL-04), so experiments can tell other agents' timing from the resident's own errors.

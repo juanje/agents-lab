@@ -2,7 +2,7 @@
 Feature: Residents look and move
 
   Background:
-    Given the neighbourhood scenario with a grid 5 cells wide and 5 cells high, a look radius of 1, and moving taking 100 milliseconds per cell
+    Given the neighbourhood scenario with a grid 5 cells wide and 5 cells high, a look radius of 1, looking taking 50 milliseconds, and moving taking 100 milliseconds per cell
     And resident "r1" of kind "teal" is at 0, 0
     And resident "r2" of kind "amber" is at 1, 0
     And resident "r3" of kind "teal" is at 0, 1
@@ -36,3 +36,20 @@ Feature: Residents look and move
     When the run ends
     Then resident "r1" is still at 0, 0
     And "r1" made no "move" call
+
+  Scenario: Looking takes its configured time
+    Given resident "r1" runs on a scripted model that calls "look", then ends without a tool call
+    When the run ends
+    Then "r1"'s "look" call ended at least 50 milliseconds after it started
+
+  Scenario: A move's target as sensed is the cell the last look showed, wherever the resident looked from
+    Given resident "r1" runs on a scripted model that calls "look", then calls "move" with dx 0 and dy 2, then calls "move" with dx 1 and dy 0, then ends without a tool call
+    When the run ends
+    Then resident "r1" is at 1, 2
+    And "r1"'s second "move" call recorded its target as sensed: "not_sensed"
+
+  Scenario: Moving towards an edge the resident saw records the target as outside
+    Given resident "r1" runs on a scripted model that calls "look", then calls "move" with dx -1 and dy 0, then ends without a tool call
+    When the run ends
+    Then "r1"'s "move" call failed with "invalid_target"
+    And the call recorded its target as sensed: "outside"
