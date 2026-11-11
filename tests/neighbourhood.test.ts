@@ -199,7 +199,7 @@ describe("the neighbourhood scenario", () => {
     if (move.kind !== "effector") throw new Error("move is not an effector");
     const world = new World(residentsAt(5, 5, { lookRadius: 1, msPerCell: 100 }));
 
-    expect(world.apply(move.action, { agent: "r1", arguments: { dx: 3, dy: 4 }, atMs: 0 })).toEqual({ applied: true });
+    expect(world.apply(move.action!, { agent: "r1", arguments: { dx: 3, dy: 4 }, atMs: 0 })).toEqual({ applied: true });
     expect(position(world.state.grid, "r1")).toEqual({ x: 3, y: 4 });
     expect(world.version).toBe(1);
   });
@@ -210,9 +210,9 @@ describe("the neighbourhood scenario", () => {
     const world = new World(residentsAt(5, 5, { lookRadius: 1, msPerCell: 100 }));
     const before = world.state;
 
-    expect(world.apply(move.action, { agent: "r1", arguments: { dx: -1, dy: 0 }, atMs: 0 })).toEqual({ applied: false, reason: "invalid_target" });
-    expect(world.apply(move.action, { agent: "r2", arguments: { dx: 4, dy: 0 }, atMs: 0 })).toEqual({ applied: false, reason: "invalid_target" });
-    expect(world.apply(move.action, { agent: "r3", arguments: { dx: 0, dy: 4 }, atMs: 0 })).toEqual({ applied: false, reason: "invalid_target" });
+    expect(world.apply(move.action!, { agent: "r1", arguments: { dx: -1, dy: 0 }, atMs: 0 })).toEqual({ applied: false, reason: "invalid_target" });
+    expect(world.apply(move.action!, { agent: "r2", arguments: { dx: 4, dy: 0 }, atMs: 0 })).toEqual({ applied: false, reason: "invalid_target" });
+    expect(world.apply(move.action!, { agent: "r3", arguments: { dx: 0, dy: 4 }, atMs: 0 })).toEqual({ applied: false, reason: "invalid_target" });
     expect(world.state).toBe(before);
     expect(world.version).toBe(0);
   });
@@ -224,7 +224,7 @@ describe("the neighbourhood scenario", () => {
     const before = world.state;
 
     expect(move.durationMs(world.state, { agent: "r1", arguments: { dx: 0, dy: 0 } })).toBe(0);
-    expect(world.apply(move.action, { agent: "r1", arguments: { dx: 0, dy: 0 }, atMs: 0 })).toEqual({ applied: false, reason: "already_there" });
+    expect(world.apply(move.action!, { agent: "r1", arguments: { dx: 0, dy: 0 }, atMs: 0 })).toEqual({ applied: false, reason: "already_there" });
     expect(world.state).toBe(before);
     expect(world.version).toBe(0);
   });
@@ -328,10 +328,10 @@ describe("the neighbourhood scenario", () => {
     const world = new World(residentsAt(5, 5, { lookRadius: 1, msPerCell: 100 }));
 
     expect(neighbourhoodScenario.metrics.moves(initial, [])).toBe(0);
-    expect(world.apply(move.action, { agent: "r1", arguments: { dx: 1, dy: 0 }, atMs: 0 })).toEqual({ applied: false, reason: "cell_full" });
-    expect(world.apply(move.action, { agent: "r1", arguments: { dx: -1, dy: 0 }, atMs: 0 })).toEqual({ applied: false, reason: "invalid_target" });
-    expect(world.apply(move.action, { agent: "r1", arguments: { dx: 2, dy: 2 }, atMs: 0 })).toEqual({ applied: true });
-    expect(world.apply(move.action, { agent: "r1", arguments: { dx: 1, dy: 1 }, atMs: 0 })).toEqual({ applied: true });
+    expect(world.apply(move.action!, { agent: "r1", arguments: { dx: 1, dy: 0 }, atMs: 0 })).toEqual({ applied: false, reason: "cell_full" });
+    expect(world.apply(move.action!, { agent: "r1", arguments: { dx: -1, dy: 0 }, atMs: 0 })).toEqual({ applied: false, reason: "invalid_target" });
+    expect(world.apply(move.action!, { agent: "r1", arguments: { dx: 2, dy: 2 }, atMs: 0 })).toEqual({ applied: true });
+    expect(world.apply(move.action!, { agent: "r1", arguments: { dx: 1, dy: 1 }, atMs: 0 })).toEqual({ applied: true });
     expect(neighbourhoodScenario.metrics.moves(world.state, [])).toBe(2);
   });
 

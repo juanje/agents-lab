@@ -513,7 +513,7 @@ describe("the workplace's tools", () => {
   /** Applies an effector's action as it lands, at a moment. */
   const land = (state: Workplace, name: string, args: Record<string, unknown>, atMs = 0) => {
     const world = new World(state);
-    const result = world.apply(effector(name).action, { ...call(args), atMs });
+    const result = world.apply(effector(name).action!, { ...call(args), atMs });
     return { result, state: world.state };
   };
 
@@ -619,7 +619,7 @@ describe("the workplace's tools", () => {
       expect(go().start?.describe(world.state, call({ place: "office" }))).toEqual({ left: "hall", towards: "office" });
       expect(world.apply(go().start as NonNullable<Effector<Workplace>["start"]>, call({ place: "office" }))).toEqual({ applied: true });
       expect(where(world.state.space, "worker")).toEqual({ passage: ["hall", "office"], towards: "office" });
-      expect(world.apply(go().action, { ...call({ place: "office" }), atMs: 0 })).toEqual({ applied: true });
+      expect(world.apply(go().action!, { ...call({ place: "office" }), atMs: 0 })).toEqual({ applied: true });
       expect(where(world.state.space, "worker")).toEqual({ place: "office" });
     });
 

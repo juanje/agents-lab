@@ -1,5 +1,6 @@
 import type { Position } from "./grid.ts";
 import type { Sensing } from "./sensings.ts";
+import type { Stimulus } from "./stimuli.ts";
 import type { Action } from "./world.ts";
 
 /**
@@ -68,17 +69,40 @@ export interface LandingCall extends AgentCall {
 /** An agent's last sensing by a sensor, by the sensor's name, or undefined if it never used it. */
 export type LastBy = (tool: string) => Sensing | undefined;
 
+/**
+ * What ends an effector's call before its duration has passed (FR-WORKPLACE-07): a change of the world, or a stimulus
+ * that reaches the calling agent, that its conditions accept. The call then ends at that moment with its own outcome.
+ */
+export interface EarlyEnd<State> {
+  outcome: string;
+  /** Whether a change of the world, from the state before it to the state after it, ends the call. */
+  byChange(before: State, after: State, call: AgentCall): boolean;
+  /** Whether a stimulus that reaches the calling agent ends the call. */
+  byStimulus(stimulus: Stimulus, call: AgentCall): boolean;
+}
+
 /** A tool that changes the world through the arbiter. */
 export interface Effector<State> extends Declared<State> {
   kind: "effector";
+  /**
+   * Why the effector does not take a call's arguments, from the state as the call starts, for a limit its schema cannot
+   * give, such as one the configuration sets; undefined when it takes them. A call it does not take is invalid_arguments:
+   * it applies nothing and takes no time (FR-TOOL-02).
+   */
+  refuses?(state: State, call: AgentCall): string | undefined;
+  /** What ends a call before its duration has passed, for an effector that declares it (FR-WORKPLACE-07). */
+  endsEarly?: EarlyEnd<State>;
   /**
    * For an effector under way in the world, such as crossing a passage, the change its call makes as it starts, through
    * the arbiter, once its duration is taken from the state before it (FR-TOOL-04, FR-SPACE-03). It cannot fail: a start
    * the world refuses is a defect of the scenario, and stops the run.
    */
   start?: Start<State>;
-  /** The change the call makes when it lands, checked then against the world as it is (FR-TOOL-04). */
-  action: Action<State, LandingCall>;
+  /**
+   * The change the call makes when it lands, checked then against the world as it is (FR-TOOL-04). An effector without
+   * one changes nothing in the world: its call succeeds, or ends early, without going through the arbiter (FR-WORKPLACE-07).
+   */
+  action?: Action<State, LandingCall>;
   /**
    * The text the agent receives for each outcome of its call's effect, success included, by the outcome; an outcome
    * without one gives the outcome itself (FR-TOOL-02). It tells the agent only what happened to it, never the world's state.

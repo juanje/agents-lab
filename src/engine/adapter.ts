@@ -32,7 +32,7 @@ import type { ParallelismLimit } from "./parallelism.ts";
 import { SCRIPT_EXHAUSTED_MESSAGE } from "./scripted-model.ts";
 import type { Sensings } from "./sensings.ts";
 import type { Stimuli, Stimulus } from "./stimuli.ts";
-import type { AgentCall, Effector, Sensor, Start, TargetAsSensed, Tool } from "./tools.ts";
+import type { AgentCall, EarlyEnd, Effector, Sensor, Start, TargetAsSensed, Tool } from "./tools.ts";
 import type { World } from "./world.ts";
 
 /**
@@ -255,7 +255,7 @@ export async function openSession<State>(
   changes: ChangesSinceSensing,
 ): Promise<AgentSession> {
   const executed = new Map<string, Executed>();
-  const customTools = tools.map((tool) => definition(world, tool, agent.name, executed, sensings, changes, records, settings));
+  const customTools = tools.map((tool) => definition(world, tool, agent.name, executed, sensings, changes, stimuli, records, settings));
   const session = await isolatedSession(runtime, agent.model, settings, customTools);
   // A turn's calls run one after another until SPEC decides otherwise; Pi's default runs them all at once.
   session.agent.toolExecution = "sequential";
@@ -605,6 +605,7 @@ function definition<State>(
   executed: Map<string, Executed>,
   sensings: Sensings,
   changes: ChangesSinceSensing,
+  stimuli: Stimuli,
   records: Records,
   { runEnd, stop, clock }: SessionSettings,
 ): ToolDefinition {
@@ -622,7 +623,9 @@ function definition<State>(
         // A call that comes after the run has ended is left unrun: it reads no target and applies nothing (FR-CLOCK-02).
         called = runEnd.aborted
           ? { outcome: CUT_OFF, text: CUT_OFF }
-          : (undeclared(tool, args) ?? (await perform(world, tool, { agent, arguments: args }, sensings, changes, runEnd, started, clock)));
+          : (undeclared(tool, args) ??
+            refused(world, tool, { agent, arguments: args }) ??
+            (await perform(world, tool, { agent, arguments: args }, { sensings, changes, stimuli }, runEnd, started, clock)));
       } catch (error) {
         // A tool that throws is a defect of the scenario, not the agent's behaviour: no outcome fits it, and the run
         // stops on it rather than going on with a world it cannot trust.
@@ -716,18 +719,36 @@ function undeclared<State>(tool: Tool<State>, args: Record<string, unknown>): Ca
 }
 
 /**
+ * Rejects a call whose arguments an effector says, from the state as the call starts, it does not take, with its reason:
+ * a limit its schema cannot give, such as one the configuration sets (FR-TOOL-02). It applies nothing and takes no time.
+ */
+function refused<State>(world: World<State>, tool: Tool<State>, call: AgentCall): CallResult | undefined {
+  const reason = tool.kind === "effector" ? tool.refuses?.(world.state, call) : undefined;
+  return reason === undefined ? undefined : { outcome: "invalid_arguments", text: `invalid_arguments: ${reason}` };
+}
+
+/** What a call of an agent's reads and is told of: its sensings, the changes since it sensed, and its stimuli. */
+interface Around {
+  sensings: Sensings;
+  changes: ChangesSinceSensing;
+  stimuli: Stimuli;
+}
+
+/**
  * Runs a call the tool takes. It lasts the duration the tool gives for the call and the state as it starts (FR-TOOL-03,
  * FR-TOOL-04); an effector under way applies its start once that duration is taken (FR-SPACE-03); then a sensor reads
  * the world, or an effector's effect goes to the arbiter. A call the run's time limit cuts short reads nothing and
- * applies no effect: the run has ended, and an effect would change a world already measured (FR-CLOCK-02). For an effector's call, what the agent last sensed of its target is read as the call starts, beside
+ * applies no effect: the run has ended, and an effect would change a world already measured (FR-CLOCK-02). An effector
+ * that declares an early end watches, once its start is applied, the world's changes and its agent's stimuli, and its
+ * call ends at the first its conditions accept, with its own outcome; its effect is checked and applied then
+ * (FR-WORKPLACE-07). For an effector's call, what the agent last sensed of its target is read as the call starts, beside
  * its outcome, and never reaches the arbiter (NFR-11).
  */
 async function perform<State>(
   world: World<State>,
   tool: Tool<State>,
   call: AgentCall,
-  sensings: Sensings,
-  changes: ChangesSinceSensing,
+  { sensings, changes, stimuli }: Around,
   runEnd: AbortSignal,
   started: (change: EffectorStart["change"]) => void,
   clock: RunClock,
@@ -739,13 +760,40 @@ async function perform<State>(
   if (tool.kind === "effector" && tool.start !== undefined && (tool.start.appliesTo?.(world.state, call) ?? true)) {
     started(start(world, tool.start, call, changes));
   }
-  await waitAtLeast(durationMs, runEnd);
+  const early = tool.kind === "effector" && tool.endsEarly !== undefined ? endingEarly(world, stimuli, tool.endsEarly, call) : undefined;
+  try {
+    await waitAtLeast(durationMs, early === undefined ? runEnd : AbortSignal.any([runEnd, early.ended]));
+  } finally {
+    early?.stop();
+  }
   const result = runEnd.aborted
     ? { outcome: CUT_OFF, text: CUT_OFF }
     : tool.kind === "sensor"
       ? sense(world, tool, call, clock.sinceStartMs())
-      : effect(world, tool, call, changes);
+      : effect(world, tool, call, changes, early?.ended.aborted ? early.outcome : undefined);
   return targetAsSensed === undefined ? result : { ...result, targetAsSensed };
+}
+
+/**
+ * Watches the world's changes and an agent's stimuli for a call that ends early: its signal aborts at the first its
+ * conditions accept, until it stops watching.
+ */
+function endingEarly<State>(world: World<State>, stimuli: Stimuli, ends: EarlyEnd<State>, call: AgentCall) {
+  const ended = new AbortController();
+  const unwatchWorld = world.watch((before, after) => {
+    if (ends.byChange(before, after, call)) ended.abort();
+  });
+  const unwatchStimuli = stimuli.watch(call.agent, (stimulus) => {
+    if (ends.byStimulus(stimulus, call)) ended.abort();
+  });
+  return {
+    ended: ended.signal,
+    outcome: ends.outcome,
+    stop: () => {
+      unwatchWorld();
+      unwatchStimuli();
+    },
+  };
 }
 
 /**
@@ -770,13 +818,16 @@ function sense<State>(world: World<State>, sensor: Sensor<State>, call: AgentCal
 
 /**
  * Applies an effector's call through the arbiter, against the world as it is now; its outcome is "success" or the
- * failure's reason, and the agent receives the text the effector declares for it, or the outcome itself. The changes
- * since the agent last sensed, and who applied them, are read at this moment, beside it.
+ * failure's reason, and the agent receives the text the effector declares for it, or the outcome itself. An effector
+ * without an action changes nothing: it applies nothing and succeeds. A call that ended early, once its effect applies,
+ * has the early end's outcome instead of "success". The changes since the agent last sensed, and who applied them, are
+ * read at this moment, beside it.
  */
-function effect<State>(world: World<State>, effector: Effector<State>, call: AgentCall, changes: ChangesSinceSensing): CallResult {
+function effect<State>(world: World<State>, effector: Effector<State>, call: AgentCall, changes: ChangesSinceSensing, endedEarly?: string): CallResult {
   const changesSinceSensing = changes.since(call.agent);
   const changesSinceSensingBy = changes.appliedBy(call.agent);
-  const outcome = applyCounted(world, changes, call.agent, effector.action, { ...call, atMs: performance.now() });
+  const applied = effector.action === undefined ? "success" : applyCounted(world, changes, call.agent, effector.action, { ...call, atMs: performance.now() });
+  const outcome = applied === "success" ? (endedEarly ?? applied) : applied;
   return { outcome, text: effector.texts?.[outcome] ?? outcome, changesSinceSensing, changesSinceSensingBy };
 }
 

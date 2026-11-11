@@ -77,7 +77,8 @@ function watched(scenario: typeof workplaceScenario, keep: (state: Workplace) =>
   const tools = scenario.tools.map((tool): Tool<Workplace> => {
     if (tool.kind === "sensor") return tool;
     const start = tool.start === undefined ? {} : { start: { ...tool.start, effect: kept(tool.start.effect) } };
-    return { ...tool, action: { ...tool.action, effect: kept(tool.action.effect) }, ...start };
+    const action = tool.action === undefined ? {} : { action: { ...tool.action, effect: kept(tool.action.effect) } };
+    return { ...tool, ...action, ...start };
   });
   return { ...scenario, tools };
 }
