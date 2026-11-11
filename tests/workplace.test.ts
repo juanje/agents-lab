@@ -225,7 +225,11 @@ class = "control"
   it("wakes the worker by the rhythm channel, with the configured source and text", () => {
     const rhythm = { source: "a bell", text: "The bell rings.", min_ms: 0, max_ms: 10 };
 
-    expect(scenario.channels(configuration({ rhythm }))).toEqual([{ name: "rhythm", source: "a bell", stimulus: "The bell rings." }]);
+    expect(scenario.channels(configuration({ rhythm })).find((channel) => channel.name === "rhythm")).toEqual({
+      name: "rhythm",
+      source: "a bell",
+      stimulus: "The bell rings.",
+    });
   });
 
   it("draws each of the worker's intervals uniformly between the configured bounds", () => {
@@ -257,6 +261,19 @@ class = "control"
 
     it("puts the task in the system prompt, last, when it is placed there", () => {
       expect(scenario.systemPrompt(placed({ task: "system" }), "worker")).toBe("I.\n\nW.\n\nN.\n\nR.\n\nT.");
+    });
+
+    it("declares the channel person, from the task giver, delivering the texts placed with the person, in order", () => {
+      const person = (placement: Record<string, string>) => scenario.channels(placed(placement)).find((channel) => channel.name === "person");
+
+      expect(person({})).toEqual({ name: "person", source: "Ada", stimulus: "T." });
+      expect(person({ identity: "person", rules: "person" })).toEqual({ name: "person", source: "Ada", stimulus: "I.\n\nR.\n\nT." });
+    });
+
+    it("gives the worker the person's message as it first wakes, and nothing when no text is placed with the person", () => {
+      expect(scenario.firstStimuli?.(placed({}), "worker")).toEqual(["person"]);
+      expect(scenario.firstStimuli?.(placed({ task: "system" }), "worker")).toEqual([]);
+      expect(scenario.firstStimuli?.(configuration({ ...texts, task: "" }), "worker")).toEqual([]);
     });
   });
 
