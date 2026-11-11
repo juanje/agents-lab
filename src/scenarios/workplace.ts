@@ -2,8 +2,7 @@ import { type TomlTable, type TomlValue, parse } from "smol-toml";
 import { type Passage, type Places, arrive, entitiesIn, entitiesInPassage, exits, layout, leave, put, where } from "../engine/places.ts";
 import type { Configuration, Scenario } from "../engine/scenario.ts";
 import { Random } from "../engine/random.ts";
-import type { Sensing } from "../engine/sensings.ts";
-import type { AgentCall, Effector, Sensor, TargetAsSensed, Tool } from "../engine/tools.ts";
+import type { AgentCall, Effector, LastBy, Sensor, TargetAsSensed, Tool } from "../engine/tools.ts";
 import type { Check } from "../engine/world.ts";
 import { describeUniformRhythm, rhythmChannels, uniformRhythm } from "./rhythm.ts";
 
@@ -339,9 +338,13 @@ const examine: Sensor<Workplace> = {
   },
 };
 
-/** The worker's last look, when it was taken where the worker is now; otherwise it shows nothing of a target. */
-function lastLook(sensing: Sensing, state: Workplace, agent: string): Seen | undefined {
-  if (sensing.tool !== look.name) return undefined;
+/**
+ * The worker's last look, when it was taken where the worker is now, whatever it read or examined after it; otherwise
+ * it shows nothing of a target.
+ */
+function lastLook(lastBy: LastBy, state: Workplace, agent: string): Seen | undefined {
+  const sensing = lastBy(look.name);
+  if (sensing === undefined) return undefined;
   const seen = JSON.parse(sensing.result) as Seen;
   return seen.place === hereOf(state, agent) ? seen : undefined;
 }
@@ -353,8 +356,8 @@ function shownIds(seen: Seen): string[] {
 }
 
 /** "free" when the worker's last look, taken where it is now, shows this thing; "not_sensed" otherwise. */
-function thingAsSensed(sensing: Sensing, state: Workplace, agent: string, thing: string | undefined): TargetAsSensed {
-  const seen = lastLook(sensing, state, agent);
+function thingAsSensed(lastBy: LastBy, state: Workplace, agent: string, thing: string | undefined): TargetAsSensed {
+  const seen = lastLook(lastBy, state, agent);
   return seen !== undefined && thing !== undefined && shownIds(seen).includes(thing) ? "free" : "not_sensed";
 }
 
@@ -403,8 +406,8 @@ const go: Effector<Workplace> = {
     [ALREADY_THERE]: "You are already there; you have not moved.",
   },
   // Its target is the place, among the exits of the worker's last look.
-  readTarget: (sensing, call, state) => {
-    const seen = lastLook(sensing, state, call.agent);
+  readTarget: (_sensing, call, state, lastBy) => {
+    const seen = lastLook(lastBy, state, call.agent);
     if (seen === undefined) return "not_sensed";
     return seen.exits.some(({ place }) => place === call.arguments.place) ? "free" : "outside";
   },
@@ -466,7 +469,7 @@ const take: Effector<Workplace> = {
     [HANDS_FULL]: "Your hands are full; you have taken nothing.",
     [ALREADY_HELD]: "You are already holding it.",
   },
-  readTarget: (sensing, call, state) => thingAsSensed(sensing, state, call.agent, thingOf(call.arguments)),
+  readTarget: (_sensing, call, state, lastBy) => thingAsSensed(lastBy, state, call.agent, thingOf(call.arguments)),
 };
 
 /** The container a call of "put" names, if any. */
@@ -506,7 +509,7 @@ const putDown: Effector<Workplace> = {
     [NOT_HERE]: "That container is not here; you are still holding it.",
     [NOT_A_CONTAINER]: "Nothing can be put inside that; you are still holding it.",
   },
-  readTarget: (sensing, call, state) => thingAsSensed(sensing, state, call.agent, intoOf(call)),
+  readTarget: (_sensing, call, state, lastBy) => thingAsSensed(lastBy, state, call.agent, intoOf(call)),
 };
 
 /** "give thing person": a thing the worker holds to a person in its place, who then holds it. */
@@ -535,8 +538,8 @@ const give: Effector<Workplace> = {
     [NOT_HELD]: "You are not holding it; you have given nothing.",
     [NOT_HERE]: "That person is not here; you are still holding it.",
   },
-  readTarget: (sensing, call, state) => {
-    const seen = lastLook(sensing, state, call.agent);
+  readTarget: (_sensing, call, state, lastBy) => {
+    const seen = lastLook(lastBy, state, call.agent);
     return seen?.people.some(({ id }) => id === call.arguments.person) ? "free" : "not_sensed";
   },
 };
