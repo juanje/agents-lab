@@ -2,6 +2,12 @@ import type { Experiment } from "./experiment.ts";
 import { type LoadedScenario, type Scenario, loadScenario } from "./scenario.ts";
 import type { Tool } from "./tools.ts";
 
+/** The descriptions a scenario gives only for the inventory, and how an error names each. */
+const describedParts = [
+  ["describeRhythm", "rhythm description"],
+  ["describeDuration", "description of its tools' durations"],
+] as const satisfies readonly (readonly [keyof Scenario<unknown>, string])[];
+
 /**
  * What the engine does not provide yet, listed as "none", and how fast information travels until a medium exists
  * (NFR-12).
@@ -23,6 +29,10 @@ const OTHER_OUTCOME = "- any other outcome: the outcome's name";
  * its scenario as that condition configures it (FR-INVENTORY-01). It runs nothing and calls no model.
  */
 export function inventory<State>(experiment: Experiment, scenario: Partial<Scenario<State>>): string {
+  // Scenarios reach the engine as modules, not through the type checker, so a description may be missing.
+  for (const [part, named] of describedParts) {
+    if (scenario[part] === undefined) throw new Error(`Scenario "${scenario.name}" lacks its ${named}`);
+  }
   const sections = experiment.conditions.map((condition) => {
     const loaded = loadScenario(scenario, experiment.seed, condition);
     return [`## Condition "${condition.name}"\n`, agentsOf(loaded), toolsOf(loaded), channelsOf(loaded), NOT_PROVIDED, modelsAndLimitsOf(experiment)].join("\n");
