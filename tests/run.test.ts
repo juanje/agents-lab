@@ -10,7 +10,8 @@ import { ScriptedModel } from "../src/engine/scripted-model.ts";
 import { type Rhythm, type Scenario, loadScenario } from "../src/engine/scenario.ts";
 import type { Stimuli } from "../src/engine/stimuli.ts";
 import type { AgentCall, Effector, Sensor } from "../src/engine/tools.ts";
-import { type Slots, emptySlots, rhythmChannel, slotTools, slotsScenario, take } from "./fixtures/slots.ts";
+import type { Component } from "../src/engine/components.ts";
+import { type Slots, emptySlots, filler, holder, rhythmChannel, slotTools, slotsScenario, take } from "./fixtures/slots.ts";
 
 /** A rhythm with no waiting: the agent wakes again as soon as its previous activation ends. */
 const noWait = () => 0;
@@ -1581,5 +1582,62 @@ describe("run's metric samples at an interval", () => {
       expect(scheduled[index].atMs - scheduled[index - 1].atMs).toBeGreaterThanOrEqual(100);
     }
     expect(samples.at(-1)!.atMs).toBeGreaterThanOrEqual(scheduled.at(-1)!.atMs);
+  });
+});
+
+describe("run, with components", () => {
+  /** A component that keeps each draw from its random sequence, drawing once and then ending. */
+  const drawing = (name: string, draws: number[]): Component<Slots> => ({
+    name,
+    kind: "world",
+    description: "Draws once.",
+    cycle: (random) => ({
+      next: () => {
+        draws.push(random.next());
+        return { kind: "end" };
+      },
+    }),
+  });
+
+  it("runs the scenario's components alongside its agents, ends once they have ended too, and records each action in its log", async () => {
+    const model = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
+    const logDirectory = newLogDirectory();
+    const porter = filler("porter", { slot: 2, thing: "crate", waitMs: () => 50, actionMs: 50 });
+    const loaded = slots({ components: () => [porter] });
+
+    const { runId } = await run(loaded, [{ name: "a", model, activations: 1 }], seed, { ...settings, logDirectory });
+
+    expect(holder(loaded.world.state, 2)).toBe("crate");
+    const actions = logOf(logDirectory, runId).filter((line) => (line as { type: string }).type === "component_action");
+    expect(actions).toEqual([
+      { type: "component_action", component: "porter", action: 'fill slot 2 with "crate"', startedAtMs: expect.any(Number), endedAtMs: expect.any(Number), outcome: "success" },
+    ]);
+  });
+
+  it("runs components with no agent, until the time limit cuts off an action still running", async () => {
+    const logDirectory = newLogDirectory();
+    const porter = filler("porter", { slot: 2, thing: "crate", waitMs: () => 0, actionMs: 10_000 });
+    const loaded = slots({ ...agentsNamed(), components: () => [porter] });
+
+    const { runId } = await run(loaded, [], seed, { ...settings, logDirectory, timeLimitMs: 50 });
+
+    expect(holder(loaded.world.state, 2)).toBeNull();
+    const actions = logOf(logDirectory, runId).filter((line) => (line as { type: string }).type === "component_action");
+    expect(actions).toMatchObject([{ component: "porter", outcome: "cut_off" }]);
+  });
+
+  it("gives each component a random sequence from the replica's seed and its name, whatever other components run", async () => {
+    const alone: number[] = [];
+    const withOther: number[] = [];
+    const otherSeed: number[] = [];
+    const runWith = (components: Component<Slots>[], runSeed: number) =>
+      run(slots({ ...agentsNamed(), components: () => components }), [], runSeed, { ...settings, logDirectory: newLogDirectory() });
+
+    await runWith([drawing("porter", alone)], 42);
+    await runWith([drawing("visitor", []), drawing("porter", withOther)], 42);
+    await runWith([drawing("porter", otherSeed)], 43);
+
+    expect(withOther).toEqual(alone);
+    expect(otherSeed).not.toEqual(alone);
   });
 });
