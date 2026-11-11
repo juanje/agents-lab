@@ -93,6 +93,7 @@ describe("loadScenario", () => {
 
   it.each([
     ["initialState", "initial state"],
+    ["agents", "agents"],
     ["tools", "tools"],
     ["channels", "stimulus channels"],
     ["metrics", "metrics"],
