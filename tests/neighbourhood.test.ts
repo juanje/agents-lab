@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { parse } from "smol-toml";
-import { entitiesAt } from "../src/engine/grid.ts";
+import { emptyGrid, entitiesAt, place } from "../src/engine/grid.ts";
 import { Random } from "../src/engine/random.ts";
 import type { Configuration } from "../src/engine/scenario.ts";
-import { neighbourhoodScenario } from "../src/scenarios/neighbourhood.ts";
+import type { Tool } from "../src/engine/tools.ts";
+import { type Neighbourhood, neighbourhoodScenario } from "../src/scenarios/neighbourhood.ts";
 
 const configuration = (width: number, height: number, residents: number): Configuration => ({
   ...parse(neighbourhoodScenario.baseConfiguration),
@@ -11,6 +12,22 @@ const configuration = (width: number, height: number, residents: number): Config
   height,
   residents,
 });
+
+/** The neighbourhood's tool of that name. */
+function toolNamed(name: string): Tool<Neighbourhood> {
+  const tool = neighbourhoodScenario.tools.find((declared) => declared.name === name);
+  if (tool === undefined) throw new Error(`the neighbourhood declares no tool "${name}"`);
+  return tool;
+}
+
+/** A neighbourhood of that size with "r1" (teal) at 0, 0, "r2" (amber) at 1, 0 and "r3" (teal) at 0, 1. */
+function residentsAt(width: number, height: number, settings: { lookRadius: number; msPerCell: number }): Neighbourhood {
+  let grid = emptyGrid(width, height, 1);
+  grid = place(grid, "r1", { x: 0, y: 0 });
+  grid = place(grid, "r2", { x: 1, y: 0 });
+  grid = place(grid, "r3", { x: 0, y: 1 });
+  return { grid, kinds: { r1: "teal", r2: "amber", r3: "teal" }, ...settings };
+}
 
 describe("the neighbourhood scenario", () => {
   it("has the grid's width and height and the number of residents in its base configuration", () => {
@@ -85,6 +102,38 @@ describe("the neighbourhood scenario", () => {
 
     expect([typeof base.look_radius, typeof base.ms_per_cell]).toEqual(["number", "number"]);
     expect({ lookRadius: state.lookRadius, msPerCell: state.msPerCell }).toEqual({ lookRadius: 2, msPerCell: 40 });
+  });
+
+  it("lets a resident look at its window, rows from the top, marking itself, its kind, the other kind, empty and outside", () => {
+    const look = toolNamed("look");
+    const state = residentsAt(5, 5, { lookRadius: 1, msPerCell: 100 });
+
+    expect(look.kind).toBe("sensor");
+    if (look.kind !== "sensor") return;
+    expect(JSON.parse(look.sense(state, "r1"))).toEqual([
+      ["outside", "outside", "outside"],
+      ["outside", "you", "other"],
+      ["outside", "same", "empty"],
+    ]);
+    expect(JSON.parse(look.sense(state, "r2"))).toEqual([
+      ["outside", "outside", "outside"],
+      ["other", "you", "empty"],
+      ["other", "empty", "empty"],
+    ]);
+  });
+
+  it("shows a window as wide as the configured look radius", () => {
+    const look = toolNamed("look");
+    const state = residentsAt(5, 5, { lookRadius: 2, msPerCell: 100 });
+
+    if (look.kind !== "sensor") throw new Error("look is not a sensor");
+    expect(JSON.parse(look.sense(state, "r3"))).toEqual([
+      ["outside", "outside", "outside", "outside", "outside"],
+      ["outside", "outside", "same", "other", "empty"],
+      ["outside", "outside", "you", "empty", "empty"],
+      ["outside", "outside", "empty", "empty", "empty"],
+      ["outside", "outside", "empty", "empty", "empty"],
+    ]);
   });
 
   it("draws the cells from the random sequence it is given", () => {
