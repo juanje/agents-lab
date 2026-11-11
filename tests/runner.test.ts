@@ -187,6 +187,30 @@ describe("runExperiment", () => {
     ]);
     expect(events).toEqual(expected);
   });
+
+  it("tells its observer that a run stopped, after each line its log records, and starts no run after it", async () => {
+    const directory = newRunsDirectory();
+    const events: unknown[] = [];
+    const observer: ExperimentObserver = {
+      runStarted: ({ number }) => events.push({ started: number }),
+      recorded: ({ type }) => events.push({ line: type }),
+      runEnded: (status) => events.push({ ended: status }),
+    };
+    // Opening a session reads its model's provider, which fails.
+    const failing = {
+      model: {
+        reasoning: false,
+        get provider(): never {
+          throw new Error("this model cannot be given to a session");
+        },
+      } as never,
+    };
+
+    const running = runExperiment({ ...experiment, models: ["scripted/one"] }, slotsScenario, new Map([["scripted/one", failing]]), directory, observer);
+
+    await expect(running).rejects.toThrow("stopped");
+    expect(events).toEqual([{ started: 1 }, { line: "run_setup" }, { line: "run_stopped" }, { ended: "stopped" }]);
+  });
 });
 
 /** The lines of a run's log, parsed. */
