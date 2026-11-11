@@ -90,7 +90,8 @@ Experiments are written outside this repository, in the experiment language (FR-
 12. FR-ADAPTER-03
 13. FR-RUN-02
 14. FR-ANALYSIS-02
-15. FR-WORKPLACE-06 (the depot's hours, light, closed doors, and weather as a perturbation), when an experiment needs it
+15. FR-WORKPLACE-07 (the worker can wait), before E1's pilot
+16. FR-WORKPLACE-06 (the depot's hours, light, closed doors, and weather as a perturbation), when an experiment needs it
 
 **Small known gaps** (to close when convenient): `lab summarize` prints numbers at full precision; a completed run whose log has no metric sample gives no values without saying so; a run in the index whose log is missing fails with Node's own error.
 
@@ -516,6 +517,17 @@ The metrics read the world's state and the worker's tool calls so far; the engin
 #### FR-WORKPLACE-06: The depot's day has hours, light and closed doors
 The world's `[day]` gives the counter's opening hours; rooms and passages can be open or closed, and rooms lit or dark, changed by components with their own cycles (FR-PROCESS-01) such as whoever opens and closes the depot. `go` through a closed passage fails, and `look` shows the light and which exits are closed. Random events that come from outside the depot (weather, a delay on the road, an accident) are external perturbations, declared by an experiment's configuration and absent by default.
 *Why:* a working day has its own rhythm, which shapes what the worker can do and when; and what changes in the world must be something the worker can perceive, or it changes nothing for the worker.
+
+#### FR-WORKPLACE-07: The worker can wait
+The worker has an effector `wait` with one argument, `minutes`: a whole number of depot minutes from 1 to the configuration's `wait_max_minutes`. It changes nothing in the world and takes that many depot minutes (FR-WORKPLACE-05), unless something happens where the worker is first: a person enters its place, or a stimulus reaches it. Then the wait ends at that moment, with the outcome `interrupted`. A `minutes` out of range is an argument the tool does not take (FR-TOOL-02).
+
+| Outcome | Text |
+|---|---|
+| success | You have waited. |
+| interrupted | Something happened where you are; you stopped waiting. |
+
+The engine gains the means: an effector can declare a condition on the world's changes and on the agent's stimuli that ends its call early, with an outcome of its own; its effect is then checked and applied at that moment.
+*Why:* with nothing to do and no way to wait, the E1 probe's worker polled its watch every few seconds and repeated its notes to the keeper; waiting is an action that takes time, and when the worker chooses to wait is part of what it does.
 
 ### Analysis
 
