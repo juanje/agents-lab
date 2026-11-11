@@ -46,6 +46,8 @@ export interface Exit {
 }
 
 /** The places one passage away from a place, each with the passage's length, in the order the passages are declared. */
-export function exits(_space: Places, _place: string): Exit[] {
-  return [];
+export function exits(space: Places, place: string): Exit[] {
+  return space.passages.flatMap(({ between: [one, other], length }) =>
+    one === place ? [{ place: other, length }] : other === place ? [{ place: one, length }] : [],
+  );
 }
