@@ -186,7 +186,9 @@ function initialState(configuration: Configuration, random: Random): Workplace {
     people[id] = { name, description };
     space = put(space, id, place);
   }
-  const settings = { book: configuration.book as string, carryLimit: configuration.carry_limit as number, durations: configuration.durations as unknown as Durations };
+  const book = configuration.book as string;
+  if (!Object.hasOwn(things, book)) throw new Error(`the configuration's "book" names "${book}", which is no thing of the world`);
+  const settings = { book, carryLimit: configuration.carry_limit as number, durations: configuration.durations as unknown as Durations };
   return { space, things, inside, held: {}, people, situations, book: [], notes: [], settings };
 }
 
@@ -625,11 +627,16 @@ export const workplaceScenario: Scenario<Workplace> = {
     'place = "room"',
     "[[places]]",
     'name = "room"',
+    "[[things]]",
+    'id = "book"',
+    'name = "a book"',
+    'place = "room"',
+    "portable = false",
     "'''",
     'situations = ""',
     'situation_keys = ""',
     "chosen_situations = []",
-    'book = ""',
+    'book = "book"',
     "carry_limit = 1",
     "[durations]",
     "look_ms = 100",

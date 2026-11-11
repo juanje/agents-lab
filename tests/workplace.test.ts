@@ -10,9 +10,9 @@ import { type Workplace, workplaceScenario } from "../src/scenarios/workplace.ts
 
 const scenario = workplaceScenario as Scenario<Workplace>;
 
-/** The workplace's base configuration with these values over it. */
+/** The workplace's base configuration with these values over it; the world's sign serves as the book. */
 function configuration(values: Configuration): Configuration {
-  return { ...parse(scenario.baseConfiguration), ...values };
+  return { ...parse(scenario.baseConfiguration), book: "sign", ...values };
 }
 
 const WORLD = `
