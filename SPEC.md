@@ -256,15 +256,16 @@ The first line of each run's log holds:
 *Why:* a result cannot be reproduced or checked without the exact setup that produced it.
 
 #### FR-INVENTORY-01: The environment inventory is generated, not written by hand
-For a scenario and a condition, the core writes `inventory.md`, listing:
-- the system prompt;
-- the tools, with their kind, the descriptions the agent sees, their durations and efforts;
+For each condition of an experiment, the core lists:
+- each agent's system prompt, which is all the agent is told about itself and its world;
+- each agent's rhythm, as the scenario describes it;
+- the tools, with their kind, the descriptions and parameters the agent sees, their durations as the scenario describes them, their efforts, and the text the agent receives for each outcome;
 - the stimulus channels, with their sources and what they deliver;
 - the energy model and the environment processes;
-- the limits (activation budget, time limit, parallelism limit, timeout);
-- what the agent is told about itself.
+- how fast information travels (NFR-12): until a medium exists, that every sensor and channel is instant;
+- the model and the limits (activation budget, time limit, parallelism limit, timeout).
 
-`lab inventory <experiment.toml>` prints it without running.
+A scenario describes, as text from its configuration, how each tool's duration and each agent's rhythm are computed. What the engine does not provide yet is listed as "none". `lab inventory <experiment.toml>` prints it as Markdown without running and without any model call.
 *Why:* the lab reviews what each environment pushes agents to do before running, and a hand-written list drifts from the code.
 
 #### FR-ADAPTER-02: Each agent is one Pi session for the whole run
