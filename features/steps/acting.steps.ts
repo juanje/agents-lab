@@ -50,26 +50,34 @@ Then(
   },
 );
 
+/**
+ * Gives an agent a script whose call of an effector with a slot lands while another agent's call of an effector is under
+ * way, and checks after the run that it did.
+ */
+export function landsWhileUnderWay(context: Context, agent: string, tool: string, slot: number, other: string, otherTool: string): void {
+  const declared = context.tools.find((candidate) => candidate.name === tool);
+  assert.ok(declared?.kind === "effector", `the test world declares no effector "${tool}"`);
+  const durationMs = declared.durationMs(context.world.state, { agent, arguments: { slot } });
+  assert.ok(durationMs > 0, `"${tool}" takes no time for a call to land in`);
+  script(context, agent, callThenEnd(tool, slot, 0));
+  // The other agent wakes halfway through this call, so its own call, which takes as long, starts before this one
+  // lands and ends after. The check below makes sure it did.
+  context.rhythms.set(other, () => durationMs / 2);
+  context.setupChecks.push(() => {
+    const landed = callOf(context, agent, tool);
+    const underWay = callOf(context, other, otherTool);
+    assert.equal(landed.outcome, "success", `agent "${agent}"'s "${tool}" did not land`);
+    assert.ok(
+      underWay.startedAtMs < landed.endedAtMs && landed.endedAtMs < underWay.endedAtMs,
+      `agent "${agent}"'s "${tool}" did not land while agent "${other}"'s was under way`,
+    );
+  });
+}
+
 Given(
   "agent {string}'s {string} of slot {int} lands while agent {string}'s {string} is under way",
   function (this: Context, agent: string, tool: string, slot: number, other: string, otherTool: string) {
-    const declared = this.tools.find((candidate) => candidate.name === tool);
-    assert.ok(declared?.kind === "effector", `the test world declares no effector "${tool}"`);
-    const durationMs = declared.durationMs(this.world.state, { agent, arguments: { slot } });
-    assert.ok(durationMs > 0, `"${tool}" takes no time for a call to land in`);
-    script(this, agent, callThenEnd(tool, slot, 0));
-    // The other agent wakes halfway through this call, so its own call, which takes as long, starts before this one
-    // lands and ends after. The check below makes sure it did.
-    this.rhythms.set(other, () => durationMs / 2);
-    this.setupChecks.push(() => {
-      const landed = callOf(this, agent, tool);
-      const underWay = callOf(this, other, otherTool);
-      assert.equal(landed.outcome, "success", `agent "${agent}"'s "${tool}" did not land`);
-      assert.ok(
-        underWay.startedAtMs < landed.endedAtMs && landed.endedAtMs < underWay.endedAtMs,
-        `agent "${agent}"'s "${tool}" did not land while agent "${other}"'s was under way`,
-      );
-    });
+    landsWhileUnderWay(this, agent, tool, slot, other, otherTool);
   },
 );
 

@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { Then } from "@cucumber/cucumber";
+import { Given, Then } from "@cucumber/cucumber";
 import { rhythmChannel } from "../../tests/fixtures/slots.ts";
 import type { Context } from "../support/context.ts";
+import { landsWhileUnderWay } from "./acting.steps.ts";
 import { turnsOf } from "./adapter.steps.ts";
 import { modelOf, returned } from "./tool.steps.ts";
 
@@ -128,5 +129,22 @@ Then(
     assert.equal(call.outcome, outcome);
     // Its result is what the agent's model received back.
     assert.equal(call.result, returned(this, agent, tool));
+  },
+);
+
+Given(
+  "agent {string} runs on a scripted model whose {string} of slot {int} lands while agent {string}'s {string} is under way",
+  function (this: Context, agent: string, tool: string, slot: number, other: string, otherTool: string) {
+    landsWhileUnderWay(this, agent, tool, slot, other, otherTool);
+  },
+);
+
+Then(
+  "the log's tool call line for agent {string}'s {string} call gives the outcome {string}, the target as sensed {string}, and {int} change(s) since its last sensing",
+  function (this: Context, agent: string, tool: string, outcome: string, sensed: string, changes: number) {
+    const call = lineOf(this, "tool_call", agent, { tool });
+    assert.equal(call.outcome, outcome);
+    assert.equal(call.targetAsSensed, sensed);
+    assert.equal(call.changesSinceSensing, changes);
   },
 );
