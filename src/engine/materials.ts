@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { TomlValue } from "smol-toml";
@@ -6,6 +7,13 @@ import { isTable } from "./scenario.ts";
 /** A value a condition gives as a material (FR-EXPERIMENT-04): a file, by its path from the experiment file. */
 export interface MaterialReference {
   path: string;
+}
+
+/** A material a condition set a value to, as a run's setup line lists it: its path and the hash of its content. */
+export interface Material {
+  path: string;
+  /** The SHA-256 hash of the file's content, in hexadecimal, after "sha256:". */
+  hash: string;
 }
 
 /**
@@ -27,8 +35,9 @@ export class Materials {
     this.#directory = directory;
   }
 
-  /** The text of a material's file. */
-  text({ path }: MaterialReference): string {
-    return readFileSync(join(this.#directory, path), "utf8");
+  /** A material's file, read: the material, with the hash of its content, and its text. */
+  read({ path }: MaterialReference): { material: Material; text: string } {
+    const content = readFileSync(join(this.#directory, path));
+    return { material: { path, hash: `sha256:${createHash("sha256").update(content).digest("hex")}` }, text: content.toString("utf8") };
   }
 }

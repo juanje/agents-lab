@@ -1,5 +1,5 @@
 import { type TomlTable, type TomlValue, parse } from "smol-toml";
-import { type MaterialReference, type Materials, materialReference } from "./materials.ts";
+import { type Material, type MaterialReference, type Materials, materialReference } from "./materials.ts";
 import { Random } from "./random.ts";
 import { type Channel, RHYTHM_CHANNEL } from "./stimuli.ts";
 import type { Tool } from "./tools.ts";
@@ -65,6 +65,8 @@ export interface LoadedScenario<State> {
   channels: readonly Channel[];
   /** Each of the scenario's agents, in the order it names them, with its rhythm. */
   rhythms: ReadonlyMap<string, Rhythm>;
+  /** Each material the condition set a value to, in the order the change gives them (FR-EXPERIMENT-04). */
+  materials: readonly Material[];
 }
 
 /** Each part a scenario must provide, and how an error names it. */
@@ -97,10 +99,11 @@ export function loadScenario<State>(
   const base = parse(scenario.baseConfiguration);
   // A text part that holds nothing gives the agents nothing, so it counts as missing.
   if (Object.keys(base).length === 0) throw lacks("base configuration");
+  const materials: Material[] = [];
   const configuration =
     condition === undefined
       ? base
-      : applyChange(base, parse(condition.change), [], { condition: condition.name, scenario: scenario.name, materials: condition.materials });
+      : applyChange(base, parse(condition.change), [], { condition: condition.name, scenario: scenario.name, read: condition.materials, materials });
   const channels = scenario.channels(configuration);
   // Each agent wakes by its rhythm's stimulus: without that channel the run would fail at the first wake.
   if (!channels.some((channel) => channel.name === RHYTHM_CHANNEL)) {
@@ -115,17 +118,18 @@ export function loadScenario<State>(
     rhythms.set(agent, scenario.rhythm(configuration, agent));
   }
   const initial = scenario.initialState(configuration, Random.derive(seed, "initial state"));
-  return { scenario, configuration, world: new World(initial), systemPrompts, channels, rhythms };
+  return { scenario, configuration, world: new World(initial), systemPrompts, channels, rhythms, materials };
 }
 
 /**
  * The names of the condition being applied and of the scenario whose base configuration it changes, for errors, and
- * where the condition's materials are read from.
+ * where the condition's materials are read from, and the materials it set values to so far.
  */
 interface Applying {
   condition: string;
   scenario: string;
-  materials?: Materials;
+  read?: Materials;
+  materials: Material[];
 }
 
 /** Whether a TOML value is a table: an object that is neither an array nor a date and time. */
@@ -161,14 +165,16 @@ function applyChange(configuration: TomlTable, change: TomlTable, path: readonly
   return changed;
 }
 
-/** The text of the material a condition sets a key to, read where the condition's materials are. */
+/** The text of the material a condition sets a key to, read where the condition's materials are; it lists the material. */
 function materialText(reference: MaterialReference, keyPath: readonly string[], applying: Applying): string {
-  if (applying.materials === undefined) {
+  if (applying.read === undefined) {
     throw new Error(
       `Condition "${applying.condition}" sets ${keyPath.join(".")} to the material "${reference.path}", but was given no directory to read materials from`,
     );
   }
-  return applying.materials.text(reference);
+  const { material, text } = applying.read.read(reference);
+  applying.materials.push(material);
+  return text;
 }
 
 /**

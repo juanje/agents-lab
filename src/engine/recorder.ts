@@ -4,6 +4,7 @@ import type { ModelTurn, ToolCall } from "./adapter.ts";
 import type { CodeVersion } from "./code-version.ts";
 import type { ConditionInventory } from "./inventory.ts";
 import { JsonlFile } from "./jsonl.ts";
+import type { Material } from "./materials.ts";
 import type { Configuration, MetricValue } from "./scenario.ts";
 import type { Stimulus } from "./stimuli.ts";
 
@@ -22,6 +23,8 @@ export interface RunSetup {
   model: string;
   code: CodeVersion;
   inventory: ConditionInventory;
+  /** Each material the condition set a value to, by its path, with the hash of its content (FR-EXPERIMENT-04). */
+  materials: readonly Material[];
 }
 
 /**

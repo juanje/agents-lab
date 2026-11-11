@@ -82,6 +82,7 @@ describe("runExperiment", () => {
       model: "scripted/one",
       code: { commit: git("rev-parse", "HEAD").trim(), uncommittedChanges: git("status", "--porcelain").trim() !== "" },
       inventory: inventory(once, slotsScenario).conditions[0],
+      materials: [],
       sampling: { thinkingLevels: { a: "off" }, otherParameters: "the provider's defaults" },
     });
     expect(seed).toBe(replicaSeed(7, 1));

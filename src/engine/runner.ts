@@ -102,6 +102,7 @@ export async function runExperiment<State>(
                 model: modelName,
                 code,
                 inventory: inventories[at],
+                materials: loaded.materials,
               },
               modelTurnTimeoutMs: experiment.limits.modelTurnTimeoutMs,
               thinkingLevel: experiment.thinkingLevel,
