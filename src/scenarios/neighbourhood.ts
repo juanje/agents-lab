@@ -1,5 +1,6 @@
 import { type Grid, emptyGrid, place, randomEmptyCell } from "../engine/grid.ts";
 import type { Configuration, Scenario } from "../engine/scenario.ts";
+import { RHYTHM_CHANNEL } from "../engine/stimuli.ts";
 
 /** The two kinds a resident can be of. */
 export const KINDS = ["teal", "amber"] as const;
@@ -47,7 +48,10 @@ export const neighbourhoodScenario: Scenario<Neighbourhood> = {
     return { grid, kinds };
   },
   tools: [],
-  channels: () => [{ name: "rhythm", source: "rhythm", stimulus: "You wake up." }],
+  channels: (configuration) => {
+    const { source, text } = configuration.rhythm as { source: string; text: string };
+    return [{ name: RHYTHM_CHANNEL, source, stimulus: text }];
+  },
   metrics: {},
   // It describes the resident and its kind; a preference or rule comes only from the configuration, which a condition
   // sets (FR-NEIGHBOURHOOD-01).
@@ -56,5 +60,14 @@ export const neighbourhoodScenario: Scenario<Neighbourhood> = {
     const rule = configuration.rule as string;
     return rule === "" ? description : `${description}\n\n${rule}`;
   },
-  baseConfiguration: ["width = 6", "height = 6", "residents = 10", 'rule = ""', ""].join("\n"),
+  baseConfiguration: [
+    "width = 6",
+    "height = 6",
+    "residents = 10",
+    'rule = ""',
+    "[rhythm]",
+    'source = "rhythm"',
+    'text = "You wake up."',
+    "",
+  ].join("\n"),
 };
