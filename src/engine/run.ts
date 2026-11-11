@@ -2,7 +2,7 @@ import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import { type AgentModel, type ModelTurn, type Records, type ToolCall, openRuntime, openSession, wake } from "./adapter.ts";
 import { ChangesSinceSensing } from "./changes.ts";
 import { runComponent } from "./components.ts";
-import { waitAtLeast } from "./clock.ts";
+import { RunClock, waitAtLeast } from "./clock.ts";
 import type { ThinkingLevel } from "./experiment.ts";
 import { failure } from "./failure.ts";
 import { ParallelismLimit } from "./parallelism.ts";
@@ -165,7 +165,9 @@ async function runAgents<State>(
   stop: (error: Error) => void,
   opened: (sampling: Sampling | null) => void,
 ): Promise<Omit<RunResult, "runId">> {
+  const clock = new RunClock();
   const sessionSettings = {
+    clock,
     modelTurnTimeoutMs: settings.modelTurnTimeoutMs,
     thinkingLevel: settings.thinkingLevel,
     runEnd: runEnd.signal,
@@ -210,7 +212,7 @@ async function runAgents<State>(
     otherParameters: PROVIDER_DEFAULTS,
   });
   settings.onStart?.(stimuli);
-  const startedAtMs = performance.now();
+  const startedAtMs = clock.start();
   const sample = () => sampleMetrics(world, toolCalls, scenario.metrics, recorder, performance.now());
   sampleMetrics(world, toolCalls, scenario.metrics, recorder, startedAtMs);
   const timer = setTimeout(() => runEnd.abort(), settings.timeLimitMs);

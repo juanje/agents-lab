@@ -28,8 +28,11 @@ interface Declared<State> {
 /** A tool that returns part of the world, as seen from where the agent is, and changes nothing. */
 export interface Sensor<State> extends Declared<State> {
   kind: "sensor";
-  /** The text the agent receives, from the state, the agent that calls it and the call's arguments. */
-  sense(state: State, agent: string, args: Readonly<Record<string, unknown>>): string;
+  /**
+   * The text the agent receives, from the state, the agent that calls it, the call's arguments and the time since the run
+   * started, as the sensor reads the world.
+   */
+  sense(state: State, agent: string, args: Readonly<Record<string, unknown>>, sinceStartMs: number): string;
   /**
    * Where the agent senses from, read against the same state as what it receives, for a sensor whose result is relative
    * to it; the engine keeps it with the sensing, so an effector can find its target in it later.

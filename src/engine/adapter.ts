@@ -21,7 +21,7 @@ import {
   validateToolArguments,
 } from "@earendil-works/pi-ai";
 import { type ChangesSinceSensing, applyCounted } from "./changes.ts";
-import { waitAtLeast } from "./clock.ts";
+import { type RunClock, waitAtLeast } from "./clock.ts";
 import type { ThinkingLevel } from "./experiment.ts";
 import { failure } from "./failure.ts";
 import type { Position } from "./grid.ts";
@@ -167,6 +167,8 @@ export interface SessionSettings {
   runEnd: AbortSignal;
   /** Stops the run on an error that is not the agent's behaviour, such as a tool that throws (FR-RECORD-01). */
   stop(error: Error): void;
+  /** The run's time, which a sensor is given as it reads the world (FR-WORKPLACE-05). */
+  clock: RunClock;
 }
 
 /** Opens the Pi session an agent keeps for the whole run (FR-ADAPTER-02). */
@@ -414,7 +416,7 @@ function definition<State>(
   sensings: Sensings,
   changes: ChangesSinceSensing,
   records: Records,
-  { runEnd, stop }: SessionSettings,
+  { runEnd, stop, clock }: SessionSettings,
 ): ToolDefinition {
   return {
     name: tool.name,
@@ -430,7 +432,7 @@ function definition<State>(
         // A call that comes after the run has ended is left unrun: it reads no target and applies nothing (FR-CLOCK-02).
         called = runEnd.aborted
           ? { outcome: CUT_OFF, text: CUT_OFF }
-          : (undeclared(tool, args) ?? (await perform(world, tool, { agent, arguments: args }, sensings, changes, runEnd, started)));
+          : (undeclared(tool, args) ?? (await perform(world, tool, { agent, arguments: args }, sensings, changes, runEnd, started, clock)));
       } catch (error) {
         // A tool that throws is a defect of the scenario, not the agent's behaviour: no outcome fits it, and the run
         // stops on it rather than going on with a world it cannot trust.
@@ -538,6 +540,7 @@ async function perform<State>(
   changes: ChangesSinceSensing,
   runEnd: AbortSignal,
   started: (change: EffectorStart["change"]) => void,
+  clock: RunClock,
 ): Promise<CallResult> {
   const sensing = sensings.last(call.agent);
   const lastBy = (sensor: string) => sensings.lastBy(call.agent, sensor);
@@ -550,7 +553,7 @@ async function perform<State>(
   const result = runEnd.aborted
     ? { outcome: CUT_OFF, text: CUT_OFF }
     : tool.kind === "sensor"
-      ? sense(world, tool, call)
+      ? sense(world, tool, call, clock.sinceStartMs())
       : effect(world, tool, call, changes);
   return targetAsSensed === undefined ? result : { ...result, targetAsSensed };
 }
@@ -568,10 +571,10 @@ function start<State>(world: World<State>, action: Start<State>, call: AgentCall
   return change;
 }
 
-/** Reads the world for a sensor's call, which then always succeeds. */
-function sense<State>(world: World<State>, sensor: Sensor<State>, call: AgentCall): CallResult {
+/** Reads the world for a sensor's call, at a time since the run started, which then always succeeds. */
+function sense<State>(world: World<State>, sensor: Sensor<State>, call: AgentCall, sinceStartMs: number): CallResult {
   const { state } = world;
-  const text = sensor.sense(state, call.agent, call.arguments);
+  const text = sensor.sense(state, call.agent, call.arguments, sinceStartMs);
   return sensor.takenFrom === undefined ? { outcome: "success", text } : { outcome: "success", text, takenFrom: sensor.takenFrom(state, call.agent) };
 }
 

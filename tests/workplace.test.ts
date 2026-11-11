@@ -387,7 +387,7 @@ class = "control"
   });
   const lookIn = (state: Workplace, place: string) => {
     const look = scenario.tools.find(({ name }) => name === "look") as Sensor<Workplace>;
-    return look.sense({ ...state, space: put(state.space, "worker", place) }, "worker", {});
+    return look.sense({ ...state, space: put(state.space, "worker", place) }, "worker", {}, 0);
   };
 
   it("gives when the worker first sensed each situation: a look that showed one of its things, or a read or examine of one", () => {
@@ -545,7 +545,7 @@ describe("the workplace's tools", () => {
     it("gives the place, its exits, the things in it with what is inside each container, its people and what the worker holds", () => {
       const state = inPlace(start(), "office");
 
-      expect(JSON.parse(sensor("look").sense(state, "worker", {}))).toEqual({
+      expect(JSON.parse(sensor("look").sense(state, "worker", {}, 0))).toEqual({
         place: "office",
         exits: [{ place: "hall", length: 3 }],
         things: [{ id: "cupboard", name: "a cupboard", inside: [{ id: "key", name: "a small key" }] }],
@@ -559,7 +559,7 @@ describe("the workplace's tools", () => {
       let state = start();
       state = { ...state, inside: {}, held: { key: "worker" }, space: leave.effect(state.space, { entity: "ana", towards: "hall" }) };
 
-      const seen = JSON.parse(sensor("look").sense(state, "worker", {}));
+      const seen = JSON.parse(sensor("look").sense(state, "worker", {}, 0));
 
       expect(seen.holding).toEqual([{ id: "key", name: "a small key" }]);
       expect(seen.people).toEqual([]);
@@ -576,15 +576,15 @@ describe("the workplace's tools", () => {
       const state = start();
       const inside = { ...state, things: { ...state.things, key: { ...state.things.key, text: "No. 7" } } };
 
-      expect(sensor("read").sense(state, "worker", { thing: "sign" })).toBe("Quiet, please.");
-      expect(sensor("read").sense(inPlace(inside, "office"), "worker", { thing: "key" })).toBe("No. 7");
-      expect(sensor("read").sense({ ...inside, inside: {}, held: { key: "worker" } }, "worker", { thing: "key" })).toBe("No. 7");
+      expect(sensor("read").sense(state, "worker", { thing: "sign" }, 0)).toBe("Quiet, please.");
+      expect(sensor("read").sense(inPlace(inside, "office"), "worker", { thing: "key" }, 0)).toBe("No. 7");
+      expect(sensor("read").sense({ ...inside, inside: {}, held: { key: "worker" } }, "worker", { thing: "key" }, 0)).toBe("No. 7");
     });
 
     it("says when the thing is not there, or has no text", () => {
-      expect(sensor("read").sense(start(), "worker", { thing: "key" })).toBe("It is not here.");
-      expect(sensor("read").sense(start(), "worker", { thing: "nothing" })).toBe("It is not here.");
-      expect(sensor("read").sense(inPlace(start(), "office"), "worker", { thing: "cupboard" })).toBe("Nothing is written on it.");
+      expect(sensor("read").sense(start(), "worker", { thing: "key" }, 0)).toBe("It is not here.");
+      expect(sensor("read").sense(start(), "worker", { thing: "nothing" }, 0)).toBe("It is not here.");
+      expect(sensor("read").sense(inPlace(start(), "office"), "worker", { thing: "cupboard" }, 0)).toBe("Nothing is written on it.");
     });
 
     it("takes the time per word of the text, and at least the time of a look", () => {
@@ -600,8 +600,8 @@ describe("the workplace's tools", () => {
     it("gives a thing's name and visible properties, as JSON, or that it is not there", () => {
       const state = inPlace(start(), "office");
 
-      expect(JSON.parse(sensor("examine").sense(state, "worker", { thing: "key" }))).toEqual({ name: "a small key", properties: { metal: "brass" } });
-      expect(sensor("examine").sense(start(), "worker", { thing: "key" })).toBe("It is not here.");
+      expect(JSON.parse(sensor("examine").sense(state, "worker", { thing: "key" }, 0))).toEqual({ name: "a small key", properties: { metal: "brass" } });
+      expect(sensor("examine").sense(start(), "worker", { thing: "key" }, 0)).toBe("It is not here.");
       expect(sensor("examine").durationMs(state, call({ thing: "key" }))).toBe(11);
     });
   });
@@ -775,7 +775,7 @@ describe("the workplace's tools", () => {
   });
 
   describe("read their targets in the worker's last look, taken where it is now", () => {
-    const looked = (state: Workplace) => ({ tool: "look", result: sensor("look").sense(state, "worker", {}), atMs: 0 });
+    const looked = (state: Workplace) => ({ tool: "look", result: sensor("look").sense(state, "worker", {}, 0), atMs: 0 });
 
     it("go: free for an exit it showed, outside for a place it showed no exit to", () => {
       const sensing = looked(start());
@@ -799,7 +799,7 @@ describe("the workplace's tools", () => {
     it("a read or examine after the look does not replace it", () => {
       const office = inPlace(start(), "office");
       const sensing = looked(office);
-      const examined = { tool: "examine", result: sensor("examine").sense(office, "worker", { thing: "cupboard" }), atMs: 1 };
+      const examined = { tool: "examine", result: sensor("examine").sense(office, "worker", { thing: "cupboard" }, 0), atMs: 1 };
       const lastBy = (tool: string) => ({ look: sensing, examine: examined })[tool];
 
       expect(effector("take").readTarget(examined, call({ thing: "key" }), office, lastBy)).toBe("free");

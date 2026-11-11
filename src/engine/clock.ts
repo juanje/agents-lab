@@ -16,3 +16,23 @@ export async function waitAtLeast(ms: number, signal?: AbortSignal): Promise<voi
     }
   }
 }
+
+/**
+ * A run's own time: how long since it started, the moment its agents can start and its time limit counts from
+ * (FR-CLOCK-02). Sensors and components' cycles are given it, so a world can keep a clock of its own (FR-WORKPLACE-05).
+ */
+export class RunClock {
+  #startedAtMs: number | undefined;
+
+  /** Starts the run's time now, by performance.now(), and gives that moment. */
+  start(): number {
+    this.#startedAtMs = performance.now();
+    return this.#startedAtMs;
+  }
+
+  /** The milliseconds since the run started; asking before it started is a defect of the engine. */
+  sinceStartMs(): number {
+    if (this.#startedAtMs === undefined) throw new Error("the run's time was asked for before the run started");
+    return performance.now() - this.#startedAtMs;
+  }
+}
