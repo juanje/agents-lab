@@ -1,5 +1,6 @@
+import { type SummaryInstructions, summaryInstructions } from "./compaction.ts";
 import type { Component } from "./components.ts";
-import type { Experiment, Limits, ThinkingLevel } from "./experiment.ts";
+import type { Compaction, Experiment, Limits, ThinkingLevel } from "./experiment.ts";
 import { type LoadedScenario, type Scenario, loadScenario } from "./scenario.ts";
 import { Stimuli, type Stimulus } from "./stimuli.ts";
 import type { Tool } from "./tools.ts";
@@ -31,6 +32,11 @@ export interface ConditionInventory {
   models: string[];
   /** The thinking level every session uses (FR-EXPERIMENT-05). */
   thinkingLevel: ThinkingLevel;
+  /**
+   * The context compaction every session uses and, when it is on, the instructions Pi gives the model to write the
+   * summary the agent has in view afterwards (FR-ADAPTER-03).
+   */
+  compaction: Compaction & { instructions?: SummaryInstructions };
   limits: Limits;
   /**
    * Each material the condition sets a value to, by its path, with the hash of its content; a held-out one by its path
@@ -95,7 +101,7 @@ export function inventory<State>(experiment: Experiment, scenario: Partial<Scena
 
 /** What the agents meet in a condition, from the scenario as that condition loads it. */
 function conditionInventory<State>(
-  { models, thinkingLevel, limits }: Experiment,
+  { models, thinkingLevel, compaction, limits }: Experiment,
   condition: string,
   { scenario, configuration, systemPrompts, channels, firstStimuli, materials, components }: LoadedScenario<State>,
 ): ConditionInventory {
@@ -126,6 +132,7 @@ function conditionInventory<State>(
     informationSpeed: "Every sensor and channel is instant.",
     models: [...models],
     thinkingLevel,
+    compaction: compaction.enabled ? { ...compaction, instructions: summaryInstructions } : { ...compaction },
     limits: { ...limits },
     materials: materials.map(({ path, hash, heldOut }) => (heldOut ? { path } : { path, hash })),
     ...(scenario.situations === undefined ? {} : { situations: [...scenario.situations(configuration)] }),
@@ -156,6 +163,7 @@ export function inventoryMarkdown({ experiment, scenario, conditions }: Inventor
       `### Environment processes\n\n${condition.environmentProcesses}\n`,
       `### How fast information travels\n\n${condition.informationSpeed}\n`,
       modelsAndLimitsMarkdown(condition),
+      compactionMarkdown(condition),
       materialsMarkdown(condition),
       ...(condition.situations === undefined ? [] : [situationsMarkdown(condition.situations)]),
       ...(condition.components === undefined ? [] : [componentsMarkdown(condition.components)]),
@@ -221,6 +229,22 @@ function modelsAndLimitsMarkdown({ models, thinkingLevel, limits }: ConditionInv
     `- Model turn timeout: ${limits.modelTurnTimeoutMs} ms`,
     "",
   ].join("\n");
+}
+
+/** The headings over each of Pi's texts for writing a summary, in the order the inventory gives them. */
+const SUMMARY_TEXTS: readonly [keyof SummaryInstructions, string][] = [
+  ["systemPrompt", "The system prompt for writing a summary:"],
+  ["first", "The instructions for a first summary, after the conversation it summarizes:"],
+  ["update", "The instructions for updating the previous summary, after the new conversation and that summary:"],
+  ["splitTurn", "The instructions for the start of a turn the compaction cuts through, after that start:"],
+];
+
+function compactionMarkdown({ compaction }: ConditionInventory): string {
+  if (!compaction.enabled) return "### Compaction\n\n- Compaction: off\n";
+  const setting = `- Compaction: enabled, with trigger_at ${compaction.triggerAt} and keep_recent_tokens ${compaction.keepRecentTokens}\n`;
+  const { instructions } = compaction;
+  const texts = instructions === undefined ? [] : SUMMARY_TEXTS.flatMap(([key, heading]) => [`${heading}\n`, fenced(instructions[key], "text")]);
+  return ["### Compaction\n", setting, ...texts].join("\n");
 }
 
 function materialsMarkdown({ materials }: ConditionInventory): string {

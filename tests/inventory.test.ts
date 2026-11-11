@@ -87,6 +87,7 @@ describe("inventory", () => {
       informationSpeed: "Every sensor and channel is instant.",
       models: ["scripted/one"],
       thinkingLevel: "off",
+      compaction: { enabled: false },
       limits: { activationsPerAgent: 3, timeLimitMs: 1000, parallelismLimit: 2, modelTurnTimeoutMs: 500 },
       materials: [],
     });

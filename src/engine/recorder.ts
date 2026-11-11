@@ -3,6 +3,7 @@ import { join } from "node:path";
 import type { ContextCompaction, EffectorStart, ModelTurn, ToolCall } from "./adapter.ts";
 import type { CodeVersion } from "./code-version.ts";
 import type { ComponentAction } from "./components.ts";
+import type { Compaction } from "./experiment.ts";
 import type { ConditionInventory } from "./inventory.ts";
 import { JsonlFile } from "./jsonl.ts";
 import type { Material } from "./materials.ts";
@@ -26,6 +27,8 @@ export interface RunSetup {
   inventory: ConditionInventory;
   /** Each material the condition set a value to, by its path, with the hash of its content (FR-EXPERIMENT-04). */
   materials: readonly Material[];
+  /** The context compaction every session of the run uses (FR-ADAPTER-03). */
+  compaction: Compaction;
   /** The level of each factor, by the factor's name, when the condition is a combination of levels; otherwise none (FR-EXPERIMENT-02). */
   levels?: Readonly<Record<string, string>>;
 }

@@ -69,6 +69,7 @@ const setup = {
   code: { commit: "0000000", uncommittedChanges: false },
   inventory: {} as never,
   materials: [{ path: "materials/wake.md", key: "rhythm.text", hash: "sha256:0", heldOut: false }],
+  compaction: { enabled: false } as const,
 };
 
 /** The lines of the only log in a directory, which must be the run's, parsed. */
