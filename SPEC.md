@@ -474,7 +474,7 @@ A situation's reserved keys can give predicates on the world's state:
 
 A location is a place, a container (the thing is directly inside it), `person:<id>` (that person holds it) or `held` (the worker holds it). A predicate that names a thing, place, container or person the world does not have fails before any model call, with an error that names it.
 
-The workplace's metrics give, for each chosen situation, by its id:
+A situation's things are the things its `situations` text brings and the things its predicates name, which can be things of the world. The workplace's metrics give, for each chosen situation, by its id:
 - `sensed_at_ms`: when the worker first sensed it, by a look that showed one of its things or a read or examine of one; no value until then;
 - `holds`: 1 when all its predicates hold, 0 when one does not; no value for a situation without predicates;
 - `predicates`: each predicate's value, 1 or 0, by `situation.key.thing` (for example `s05.not_where.item-13`);

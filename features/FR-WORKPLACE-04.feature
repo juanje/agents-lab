@@ -63,3 +63,12 @@ Feature: What the worker did in each situation is measured from the world
     When the run starts
     Then it fails with an error that names "attic"
     And no model was called
+
+  Scenario: A thing of the world that a predicate names is one of the situation's things
+    Given "situation_keys" gives "jar" the predicate where "lamp" in ["held"]
+    And the worker is in "store"
+    And the worker's scripted turns call "examine" with "lamp", then "take" with "lamp", then end
+    When the run ends
+    Then "sensed_at_ms" gives "jar" the moment the examine ended
+    And "acted_at_ms" gives "jar" the moment the take ended
+    And "predicates" gives 1 for "jar.where.lamp"
