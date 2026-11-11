@@ -86,8 +86,8 @@ Experiments are written outside this repository, in the experiment language (FR-
 8. FR-WORKPLACE-03
 9. FR-WORKPLACE-04
 10. FR-PROCESS-01 (components with their own life cycles, in the engine)
-11. FR-WORKPLACE-05 (the depot's porter and visitors, as components)
-12. FR-WORKPLACE-06 (the depot's day: time of day, opening hours, light, doors, weather as a perturbation)
+11. FR-WORKPLACE-05 (the depot's day goes on: time, the porter and visitors)
+12. FR-WORKPLACE-06 (the depot's hours, light, closed doors, and weather as a perturbation)
 13. FR-ADAPTER-03
 14. FR-RUN-02
 15. FR-ANALYSIS-02
@@ -492,12 +492,20 @@ A situation's things are the things its `situations` text brings and the things 
 The metrics read the world's state and the worker's tool calls so far; the engine gives them both. They are sampled like every metric (FR-METRIC-02). What a note or an entry says (`said`, `not_said`) is left to the reserved judge (FR-ANALYSIS-02); the other reserved keys (class, kind, rule, owner…) are carried to the analysis as they are.
 *Why:* A18, A19 and I4 are judged on actions in situations; reading them from the world keeps the measure objective, keeps what the worker did apart from what it said, and leaves a judge only for what it wrote. A18 predicts that rules change how much the worker explores; I4 reads the worker's scope from predicates on other people's parts; E4 looks for drift across the day.
 
-#### FR-WORKPLACE-05: The depot's porter and visitors are components
-The workplace can declare, in its world, a porter who brings the day's arrivals to the intake room on his rounds, and visitors who come to the counter on their own errands and leave, as components (FR-PROCESS-01) under the space's physics (FR-SPACE-03). Their cycles, errands and arrivals come from the world's text.
-*Why:* E4's drift and A19's load need a working day that fills the context; it should come from the work arriving, not from padding, and the people in it should come and go for their own reasons.
+#### FR-WORKPLACE-05: The depot's day goes on: time, the porter and visitors
+**Time.** The world's `[day] start` gives the time the depot's clocks show when the run starts (`"HH:MM"`), and the configuration's `time_scale` how many depot seconds pass per second of the run. `look` gives the time the clocks show, to the minute. Every time in the world's texts and the configuration is a clock time, turned into run time by these two.
 
-#### FR-WORKPLACE-06: The depot's day
-The workplace maps the run's time to a time of day, by a start time and a scale the configuration gives. Rooms and passages can be open or closed, and rooms lit or dark; `go` through a closed passage fails, and `look` shows the time as the depot's clocks show it, the light, and which exits are closed. Periodic changes (the depot's opening hours, the light through the day, a transport's timetable) come from components with their own cycles (FR-PROCESS-01). Random events that come from outside the depot (weather, a delay on the road, an accident) are external perturbations, declared by an experiment's configuration and absent by default.
+**The porter.** The world's `[porter]` (id, name, description, `enters`, `drops_in`, `rounds`) is a component (FR-PROCESS-01) and a person of the space. At each round's time he appears in `enters`, carrying that round's arrivals, walks to `drops_in` by the shortest way through the passages, puts them down there, walks back and leaves. A round's arrivals are the world's things marked `arrives = "<round>"` and the things of the situations that the configuration's `arrivals` (a TOML text, usually a material, mapping a round to situation ids) lists for it. Until they arrive, they are in no place. While he walks he is in each passage he crosses, as the worker is (FR-SPACE-03).
+
+**Visitors.** Each of the world's `[[visitors]]` (id, name, description, `enters`, `arrives_between`, `waits_minutes`, `comes_for`) is a component and a person of the space. Once, at a time drawn between the two times of `arrives_between` from the visitor's own random sequence, the visitor appears in `enters` with the situations' things marked `brought_by` that visitor, which they put down there. They wait there, keep what the worker gives them (FR-WORKPLACE-02), and leave once they hold every thing of `comes_for`, or when `waits_minutes` have passed; a thing the run does not hold can never be given, so its visitor waits the whole time. A visitor who has left is in no place and keeps what they hold, so `person:<id>` still holds for it (FR-WORKPLACE-04). The world's `[[people]]` stay as they are: people who do not act.
+
+**What the engine gains.** A component's action can have a start, applied as the action starts, as an effector's can (FR-TOOL-04); the porter's walk uses it. Agents' and components' names must all differ; a run that would give two of them the same name is refused before any model call, naming it.
+
+**Refusals.** Before any model call, with an error that names it: an `arrivals` round that is not one of the porter's `rounds`; a situation in `arrivals` that is not chosen, or whose places do not include `drops_in`; a `brought_by` that names no visitor; a time that is not `"HH:MM"`; and an `arrives_between` whose first time is after its second.
+*Why:* a working day fills the context with the work arriving, not with padding, and the people in it come and go for their own reasons, under the same physics as the worker. Which situations arrive with which round is the content of the day's deliveries, declared per experiment, so E4 can put the same situations early or late.
+
+#### FR-WORKPLACE-06: The depot's day has hours, light and closed doors
+The world's `[day]` gives the counter's opening hours; rooms and passages can be open or closed, and rooms lit or dark, changed by components with their own cycles (FR-PROCESS-01) such as whoever opens and closes the depot. `go` through a closed passage fails, and `look` shows the light and which exits are closed. Random events that come from outside the depot (weather, a delay on the road, an accident) are external perturbations, declared by an experiment's configuration and absent by default.
 *Why:* a working day has its own rhythm, which shapes what the worker can do and when; and what changes in the world must be something the worker can perceive, or it changes nothing for the worker.
 
 ### Analysis
