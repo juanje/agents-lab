@@ -149,6 +149,49 @@ describe("readExperiment with factors", () => {
       { name: "count=five,held=two", change: { slots: { count: 5, held: 2 } }, levels: { count: "five", held: "two" } },
     ]);
   });
+  it("gives no baseline when the file turns it off", () => {
+    expect(readExperiment(`baseline = false\n${withFactors}`).conditions.map(({ name }) => name)).toEqual([
+      "count=three,held=none",
+      "count=three,held=two",
+      "count=five,held=none",
+      "count=five,held=two",
+    ]);
+  });
+
+  it("refuses a baseline that is neither true nor false, naming it", () => {
+    expect(() => readExperiment(`baseline = "no"\n${withFactors}`)).toThrow('The experiment file\'s field "baseline" must be true or false');
+  });
+
+  it("gives the file's own conditions after the combinations, in its order", () => {
+    const own = `${withFactors}[conditions.six-slots]\nslots.count = 6\n[conditions.one-held]\nslots.held = 1\n`;
+    expect(readExperiment(own).conditions.map(({ name }) => name).slice(-3)).toEqual(["count=five,held=two", "six-slots", "one-held"]);
+  });
+
+  it.each(["baseline", "count=three,held=two"])("refuses a condition of the file's own named %s, a name already taken, naming it", (name) => {
+    expect(() => readExperiment(`${withFactors}[conditions."${name}"]\n`)).toThrow(
+      `The experiment file gives two conditions named "${name}"`,
+    );
+  });
+
+  it("gives a condition of the file's own the name baseline when the file turns the baseline off", () => {
+    const conditions = readExperiment(`baseline = false\n${withFactors}[conditions.baseline]\n`).conditions;
+    expect(conditions.map(({ name }) => name).at(-1)).toBe("baseline");
+  });
+
+  it.each<[string, string, string]>([
+    ["the same key", "slots.count = 2", "slots.count"],
+    ["a key the other sets a key inside", "slots = 2", "slots"],
+  ])("refuses two levels of one combination that set %s, naming both factors and the key", (_, setting, key) => {
+    expect(() => readExperiment(`${withFactors}[factors.size.small]\n${setting}\n`)).toThrow(
+      `The levels "three" of factor "count" and "small" of factor "size" both set ${key}, so the condition "count=three,held=none,size=small" cannot be formed`,
+    );
+  });
+
+  it("refuses two levels that set the same key to a material, naming the key and not a key inside the material", () => {
+    const material = (path: string) => `rhythm.text = { file = "${path}" }`;
+    const file = `${withFactors}[factors.wake.morning]\n${material("a.md")}\n[factors.sleep.night]\n${material("b.md")}\n`;
+    expect(() => readExperiment(file)).toThrow('"morning" of factor "wake" and "night" of factor "sleep" both set rhythm.text,');
+  });
 });
 
 /** The valid file with the value at a dotted path set, or left out when the value is undefined. */
