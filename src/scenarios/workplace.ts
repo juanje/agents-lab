@@ -2,7 +2,7 @@ import { type TomlTable, type TomlValue, parse } from "smol-toml";
 import { type Passage, type Places, layout, put } from "../engine/places.ts";
 import type { Configuration, Scenario } from "../engine/scenario.ts";
 import { Random } from "../engine/random.ts";
-import { RHYTHM_CHANNEL } from "../engine/stimuli.ts";
+import { describeUniformRhythm, rhythmChannels, uniformRhythm } from "./rhythm.ts";
 
 /** A thing in the workplace, as anyone in its place sees it. */
 export interface Thing {
@@ -158,26 +158,17 @@ export const workplaceScenario: Partial<Scenario<Workplace>> = {
   // Its tools come with FR-WORKPLACE-02 and its metrics with FR-WORKPLACE-04.
   tools: [],
   metrics: {},
-  channels: (configuration) => {
-    const { source, text } = configuration.rhythm as { source: string; text: string };
-    return [{ name: RHYTHM_CHANNEL, source, stimulus: text }];
-  },
+  channels: rhythmChannels,
   // The configured texts, in this order, each that holds something; nothing else, so the reserved keys never reach it.
   systemPrompt: (configuration) =>
     PROMPT_TEXTS.map((key) => configuration[key] as string)
       .filter((text) => text !== "")
       .join("\n\n"),
-  rhythm: (configuration) => {
-    const { min_ms: minMs, max_ms: maxMs } = configuration.rhythm as { min_ms: number; max_ms: number };
-    return (random) => minMs + random.next() * (maxMs - minMs);
-  },
+  rhythm: uniformRhythm,
   describeDuration: (_configuration, tool) => {
     throw new Error(`The workplace has no tool "${tool}"`);
   },
-  describeRhythm: (configuration) => {
-    const { min_ms: minMs, max_ms: maxMs } = configuration.rhythm as { min_ms: number; max_ms: number };
-    return `An interval drawn uniformly between ${minMs} and ${maxMs} ms before each activation.`;
-  },
+  describeRhythm: describeUniformRhythm,
   situations: (configuration) => configuration.chosen_situations as string[],
   baseConfiguration: [
     'identity = "You work here."',

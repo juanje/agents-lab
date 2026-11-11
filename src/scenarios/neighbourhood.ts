@@ -1,6 +1,6 @@
 import { CELL_FULL, type Grid, type Position, distance, emptyGrid, entitiesAt, inside, move as moveOnGrid, neighbours, place, position, randomEmptyCell, window } from "../engine/grid.ts";
 import type { Configuration, Scenario } from "../engine/scenario.ts";
-import { RHYTHM_CHANNEL } from "../engine/stimuli.ts";
+import { describeUniformRhythm, rhythmChannels, uniformRhythm } from "./rhythm.ts";
 import type { AgentCall, Effector, Sensor } from "../engine/tools.ts";
 
 /** The two kinds a resident can be of. */
@@ -173,10 +173,7 @@ export const neighbourhoodScenario: Scenario<Neighbourhood> = {
     return { grid, kinds, moves: 0, lookRadius: settings.look_radius, msPerLook: settings.ms_per_look, msPerCell: settings.ms_per_cell };
   },
   tools: [look, move],
-  channels: (configuration) => {
-    const { source, text } = configuration.rhythm as { source: string; text: string };
-    return [{ name: RHYTHM_CHANNEL, source, stimulus: text }];
-  },
+  channels: rhythmChannels,
   metrics: { shares, segregation, moves: (state) => state.moves },
   // It describes the resident and its kind, then the world's rules; a preference or rule comes only from the
   // configuration, which a condition sets (FR-NEIGHBOURHOOD-01).
@@ -186,21 +183,14 @@ export const neighbourhoodScenario: Scenario<Neighbourhood> = {
     const parts = [description, configuration.world_rules as string, ...(rule === "" ? [] : [rule])];
     return parts.join("\n\n");
   },
-  // Every resident waits an interval drawn uniformly between the configured bounds; a condition may change them.
-  rhythm: (configuration) => {
-    const { min_ms: minMs, max_ms: maxMs } = configuration.rhythm as { min_ms: number; max_ms: number };
-    return (random) => minMs + random.next() * (maxMs - minMs);
-  },
+  rhythm: uniformRhythm,
   describeDuration: (configuration, tool) => {
     const settings = configuration as { ms_per_look: number; ms_per_cell: number };
     if (tool === look.name) return `${settings.ms_per_look} ms.`;
     if (tool === move.name) return `${settings.ms_per_cell} ms for each cell of distance to the target.`;
     throw new Error(`The neighbourhood has no tool "${tool}"`);
   },
-  describeRhythm: (configuration) => {
-    const { min_ms: minMs, max_ms: maxMs } = configuration.rhythm as { min_ms: number; max_ms: number };
-    return `An interval drawn uniformly between ${minMs} and ${maxMs} ms before each activation.`;
-  },
+  describeRhythm: describeUniformRhythm,
   baseConfiguration: [
     "width = 6",
     "height = 6",
