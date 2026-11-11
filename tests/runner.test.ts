@@ -1,9 +1,13 @@
+import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { type Experiment, replicaSeed } from "../src/engine/experiment.ts";
+import { inventory } from "../src/engine/inventory.ts";
 import { runExperiment } from "../src/engine/runner.ts";
+import { loadScenario } from "../src/engine/scenario.ts";
 import { ScriptedModel } from "../src/engine/scripted-model.ts";
 import { slotsScenario } from "./fixtures/slots.ts";
 
@@ -38,7 +42,36 @@ function indexOf(directory: string): Record<string, unknown>[] {
     .map((line) => JSON.parse(line));
 }
 
+/** Runs git in this repository, the code that runs, and gives what it prints. */
+function git(...args: string[]): string {
+  return execFileSync("git", args, { cwd: fileURLToPath(new URL("..", import.meta.url)), encoding: "utf8" });
+}
+
 describe("runExperiment", () => {
+  it("writes first in each run's log what it ran: its id, experiment, condition, resolved configuration, replica, seed, model, code and condition's inventory", async () => {
+    const directory = newRunsDirectory();
+    const models = new Map([["scripted/one", new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }])]]);
+    const once = { ...experiment, models: ["scripted/one"], replicas: 1, conditions: [experiment.conditions[1]] };
+
+    await runExperiment(once, slotsScenario, models, directory);
+
+    const [{ runId, seed }] = indexOf(directory);
+    const [first] = readFileSync(join(directory, `${String(runId)}.jsonl`), "utf8").split("\n").map((line) => (line === "" ? undefined : JSON.parse(line)));
+    expect(first).toEqual({
+      type: "run_setup",
+      runId,
+      experiment: "e-test",
+      condition: "five-slots",
+      configuration: loadScenario(slotsScenario, replicaSeed(7, 1), experiment.conditions[1]).configuration,
+      replica: 1,
+      seed: replicaSeed(7, 1),
+      model: "scripted/one",
+      code: { commit: git("rev-parse", "HEAD").trim(), uncommittedChanges: git("status", "--porcelain").trim() !== "" },
+      inventory: inventory(once, slotsScenario).conditions[0],
+    });
+    expect(seed).toBe(replicaSeed(7, 1));
+  });
+
   it("samples each run's metrics at the experiment's interval", async () => {
     const directory = newRunsDirectory();
     const models = new Map([["scripted/one", new ScriptedModel([{ text: "Waiting.", delayMs: 250 }])]]);

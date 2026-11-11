@@ -1,10 +1,15 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Given, Then, When } from "@cucumber/cucumber";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { type TomlTable, stringify } from "smol-toml";
 import { lab } from "../../src/cli/lab.ts";
+import { replicaSeed } from "../../src/engine/experiment.ts";
+import { type ConditionInventory, inventoryMarkdown } from "../../src/engine/inventory.ts";
+import { type Scenario, loadScenario } from "../../src/engine/scenario.ts";
 import { ScriptedModel } from "../../src/engine/scripted-model.ts";
 import { scenarioLibrary } from "../../src/scenarios/library.ts";
 import { slotsScenario } from "../../tests/fixtures/slots.ts";
@@ -23,15 +28,40 @@ Given(
   },
 );
 
+/** Scripted models by name, whose agents end every turn without a tool call, for "lab" to resolve. */
+function idleModels(context: Context, names: readonly string[]): void {
+  for (const name of names) {
+    const model = new ScriptedModel(Array.from({ length: ANSWERS }, () => ({ text: "Nothing to do.", delayMs: 0 })), name.split("/")[1]);
+    // Kept by name, so "no model was called" checks every one of them.
+    context.models.set(name, model);
+    context.labModels.set(name, model);
+  }
+}
+
 Given(
   "the scripted models {string} and {string}, whose agents end every turn without a tool call",
   function (this: Context, first: string, second: string) {
-    for (const name of [first, second]) {
-      const model = new ScriptedModel(Array.from({ length: ANSWERS }, () => ({ text: "Nothing to do.", delayMs: 0 })), name.split("/")[1]);
-      // Kept by name, so "no model was called" checks every one of them.
-      this.models.set(name, model);
-      this.labModels.set(name, model);
-    }
+    idleModels(this, [first, second]);
+  },
+);
+
+Given("the scripted model {string}, whose agents end every turn without a tool call", function (this: Context, name: string) {
+  idleModels(this, [name]);
+});
+
+Given(
+  "an experiment file {string} for the scenario {string}, with the model {string}, {int} replica, the base seed {int}, {int} activation per agent, and the condition {string}, which sets {string} to {int}",
+  function (this: Context, id: string, scenario: string, model: string, replicas: number, seed: number, activationsPerAgent: number, condition: string, path: string, value: number) {
+    this.experimentFile = {
+      id,
+      scenario,
+      models: [model],
+      replicas,
+      seed,
+      // Limits no run here reaches but its activations.
+      limits: { time_limit_ms: 60_000, activations_per_agent: activationsPerAgent, parallelism_limit: 10, model_turn_timeout_ms: 10_000 },
+      conditions: { [condition]: tableAt(path, value) },
+    };
   },
 );
 
@@ -278,3 +308,64 @@ Then("no run started after it", function (this: Context) {
   assert.equal(index.at(-1)?.status, "stopped");
   assert.equal(runLogs(this).length, index.length, "a run wrote a log the index does not list");
 });
+
+/** The first line of the log of the experiment's only run, once "lab run" completed. */
+function firstLine(context: Context): LogLine {
+  const index = completedIndex(context);
+  assert.equal(index.length, 1, `the index lists ${index.length} runs`);
+  const first = logOf(context, index[0].runId)[0];
+  assert.equal(first.type, "run_setup", `the first line of the run's log is a "${first.type}" line`);
+  return first;
+}
+
+/** Runs git in this repository, the code "lab run" ran, and gives what it prints. */
+function git(...args: string[]): string {
+  return execFileSync("git", args, { cwd: fileURLToPath(new URL("../..", import.meta.url)), encoding: "utf8" });
+}
+
+Then(
+  "the first line of the run's log gives its run id, the experiment {string}, the condition {string} and the resolved configuration, with {string} as {int}",
+  function (this: Context, experiment: string, condition: string, path: string, value: number) {
+    const first = firstLine(this);
+    const [{ runId, seed }] = completedIndex(this);
+    assert.equal(first.runId, runId);
+    assert.equal(first.experiment, experiment);
+    assert.equal(first.condition, condition);
+    const scenario = this.library?.get(String(this.experimentFile.scenario)) as Partial<Scenario<unknown>>;
+    const change = stringify((this.experimentFile.conditions as TomlTable)[condition] as TomlTable);
+    assert.deepEqual(first.configuration, loadScenario(scenario, seed, { name: condition, change }).configuration);
+    assert.equal(path.split(".").reduce<unknown>((table, key) => (table as TomlTable)[key], first.configuration), value);
+  },
+);
+
+Then(
+  "it gives replica {int}, the replica's seed, the model {string} and the sampling settings its sessions use",
+  function (this: Context, replica: number, model: string) {
+    const first = firstLine(this);
+    assert.equal(first.replica, replica);
+    assert.equal(first.seed, replicaSeed(this.experimentFile.seed as number, replica));
+    assert.equal(first.model, model);
+    assert.ok(first.sampling !== undefined, "the first line gives no sampling settings");
+  },
+);
+
+Then("the first line of the run's log gives the commit of the code that ran", function (this: Context) {
+  assert.equal((firstLine(this).code as { commit: unknown }).commit, git("rev-parse", "HEAD").trim());
+});
+
+Then("it says whether that code's working tree had changes not committed", function (this: Context) {
+  assert.equal((firstLine(this).code as { uncommittedChanges: unknown }).uncommittedChanges, git("status", "--porcelain").trim() !== "");
+});
+
+Then(
+  "the first line of the run's log holds, as data, the inventory {string} prints for the condition {string}",
+  async function (this: Context, command: string, condition: string) {
+    const logged = firstLine(this).inventory as ConditionInventory;
+    assert.equal(command, "lab inventory");
+    await runLab(this, "inventory");
+    assert.equal(this.labError, undefined, `"lab inventory" failed: ${this.labError?.message}`);
+    const section = (markdown: string) => markdown.slice(markdown.indexOf(`## Condition "${condition}"`));
+    const { id, scenario } = this.experimentFile as { id: string; scenario: string };
+    assert.equal(section(inventoryMarkdown({ experiment: id, scenario, conditions: [logged] })), section(this.labOutput ?? ""));
+  },
+);
