@@ -64,3 +64,7 @@ Then("the resident at {int}, {int} has no share, because it has no neighbour", f
   const given = shares(this);
   assert.ok(!Object.hasOwn(given, resident), `"${resident}" has the share ${given[resident]}`);
 });
+
+Then("the segregation is {float}", function (this: Context, segregation: number) {
+  assert.equal(metric(this, "segregation"), segregation);
+});

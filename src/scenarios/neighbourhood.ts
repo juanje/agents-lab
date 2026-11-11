@@ -135,6 +135,12 @@ function shares(state: Neighbourhood): Record<string, number> {
   return found;
 }
 
+/** "segregation": the mean of the residents' shares. */
+function segregation(state: Neighbourhood): number {
+  const given = Object.values(shares(state));
+  return given.reduce((sum, share) => sum + share, 0) / given.length;
+}
+
 /** The neighbourhood scenario. */
 export const neighbourhoodScenario: Scenario<Neighbourhood> = {
   name: "neighbourhood",
@@ -158,7 +164,7 @@ export const neighbourhoodScenario: Scenario<Neighbourhood> = {
     const { source, text } = configuration.rhythm as { source: string; text: string };
     return [{ name: RHYTHM_CHANNEL, source, stimulus: text }];
   },
-  metrics: { shares },
+  metrics: { shares, segregation },
   // It describes the resident and its kind; a preference or rule comes only from the configuration, which a condition
   // sets (FR-NEIGHBOURHOOD-01).
   systemPrompt: (configuration, resident) => {
