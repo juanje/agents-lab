@@ -7,6 +7,9 @@ import { World } from "./world.ts";
 /** A resolved configuration: the scenario's base configuration with the condition's change over it. */
 export type Configuration = TomlTable;
 
+/** A metric's value: one number for the world, or a number for each agent it applies to, by the agent's name. */
+export type MetricValue = number | Readonly<Record<string, number>>;
+
 /** What a scenario provides to the engine. */
 export interface Scenario<State> {
   name: string;
@@ -19,7 +22,7 @@ export interface Scenario<State> {
   /** The declared paths by which stimuli reach agents, from the resolved configuration. */
   channels: (configuration: Configuration) => readonly Channel[];
   /** Each metric by its name, computed from the world's state. */
-  metrics: Readonly<Record<string, (state: State) => number>>;
+  metrics: Readonly<Record<string, (state: State) => MetricValue>>;
   /** What an agent is told it is, from the resolved configuration and the agent's name; never the world's state. */
   systemPrompt: (configuration: Configuration, agent: string) => string;
   /** The base configuration, in TOML. */

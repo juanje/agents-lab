@@ -28,7 +28,7 @@ Given(
  * The neighbourhood as the scenario set it up: its configuration, with the residents it names on the cells it gives
  * rather than on cells drawn from a seed, and the residents that have a model as its agents.
  */
-function assembled(context: Context, agents: readonly string[]): LoadedScenario<Neighbourhood> {
+export function assembled(context: Context, agents: readonly string[]): LoadedScenario<Neighbourhood> {
   const configuration = parse(context.neighbourhood.baseConfiguration ?? "");
   // The scenario's own initial state with no residents gives the grid and the settings the configuration sets.
   const empty = neighbourhoodScenario.initialState({ ...configuration, residents: 0 }, new Random(context.seed));

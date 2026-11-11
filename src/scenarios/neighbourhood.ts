@@ -1,4 +1,4 @@
-import { type Grid, type Position, distance, emptyGrid, entitiesAt, inside, move as moveOnGrid, place, position, randomEmptyCell, window } from "../engine/grid.ts";
+import { type Grid, type Position, distance, emptyGrid, entitiesAt, inside, move as moveOnGrid, neighbours, place, position, randomEmptyCell, window } from "../engine/grid.ts";
 import type { Configuration, Scenario } from "../engine/scenario.ts";
 import { RHYTHM_CHANNEL } from "../engine/stimuli.ts";
 import type { AgentCall, Effector, Sensor } from "../engine/tools.ts";
@@ -121,6 +121,20 @@ const move: Effector<Neighbourhood> = {
   },
 };
 
+/**
+ * "shares": for each resident with at least one occupied neighbouring cell, the share of the residents on those cells
+ * that are of its kind, by the resident's name. A resident with no neighbour has no share.
+ */
+function shares(state: Neighbourhood): Record<string, number> {
+  const { grid, kinds } = state;
+  const found: Record<string, number> = {};
+  for (const [resident, kind] of Object.entries(kinds)) {
+    const around = neighbours(grid, whereIs(state, resident)).flatMap((cell) => entitiesAt(grid, cell));
+    if (around.length > 0) found[resident] = around.filter((neighbour) => kinds[neighbour] === kind).length / around.length;
+  }
+  return found;
+}
+
 /** The neighbourhood scenario. */
 export const neighbourhoodScenario: Scenario<Neighbourhood> = {
   name: "neighbourhood",
@@ -144,7 +158,7 @@ export const neighbourhoodScenario: Scenario<Neighbourhood> = {
     const { source, text } = configuration.rhythm as { source: string; text: string };
     return [{ name: RHYTHM_CHANNEL, source, stimulus: text }];
   },
-  metrics: {},
+  metrics: { shares },
   // It describes the resident and its kind; a preference or rule comes only from the configuration, which a condition
   // sets (FR-NEIGHBOURHOOD-01).
   systemPrompt: (configuration, resident) => {
