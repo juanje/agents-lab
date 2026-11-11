@@ -85,7 +85,7 @@ Experiments are written outside this repository, in the experiment language (FR-
 7. FR-WORKPLACE-02
 8. FR-WORKPLACE-03
 9. FR-WORKPLACE-04
-10. FR-PROCESS-01 (the workplace changes while the worker works)
+10. FR-PROCESS-01 (components with their own cycles, such as the porter's rounds, change the workplace)
 11. FR-ADAPTER-03
 12. FR-RUN-02
 13. FR-ANALYSIS-02
@@ -228,9 +228,9 @@ A leave of an entity the space does not hold, or not in a place, or towards a pl
 A scenario's effector that moves an agent to another place takes, as its duration (FR-TOOL-04), the scenario's time per unit of length multiplied by the passage's length. The agent leaves its place when the call starts and arrives when it ends: in between it is in the passage, where others can see it, and its old place no longer holds it. A start the space refuses stops the run, as a tool that throws does. A crossing cut off by the time limit (FR-CLOCK-02) leaves the agent in the passage, where it was when time ran out.
 *Why:* worlds such as a building or a village are made of rooms and paths, not cells; the space keeps their layout, the time to cross it and what can be seen from where the same across scenarios. An agent that stayed in its place until it arrived would be seen where it no longer is, and would reach its new place at once for everyone else. What an agent can see depends on where it is, so the layout shapes what each agent can know (NFR-12). An agent's choice of a place it cannot reach is the scenario's to name; a leave that reaches the space with it is a defect in the scenario.
 
-#### FR-PROCESS-01: The environment changes on its own
-A scenario can declare processes: changes the world applies at a given interval, through the arbiter, whether or not any agent acts (for example, energy recovering or a resource growing back).
-*Why:* real environments have their own dynamics; a world that changes only when agents act is a laboratory artefact.
+#### FR-PROCESS-01: Components with their own life cycles change the world
+A scenario can declare components besides its agents: parts of the world that follow their own life cycle and goals (for example, a porter on his rounds bringing arrivals, or visitors who come and go for their own reasons) and change the world through the arbiter, as agents do, whether or not any agent acts. A scenario can also declare an external perturbation, scheduled at a given moment; it is declared as such, and it is neither required nor the main way the world changes.
+*Why:* a world does not change by itself: it changes because agents and components, each with its own cycle and goals, make it change. A world that changes only when the agents under study act is a laboratory artefact; one that changes through scheduled events added for their own sake is another.
 
 #### FR-EFFORT-01: Doing things spends energy
 Each agent has energy, up to a maximum the scenario sets. Each tool call spends its declared effort when it starts. A call the agent cannot afford fails with `no_energy`, takes no time and spends nothing. Energy recovers through a process the scenario declares. An agent learns its energy only through a sensor or a tool result the scenario declares.
@@ -358,7 +358,7 @@ It writes each run's log into `runs/<experiment id>/` under the current director
 *Why:* an experiment is the full grid of conditions and models, and a typo found after an hour of model calls wastes the run.
 
 #### FR-RUN-02: Summaries across replicas
-`lab summarize <runs-dir>` prints one row per condition and model, with the mean and range of each metric across replicas and the number of replicas.
+`lab summarize <runs-dir>` prints one row per condition and model, with the number of replicas and the distribution of each metric across them: every value, and its quantiles.
 *Why:* hypotheses are judged on distributions across replicas, not on single runs.
 
 #### FR-RUN-03: One experiment at a time
@@ -461,12 +461,19 @@ Each effector reads its target in the worker's last sensing (FR-TOOL-04): `go`, 
 *Why:* in E1–E4 what the worker did in each situation is read from the world (where things ended up, what was recorded, what was said to the person), not judged from a text. Every action takes time, and reading and writing take longer the longer the text.
 
 #### FR-WORKPLACE-03: The task comes from a person, and each text has a declared place
-The workplace declares a channel from the person who gives the task, with that person as its source; the task arrives through it when the worker first wakes. The configuration says, for each block of text (identity and character, rules, the task, the workplace's norms), whether it goes in the system prompt or in the person's first message.
-*Why:* E4 tests whether the same text weighs differently in the system prompt and in the person's message; the place of each text must be a declared, recorded choice.
+The workplace declares a channel from the person who gives the task, with that person as its source; the task arrives through it when the worker first wakes. The configuration says, for each of its texts (`identity`, `world_rules`, `norms`, `rules` and the task), whether it goes in the system prompt or in the person's first message; each text keeps the same position, whatever its place.
+*Why:* E4 tests whether the same text weighs differently in the system prompt and in the person's message; the place of each text must be a declared, recorded choice, and changing one text's place must not change the order of the others.
 
 #### FR-WORKPLACE-04: What the worker did in each situation is measured from the world
-For each seeded situation, the scenario's metrics give what the worker did, from the world's state and the run's tool calls: whether it sensed the situation, what it did with each thing the situation involves, what it recorded, and which notes it sent. They are sampled like every metric (FR-METRIC-02).
-*Why:* A18, A19 and I4 are judged on actions in situations; reading them from the world keeps the measure objective and leaves a judge only for the reasons the worker gives.
+Each situation's reserved keys can give predicates on the world: where its things may end (`where`: a place, a container, `person:<id>` or `held`), where they may not (`not_where`), and things that must end with no person (`not_given`). For each chosen situation, the scenario's metrics give, from the world's state and the run's tool calls:
+- whether the worker sensed it (looked at, read or examined one of its things), and when;
+- whether each predicate holds;
+- the worker's book entries and notes made after first sensing it;
+- its exploration: the tool calls between first sensing it and its predicates last changing;
+- when in the run the worker acted on it.
+
+They are sampled like every metric (FR-METRIC-02). What a note or an entry says (`said`, `not_said`) is left to the reserved judge (FR-ANALYSIS-02).
+*Why:* A18, A19 and I4 are judged on actions in situations; reading them from the world keeps the measure objective, keeps what the worker did apart from what it said, and leaves a judge only for what it wrote. A18 predicts that rules change how much the worker explores, and E4 looks for drift across the day.
 
 ### Analysis
 
