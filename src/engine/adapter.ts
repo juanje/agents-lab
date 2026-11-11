@@ -13,6 +13,7 @@ import {
 import { type Api, type AssistantMessage, type Model, type Provider, type Usage, getCurrentSystemMessage } from "@earendil-works/pi-ai";
 import type { ChangesSinceSensing } from "./changes.ts";
 import { waitAtLeast } from "./clock.ts";
+import { failure } from "./failure.ts";
 import type { ParallelismLimit } from "./parallelism.ts";
 import { SCRIPT_EXHAUSTED_MESSAGE } from "./scripted-model.ts";
 import type { Sensing, Sensings } from "./sensings.ts";
@@ -126,8 +127,11 @@ export interface SessionSettings {
   systemPrompt: string;
   /** How long a model turn may run before it is aborted. */
   modelTurnTimeoutMs: number;
-  /** Aborts when the run's time limit passes, which cuts off the tool calls still running (FR-CLOCK-02). */
-  timeLimit: AbortSignal;
+  /**
+   * Aborts when the run ends before its agents are done: when its time limit passes, which cuts off the tool calls and
+   * model turns still running (FR-CLOCK-02), or when it stops on an error (FR-RECORD-01).
+   */
+  runEnd: AbortSignal;
   /** Stops the run on an error that is not the agent's behaviour, such as a tool that throws (FR-RECORD-01). */
   stop(error: Error): void;
 }
@@ -163,7 +167,7 @@ export async function openSession<State>(
   forceSystemPrompt(session, settings.systemPrompt);
   runTurns(session, agent.name, settings, parallelism, records);
   deliverBetweenTurns(session, agent.name, stimuli);
-  endAtTimeLimit(session, settings.timeLimit);
+  endAtRunEnd(session, settings.runEnd);
   recordToolCalls(session, agent.name, new Set(tools.map((tool) => tool.name)), executed, records);
   return session;
 }
@@ -198,15 +202,15 @@ function recordToolCalls(
 }
 
 /**
- * Ends the agent's activation after a model turn that finished once the run's time limit had passed, so no model turn
+ * Ends the agent's activation after a model turn that finished once the run had ended, so no model turn
  * starts after the end (FR-CLOCK-02). Pi asks `finishTurn` after every turn, its tool calls done, and an "end" there
  * stops the activation before Pi prepares another turn (pi-agent-core 1.5.0, agent-loop.js).
  */
-function endAtTimeLimit(session: AgentSession, timeLimit: AbortSignal): void {
+function endAtRunEnd(session: AgentSession, runEnd: AbortSignal): void {
   const finish = session.agent.finishTurn;
   session.agent.finishTurn = async (turn, signal) => {
     const decision = await finish?.(turn, signal);
-    return timeLimit.aborted ? { action: "end" as const } : (decision ?? undefined);
+    return runEnd.aborted ? { action: "end" as const } : (decision ?? undefined);
   };
 }
 
@@ -249,7 +253,7 @@ function message(stimulus: Stimulus) {
 function runTurns(
   session: AgentSession,
   agent: string,
-  { modelTurnTimeoutMs, timeLimit }: SessionSettings,
+  { modelTurnTimeoutMs, runEnd }: SessionSettings,
   parallelism: ParallelismLimit,
   records: Records,
 ): void {
@@ -260,13 +264,13 @@ function runTurns(
     const startedAtMs = performance.now();
     const timeout = new AbortController();
     const timer = setTimeout(() => timeout.abort(), modelTurnTimeoutMs);
-    const signal = AbortSignal.any([...(options?.signal === undefined ? [] : [options.signal]), timeout.signal, timeLimit]);
+    const signal = AbortSignal.any([...(options?.signal === undefined ? [] : [options.signal]), timeout.signal, runEnd]);
     const answer = await call(model, context, { ...options, signal });
     void answer.result().then((message) => {
       const endedAtMs = performance.now();
       clearTimeout(timer);
       free();
-      const outcome = timeLimit.aborted
+      const outcome = runEnd.aborted
         ? { outcome: CUT_OFF }
         : timeout.signal.aborted
           ? { outcome: "timeout" as const }
@@ -349,7 +353,7 @@ function definition<State>(
   executed: Map<string, Executed>,
   sensings: Sensings,
   changes: ChangesSinceSensing,
-  { timeLimit, stop }: SessionSettings,
+  { runEnd, stop }: SessionSettings,
 ): ToolDefinition {
   return {
     name: tool.name,
@@ -360,12 +364,11 @@ function definition<State>(
       const startedAtMs = performance.now();
       let called: CallResult;
       try {
-        called = undeclared(tool, args) ?? (await perform(world, tool, { agent, arguments: args }, sensings.last(agent), changes, timeLimit));
+        called = undeclared(tool, args) ?? (await perform(world, tool, { agent, arguments: args }, sensings.last(agent), changes, runEnd));
       } catch (error) {
         // A tool that throws is a defect of the scenario, not the agent's behaviour: no outcome fits it, and the run
         // stops on it rather than going on with a world it cannot trust.
-        const message = error instanceof Error ? error.message : String(error);
-        stop(new Error(`agent "${agent}"'s "${tool.name}" call failed: ${message}`, { cause: error }));
+        stop(failure(`agent "${agent}"'s "${tool.name}" call failed`, error));
         throw error;
       }
       const { outcome, text, ...perceived } = called;
@@ -431,11 +434,11 @@ async function perform<State>(
   call: AgentCall,
   sensing: Sensing | undefined,
   changes: ChangesSinceSensing,
-  timeLimit: AbortSignal,
+  runEnd: AbortSignal,
 ): Promise<CallResult> {
   const targetAsSensed = tool.kind === "effector" ? (sensing === undefined ? "not_sensed" : tool.readTarget(sensing, call)) : undefined;
-  await waitAtLeast(tool.durationMs(world.state, call), timeLimit);
-  const result = timeLimit.aborted
+  await waitAtLeast(tool.durationMs(world.state, call), runEnd);
+  const result = runEnd.aborted
     ? { outcome: CUT_OFF, text: CUT_OFF }
     : tool.kind === "sensor"
       ? sense(world, tool, call)
