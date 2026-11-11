@@ -381,7 +381,7 @@ function runTurns(
     // which takes a slot and stops at the run's end, but no turn of the agent's (FR-ADAPTER-03).
     if (isSummaryRequest(context.messages)) {
       const free = await parallelism.acquire();
-      const signal = AbortSignal.any([...(options?.signal === undefined ? [] : [options.signal]), runEnd]);
+      const signal = abortedBy(options?.signal, runEnd);
       const answer = await call(model, context, { ...options, signal });
       void answer.result().then(free);
       return answer;
@@ -391,7 +391,7 @@ function runTurns(
     const startedAtMs = performance.now();
     const timeout = new AbortController();
     const timer = setTimeout(() => timeout.abort(), modelTurnTimeoutMs);
-    const signal = AbortSignal.any([...(options?.signal === undefined ? [] : [options.signal]), timeout.signal, runEnd]);
+    const signal = abortedBy(options?.signal, timeout.signal, runEnd);
     const answer = await call(model, context, { ...options, signal });
     void answer.result().then((message) => {
       const endedAtMs = performance.now();
@@ -421,6 +421,11 @@ function runTurns(
     });
     return answer;
   };
+}
+
+/** A signal that aborts as soon as any of the call's own signal, if it has one, and the others aborts. */
+function abortedBy(own: AbortSignal | undefined, ...others: AbortSignal[]): AbortSignal {
+  return AbortSignal.any([...(own === undefined ? [] : [own]), ...others]);
 }
 
 function outcomeOf(message: AssistantMessage): Pick<ModelTurn, "outcome" | "message"> {
