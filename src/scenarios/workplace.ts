@@ -299,11 +299,40 @@ function locationOf(state: Workplace, thing: string): string {
   return at.place;
 }
 
-/** Whether a predicate holds in a state; the worker is no person, so a thing it holds is given to no one. */
-function holdsIn(state: Workplace, { key, thing, locations }: Predicate): boolean {
-  if (key === "not_given") return state.held[thing] === undefined || state.held[thing] === WORKER;
-  const located = locations.includes(locationOf(state, thing));
+/** Whether a predicate holds with its thing at a location; the worker is no person, so a thing it holds is given to no one. */
+function holdsAt({ key, locations }: Predicate, location: string): boolean {
+  if (key === "not_given") return !location.startsWith(PERSON);
+  const located = locations.includes(location);
   return key === "where" ? located : !located;
+}
+
+/** Whether a predicate holds in a state. */
+function holdsIn(state: Workplace, predicate: Predicate): boolean {
+  return holdsAt(predicate, locationOf(state, predicate.thing));
+}
+
+/**
+ * For each situation, the moment its predicates last changed value, replaying the world's moves from where each thing
+ * was before its first move; none while they have not.
+ */
+function settledAt(state: Workplace): Record<string, number> {
+  return Object.fromEntries(
+    situationPredicates(state).flatMap(([id, given]) => {
+      const named = new Set(given.map(({ thing }) => thing));
+      const moves = state.moves.filter(({ thing }) => named.has(thing));
+      const at = new Map([...named].map((thing) => [thing, moves.find((move) => move.thing === thing)?.from ?? locationOf(state, thing)]));
+      const values = () => given.map((predicate) => holdsAt(predicate, at.get(predicate.thing) as string)).join();
+      let before = values();
+      let changedAtMs: number | undefined;
+      for (const { thing, to, atMs } of moves) {
+        at.set(thing, to);
+        const after = values();
+        if (after !== before) changedAtMs = atMs;
+        before = after;
+      }
+      return changedAtMs === undefined ? [] : [[id, changedAtMs]];
+    }),
+  );
 }
 
 /** Each chosen situation's predicates, by the situation's id. */
@@ -791,7 +820,7 @@ export const workplaceScenario: Scenario<Workplace> = {
   agents: () => [WORKER],
   initialState,
   tools: TOOLS,
-  metrics: { holds, predicates, sensed_at_ms: sensedAt, acted_at_ms: actedAt },
+  metrics: { holds, predicates, sensed_at_ms: sensedAt, acted_at_ms: actedAt, settled_at_ms: settledAt },
   channels: (configuration) => [
     ...rhythmChannels(configuration),
     { name: PERSON_CHANNEL, source: configuration.task_giver as string, stimulus: textsIn(configuration, "person") },
