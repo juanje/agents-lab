@@ -49,24 +49,29 @@ export type LogLine =
 export class Recorder {
   readonly runId: string;
   readonly #file: JsonlFile;
+  readonly #onRecord: ((line: LogLine) => void) | undefined;
   #stopped = false;
 
-  private constructor(runId: string, file: JsonlFile) {
+  private constructor(runId: string, file: JsonlFile, onRecord: ((line: LogLine) => void) | undefined) {
     this.runId = runId;
     this.#file = file;
+    this.#onRecord = onRecord;
   }
 
   /**
    * Opens a new log for a run, in the directory, under an id of its own unless one is given. It refuses a file that is
-   * already there: a run never writes to an existing file.
+   * already there: a run never writes to an existing file. Each line it writes is then handed to `onRecord`, when given,
+   * so whoever follows the run reads it from what the log records.
    */
-  static open(directory: string, runId: string = randomUUID()): Recorder {
-    return new Recorder(runId, JsonlFile.create(join(directory, `${runId}.jsonl`)));
+  static open(directory: string, runId: string = randomUUID(), onRecord?: (line: LogLine) => void): Recorder {
+    return new Recorder(runId, JsonlFile.create(join(directory, `${runId}.jsonl`)), onRecord);
   }
 
   /** Writes one line at once. */
   record(line: LogLine): void {
-    if (!this.#stopped) this.#file.write(line);
+    if (this.#stopped) return;
+    this.#file.write(line);
+    this.#onRecord?.(line);
   }
 
   /**
