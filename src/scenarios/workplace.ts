@@ -66,6 +66,9 @@ export interface Workplace {
 /** The worker, the workplace's one agent. */
 const WORKER = "worker";
 
+/** The channel of the person who gives the task: its source is that person, and it delivers their first message. */
+const PERSON_CHANNEL = "person";
+
 /** The configuration's texts the worker meets, in the order each place joins them. */
 const TEXTS = ["identity", "world_rules", "norms", "rules", "task"] as const;
 
@@ -619,7 +622,12 @@ export const workplaceScenario: Scenario<Workplace> = {
   tools: TOOLS,
   // Its metrics come with FR-WORKPLACE-04.
   metrics: {},
-  channels: rhythmChannels,
+  channels: (configuration) => [
+    ...rhythmChannels(configuration),
+    { name: PERSON_CHANNEL, source: configuration.task_giver as string, stimulus: textsIn(configuration, "person") },
+  ],
+  // The person's first message, when a text is placed there.
+  firstStimuli: (configuration) => (textsIn(configuration, "person") === "" ? [] : [PERSON_CHANNEL]),
   // The texts placed in it; nothing else, so the reserved keys never reach it.
   systemPrompt: (configuration) => textsIn(configuration, "system"),
   rhythm: uniformRhythm,
