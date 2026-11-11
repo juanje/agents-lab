@@ -1,5 +1,5 @@
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { getCurrentSystemPrompt, getCurrentTools } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "vitest";
@@ -33,10 +33,38 @@ const withLookTaking = (durationMs: number) =>
 const withTakeTaking = (durationMs: number) =>
   slotTools.map((tool) => (tool.kind === "effector" ? { ...tool, durationMs: () => durationMs } : tool));
 
+/** A new, empty directory for a run's log. */
+const newLogDirectory = () => mkdtempSync(join(tmpdir(), "agents-lab-logs-"));
+
 /** Settings for a run whose test looks at none of them. */
-const settings: RunSettings = { modelTurnTimeoutMs: 10_000, parallelismLimit: 10, timeLimitMs: 60_000 };
+const settings: RunSettings = { logDirectory: newLogDirectory(), modelTurnTimeoutMs: 10_000, parallelismLimit: 10, timeLimitMs: 60_000 };
+
+/** The lines of the only log in a directory, which must be the run's, parsed. */
+function logOf(directory: string, runId: string): unknown[] {
+  expect(readdirSync(directory)).toEqual([`${runId}.jsonl`]);
+  return readFileSync(join(directory, `${runId}.jsonl`), "utf8")
+    .split("\n")
+    .filter((line) => line !== "")
+    .map((line) => JSON.parse(line));
+}
 
 describe("run", () => {
+  it("records each activation in a new log named with its run id: the agent, when it woke and when it ended", async () => {
+    const model = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }, { text: "Nothing to do.", delayMs: 0 }]);
+    const logDirectory = newLogDirectory();
+
+    const { runId } = await run(slots(), [{ name: "a", model, activations: 2, rhythm: noWait }], seed, { ...settings, logDirectory });
+
+    const activations = logOf(logDirectory, runId).filter((line) => (line as { type: string }).type === "activation");
+    expect(activations).toEqual([
+      { type: "activation", agent: "a", wokeAtMs: expect.any(Number), endedAtMs: expect.any(Number) },
+      { type: "activation", agent: "a", wokeAtMs: expect.any(Number), endedAtMs: expect.any(Number) },
+    ]);
+    const [first, second] = activations as { wokeAtMs: number; endedAtMs: number }[];
+    expect(first.wokeAtMs).toBeLessThanOrEqual(first.endedAtMs);
+    expect(first.endedAtMs).toBeLessThanOrEqual(second.wokeAtMs);
+  });
+
   it("starts an activation with the rhythm channel's stimulus, which the model reads with its source", async () => {
     const model = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
 
