@@ -27,7 +27,9 @@ export interface Experiment {
 /** Reads an experiment file, in TOML, and validates it against the experiment schema before anything runs. */
 export function readExperiment(toml: string): Experiment {
   const file = parse(toml);
+  onlyKnown(file, [], ["id", "scenario", "models", "replicas", "seed", "limits", "conditions"]);
   const limits = field(file, ["limits"], table);
+  onlyKnown(limits, ["limits"], ["time_limit_ms", "activations_per_agent", "parallelism_limit", "model_turn_timeout_ms"]);
   const conditions = field(file, ["conditions"], namedConditions);
   return {
     id: field(file, ["id"], text),
@@ -46,6 +48,15 @@ export function readExperiment(toml: string): Experiment {
       change: stringify(field(conditions, ["conditions", name], table)),
     })),
   };
+}
+
+/** Refuses a key of a table, at its path from the file, that the schema does not give it. */
+function onlyKnown(holder: TomlTable, at: readonly string[], known: readonly string[]): void {
+  for (const key of Object.keys(holder)) {
+    if (!known.includes(key)) {
+      throw new Error(`The experiment file has the field "${[...at, key].join(".")}", which the experiment schema does not know`);
+    }
+  }
 }
 
 /** What a field must hold, as an error names it, and the check that its value holds it. */
