@@ -8,6 +8,7 @@ import {
   move,
   neighbours,
   place,
+  position,
   randomEmptyCell,
   window,
 } from "../src/engine/grid.ts";
@@ -220,5 +221,18 @@ describe("distance", () => {
     expect(distance({ x: 3, y: 1 }, { x: 0, y: 2 })).toBe(3);
     expect(distance({ x: 0, y: 2 }, { x: 3, y: 1 })).toBe(3);
     expect(distance({ x: 2, y: 2 }, { x: 2, y: 2 })).toBe(0);
+  });
+});
+
+describe("position", () => {
+  it("gives the cell an entity is in, counting x along a row and y down the rows", () => {
+    const grid = place(place(emptyGrid(5, 4, 2), "a", { x: 3, y: 2 }), "b", { x: 3, y: 2 });
+    expect(position(grid, "a")).toEqual({ x: 3, y: 2 });
+    expect(position(grid, "b")).toEqual({ x: 3, y: 2 });
+  });
+
+  it("gives none for an entity the grid does not hold", () => {
+    const grid = place(emptyGrid(5, 4, 1), "a", { x: 0, y: 0 });
+    expect(position(grid, "z")).toBeUndefined();
   });
 });
