@@ -51,3 +51,22 @@ Then(
     assert.equal(sample.metrics[metric], Number(value), `the ${which} sample gives "${metric}" as ${JSON.stringify(sample.metrics[metric])}`);
   },
 );
+
+Given("the world's metric {string} has no value while no slot is held", function (this: Context, metric: string) {
+  // Its value, once a slot is held, is the number of the first held slot.
+  this.metrics = {
+    ...this.metrics,
+    [metric]: (slots) => {
+      const first = slots.findIndex((holder) => holder !== null);
+      return first === -1 ? null : first + 1;
+    },
+  };
+});
+
+Then("every metric sample gives {string} as null", function (this: Context, metric: string) {
+  for (const [index, sample] of samplesOf(this).entries()) {
+    // Written as null, not left out, so the metric is there in every sample.
+    assert.ok(metric in sample.metrics, `sample ${index + 1} leaves out "${metric}": ${JSON.stringify(sample)}`);
+    assert.equal(sample.metrics[metric], null, `sample ${index + 1} gives "${metric}" as ${JSON.stringify(sample.metrics[metric])}`);
+  }
+});

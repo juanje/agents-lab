@@ -1168,3 +1168,17 @@ describe("run's metric samples", () => {
     expect(lines.at(-1)?.type).toBe("metric_sample");
   });
 });
+
+describe("run's metric samples of a metric with no value", () => {
+  it("records a metric the state gives no value as null in every sample, not leaving it out", async () => {
+    const model = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
+    const logDirectory = newLogDirectory();
+    const none = { metrics: { ...slotsScenario.metrics, "first holder": () => null } };
+
+    const { runId } = await run(slots(none), [{ name: "a", model, activations: 1 }], seed, { ...settings, logDirectory });
+
+    const samples = logOf(logDirectory, runId).filter((line) => (line as { type: string }).type === "metric_sample");
+    expect(samples).toHaveLength(2);
+    for (const sample of samples) expect(sample).toMatchObject({ metrics: { held: 0, "first holder": null } });
+  });
+});
