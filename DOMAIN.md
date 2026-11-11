@@ -46,6 +46,9 @@ What the words mean here, how the pieces fit together, and how the tools behave 
 - **Stimuli** from channels enter the session at the agent's next model turn, or when it wakes.
 - **Processes** change the world on their own schedule, through the arbiter.
 - **The recorder writes a line per event.** The inventory and the run's setup go first.
+  - Each run opens a new `<run id>.jsonl` in the log directory it is given, created exclusively (it refuses a file that is already there), and writes each line at once, synchronously.
+  - Lines: `activation`, `stimulus` (as it is delivered: a channel's when `Stimuli.deliver` is called, the rhythm's as the agent wakes), `model_turn`, `tool_call` and `run_stopped`. Every time in them is by `performance.now()`.
+  - The first error that stops a run writes `run_stopped` with its message at once and aborts the run as its time limit does; nothing is written after it. A tool that throws, or a session that fails to open, stops the run: the scenario's defect, not the agent's behaviour, so the call that threw has no `tool_call` line.
 - **Metrics read the state** at the start, on an interval and at the end.
 - **The runner** expands an experiment into runs and executes them one after another.
 
@@ -67,6 +70,7 @@ What the words mean here, how the pieces fit together, and how the tools behave 
   - oid's `src/pi-executor.ts` uses this pattern.
 - **Events:** `session.subscribe` streams messages, thinking, tool calls with their results, and the agent's lifecycle. Assistant messages carry `responseModel` (the model that actually answered) and usage, with `cost.totalFromProvider` telling billed totals from catalog estimates.
 - **Tool events and timing:** Pi emits `tool_execution_start` before it validates a call, and with parallel execution (the default) it emits the start of every call in a batch before running any of them (`agent-loop.js`). A call's start and end are therefore measured inside the tool's `execute`; Pi's events time only the calls it answers without running them (unknown tool, invalid arguments).
+- **A tool that throws** is answered by Pi with an error result, as if the call had failed, and the agent goes on (`executePreparedToolCall`, `agent-loop.js`). The adapter catches the error inside `execute` first and stops the run with it.
 - **Tool arguments are coerced** by `@earendil-works/pi-schema` before a tool sees them (numeric strings become numbers, a single value becomes an array). Record the raw tool call from the events, not only the coerced arguments, or malformed answers disappear from the data.
 - **Tests:** `fauxProvider()` from `@earendil-works/pi-ai` gives scripted answers (`fauxText`, `fauxToolCall`), with an optional tokens-per-second rate. oid's `features/support/scripted-model.ts` is an example.
   - A response factory receives the normalized transcript: the tools offered with `Models.complete(model, { messages, tools })` arrive as `toolsAdded` on a leading system message, and `getCurrentTools(messages)` gives them back.
