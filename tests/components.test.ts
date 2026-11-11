@@ -137,4 +137,12 @@ describe("runComponent", () => {
     expect(changes.appliedBy("a")).toEqual(["carrier", "carrier"]);
     expect(actions.map((action) => action.outcome)).toEqual(["success"]);
   });
+
+  it("fails, naming itself and its action, when the world refuses its action's start", async () => {
+    let index = 0;
+    const refused: Step<Slots> = { kind: "action", name: "carry", durationMs: 0, start: { precondition: () => ({ holds: false, reason: "blocked" }), effect: (slots) => slots }, action: { precondition: () => ({ holds: true }), effect: (slots) => slots } };
+    const carrier: Component<Slots> = { name: "carrier", kind: "world", description: "Carries.", cycle: () => ({ next: () => (index++ === 0 ? refused : { kind: "end" }) }) };
+
+    await expect(runIn(carrier, new World(emptySlots(3)))).rejects.toThrow('component "carrier"\'s action "carry" was refused with "blocked"');
+  });
 });

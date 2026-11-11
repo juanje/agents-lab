@@ -227,6 +227,7 @@ async function runAgents<State>(
         // From the seed and the component's name, as an agent's rhythm is, so a condition that adds a component leaves
         // the others' sequences as they were.
         random: Random.derive(seed, `cycle of ${component.name}`),
+        clock,
         runEnd: runEnd.signal,
         changes,
         record: (action) => recorder.record({ type: "component_action", ...action }),
