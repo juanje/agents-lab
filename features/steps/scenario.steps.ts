@@ -152,8 +152,9 @@ Then(
 );
 
 Then("no model was called", function (this: Context) {
-  // A run takes only a loaded scenario: a refused one leaves nothing a run could start from.
-  assert.equal(this.loaded, undefined, "expected no loaded scenario a run could start from");
+  // A run takes only a loaded scenario: a refused one leaves nothing a run could start from. A loaded one must have
+  // been refused by the run itself.
+  if (this.loaded !== undefined) assert.ok(this.runError !== undefined, "expected the run of the loaded scenario to be refused");
   for (const [agent, model] of this.models) {
     assert.equal(model.received.length, 0, `expected no call to agent "${agent}"'s model, but it made ${model.received.length}`);
   }
@@ -272,4 +273,30 @@ Then("agent {string}'s rhythm stimulus has the content {string}", function (this
   const { source } = rhythmOf(loadedOf(this).configuration);
   const [first] = userTexts(modelOf(this, agent).received[0] ?? []);
   assert.equal(first, asRead(source, content), `agent "${agent}"'s activation began with another stimulus`);
+});
+
+Given(
+  "the test scenario {string}, whose configuration declares agents {string} and {string}",
+  function (this: Context, name: string, first: string, second: string) {
+    assert.equal(slotsScenario.name, name);
+    this.scenario = declaring(slotsScenario, [first, second]);
+  },
+);
+
+When("a run is given agents {string} and {string}", async function (this: Context, first: string, second: string) {
+  for (const agent of [first, second]) script(this, agent, [{ text: "Nothing to do.", delayMs: 0 }]);
+  this.loaded = loadScenario(this.scenario, this.seed);
+  try {
+    await runLoaded(this);
+  } catch (error) {
+    this.runError = error as Error;
+  }
+});
+
+Then("the run fails with an error that names {string} and {string}", function (this: Context, first: string, second: string) {
+  const error = this.runError;
+  if (error === undefined) assert.fail("expected the run to fail, but it ran");
+  for (const name of [first, second]) {
+    if (!error.message.includes(`"${name}"`)) assert.fail(`expected the error to name "${name}", got: ${error.message}`);
+  }
 });
