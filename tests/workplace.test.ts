@@ -458,6 +458,20 @@ class = "control"
     expect(exploration(initial, [])).toEqual({});
   });
 
+  it("counts the book's entries and the notes written since the worker first sensed each situation; none until it has", () => {
+    const written = {
+      ...start(),
+      book: [{ entry: "Before.", atMs: 40 }, { entry: "After.", atMs: 60 }],
+      notes: [{ text: "After.", to: "the keeper", atMs: 70 }, { text: "Later.", to: "the keeper", atMs: 95 }],
+    };
+    const calls = [made("read", { thing: "label" }, 50, "success", "Fragile."), made("examine", { thing: "mug" }, 90, "success", '{"name":"a mug","properties":{}}')];
+
+    expect(metric("entries_after")(written, calls)).toEqual({ parcel: 1, mug: 0 });
+    expect(metric("notes_after")(written, calls)).toEqual({ parcel: 2, mug: 1 });
+    expect(metric("entries_after")(written, [])).toEqual({});
+    expect(metric("notes_after")(written, [])).toEqual({});
+  });
+
   it("refuses a predicate that names a thing, place, container or person the world does not have, naming it", () => {
     const refusal = (keys: string) => () => start(keys);
 
