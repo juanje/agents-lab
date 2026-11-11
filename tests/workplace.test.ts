@@ -517,7 +517,7 @@ describe("the workplace's tools", () => {
     return { result, state: world.state };
   };
 
-  it("are look, read, examine, check_time, go, take, put, give, record and note, in that order", () => {
+  it("are look, read, examine, check_time, go, take, put, give, record, note and wait, in that order", () => {
     expect(scenario.tools.map(({ name, kind }) => `${kind} ${name}`)).toEqual([
       "sensor look",
       "sensor read",
@@ -529,14 +529,15 @@ describe("the workplace's tools", () => {
       "effector give",
       "effector record",
       "effector note",
+      "effector wait",
     ]);
   });
 
-  it("keep the book, the carry limit, the durations and the task giver the configuration sets, an empty book and no notes", () => {
-    const state = start({ task_giver: "Ada" });
+  it("keep the book, the carry limit, the durations, the task giver and the longest wait the configuration sets, an empty book and no notes", () => {
+    const state = start({ task_giver: "Ada", wait_max_minutes: 45 });
 
     expect({ book: state.book, notes: state.notes, held: state.held }).toEqual({ book: [], notes: [], held: {} });
-    expect(state.settings).toEqual({ book: "sign", carryLimit: 1, durations: DURATIONS, taskGiver: "Ada" });
+    expect(state.settings).toEqual({ book: "sign", carryLimit: 1, durations: DURATIONS, taskGiver: "Ada", waitMaxMinutes: 45 });
   });
 
   it("refuse a book that names no thing of the world, naming it", () => {
@@ -773,6 +774,7 @@ describe("the workplace's tools", () => {
       },
       record: { success: "It is in the book.", not_here: "The book is not here; nothing has been recorded." },
       note: { success: "Your note has been sent." },
+      wait: { success: "You have waited.", interrupted: "Something happened where you are; you stopped waiting." },
     });
   });
 
@@ -836,6 +838,7 @@ describe("the workplace's tools", () => {
       give: "14 ms.",
       record: "5 ms for each word of the entry.",
       note: "5 ms for each word of the note.",
+      wait: "One depot minute (60000 ms) for each minute it is given, up to 60; it ends early when a person enters the worker's place or a stimulus reaches the worker.",
     });
   });
 });
@@ -865,6 +868,67 @@ describe("the depot's day", () => {
   it("gives the inventory its clock: the day's start, midnight when the world has none, and the time scale", () => {
     expect(scenario.clock?.(configuration({ world: withDay("09:00"), time_scale: 6000 }))).toEqual({ start: "09:00", timeScale: 6000 });
     expect(scenario.clock?.(configuration({ world: WORLD }))).toEqual({ start: "00:00", timeScale: 1 });
+  });
+
+  describe("wait", () => {
+    const wait = () => tool("wait") as Effector<Workplace>;
+    const waiting = (minutes: unknown) => ({ agent: "worker", arguments: { minutes } });
+    const tool = (name: string) => {
+      const found = scenario.tools.find((declared) => declared.name === name);
+      if (found === undefined) throw new Error(`no tool "${name}"`);
+      return found;
+    };
+    /** The day's state with a person moved, or taken out of the space when the place is none. */
+    const moved = (state: Workplace, person: string, place: string | undefined): Workplace => {
+      const { [person]: _gone, ...whereabouts } = state.space.whereabouts;
+      return { ...state, space: place === undefined ? { ...state.space, whereabouts } : put(state.space, person, place) };
+    };
+
+    it("takes the minutes it is given, in depot minutes, as the inventory describes it", () => {
+      expect(wait().durationMs(day(), waiting(20))).toBe(200);
+      expect(wait().durationMs(day({ time_scale: 1 }), waiting(2))).toBe(120_000);
+      expect(scenario.describeDuration(configuration({ time_scale: 6000, wait_max_minutes: 30 }), "wait")).toBe(
+        "One depot minute (10 ms) for each minute it is given, up to 30; it ends early when a person enters the worker's place or a stimulus reaches the worker.",
+      );
+    });
+
+    it("takes from 1 to the configuration's wait_max_minutes, and refuses any other number of minutes, saying so", () => {
+      const state = day({ wait_max_minutes: 30 });
+
+      expect([1, 30].map((minutes) => wait().refuses?.(state, waiting(minutes)))).toEqual([undefined, undefined]);
+      expect([0, 31, -5].map((minutes) => wait().refuses?.(state, waiting(minutes)))).toEqual(Array(3).fill('"wait" takes from 1 to 30 minutes'));
+      expect(wait().parameters).toEqual({ type: "object", properties: { minutes: { type: "integer" } }, required: ["minutes"] });
+    });
+
+    it("changes nothing in the world, and has no target", () => {
+      expect(wait().action).toBeUndefined();
+      expect(wait().start).toBeUndefined();
+      expect(wait().readTarget({ tool: "look", result: "{}", atMs: 0 }, waiting(5), day(), () => undefined)).toBe("not_sensed");
+    });
+
+    it("ends early, interrupted, when a person enters the worker's place, from a passage or from nowhere", () => {
+      const { endsEarly } = wait();
+      const state = day();
+
+      expect(endsEarly?.outcome).toBe("interrupted");
+      expect(endsEarly?.byChange(state, moved(state, "ana", "hall"), waiting(5))).toBe(true);
+      expect(endsEarly?.byChange(moved(state, "ana", undefined), moved(state, "ana", "hall"), waiting(5))).toBe(true);
+    });
+
+    it("does not end early when a person enters another place, leaves, or stays, or when a thing moves", () => {
+      const { endsEarly } = wait();
+      const state = day();
+      const inHall = moved(state, "ana", "hall");
+      const signMoved = { ...inHall, space: put(inHall.space, "sign", "office") };
+
+      expect(endsEarly?.byChange(moved(state, "ana", undefined), state, waiting(5))).toBe(false);
+      expect(endsEarly?.byChange(inHall, state, waiting(5))).toBe(false);
+      expect(endsEarly?.byChange(inHall, signMoved, waiting(5))).toBe(false);
+    });
+
+    it("ends early, interrupted, when any stimulus reaches the worker", () => {
+      expect(wait().endsEarly?.byStimulus({ channel: "person", source: "Ada", content: "Hello." }, waiting(5))).toBe(true);
+    });
   });
 
   it("takes the configured time to check it, as the inventory describes it", () => {
