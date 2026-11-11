@@ -231,6 +231,16 @@ describe("the neighbourhood scenario", () => {
     expect(neighbourhoodScenario.metrics.shares(withLoner)).toEqual({ r1: 0.5, r2: 0, r3: 0.5 });
   });
 
+  it("gives as the segregation the mean of the residents' shares, leaving out a resident with no share", () => {
+    const state = residentsAt(5, 5, { lookRadius: 1, msPerCell: 100 });
+    // "r4" (amber) at 2, 0 makes the shares r1 0.5, r2 1/3, r3 0.5 and r4 1; "r5", alone in a corner, has none.
+    const grid = place(place(state.grid, "r4", { x: 2, y: 0 }), "r5", { x: 4, y: 4 });
+    const crowded = { ...state, grid, kinds: { ...state.kinds, r4: "amber" as const, r5: "amber" as const } };
+
+    expect(neighbourhoodScenario.metrics.shares(crowded)).toEqual({ r1: 0.5, r2: 1 / 3, r3: 0.5, r4: 1 });
+    expect(neighbourhoodScenario.metrics.segregation(crowded)).toBeCloseTo((0.5 + 1 / 3 + 0.5 + 1) / 4, 12);
+  });
+
   it("draws the cells from the random sequence it is given", () => {
     const cellsOf = (seed: number) => neighbourhoodScenario.initialState(configuration(6, 6, 10), new Random(seed)).grid;
     const where = (seed: number) =>
