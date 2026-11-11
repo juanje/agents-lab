@@ -149,6 +149,16 @@ describe("readExperiment with factors", () => {
       { name: "count=five,held=two", change: { slots: { count: 5, held: 2 } }, levels: { count: "five", held: "two" } },
     ]);
   });
+  it("gives every condition, the baseline, the combinations and the file's own, the change common to all of them", () => {
+    const { conditions } = readExperiment(`${withFactors}[conditions.six-slots]\nslots.count = 6\n[common]\nslots.held = 1\n`);
+    expect(conditions).toHaveLength(6);
+    for (const { common } of conditions) expect(parse(common ?? "")).toEqual({ slots: { held: 1 } });
+  });
+
+  it("gives no condition a common change when the file gives none", () => {
+    for (const condition of readExperiment(withFactors).conditions) expect(condition).not.toHaveProperty("common");
+  });
+
   it("gives no baseline when the file turns it off", () => {
     expect(readExperiment(`baseline = false\n${withFactors}`).conditions.map(({ name }) => name)).toEqual([
       "count=three,held=none",

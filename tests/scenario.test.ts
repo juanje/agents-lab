@@ -86,6 +86,16 @@ describe("loadScenario", () => {
     expect(loaded.configuration).toEqual({ label: "changed", mode: "plain", slots: { count: 2, held: 0 } });
   });
 
+  it("applies the change common to every condition before the condition's own, whose value wins on the same key", () => {
+    const loaded = loadScenario(withBase("label = 'base'\nmode = 'plain'\n[slots]\ncount = 2\nheld = 0\n"), seed, {
+      name: "new-label",
+      common: "label = 'common'\nmode = 'common'\n",
+      change: "label = 'changed'\n",
+    });
+
+    expect(loaded.configuration).toEqual({ label: "changed", mode: "common", slots: { count: 2, held: 0 } });
+  });
+
   it("applies a table in the change inside the base configuration's table, at any depth, and replaces arrays whole", () => {
     const loaded = loadScenario(
       withBase("[slots]\ncount = 2\nheld = 0\n[view]\nnames = ['a', 'b', 'c']\n[view.style]\nmark = 'x'\nwidth = 1\n"),

@@ -71,6 +71,26 @@ describe("materials", () => {
     expect(loaded.materials).toEqual([{ path: "materials/wake.md", key: "rhythm.text", hash: `sha256:${sha256("Morning comes.")}`, heldOut: false }]);
   });
 
+  describe("in the change common to every condition", () => {
+    it("reach the condition and are listed for it", () => {
+      writeMaterial("materials/wake.md", "Morning comes.");
+
+      const loaded = loadedWith('[common]\nrhythm.text = { file = "materials/wake.md" }');
+
+      expect(rhythmOf(loaded.configuration).text).toBe("Morning comes.");
+      expect(loaded.materials.map(({ path, key }) => ({ path, key }))).toEqual([{ path: "materials/wake.md", key: "rhythm.text" }]);
+    });
+
+    it("are not listed for a condition whose own change sets their key again, as their text does not reach it", () => {
+      writeMaterial("materials/wake.md", "Morning comes.");
+
+      const loaded = loadedWith('rhythm.text = "Own."\n[common]\nrhythm.text = { file = "materials/wake.md", held_out = true }');
+
+      expect(rhythmOf(loaded.configuration).text).toBe("Own.");
+      expect(loaded.materials).toEqual([]);
+    });
+  });
+
   it("are read once for an experiment, so a file changed after its first run started does not reach a later run", () => {
     writeMaterial("materials/wake.md", "Morning comes.");
     const [condition] = readExperiment(experimentFile('rhythm.text = { file = "materials/wake.md" }'), directory).conditions;
