@@ -84,7 +84,8 @@ export async function runTheScenario(context: Context): Promise<void> {
   }
   if (context.gridTools !== undefined) {
     context.gridWorld = new World(context.grid);
-    await runScenario(context, assembled(gridScenario(context.grid, context.gridTools, agents), context.gridWorld));
+    const scenario = { ...gridScenario(context.grid, context.gridTools, agents), rhythm: rhythmsOf(context) };
+    await runScenario(context, assembled(scenario, context.gridWorld));
     return;
   }
   context.versionBefore = context.world.version;
@@ -94,14 +95,25 @@ export async function runTheScenario(context: Context): Promise<void> {
     tools: context.tools,
     channels: () => context.channels,
     systemPrompt: () => context.systemPrompt,
+    rhythm: rhythmsOf(context),
   };
   await runScenario(context, context.loaded ?? assembled(scenario, context.world));
 }
 
+/**
+ * The rhythm a test world gives an agent: the one the scenario gives that agent, or else the scenario's wait before
+ * every activation.
+ */
+function rhythmsOf(context: Context): Scenario<unknown>["rhythm"] {
+  return (_configuration, agent) => context.rhythms.get(agent) ?? (() => context.waitBeforeActivationMs);
+}
+
 /** A scenario assembled around a world as loading would give it, with no configuration. */
 function assembled<State>(scenario: Scenario<State>, world: World<State>): LoadedScenario<State> {
-  const systemPrompts = new Map(scenario.agents({}).map((agent) => [agent, scenario.systemPrompt({}, agent)]));
-  return { scenario, configuration: {}, world, systemPrompts, channels: scenario.channels({}) };
+  const agents = scenario.agents({});
+  const systemPrompts = new Map(agents.map((agent) => [agent, scenario.systemPrompt({}, agent)]));
+  const rhythms = new Map(agents.map((agent) => [agent, scenario.rhythm({}, agent)]));
+  return { scenario, configuration: {}, world, systemPrompts, channels: scenario.channels({}), rhythms };
 }
 
 /** Runs the scenario's agents in a loaded scenario, watching its arbiter, and keeps what the run gave. */

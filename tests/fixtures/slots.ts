@@ -90,6 +90,11 @@ export const slotsScenario: Scenario<Slots> = {
     return [{ name: "rhythm", source, stimulus: text }];
   },
   metrics: { held: (slots) => slots.filter((holder) => holder !== null).length },
+  // Every agent waits the interval its configuration's [rhythm] table gives.
+  rhythm: (configuration) => {
+    const intervalMs = (configuration.rhythm as { interval_ms: number }).interval_ms;
+    return () => intervalMs;
+  },
   // It names the agent it describes, quoted, so each agent's prompt can be told from another's.
   systemPrompt: (_configuration, agent) => `You are agent "${agent}", in a world of slots.`,
   // Its [rhythm] table gives the rhythm channel's source and text, the same as the test world's rhythm channel, and
@@ -120,8 +125,9 @@ export const placingScenario: Scenario<Slots> = {
   ...slotsScenario,
   agents: (configuration) =>
     Array.from({ length: (configuration.slots as { agents: number }).agents }, (_, index) => placedAgent(index + 1)),
-  // Its base configuration does not give the rhythm channel, so it declares the test world's.
+  // Its base configuration does not give the rhythm channel or its interval, so it declares the test world's and no wait.
   channels: () => [rhythmChannel],
+  rhythm: () => () => 0,
   initialState: (configuration, random) => {
     const { count, agents } = configuration.slots as { count: number; agents: number };
     const slots: (string | null)[] = Array.from({ length: count }, () => null);

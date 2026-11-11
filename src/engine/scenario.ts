@@ -13,6 +13,9 @@ export type Configuration = TomlTable;
  */
 export type MetricValue = number | null | Readonly<Record<string, number>>;
 
+/** How an agent's waits between activations are drawn: each call draws the next interval, in milliseconds, from the agent's random sequence. */
+export type Rhythm = (random: Random) => number;
+
 /** What a scenario provides to the engine. */
 export interface Scenario<State> {
   name: string;
@@ -28,6 +31,8 @@ export interface Scenario<State> {
   metrics: Readonly<Record<string, (state: State) => MetricValue>>;
   /** What an agent is told it is, from the resolved configuration and the agent's name; never the world's state. */
   systemPrompt: (configuration: Configuration, agent: string) => string;
+  /** How an agent's waits between activations are drawn, from the resolved configuration and the agent's name. */
+  rhythm: (configuration: Configuration, agent: string) => Rhythm;
   /** The base configuration, in TOML. */
   baseConfiguration: string;
 }
@@ -51,6 +56,8 @@ export interface LoadedScenario<State> {
   systemPrompts: ReadonlyMap<string, string>;
   /** The scenario's stimulus channels, as its configuration gives them. */
   channels: readonly Channel[];
+  /** Each of the scenario's agents, in the order it names them, with its rhythm. */
+  rhythms: ReadonlyMap<string, Rhythm>;
 }
 
 /** Each part a scenario must provide, and how an error names it. */
@@ -92,13 +99,15 @@ export function loadScenario<State>(
     throw new Error(`Scenario "${scenario.name}" declares no stimulus channel named "${RHYTHM_CHANNEL}", which wakes each agent`);
   }
   const systemPrompts = new Map<string, string>();
+  const rhythms = new Map<string, Rhythm>();
   for (const agent of scenario.agents(configuration)) {
     const systemPrompt = scenario.systemPrompt(configuration, agent);
     if (systemPrompt.trim() === "") throw lacks(`system prompt for agent "${agent}"`);
     systemPrompts.set(agent, systemPrompt);
+    rhythms.set(agent, scenario.rhythm(configuration, agent));
   }
   const initial = scenario.initialState(configuration, Random.derive(seed, "initial state"));
-  return { scenario, configuration, world: new World(initial), systemPrompts, channels };
+  return { scenario, configuration, world: new World(initial), systemPrompts, channels, rhythms };
 }
 
 /** The names of the condition being applied and of the scenario whose base configuration it changes, for errors. */

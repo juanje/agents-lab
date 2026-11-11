@@ -47,7 +47,8 @@ export function assembled(context: Context, agents: readonly string[]): LoadedSc
   const world = new World<Neighbourhood>({ ...empty, grid, kinds });
   context.neighbourhoodWorld = world;
   const systemPrompts = new Map(agents.map((agent) => [agent, scenario.systemPrompt(configuration, agent)]));
-  return { scenario, configuration, world, systemPrompts, channels: scenario.channels(configuration) };
+  const rhythms = new Map(agents.map((agent) => [agent, scenario.rhythm(configuration, agent)]));
+  return { scenario, configuration, world, systemPrompts, channels: scenario.channels(configuration), rhythms };
 }
 
 Given("resident {string} of kind {string} is at {int}, {int}", function (this: Context, name: string, kind: string, x: number, y: number) {

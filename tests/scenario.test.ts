@@ -8,12 +8,13 @@ const seed = 1;
 
 /**
  * The slots test scenario with another base configuration, which need not name its agents or its rhythm channel's
- * source and text: the scenario names agent "a" and declares the test world's rhythm channel itself.
+ * source, text and interval: the scenario names agent "a" and declares the test world's rhythm channel and no wait itself.
  */
 const withBase = (baseConfiguration: string): Partial<Scenario<Slots>> => ({
   ...slotsScenario,
   agents: () => ["a"],
   channels: () => [rhythmChannel],
+  rhythm: () => () => 0,
   baseConfiguration,
 });
 

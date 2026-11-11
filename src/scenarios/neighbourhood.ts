@@ -174,6 +174,11 @@ export const neighbourhoodScenario: Scenario<Neighbourhood> = {
     const rule = configuration.rule as string;
     return rule === "" ? description : `${description}\n\n${rule}`;
   },
+  // Every resident waits an interval drawn uniformly between the configured bounds; a condition may change them.
+  rhythm: (configuration) => {
+    const { min_ms: minMs, max_ms: maxMs } = configuration.rhythm as { min_ms: number; max_ms: number };
+    return (random) => minMs + random.next() * (maxMs - minMs);
+  },
   baseConfiguration: [
     "width = 6",
     "height = 6",
@@ -185,6 +190,8 @@ export const neighbourhoodScenario: Scenario<Neighbourhood> = {
     "[rhythm]",
     'source = "rhythm"',
     'text = "You wake up."',
+    "min_ms = 0",
+    "max_ms = 1000",
     "",
   ].join("\n"),
 };

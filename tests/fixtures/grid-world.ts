@@ -48,6 +48,8 @@ export function gridScenario(start: Grid, tools: readonly Tool<Grid>[], agents: 
     channels: () => [rhythmChannel],
     metrics: {},
     systemPrompt: () => "You are an agent on a grid.",
+    // Its agents wake at once: a test that needs another rhythm gives it.
+    rhythm: () => () => 0,
     baseConfiguration: "",
   };
 }
