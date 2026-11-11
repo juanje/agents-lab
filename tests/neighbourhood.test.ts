@@ -128,6 +128,13 @@ describe("the neighbourhood scenario", () => {
     expect(described).toBe("An interval drawn uniformly between 100 and 200 ms before each activation.");
   });
 
+  it("describes the duration of a look with its configuration's ms_per_look, and of a move with its ms_per_cell", () => {
+    const changed = { ...configuration(3, 2, 2), ms_per_look: 30, ms_per_cell: 40 };
+
+    expect(neighbourhoodScenario.describeDuration(changed, "look")).toBe("30 ms.");
+    expect(neighbourhoodScenario.describeDuration(changed, "move")).toBe("40 ms for each cell of distance to the target.");
+  });
+
   it("keeps the configured look radius and time per cell of distance in its state, for its tools to read", () => {
     const base = parse(neighbourhoodScenario.baseConfiguration);
     const state = neighbourhoodScenario.initialState({ ...configuration(3, 2, 2), look_radius: 2, ms_per_cell: 40 }, new Random(1));

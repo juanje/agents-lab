@@ -44,6 +44,62 @@ describe("inventory", () => {
     expect(slow).toContain(["### Agents", "", agent("a", 50), agent("b", 50)].join("\n"));
   });
 
+  it("lists each tool with its kind, the description and parameters its agents see, its duration as the scenario describes it in each condition, and the text for each outcome", () => {
+    const experiment = experimentOf(["[conditions.baseline]", "[conditions.crowded]", "slots.count = 5"]);
+    const [look, take] = slotsScenario.tools;
+    const texts = { success: "You took the slot.", slot_taken: "Someone holds that slot." };
+    const scenario = slotsWith({
+      tools: [look, { ...take, texts } as typeof take],
+      describeDuration: (configuration, tool) => `"${tool}" takes ${(configuration.slots as { count: number }).count} ms.`,
+    });
+
+    const listed = inventory(experiment, scenario);
+
+    const parameters = (tool: typeof look) => ["Parameters:", "", "```json", JSON.stringify(tool.parameters, null, 2), "```", ""];
+    const tools = (count: number) =>
+      [
+        "### Tools",
+        "",
+        '#### Tool "look"',
+        "",
+        "- Kind: sensor",
+        `- Duration: "look" takes ${count} ms.`,
+        "",
+        "Description:",
+        "",
+        "```text",
+        look.description,
+        "```",
+        "",
+        ...parameters(look),
+        "Texts for each outcome:",
+        "",
+        "- success: the part of the world it senses",
+        "- any other outcome: the outcome's name",
+        "",
+        '#### Tool "take"',
+        "",
+        "- Kind: effector",
+        `- Duration: "take" takes ${count} ms.`,
+        "",
+        "Description:",
+        "",
+        "```text",
+        take.description,
+        "```",
+        "",
+        ...parameters(take),
+        "Texts for each outcome:",
+        "",
+        "- success: You took the slot.",
+        "- slot_taken: Someone holds that slot.",
+        "- any other outcome: the outcome's name",
+        "",
+      ].join("\n");
+    expect(listed.slice(listed.indexOf('## Condition "baseline"'), listed.indexOf('## Condition "crowded"'))).toContain(tools(3));
+    expect(listed.slice(listed.indexOf('## Condition "crowded"'))).toContain(tools(5));
+  });
+
   it("fences a system prompt that holds a fence with a longer one, so the prompt is given whole", () => {
     const experiment = experimentOf(["[conditions.baseline]"]);
     const scenario = slotsWith({ systemPrompt: () => "Answer like this:\n```\ndone\n```" });

@@ -95,6 +95,8 @@ export const slotsScenario: Scenario<Slots> = {
     const intervalMs = (configuration.rhythm as { interval_ms: number }).interval_ms;
     return () => intervalMs;
   },
+  // Its tools take no time.
+  describeDuration: () => "0 ms.",
   describeRhythm: (configuration) => `Every agent waits ${(configuration.rhythm as { interval_ms: number }).interval_ms} ms before each activation.`,
   // It names the agent it describes, quoted, so each agent's prompt can be told from another's.
   systemPrompt: (_configuration, agent) => `You are agent "${agent}", in a world of slots.`,
