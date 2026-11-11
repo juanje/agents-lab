@@ -52,13 +52,56 @@ export function readExperiment(toml: string, directory?: string): Experiment {
       modelTurnTimeoutMs: limits.model_turn_timeout_ms,
     },
     ...(file.metric_interval_ms === undefined ? {} : { metricIntervalMs: file.metric_interval_ms }),
-    // A change's keys are checked when the scenario is loaded with it, against the scenario's base configuration.
-    conditions: Object.keys(file.conditions).map((name) => ({
-      name,
-      change: stringify(field(file.conditions, ["conditions", name], table)),
-      ...materials,
-    })),
+    conditions: conditionsOf(file).map((condition) => ({ ...condition, ...materials })),
   };
+}
+
+/** A condition as the file gives it, before its materials: its name, its change as a table, and its levels. */
+interface Given {
+  name: string;
+  change: TomlTable;
+  levels: Readonly<Record<string, string>>;
+}
+
+/**
+ * The file's conditions, in the order they run: when it declares factors, the baseline, which takes no level, then
+ * every combination of levels, the first factor's changing slowest; then the file's own conditions (FR-EXPERIMENT-02).
+ * A change's keys are checked when the scenario is loaded with it, against the scenario's base configuration.
+ */
+function conditionsOf(file: { conditions?: TomlTable; factors?: TomlTable }): { name: string; change: string; levels: Readonly<Record<string, string>> }[] {
+  const own = file.conditions ?? {};
+  const given: Given[] = [
+    ...(file.factors === undefined ? [] : [{ name: "baseline", change: {}, levels: {} }, ...combinations(file.factors)]),
+    ...Object.keys(own).map((name) => ({ name, change: field(own, ["conditions", name], table), levels: {} })),
+  ];
+  if (given.length === 0) throw new Error('The experiment file gives no condition: it must give "conditions", "factors" or both');
+  return given.map(({ name, change, levels }) => ({ name, change: stringify(change), levels }));
+}
+
+/** Every combination of the factors' levels, as a condition named after its levels, the first factor's changing slowest. */
+function combinations(factors: TomlTable): Given[] {
+  let combined: Given[] = [{ name: "", change: {}, levels: {} }];
+  for (const factor of Object.keys(factors)) {
+    const levels = field(factors, ["factors", factor], namedLevels);
+    combined = combined.flatMap((partial) =>
+      Object.keys(levels).map((level) => ({
+        name: `${partial.name}${partial.name === "" ? "" : ","}${factor}=${level}`,
+        change: merged(partial.change, field(levels, ["factors", factor, level], table)),
+        levels: { ...partial.levels, [factor]: level },
+      })),
+    );
+  }
+  return combined;
+}
+
+/** Two changes as one: a table both give is merged the same way inside them. */
+function merged(one: TomlTable, other: TomlTable): TomlTable {
+  const changed: TomlTable = { ...one };
+  for (const [key, value] of Object.entries(other)) {
+    const current = changed[key];
+    changed[key] = current !== undefined && isTable(current) && isTable(value) ? merged(current, value) : value;
+  }
+  return changed;
 }
 
 /**
@@ -80,6 +123,13 @@ const text: Kind<string> = { expected: "a text", holds: (value) => typeof value 
 const table: Kind<TomlTable> = { expected: "a table", holds: isTable };
 
 const namedConditions: Kind<TomlTable> = { expected: "a table of named conditions", holds: isTable };
+
+const namedFactors: Kind<TomlTable> = { expected: "a table of named factors", holds: isTable };
+
+const namedLevels: Kind<TomlTable> = {
+  expected: "a table of at least one named level",
+  holds: (value): value is TomlTable => isTable(value) && Object.keys(value).length > 0,
+};
 
 const modelIds: Kind<string[]> = {
   expected: "a list of at least one model id",
@@ -123,12 +173,13 @@ const fileSchema = {
   replicas: atLeastOne,
   seed,
   limits: table,
-  conditions: namedConditions,
 } satisfies Schema;
 
 /** The fields the file may leave out. */
 const optionalFileSchema = {
   metric_interval_ms: atLeastOne,
+  conditions: namedConditions,
+  factors: namedFactors,
 } satisfies Schema;
 
 const limitsSchema = {
