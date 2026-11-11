@@ -103,6 +103,17 @@ describe("refusals", () => {
     expect(() => layout(["hall", "store"], [{ between: ["garden", "hall"], length: 2 }])).toThrow('place "garden"');
   });
 
+  it.each([
+    ["the same way", ["hall", "store"]],
+    ["the other way", ["store", "hall"]],
+  ] as const)("refuses a layout that joins the same two places twice, %s, naming both places", (_case, between) => {
+    const passages = [
+      { between: ["hall", "store"] as const, length: 2 },
+      { between, length: 3 },
+    ];
+    expect(() => layout(["hall", "store"], passages)).toThrow('places "hall" and "store"');
+  });
+
   it.each([0, -1])("refuses a layout with a passage of length %d, naming the length", (length) => {
     expect(() => layout(["hall", "store"], [{ between: ["hall", "store"], length }])).toThrow(`length ${length}`);
   });
