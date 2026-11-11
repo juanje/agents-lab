@@ -1144,4 +1144,39 @@ brought_by = "ana"
     expect(new Set(arrivals).size).toBeGreaterThan(1);
     expect(drive(componentOf(configured, "ana"), scenario.initialState(configured, new Random(1)), new Random(3)).actions[0].startedAtMs).toBe(arrivals[2]);
   });
+
+  describe("refuses a day that names something it does not have, naming it", () => {
+    const refused = (values: Configuration) => () => scenario.initialState(values, new Random(1));
+
+    it("an arrivals round that is not one of the porter's rounds", () => {
+      expect(refused(porterDay({ arrivals: '"11:00" = ["late"]' }))).toThrow('"11:00"');
+    });
+
+    it("a situation in arrivals that is not chosen", () => {
+      expect(refused(porterDay({ chosen_situations: [] }))).toThrow('"late"');
+    });
+
+    it("a situation in arrivals whose places do not include where the porter drops it", () => {
+      expect(refused(porterDay({ situations: LATE.replace('places = ["hall", "office"]', 'places = ["hall"]') }))).toThrow(/"late".*"office"|"office".*"late"/);
+    });
+
+    it("a thing that arrives with the porter and gives a place other than where he drops it", () => {
+      const world = `${withDay("09:00")}${PORTER}${ARRIVING.replace('place = "office"', 'place = "hall"')}`;
+      expect(refused(porterDay({ world }))).toThrow(/"parcel".*"hall"|"hall".*"parcel"/);
+    });
+
+    it("a situation's thing brought by no visitor", () => {
+      const configured = visitorDay();
+      expect(refused({ ...configured, situations: (configured.situations as string).replace('brought_by = "ana"', 'brought_by = "dale"') })).toThrow('"dale"');
+    });
+
+    it("a time that is not \"HH:MM\"", () => {
+      expect(refused(porterDay({ world: `${withDay("09:00")}${PORTER.replace('"09:10"', '"9.10"')}${ARRIVING}` }))).toThrow('"9.10"');
+      expect(refused(configuration({ world: withDay("9h") }))).toThrow('"9h"');
+    });
+
+    it("an arrives_between whose first time is after its second", () => {
+      expect(refused(visitorDay({ arrivesBetween: ["10:00", "09:00"] }))).toThrow('"ana"');
+    });
+  });
 });
