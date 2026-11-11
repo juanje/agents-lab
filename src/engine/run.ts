@@ -1,6 +1,7 @@
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import { type AgentModel, type ModelTurn, type Records, type ToolCall, openRuntime, openSession, wake } from "./adapter.ts";
 import { ChangesSinceSensing } from "./changes.ts";
+import { runComponent } from "./components.ts";
 import { waitAtLeast } from "./clock.ts";
 import type { ThinkingLevel } from "./experiment.ts";
 import { failure } from "./failure.ts";
@@ -144,7 +145,7 @@ const PROVIDER_DEFAULTS = "the provider's defaults";
  * sampling settings the sessions use, or null.
  */
 async function runAgents<State>(
-  { world, scenario, systemPrompts, rhythms }: LoadedScenario<State>,
+  { world, scenario, systemPrompts, rhythms, components }: LoadedScenario<State>,
   agents: readonly Agent[],
   seed: number,
   settings: RunSettings,
@@ -206,21 +207,33 @@ async function runAgents<State>(
   const samplingEnd = new AbortController();
   const sampling = settings.metricIntervalMs === undefined ? Promise.resolve() : sampleEvery(settings.metricIntervalMs, sample, samplingEnd.signal);
   try {
-    await Promise.all(
-      agents.map(async (agent, index) => {
-        const session = sessions[index];
-        try {
-          // Each agent's rhythm has its own sequence, from the seed and the agent's name: sharing one would make an
-          // agent's intervals depend on when the others' models answer, and deriving by order on which other agents run.
-          const rhythm = { draw: rhythmOf(rhythms, agent.name), random: Random.derive(seed, `rhythm of ${agent.name}`) };
-          await loop(session, agent, stimuli, rhythm, runEnd.signal, recorder);
-        } finally {
-          // Copied: disposing the session may clear what it holds.
-          messages.set(agent.name, [...session.messages]);
-          session.dispose();
-        }
+    // Components run alongside the agents from the moment they can start, without turns; the run ends once every agent
+    // and every component has ended, or at its time limit (FR-PROCESS-01).
+    const cycles = components.map((component) =>
+      runComponent(component, {
+        world,
+        // From the seed and the component's name, as an agent's rhythm is, so a condition that adds a component leaves
+        // the others' sequences as they were.
+        random: Random.derive(seed, `cycle of ${component.name}`),
+        runEnd: runEnd.signal,
+        changes,
+        record: (action) => recorder.record({ type: "component_action", ...action }),
       }),
     );
+    const agentLoops = agents.map(async (agent, index) => {
+      const session = sessions[index];
+      try {
+        // Each agent's rhythm has its own sequence, from the seed and the agent's name: sharing one would make an
+        // agent's intervals depend on when the others' models answer, and deriving by order on which other agents run.
+        const rhythm = { draw: rhythmOf(rhythms, agent.name), random: Random.derive(seed, `rhythm of ${agent.name}`) };
+        await loop(session, agent, stimuli, rhythm, runEnd.signal, recorder);
+      } finally {
+        // Copied: disposing the session may clear what it holds.
+        messages.set(agent.name, [...session.messages]);
+        session.dispose();
+      }
+    });
+    await Promise.all([...cycles, ...agentLoops]);
   } finally {
     // A run that ends at its budget must not leave its time limit pending, nor a sample to write once its log is closed.
     clearTimeout(timer);

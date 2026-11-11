@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import type { EffectorStart, ModelTurn, ToolCall } from "./adapter.ts";
 import type { CodeVersion } from "./code-version.ts";
+import type { ComponentAction } from "./components.ts";
 import type { ConditionInventory } from "./inventory.ts";
 import { JsonlFile } from "./jsonl.ts";
 import type { Material } from "./materials.ts";
@@ -48,6 +49,7 @@ export type LogLine =
   | ({ type: "model_turn" } & ModelTurn)
   | ({ type: "tool_call" } & ToolCall)
   | ({ type: "effector_start" } & EffectorStart)
+  | ({ type: "component_action" } & ComponentAction)
   | { type: "metric_sample"; atMs: number; version: number; metrics: Record<string, MetricValue> }
   | { type: "run_stopped"; error: string };
 

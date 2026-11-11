@@ -51,7 +51,7 @@ export function assembled(context: Context, agents: readonly string[]): LoadedSc
   const rhythms = new Map(agents.map((agent) => [agent, scenario.rhythm(configuration, agent)]));
   // The neighbourhood gives its residents no first stimuli.
   const firstStimuli = new Map(agents.map((agent) => [agent, []]));
-  return { scenario, configuration, world, systemPrompts, channels: scenario.channels(configuration), firstStimuli, rhythms, materials: [] };
+  return { scenario, configuration, world, systemPrompts, channels: scenario.channels(configuration), firstStimuli, rhythms, materials: [], components: scenario.components?.(configuration) ?? [] };
 }
 
 Given("resident {string} of kind {string} is at {int}, {int}", function (this: Context, name: string, kind: string, x: number, y: number) {

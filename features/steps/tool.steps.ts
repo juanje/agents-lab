@@ -120,7 +120,7 @@ export function assembled<State>(scenario: Scenario<State>, world: World<State>)
   const systemPrompts = new Map(agents.map((agent) => [agent, scenario.systemPrompt({}, agent)]));
   const rhythms = new Map(agents.map((agent) => [agent, scenario.rhythm({}, agent)]));
   const firstStimuli = new Map(agents.map((agent) => [agent, scenario.firstStimuli?.({}, agent) ?? []]));
-  return { scenario, configuration: {}, world, systemPrompts, channels: scenario.channels({}), firstStimuli, rhythms, materials: [] };
+  return { scenario, configuration: {}, world, systemPrompts, channels: scenario.channels({}), firstStimuli, rhythms, materials: [], components: scenario.components?.({}) ?? [] };
 }
 
 /** Runs the scenario's agents in a loaded scenario, watching its arbiter, and keeps what the run gave. */

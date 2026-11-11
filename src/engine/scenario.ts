@@ -87,6 +87,8 @@ export interface LoadedScenario<State> {
   rhythms: ReadonlyMap<string, Rhythm>;
   /** Each material the condition set a value to, in the order the change gives them (FR-EXPERIMENT-04). */
   materials: readonly Material[];
+  /** The scenario's components besides its agents, as its configuration declares them (FR-PROCESS-01). */
+  components: readonly Component<State>[];
 }
 
 /** Each part a scenario must provide, and how an error names it. */
@@ -143,7 +145,8 @@ export function loadScenario<State>(
     rhythms.set(agent, scenario.rhythm(configuration, agent));
   }
   const initial = scenario.initialState(configuration, Random.derive(seed, "initial state"));
-  return { scenario, configuration, world: new World(initial), systemPrompts, channels, firstStimuli, rhythms, materials };
+  const components = scenario.components?.(configuration) ?? [];
+  return { scenario, configuration, world: new World(initial), systemPrompts, channels, firstStimuli, rhythms, materials, components };
 }
 
 /**
