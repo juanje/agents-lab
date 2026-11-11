@@ -2,8 +2,10 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { AgentModel } from "./adapter.ts";
+import { codeVersion } from "./code-version.ts";
 import { type Experiment, replicaSeed } from "./experiment.ts";
 import { failure } from "./failure.ts";
+import { inventory } from "./inventory.ts";
 import { JsonlFile } from "./jsonl.ts";
 import { run } from "./run.ts";
 import { type Scenario, loadScenario } from "./scenario.ts";
@@ -33,10 +35,14 @@ export async function runExperiment<State>(
 ): Promise<void> {
   // Each condition is loaded once before the first run, so one the scenario refuses fails before any model call.
   for (const condition of experiment.conditions) loadScenario(scenario, experiment.seed, condition);
+  // What every run's log gives first, read before any run, so a scenario the inventory refuses, or code whose version
+  // cannot be read, fails before any model call.
+  const inventories = inventory(experiment, scenario).conditions;
+  const code = codeVersion();
   mkdirSync(runsDirectory, { recursive: true });
   const index = JsonlFile.create(join(runsDirectory, "index.jsonl"));
   try {
-    for (const condition of experiment.conditions) {
+    for (const [at, condition] of experiment.conditions.entries()) {
       for (const [modelName, model] of models) {
         for (let replica = 1; replica <= experiment.replicas; replica += 1) {
           const seed = replicaSeed(experiment.seed, replica);
@@ -49,6 +55,16 @@ export async function runExperiment<State>(
             await run(loaded, agents, seed, {
               logDirectory: runsDirectory,
               runId,
+              setup: {
+                experiment: experiment.id,
+                condition: condition.name,
+                configuration: loaded.configuration,
+                replica,
+                seed,
+                model: modelName,
+                code,
+                inventory: inventories[at],
+              },
               modelTurnTimeoutMs: experiment.limits.modelTurnTimeoutMs,
               parallelismLimit: experiment.limits.parallelismLimit,
               timeLimitMs: experiment.limits.timeLimitMs,

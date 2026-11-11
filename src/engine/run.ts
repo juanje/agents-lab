@@ -5,7 +5,7 @@ import { waitAtLeast } from "./clock.ts";
 import { failure } from "./failure.ts";
 import { ParallelismLimit } from "./parallelism.ts";
 import { Random } from "./random.ts";
-import { Recorder } from "./recorder.ts";
+import { Recorder, type RunSetup } from "./recorder.ts";
 import type { LoadedScenario, Rhythm, Scenario } from "./scenario.ts";
 import { Sensings } from "./sensings.ts";
 import { Stimuli } from "./stimuli.ts";
@@ -24,6 +24,8 @@ export interface RunSettings {
   logDirectory: string;
   /** The run's id, when its caller must know it before the run starts or stops; a new one otherwise. */
   runId?: string;
+  /** For a run of an experiment, what it runs, which its log gives first (FR-RECORD-02). */
+  setup?: RunSetup;
   /** How long a model turn may run before it is aborted. */
   modelTurnTimeoutMs: number;
   /** The maximum number of model calls running at once, across all agents. */
@@ -70,6 +72,7 @@ export async function run<State>(
   // Refused before its log opens, as a scenario that fails to load is: nothing has run.
   assertScenarioAgents(loaded, agents);
   const recorder = Recorder.open(settings.logDirectory, settings.runId);
+  if (settings.setup !== undefined) recorder.record({ type: "run_setup", runId: recorder.runId, ...settings.setup });
   // Aborts when the run ends before its agents are done: its time limit passes (FR-CLOCK-02) or it stops on an error.
   const runEnd = new AbortController();
   let stoppedOn: Error | undefined;

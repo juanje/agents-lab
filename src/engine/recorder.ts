@@ -1,12 +1,33 @@
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import type { ModelTurn, ToolCall } from "./adapter.ts";
+import type { CodeVersion } from "./code-version.ts";
+import type { ConditionInventory } from "./inventory.ts";
 import { JsonlFile } from "./jsonl.ts";
-import type { MetricValue } from "./scenario.ts";
+import type { Configuration, MetricValue } from "./scenario.ts";
 import type { Stimulus } from "./stimuli.ts";
 
-/** A line of a run's log: one event of the run. Every time in it is by performance.now(). */
+/**
+ * What a run of an experiment ran, which its log's first line gives (FR-RECORD-02): the experiment, the condition and
+ * its resolved configuration, the replica and its seed, the model, the code, and the condition's inventory.
+ */
+export interface RunSetup {
+  experiment: string;
+  condition: string;
+  configuration: Configuration;
+  /** The replica, from 1. */
+  replica: number;
+  seed: number;
+  model: string;
+  code: CodeVersion;
+  inventory: ConditionInventory;
+}
+
+/**
+ * A line of a run's log: what the run ran, first, then one event of the run. Every time in it is by performance.now().
+ */
 export type LogLine =
+  | ({ type: "run_setup"; runId: string } & RunSetup)
   | { type: "activation"; agent: string; wokeAtMs: number; endedAtMs: number }
   | ({ type: "stimulus"; agent: string; deliveredAtMs: number } & Stimulus)
   | ({ type: "model_turn" } & ModelTurn)
