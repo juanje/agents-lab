@@ -312,48 +312,52 @@ function holdsIn(state: Workplace, predicate: Predicate): boolean {
 }
 
 /**
- * For each situation, the moment its predicates last changed value, replaying the world's moves from where each thing
- * was before its first move; none while they have not.
+ * A measure of each chosen situation, by its id, from the situation and its predicates; a situation the measure gives
+ * no value is left out.
  */
-function settledAt(state: Workplace): Record<string, number> {
+function bySituation(state: Workplace, measure: (id: string, situation: Situation, predicates: readonly Predicate[]) => number | undefined): Record<string, number> {
   return Object.fromEntries(
-    situationPredicates(state).flatMap(([id, given]) => {
-      const named = new Set(given.map(({ thing }) => thing));
-      const moves = state.moves.filter(({ thing }) => named.has(thing));
-      const at = new Map([...named].map((thing) => [thing, moves.find((move) => move.thing === thing)?.from ?? locationOf(state, thing)]));
-      const values = () => given.map((predicate) => holdsAt(predicate, at.get(predicate.thing) as string)).join();
-      let before = values();
-      let changedAtMs: number | undefined;
-      for (const { thing, to, atMs } of moves) {
-        at.set(thing, to);
-        const after = values();
-        if (after !== before) changedAtMs = atMs;
-        before = after;
-      }
-      return changedAtMs === undefined ? [] : [[id, changedAtMs]];
+    Object.entries(state.situations).flatMap(([id, situation]) => {
+      const value = measure(id, situation, predicatesOf(situation.keys));
+      return value === undefined ? [] : [[id, value]];
     }),
   );
 }
 
-/** Each chosen situation's predicates, by the situation's id. */
-function situationPredicates(state: Workplace): [string, Predicate[]][] {
-  return Object.entries(state.situations).map(([id, { keys }]) => [id, predicatesOf(keys)]);
+/**
+ * For each situation, the moment its predicates last changed value, replaying the world's moves from where each thing
+ * was before its first move; none while they have not.
+ */
+function settledAt(state: Workplace): Record<string, number> {
+  return bySituation(state, (_id, _situation, given) => {
+    const named = new Set(given.map(({ thing }) => thing));
+    const moves = state.moves.filter(({ thing }) => named.has(thing));
+    const at = new Map([...named].map((thing) => [thing, moves.find((move) => move.thing === thing)?.from ?? locationOf(state, thing)]));
+    const values = () => given.map((predicate) => holdsAt(predicate, at.get(predicate.thing) as string)).join();
+    let before = values();
+    let changedAtMs: number | undefined;
+    for (const { thing, to, atMs } of moves) {
+      at.set(thing, to);
+      const after = values();
+      if (after !== before) changedAtMs = atMs;
+      before = after;
+    }
+    return changedAtMs;
+  });
 }
 
 /** Each predicate's value, 1 or 0, by situation, key and thing (for example "s05.not_where.item-13"). */
 function predicates(state: Workplace): Record<string, number> {
   return Object.fromEntries(
-    situationPredicates(state).flatMap(([id, given]) => given.map((predicate) => [`${id}.${predicate.key}.${predicate.thing}`, holdsIn(state, predicate) ? 1 : 0])),
+    Object.entries(state.situations).flatMap(([id, { keys }]) =>
+      predicatesOf(keys).map((predicate) => [`${id}.${predicate.key}.${predicate.thing}`, holdsIn(state, predicate) ? 1 : 0]),
+    ),
   );
 }
 
 /** For each situation with predicates, 1 when they all hold and 0 when one does not. */
 function holds(state: Workplace): Record<string, number> {
-  return Object.fromEntries(
-    situationPredicates(state)
-      .filter(([, given]) => given.length > 0)
-      .map(([id, given]) => [id, given.every((predicate) => holdsIn(state, predicate)) ? 1 : 0]),
-  );
+  return bySituation(state, (_id, _situation, given) => (given.length === 0 ? undefined : given.every((predicate) => holdsIn(state, predicate)) ? 1 : 0));
 }
 
 /** The place the worker is in; the worker is in a passage only while a "go" is under way, when it calls nothing else. */
@@ -779,12 +783,7 @@ function actedOn(call: ToolCall, things: readonly string[]): boolean {
 /** For each situation, the end of the worker's first call that meets a condition on its things; none until one does. */
 function firstEnd(state: Workplace, toolCalls: readonly ToolCall[], meets: (call: ToolCall, things: readonly string[]) => boolean): Record<string, number> {
   const calls = workerCalls(toolCalls);
-  return Object.fromEntries(
-    Object.entries(state.situations).flatMap(([id, { things }]) => {
-      const first = calls.find((call) => meets(call, things));
-      return first === undefined ? [] : [[id, first.endedAtMs]];
-    }),
-  );
+  return bySituation(state, (_id, { things }) => calls.find((call) => meets(call, things))?.endedAtMs);
 }
 
 /** When the worker first sensed each situation. */
@@ -800,20 +799,19 @@ const actedAt = (state: Workplace, toolCalls: readonly ToolCall[]) => firstEnd(s
 function exploration(state: Workplace, toolCalls: readonly ToolCall[]): Record<string, number> {
   const calls = workerCalls(toolCalls);
   const settled = settledAt(state);
-  return Object.fromEntries(
-    Object.entries(state.situations).flatMap(([id, { things }]) => {
-      const sensing = calls.findIndex((call) => sensedOne(call, things));
-      if (sensing === -1) return [];
-      const after = calls.slice(sensing + 1);
-      const until = settled[id];
-      return [[id, until === undefined ? after.length : after.filter(({ startedAtMs }) => startedAtMs <= until).length]];
-    }),
-  );
+  return bySituation(state, (id, { things }) => {
+    const sensing = calls.findIndex((call) => sensedOne(call, things));
+    if (sensing === -1) return undefined;
+    const after = calls.slice(sensing + 1);
+    const until = settled[id];
+    return until === undefined ? after.length : after.filter(({ startedAtMs }) => startedAtMs <= until).length;
+  });
 }
 
 /** For each situation the worker sensed, how many of these written things were written since it first sensed it. */
 function writtenSince(state: Workplace, toolCalls: readonly ToolCall[], written: readonly Written[]): Record<string, number> {
-  return Object.fromEntries(Object.entries(sensedAt(state, toolCalls)).map(([id, sensed]) => [id, written.filter(({ atMs }) => atMs >= sensed).length]));
+  const sensed = sensedAt(state, toolCalls);
+  return bySituation(state, (id) => (sensed[id] === undefined ? undefined : written.filter(({ atMs }) => atMs >= sensed[id]).length));
 }
 
 /** The worker's book entries since it first sensed each situation. */
