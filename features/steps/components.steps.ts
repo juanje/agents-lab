@@ -55,7 +55,7 @@ function fillingOf(context: Context, name: string): Filling {
 }
 
 Given("a test world with {int} slots, slot {int} held by {string}", function (this: Context, count: number, slot: number, thing: string) {
-  this.world = new World(emptySlots(count).map((holder, index) => (index === slot - 1 ? thing : holder)));
+  this.world = new World<Slots>(emptySlots(count).map((holder, index) => (index === slot - 1 ? thing : holder)));
 });
 
 Given(

@@ -13,6 +13,7 @@ export type ActionResult = { applied: true } | { applied: false; reason: string 
 export class World<State> {
   #state: State;
   #version = 0;
+  readonly #watchers = new Set<(before: State, after: State) => void>();
 
   constructor(initial: State) {
     this.#state = initial;
@@ -34,8 +35,20 @@ export class World<State> {
   apply<Args>(action: Action<State, Args>, args: Args): ActionResult {
     const check = action.precondition(this.#state, args);
     if (!check.holds) return { applied: false, reason: check.reason };
-    this.#state = action.effect(this.#state, args);
+    const before = this.#state;
+    this.#state = action.effect(before, args);
     this.#version += 1;
+    for (const watcher of this.#watchers) watcher(before, this.#state);
     return { applied: true };
+  }
+
+  /**
+   * Tells a watcher each action applied from now on, with the state before it and after it, as it is applied, until the
+   * function it returns is called; an effector's call that ends early watches the world's changes (FR-WORKPLACE-07).
+   */
+  watch(watcher: (before: State, after: State) => void): () => void {
+    const own = (before: State, after: State) => watcher(before, after);
+    this.#watchers.add(own);
+    return () => this.#watchers.delete(own);
   }
 }

@@ -22,6 +22,8 @@ export class Stimuli {
   readonly #delivered: (agent: string, stimulus: Stimulus) => void;
   /** The channels whose stimuli each agent still has to receive as it first wakes. */
   readonly #first: Map<string, readonly string[]>;
+  /** Who watches each agent's stimuli as they are delivered. */
+  readonly #watchers = new Map<string, Set<(stimulus: Stimulus) => void>>();
 
   /**
    * Takes the scenario's channels, what to do with each stimulus as it is delivered (the run records it), and the
@@ -42,6 +44,20 @@ export class Stimuli {
     const stimulus = this.#stimulusOf(channel);
     this.#delivered(agent, stimulus);
     this.#waiting.set(agent, [...(this.#waiting.get(agent) ?? []), stimulus]);
+    for (const watcher of this.#watchers.get(agent) ?? []) watcher(stimulus);
+  }
+
+  /**
+   * Tells a watcher each stimulus delivered to an agent from now on, as it is delivered, until the function it returns is
+   * called; the stimulus still waits for the agent's session. An effector's call that ends early watches its agent's
+   * stimuli (FR-WORKPLACE-07).
+   */
+  watch(agent: string, watcher: (stimulus: Stimulus) => void): () => void {
+    const own = (stimulus: Stimulus) => watcher(stimulus);
+    const watchers = this.#watchers.get(agent) ?? new Set();
+    watchers.add(own);
+    this.#watchers.set(agent, watchers);
+    return () => watchers.delete(own);
   }
 
   /** Takes the stimuli waiting for an agent, in the order they were delivered. */
