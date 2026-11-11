@@ -1,3 +1,9 @@
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import type { LogLine } from "../engine/recorder.ts";
+import type { IndexLine } from "../engine/runner.ts";
+import type { MetricValue } from "../engine/scenario.ts";
+
 /** The five numbers that show a distribution of values: none, when there are no values. */
 export interface Quartiles {
   minimum: number | null;
@@ -38,7 +44,75 @@ export interface SummaryRow extends Quartiles {
   nulls: number;
 }
 
-/** A stub that gives no rows and refuses nothing, for the test to fail on its assertions. */
-export function summarizeRuns(_directory: string, _name: string = _directory): SummaryRow[] {
-  return [];
+/** The lines of a JSONL file, parsed. */
+function linesOf<Line>(path: string): Line[] {
+  return readFileSync(path, "utf8")
+    .split("\n")
+    .filter((line) => line !== "")
+    .map((line) => JSON.parse(line) as Line);
+}
+
+/** The values of a completed run's last metric sample, by metric; none when its log has no sample. */
+function lastSample(directory: string, runId: string): Record<string, MetricValue> {
+  const samples = linesOf<LogLine>(join(directory, `${runId}.jsonl`)).filter((line) => line.type === "metric_sample");
+  return samples.at(-1)?.metrics ?? {};
+}
+
+/** A row's metric, and the agent or situation it gives a value for, if any. */
+type RowKey = { metric: string; key?: string };
+
+/** What a row's metric and key are called, to tell rows apart. */
+const nameOf = ({ metric, key }: RowKey) => JSON.stringify([metric, key ?? null]);
+
+/** The values a metric sample gives, one for each row: a metric's own, or one for each of its agents or situations. */
+function valuesOf(metrics: Record<string, MetricValue>): { rowKey: RowKey; value: number | null }[] {
+  return Object.entries(metrics).flatMap(([metric, value]) =>
+    value === null || typeof value === "number"
+      ? [{ rowKey: { metric }, value }]
+      : Object.entries(value).map(([key, of]) => ({ rowKey: { metric, key }, value: of })),
+  );
+}
+
+/**
+ * The summary of an experiment's runs, from its runs directory: its index and its run logs, and nothing else.
+ * - It gives a row for each condition and model, in the order the index first lists them, and each metric, or each agent
+ *   or situation of a metric that gives a value for each, in the order the completed runs first give them.
+ * - Every condition and model gets a row for every one of them, so one whose runs all stopped still shows its counts.
+ * - Each row gives how many of its runs completed and stopped, and the values of the completed runs' last samples, in
+ *   replica order, with the replica each comes from; a null is counted, not given. A stopped run gives no values.
+ *
+ * It refuses a directory without an index, naming it as it was given.
+ */
+export function summarizeRuns(directory: string, name: string = directory): SummaryRow[] {
+  const indexPath = join(directory, "index.jsonl");
+  if (!existsSync(indexPath)) throw new Error(`"${name}" has no index (index.jsonl): it is not the runs directory of an experiment`);
+  const index = linesOf<IndexLine>(indexPath);
+  const last = new Map(index.filter((run) => run.status === "completed").map((run) => [run.runId, valuesOf(lastSample(directory, run.runId))]));
+  const rowKeys = new Map<string, RowKey>();
+  for (const given of last.values()) for (const { rowKey } of given) if (!rowKeys.has(nameOf(rowKey))) rowKeys.set(nameOf(rowKey), rowKey);
+  const groups = new Map<string, { condition: string; model: string; runs: IndexLine[] }>();
+  for (const run of index) {
+    const group = JSON.stringify([run.condition, run.model]);
+    groups.set(group, { condition: run.condition, model: run.model, runs: [...(groups.get(group)?.runs ?? []), run] });
+  }
+  return [...groups.values()].flatMap(({ condition, model, runs }) => {
+    const completed = runs.filter((run) => run.status === "completed").sort((one, other) => one.replica - other.replica);
+    return [...rowKeys].map(([rowName, { metric, key }]) => {
+      const values: number[] = [];
+      const replicas: number[] = [];
+      let nulls = 0;
+      for (const run of completed) {
+        for (const { rowKey, value } of last.get(run.runId) ?? []) {
+          if (nameOf(rowKey) !== rowName) continue;
+          if (value === null) nulls += 1;
+          else {
+            values.push(value);
+            replicas.push(run.replica);
+          }
+        }
+      }
+      const of = key === undefined ? {} : { key };
+      return { condition, model, metric, ...of, completed: completed.length, stopped: runs.length - completed.length, values, replicas, nulls, ...quartiles(values) };
+    });
+  });
 }
