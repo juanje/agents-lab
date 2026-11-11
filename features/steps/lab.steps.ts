@@ -333,7 +333,9 @@ Then(
     assert.equal(first.condition, condition);
     const scenario = this.library?.get(String(this.experimentFile.scenario)) as Partial<Scenario<unknown>>;
     const change = stringify((this.experimentFile.conditions as TomlTable)[condition] as TomlTable);
-    assert.deepEqual(first.configuration, loadScenario(scenario, seed, { name: condition, change }).configuration);
+    // Compared as JSON gives it back, as the log holds it.
+    const resolved = loadScenario(scenario, seed, { name: condition, change }).configuration;
+    assert.deepEqual(first.configuration, JSON.parse(JSON.stringify(resolved)));
     assert.equal(path.split(".").reduce<unknown>((table, key) => (table as TomlTable)[key], first.configuration), value);
   },
 );
