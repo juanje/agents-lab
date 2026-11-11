@@ -50,6 +50,7 @@ export interface LoadedScenario<State> {
 /** Each part a scenario must provide, and how an error names it. */
 const requiredParts = [
   ["initialState", "initial state"],
+  ["agents", "agents"],
   ["tools", "tools"],
   ["channels", "stimulus channels"],
   ["metrics", "metrics"],
