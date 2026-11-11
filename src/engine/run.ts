@@ -62,10 +62,12 @@ export async function run<State>(
   seed: number,
   settings: RunSettings,
 ): Promise<RunResult> {
-  const stimuli = new Stimuli(loaded.scenario.channels);
-  settings.onStart?.(stimuli);
   const recorder = Recorder.open(settings.logDirectory);
   try {
+    const stimuli = new Stimuli(loaded.scenario.channels, (agent, stimulus) =>
+      recorder.record({ type: "stimulus", agent, ...stimulus, deliveredAtMs: performance.now() }),
+    );
+    settings.onStart?.(stimuli);
     return { runId: recorder.runId, ...(await runAgents(loaded, agents, seed, settings, stimuli, recorder)) };
   } finally {
     recorder.close();

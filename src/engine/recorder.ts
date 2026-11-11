@@ -1,9 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { closeSync, openSync, writeSync } from "node:fs";
 import { join } from "node:path";
+import type { Stimulus } from "./stimuli.ts";
 
-/** A line of a run's log: one event of the run. */
-export type LogLine = { type: "activation"; agent: string; wokeAtMs: number; endedAtMs: number };
+/** A line of a run's log: one event of the run. Every time in it is by performance.now(). */
+export type LogLine =
+  | { type: "activation"; agent: string; wokeAtMs: number; endedAtMs: number }
+  | ({ type: "stimulus"; agent: string; deliveredAtMs: number } & Stimulus);
 
 /** Writes a run's log: one new JSONL file, named with the run's id, with a line for each event (FR-RECORD-01). */
 export class Recorder {
