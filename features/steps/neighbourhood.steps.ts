@@ -11,7 +11,7 @@ import type { Context } from "../support/context.ts";
  * The neighbourhood scenario with these values over its base configuration. Each key must be one the base configuration
  * already has, so the steps set the scenario's own configuration rather than keys it never reads.
  */
-function withBase(scenario: Partial<Scenario<Neighbourhood>>, values: TomlTable): Partial<Scenario<Neighbourhood>> {
+export function withBase(scenario: Partial<Scenario<Neighbourhood>>, values: TomlTable): Partial<Scenario<Neighbourhood>> {
   const base = parse(scenario.baseConfiguration ?? "");
   const merged: TomlTable = { ...base };
   for (const [key, value] of Object.entries(values)) {

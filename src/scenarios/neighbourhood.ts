@@ -6,10 +6,15 @@ import { RHYTHM_CHANNEL } from "../engine/stimuli.ts";
 export const KINDS = ["teal", "amber"] as const;
 export type Kind = (typeof KINDS)[number];
 
-/** The neighbourhood's state: its grid, where each resident is, and each resident's kind. */
+/**
+ * The neighbourhood's state: its grid, where each resident is, and each resident's kind; and, as the configuration sets
+ * them, how far a resident sees and how long moving takes per cell of distance, which its tools read.
+ */
 export interface Neighbourhood {
   grid: Grid;
   kinds: Readonly<Record<string, Kind>>;
+  lookRadius: number;
+  msPerCell: number;
 }
 
 /** The size of the grid and the number of residents, as the configuration gives them. */
@@ -45,7 +50,8 @@ export const neighbourhoodScenario: Scenario<Neighbourhood> = {
       grid = place(grid, resident, cell);
       kinds[resident] = kindOf(configuration, resident);
     }
-    return { grid, kinds };
+    const { look_radius: lookRadius, ms_per_cell: msPerCell } = configuration as { look_radius: number; ms_per_cell: number };
+    return { grid, kinds, lookRadius, msPerCell };
   },
   tools: [],
   channels: (configuration) => {
@@ -65,6 +71,8 @@ export const neighbourhoodScenario: Scenario<Neighbourhood> = {
     "height = 6",
     "residents = 10",
     'rule = ""',
+    "look_radius = 1",
+    "ms_per_cell = 100",
     "[rhythm]",
     'source = "rhythm"',
     'text = "You wake up."',

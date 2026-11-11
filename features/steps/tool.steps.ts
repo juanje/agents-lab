@@ -78,6 +78,10 @@ export async function runTheScenario(context: Context): Promise<void> {
   // scenario declared its tools, the slots world otherwise.
   // Its agents are the ones the scenario runs.
   const agents = [...context.models.keys(), ...context.realModels.keys()];
+  if (context.assembleRun !== undefined) {
+    await runScenario(context, context.assembleRun(agents));
+    return;
+  }
   if (context.gridTools !== undefined) {
     context.gridWorld = new World(context.grid);
     await runScenario(context, assembled(gridScenario(context.grid, context.gridTools, agents), context.gridWorld));

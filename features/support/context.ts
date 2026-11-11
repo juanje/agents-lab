@@ -125,6 +125,15 @@ export class Context extends CucumberWorld {
   neighbourhood!: Partial<Scenario<Neighbourhood>>;
   /** Each neighbourhood the engine loaded, in order. */
   readonly neighbourhoodLoads: LoadedScenario<Neighbourhood>[] = [];
+  /** The residents the scenario places, each with its kind and the cell it starts on, in the order it names them. */
+  readonly residents: { name: string; kind: string; x: number; y: number }[] = [];
+  /** The neighbourhood's world the run acted on, for a scenario that runs residents. */
+  neighbourhoodWorld?: World<Neighbourhood>;
+  /**
+   * Assembles the loaded scenario the run is given from what the scenario set up, with the agents that run in it, when
+   * the scenario runs a world other than the test worlds.
+   */
+  assembleRun?: (agents: readonly string[]) => LoadedScenario<unknown>;
 }
 
 setWorldConstructor(Context);
