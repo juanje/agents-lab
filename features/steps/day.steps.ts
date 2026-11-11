@@ -126,6 +126,16 @@ Given("the configuration's {string} is {int}", function (this: Context, key: str
   this.libraryScenario = withBase(this.libraryScenario, Object.hasOwn(durations, key) ? { durations: { [key]: value } } : { [key]: value });
 });
 
+Given(
+  "the configuration's {string} is {int} and its {string} is {int}, so one depot minute is {int} milliseconds of the run",
+  function (this: Context, key: string, value: number, scaleKey: string, scale: number, minuteMs: number) {
+    const durations = parse(this.libraryScenario.baseConfiguration ?? "").durations as TomlTable;
+    assert.ok(Object.hasOwn(durations, key), `"${key}" is no duration of the configuration`);
+    this.libraryScenario = withBase(this.libraryScenario, { durations: { [key]: value }, [scaleKey]: scale });
+    assert.equal((60 * 1000) / scale, minuteMs, `with "${scaleKey}" ${scale}, a depot minute is not ${minuteMs} ms`);
+  },
+);
+
 Given("the worker's scripted turns end at once, for {int} activation(s)", function (this: Context, activations: number) {
   idleModels(this, [MODEL]);
   this.activations.set(WORKER, activations);
