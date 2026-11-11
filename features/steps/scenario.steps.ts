@@ -236,3 +236,40 @@ Then("agent {string}'s system prompt names {string}", function (this: Context, a
     if (prompt.includes(`"${other}"`)) assert.fail(`expected agent "${agent}"'s system prompt not to name "${other}", got: ${prompt}`);
   }
 });
+
+/** The rhythm channel's source and text, as the slots test scenario's configuration gives them. */
+function rhythmOf(configuration: TomlTable): { source: string; text: string } {
+  const { source, text } = configuration.rhythm as { source: string; text: string };
+  return { source, text };
+}
+
+Given(
+  "the test scenario {string}, whose rhythm channel's text is {string} in its configuration",
+  function (this: Context, name: string, path: string) {
+    assert.equal(slotsScenario.name, name);
+    // The fixture's [rhythm] table holds the channel's source and text; the text is the one the scenario names.
+    assert.equal(path, "rhythm.text");
+    assert.equal(typeof rhythmOf(parse(slotsScenario.baseConfiguration)).text, "string");
+    this.scenario = slotsScenario;
+  },
+);
+
+Given("a condition {string} that sets {string} to {string}", function (this: Context, name: string, path: string, text: string) {
+  this.condition = setAt(name, path, text);
+});
+
+When(
+  "agent {string} runs with the condition {string} on a scripted model that ends its first turn without a tool call",
+  async function (this: Context, agent: string, name: string) {
+    assert.equal(this.condition?.name, name, "the scenario gives the condition before running with it");
+    script(this, agent, [{ text: "Nothing to do.", delayMs: 0 }]);
+    this.loaded = loadScenario(this.scenario, this.seed, this.condition);
+    await runLoaded(this);
+  },
+);
+
+Then("agent {string}'s rhythm stimulus has the content {string}", function (this: Context, agent: string, content: string) {
+  const { source } = rhythmOf(loadedOf(this).configuration);
+  const [first] = userTexts(modelOf(this, agent).received[0] ?? []);
+  assert.equal(first, asRead(source, content), `agent "${agent}"'s activation began with another stimulus`);
+});

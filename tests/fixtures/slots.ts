@@ -83,7 +83,7 @@ export const slotsScenario: Scenario<Slots> = {
   metrics: { held: (slots) => slots.filter((holder) => holder !== null).length },
   // It names the agent it describes, quoted, so each agent's prompt can be told from another's.
   systemPrompt: (_configuration, agent) => `You are agent "${agent}", in a world of slots.`,
-  baseConfiguration: 'agents = ["a"]\n[slots]\ncount = 3\nheld = 0\n',
+  baseConfiguration: 'agents = ["a"]\n[slots]\ncount = 3\nheld = 0\n[rhythm]\nsource = "rhythm"\ntext = "You wake up."\n',
 };
 
 /** The name the placing scenario gives its n-th agent, from 1. */
