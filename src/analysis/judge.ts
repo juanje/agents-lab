@@ -15,6 +15,8 @@ export interface JudgeFile {
   model: string;
   thinkingLevel: ThinkingLevel;
   instructions: { path: string; hash: string; text: string };
+  /** How long each model call may run, in milliseconds (a stub reads none yet). */
+  timeoutMs: number;
 }
 
 /**
@@ -35,7 +37,7 @@ export function readJudgeFile(path: string): JudgeFile {
   if (reference === undefined) throw new Error(`The judge file "${path}"'s field "instructions" must be a material`);
   const read = new Materials(dirname(path)).read(reference);
   if (read === undefined) throw new Error(`The judge file "${path}"'s instructions "${reference.path}" do not exist`);
-  return { model, thinkingLevel, instructions: { path: reference.path, ...read } };
+  return { model, thinkingLevel, instructions: { path: reference.path, ...read }, timeoutMs: 0 };
 }
 
 /** The tool the judge answers each question with. */

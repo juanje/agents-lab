@@ -20,7 +20,7 @@ function judgeDirectory(lines: readonly string[]): string {
   return directory;
 }
 
-const JUDGE_FILE = ['model = "scripted/judge"', 'thinking_level = "off"', 'instructions = { file = "materials/judge.md" }'];
+const JUDGE_FILE = ['model = "scripted/judge"', 'thinking_level = "off"', 'instructions = { file = "materials/judge.md" }', "timeout_ms = 2000"];
 
 describe("readJudgeFile", () => {
   it("gives the model, the thinking level and the instructions, read from beside the file, with their hash", () => {
@@ -30,10 +30,11 @@ describe("readJudgeFile", () => {
       model: "scripted/judge",
       thinkingLevel: "off",
       instructions: { path: "materials/judge.md", hash: hashOf("You judge.\n"), text: "You judge.\n" },
+      timeoutMs: 2000,
     });
   });
 
-  it.each([["model"], ["thinking_level"], ["instructions"]])("refuses a judge file without its %s, naming it", (field) => {
+  it.each([["model"], ["thinking_level"], ["instructions"], ["timeout_ms"]])("refuses a judge file without its %s, naming it", (field) => {
     const directory = judgeDirectory(JUDGE_FILE.filter((line) => !line.startsWith(`${field} `)));
 
     expect(() => readJudgeFile(join(directory, "judge.toml"))).toThrow(`"${field}"`);
@@ -45,6 +46,12 @@ describe("readJudgeFile", () => {
 
     expect(() => readJudgeFile(join(level, "judge.toml"))).toThrow(/"thinking_level"/);
     expect(() => readJudgeFile(join(missing, "judge.toml"))).toThrow(/"materials\/none.md"/);
+  });
+
+  it("refuses a timeout that is not a whole number of milliseconds of at least 1, naming it", () => {
+    const directory = judgeDirectory([...JUDGE_FILE.slice(0, 3), "timeout_ms = 0"]);
+
+    expect(() => readJudgeFile(join(directory, "judge.toml"))).toThrow(/"timeout_ms"/);
   });
 });
 
@@ -139,8 +146,8 @@ describe("judgeRuns", () => {
     const [lines] = judgementFiles(runsDirectory);
     const settings = { model: "scripted/judge", thinkingLevel: "off", instructionsHash: hashOf("You judge.\n") };
     expect(lines).toEqual([
-      { runId: "run-1", situation: "box", key: "said", verdict: "yes", quoted: "came in open", reason: "It says so.", ...settings, tokens: expect.objectContaining({ totalTokens: expect.any(Number) }), cost: expect.objectContaining({ total: expect.any(Number) }) },
-      { runId: "run-1", situation: "jar", key: "said", verdict: "no", quoted: null, reason: "no text on the channel", ...settings, tokens: null, cost: null },
+      { runId: "run-1", situation: "box", key: "said", outcome: "success", verdict: "yes", quoted: "came in open", reason: "It says so.", quoted_found: true, ...settings, tokens: expect.objectContaining({ totalTokens: expect.any(Number) }), cost: expect.objectContaining({ total: expect.any(Number) }) },
+      { runId: "run-1", situation: "jar", key: "said", outcome: "success", verdict: "no", quoted: null, reason: "no text on the channel", quoted_found: null, ...settings, tokens: null, cost: null },
     ]);
     expect(model.received).toHaveLength(1);
   });
@@ -212,14 +219,52 @@ describe("judgeRuns", () => {
   });
 
   it.each([
-    ["no verdict call", []],
-    ["a verdict that is neither yes nor no", [{ verdict: "maybe", quoted: "", reason: "Unsure." }]],
-    ["a verdict without its reason", [{ verdict: "yes", quoted: "came in open" }]],
-  ])("refuses an answer with %s, naming the run, the situation and the key", async (_case, verdicts) => {
+    ["quoted words that are in a text as written", "came in open", true],
+    ["quoted words that are not in a text as written", "came in OPEN", false],
+    ["no quoted words", "", null],
+  ])("says, for %s, whether they were found", async (_case, quoted, found) => {
     const directory = judgeDirectory(JUDGE_FILE);
     const runsDirectory = runsDirectoryOf(directory, [{ runId: "run-1", status: "completed", notes: ["The box came in open."] }]);
-    const model = verdicts.length === 0 ? new ScriptedModel([{ text: "Yes.", delayMs: 0 }]) : judgeModel(verdicts);
 
-    await expect(judgeRuns(runsDirectory, join(directory, "judge.toml"), scenarios, resolving(model))).rejects.toThrow(/"run-1".*"box".*"said"/);
+    await judgeRuns(runsDirectory, join(directory, "judge.toml"), scenarios, resolving(judgeModel([{ verdict: "yes", quoted, reason: "It says so." }])));
+
+    expect(judgementFiles(runsDirectory)[0][0].quoted_found).toBe(found);
+  });
+
+  it.each([
+    ["no verdict call", [{ text: "Yes.", delayMs: 0 }], "invalid_verdict"],
+    ["a verdict that is neither yes nor no", [{ toolCalls: [{ name: "verdict", arguments: { verdict: "maybe", quoted: "", reason: "Unsure." } }], delayMs: 0 }], "invalid_verdict"],
+    ["a verdict without its reason", [{ toolCalls: [{ name: "verdict", arguments: { verdict: "yes", quoted: "came in open" } }], delayMs: 0 }], "invalid_verdict"],
+    ["a provider error", [{ error: "overloaded", delayMs: 0 }], "model_error"],
+    ["an answer past the timeout", [{ toolCalls: [{ name: "verdict", arguments: { verdict: "yes", quoted: "", reason: "Late." } }], delayMs: 5_000 }], "timeout"],
+  ] as [string, ScriptedAnswer[], string][])("records a question answered with %s with its outcome and no verdict, and goes on", async (_case, answers, outcome) => {
+    const directory = judgeDirectory([...JUDGE_FILE.slice(0, 3), "timeout_ms = 100"]);
+    const runsDirectory = runsDirectoryOf(directory, [{ runId: "run-1", status: "completed", notes: ["The box came in open."] }]);
+
+    await judgeRuns(runsDirectory, join(directory, "judge.toml"), scenarios, resolving(new ScriptedModel(answers)));
+
+    const [[box, jar]] = judgementFiles(runsDirectory);
+    expect(box).toMatchObject({ runId: "run-1", situation: "box", key: "said", outcome, verdict: null, quoted: null, reason: null, quoted_found: null });
+    expect(box.tokens).not.toBeNull();
+    expect(jar).toMatchObject({ situation: "jar", outcome: "success", verdict: "no" });
+  });
+
+  it("gives a model error's message on its line", async () => {
+    const directory = judgeDirectory(JUDGE_FILE);
+    const runsDirectory = runsDirectoryOf(directory, [{ runId: "run-1", status: "completed", notes: ["The box came in open."] }]);
+
+    await judgeRuns(runsDirectory, join(directory, "judge.toml"), scenarios, resolving(new ScriptedModel([{ error: "overloaded", delayMs: 0 }])));
+
+    expect(judgementFiles(runsDirectory)[0][0]).toMatchObject({ outcome: "model_error", message: "overloaded" });
+  });
+
+  it("refuses a thinking level the judge's model cannot use, naming both, before any call", async () => {
+    const directory = judgeDirectory(['model = "scripted/judge"', 'thinking_level = "high"', ...JUDGE_FILE.slice(2)]);
+    const runsDirectory = runsDirectoryOf(directory, [{ runId: "run-1", status: "completed", notes: ["The box came in open."] }]);
+    const model = judgeModel([{ verdict: "no", quoted: "", reason: "No." }]);
+
+    await expect(judgeRuns(runsDirectory, join(directory, "judge.toml"), scenarios, resolving(model))).rejects.toThrow(/"scripted\/judge".*"high"/);
+    expect(model.received).toHaveLength(0);
+    expect(judgementFiles(runsDirectory)).toEqual([]);
   });
 });
