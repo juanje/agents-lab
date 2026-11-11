@@ -270,6 +270,16 @@ class = "control"
       expect(person({ identity: "person", rules: "person" })).toEqual({ name: "person", source: "Ada", stimulus: "I.\n\nR.\n\nT." });
     });
 
+    it("refuses a placement that names a text the workplace does not have, or a place other than system or person, naming it", () => {
+      for (const [placement, error] of [
+        [{ motto: "person" }, 'the configuration\'s "placement.motto" names no text of the workplace; its texts are identity, world_rules, norms, rules and task'],
+        [{ rules: "inbox" }, 'the configuration\'s "placement.rules" is "inbox", which is no place; a text goes to "system" or "person"'],
+      ] as const) {
+        expect(() => scenario.systemPrompt(placed(placement), "worker")).toThrow(error);
+        expect(() => scenario.channels(placed(placement))).toThrow(error);
+      }
+    });
+
     it("gives the worker the person's message as it first wakes, and nothing when no text is placed with the person", () => {
       expect(scenario.firstStimuli?.(placed({}), "worker")).toEqual(["person"]);
       expect(scenario.firstStimuli?.(placed({ task: "system" }), "worker")).toEqual([]);
