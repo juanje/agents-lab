@@ -7,6 +7,7 @@ import { type Condition, type LoadedScenario, type Scenario, loadScenario } from
 import { RHYTHM_CHANNEL } from "../../src/engine/stimuli.ts";
 import { type Slots, rhythmOf, slotsScenario } from "../../tests/fixtures/slots.ts";
 import type { Context } from "../support/context.ts";
+import { logLines } from "./record.steps.ts";
 import { asRead, userTexts } from "./stimulus.steps.ts";
 import { modelOf, script } from "./tool.steps.ts";
 
@@ -166,12 +167,14 @@ Then("no model was called", function (this: Context) {
 /** Runs the loaded scenario with the scenario's scripted agents, each for one activation that starts at once. */
 async function runLoaded(context: Context): Promise<void> {
   const agents = [...context.models].map(([name, model]) => ({ name, model, activations: 1, rhythm: () => 0 }));
-  await run(loadedOf(context), agents, context.seed, {
+  const { runId, startedAtMs } = await run(loadedOf(context), agents, context.seed, {
     logDirectory: context.logDirectory,
     modelTurnTimeoutMs: context.modelTurnTimeoutMs,
     parallelismLimit: context.parallelismLimit,
     timeLimitMs: context.timeLimitMs,
   });
+  context.runId = runId;
+  context.runStartedAtMs = startedAtMs;
 }
 
 When("the loaded scenario runs", async function (this: Context) {
@@ -263,6 +266,30 @@ When(
     script(this, agent, [{ text: "Nothing to do.", delayMs: 0 }]);
     this.loaded = loadScenario(this.scenario, this.seed, this.condition);
     await runLoaded(this);
+  },
+);
+
+Given(
+  "the test scenario {string}, whose agents wait {string} between activations",
+  function (this: Context, name: string, path: string) {
+    assert.equal(slotsScenario.name, name);
+    // The fixture's [rhythm] table holds the interval each agent waits; it is the one the scenario names.
+    assert.equal(path, "rhythm.interval_ms");
+    const { rhythm } = parse(slotsScenario.baseConfiguration) as { rhythm: { interval_ms?: unknown } };
+    assert.equal(typeof rhythm.interval_ms, "number", `the test scenario has no ${path}`);
+    this.scenario = slotsScenario;
+  },
+);
+
+Then(
+  "agent {string}'s first activation began at least {int} milliseconds after the run started",
+  function (this: Context, agent: string, waitMs: number) {
+    const startedAtMs = this.runStartedAtMs;
+    assert.ok(startedAtMs !== undefined, "the run gave no start");
+    const [first] = logLines(this).filter((line) => line.type === "activation" && line.agent === agent);
+    assert.ok(first !== undefined, `the log has no activation of agent "${agent}"`);
+    const after = (first.wokeAtMs as number) - startedAtMs;
+    assert.ok(after >= waitMs, `agent "${agent}"'s first activation began ${after} ms after the run started`);
   },
 );
 

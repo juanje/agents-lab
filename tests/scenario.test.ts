@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { Random } from "../src/engine/random.ts";
 import { type Scenario, loadScenario } from "../src/engine/scenario.ts";
 import { START_HOLDER, type Slots, rhythmChannel, slotsScenario } from "./fixtures/slots.ts";
 
@@ -42,6 +43,23 @@ describe("loadScenario", () => {
         ["b", 'You are "b", among 2 slots.'],
       ]),
     );
+  });
+
+  it("gives each of the scenario's agents its rhythm, from the resolved configuration and the agent", () => {
+    const loaded = loadScenario(
+      {
+        ...withBase("agents = ['a', 'b']\n[slots]\ncount = 2\nheld = 0\n[rhythm]\ninterval_ms = 0\n"),
+        agents: (configuration) => configuration.agents as string[],
+        rhythm: (configuration, agent) => () => (configuration.rhythm as { interval_ms: number }).interval_ms + (agent === "b" ? 1 : 0),
+      },
+      seed,
+      { name: "slow", change: "[rhythm]\ninterval_ms = 300\n" },
+    );
+
+    expect([...loaded.rhythms].map(([agent, rhythm]) => [agent, rhythm(new Random(seed))])).toEqual([
+      ["a", 300],
+      ["b", 301],
+    ]);
   });
 
   it("builds the scenario's stimulus channels from the resolved configuration", () => {

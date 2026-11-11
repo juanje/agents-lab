@@ -92,7 +92,8 @@ export const slotsScenario: Scenario<Slots> = {
   metrics: { held: (slots) => slots.filter((holder) => holder !== null).length },
   // It names the agent it describes, quoted, so each agent's prompt can be told from another's.
   systemPrompt: (_configuration, agent) => `You are agent "${agent}", in a world of slots.`,
-  // Its [rhythm] table gives the rhythm channel's source and text, the same as the test world's rhythm channel.
+  // Its [rhythm] table gives the rhythm channel's source and text, the same as the test world's rhythm channel, and
+  // the interval each agent waits before each activation.
   baseConfiguration: [
     'agents = ["a"]',
     "[slots]",
@@ -101,6 +102,7 @@ export const slotsScenario: Scenario<Slots> = {
     "[rhythm]",
     `source = ${JSON.stringify(rhythmChannel.source)}`,
     `text = ${JSON.stringify(rhythmChannel.stimulus)}`,
+    "interval_ms = 0",
     "",
   ].join("\n"),
 };
