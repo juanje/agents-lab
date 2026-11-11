@@ -76,6 +76,12 @@ export function entitiesAt(grid: Grid, at: Position): readonly string[] {
   return grid.cells[indexOf(grid, at)];
 }
 
+/** The cell an entity is in, or none when the grid does not hold it. */
+export function position(grid: Grid, entity: string): Position | undefined {
+  const index = grid.cells.findIndex((cell) => cell.includes(entity));
+  return index === -1 ? undefined : { x: index % grid.width, y: Math.floor(index / grid.width) };
+}
+
 /**
  * The grid with one more entity in a cell, for building a world's initial state. Once the world runs, entities change
  * cells only through the arbiter, with `move`.
