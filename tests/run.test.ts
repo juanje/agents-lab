@@ -61,6 +61,7 @@ const settings: RunSettings = {
 /** What a run of an experiment runs, for a test that gives one and checks only where it is written. */
 const setup = {
   experiment: "e-test",
+  scenario: "slots",
   condition: "baseline",
   configuration: { agents: ["a"] },
   replica: 1,

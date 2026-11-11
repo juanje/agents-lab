@@ -11,12 +11,14 @@ import type { Configuration, MetricValue } from "./scenario.ts";
 import type { Stimulus } from "./stimuli.ts";
 
 /**
- * What a run of an experiment ran, which its log's first line gives (FR-RECORD-02): the experiment, the condition and
+ * What a run of an experiment ran, which its log's first line gives (FR-RECORD-02): the experiment, its scenario, the condition and
  * its resolved configuration, the replica and its seed, the model, the code, and the condition's inventory; the run adds
  * the sampling settings its sessions use, or null when they failed to open.
  */
 export interface RunSetup {
   experiment: string;
+  /** The scenario's name in the library, which the run's analysis asks what it declares (FR-ANALYSIS-02). */
+  scenario: string;
   condition: string;
   configuration: Configuration;
   /** The replica, from 1. */

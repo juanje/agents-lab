@@ -99,6 +99,7 @@ export async function runExperiment<State>(
               runId,
               setup: {
                 experiment: experiment.id,
+                scenario: experiment.scenario,
                 condition: condition.name,
                 configuration: hidingHeldOut(loaded.configuration, loaded.materials),
                 replica,
