@@ -19,7 +19,8 @@ export interface LabEnvironment {
 export async function lab([, path]: readonly string[], environment: LabEnvironment): Promise<void> {
   const experiment = readExperiment(readFileSync(path, "utf8"));
   const scenario = environment.scenarios.get(experiment.scenario);
+  if (scenario === undefined) throw new Error(`The scenario library has no scenario "${experiment.scenario}"`);
   const models = new Map<string, AgentModel>();
   for (const name of experiment.models) models.set(name, await environment.model(name));
-  await runExperiment(experiment, scenario ?? {}, models, join(environment.directory, "runs", experiment.id));
+  await runExperiment(experiment, scenario, models, join(environment.directory, "runs", experiment.id));
 }
