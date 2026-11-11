@@ -30,6 +30,11 @@ export interface Scenario<State> {
   channels: (configuration: Configuration) => readonly Channel[];
   /** Each metric by its name, computed from the world's state. */
   metrics: Readonly<Record<string, (state: State) => MetricValue>>;
+  /**
+   * The channels whose stimuli an agent receives once, as it first wakes, right after its rhythm's, from the resolved
+   * configuration and the agent's name; none when the scenario does not give this.
+   */
+  firstStimuli?: (configuration: Configuration, agent: string) => readonly string[];
   /** What an agent is told it is, from the resolved configuration and the agent's name; never the world's state. */
   systemPrompt: (configuration: Configuration, agent: string) => string;
   /** How an agent's waits between activations are drawn, from the resolved configuration and the agent's name. */
@@ -72,6 +77,8 @@ export interface LoadedScenario<State> {
   systemPrompts: ReadonlyMap<string, string>;
   /** The scenario's stimulus channels, as its configuration gives them. */
   channels: readonly Channel[];
+  /** Each of the scenario's agents, in the order it names them, with the channels of the stimuli it receives as it first wakes. */
+  firstStimuli: ReadonlyMap<string, readonly string[]>;
   /** Each of the scenario's agents, in the order it names them, with its rhythm. */
   rhythms: ReadonlyMap<string, Rhythm>;
   /** Each material the condition set a value to, in the order the change gives them (FR-EXPERIMENT-04). */
@@ -115,15 +122,24 @@ export function loadScenario<State>(
     throw new Error(`Scenario "${scenario.name}" declares no stimulus channel named "${RHYTHM_CHANNEL}", which wakes each agent`);
   }
   const systemPrompts = new Map<string, string>();
+  const firstStimuli = new Map<string, readonly string[]>();
   const rhythms = new Map<string, Rhythm>();
   for (const agent of scenario.agents(configuration)) {
     const systemPrompt = scenario.systemPrompt(configuration, agent);
     if (systemPrompt.trim() === "") throw lacks(`system prompt for agent "${agent}"`);
     systemPrompts.set(agent, systemPrompt);
+    const first = scenario.firstStimuli?.(configuration, agent) ?? [];
+    // Refused here rather than when the agent first wakes, after model calls.
+    for (const name of first) {
+      if (!channels.some((channel) => channel.name === name)) {
+        throw new Error(`Scenario "${scenario.name}" gives agent "${agent}" a first stimulus on the channel "${name}", which it does not declare`);
+      }
+    }
+    firstStimuli.set(agent, first);
     rhythms.set(agent, scenario.rhythm(configuration, agent));
   }
   const initial = scenario.initialState(configuration, Random.derive(seed, "initial state"));
-  return { scenario, configuration, world: new World(initial), systemPrompts, channels, rhythms, materials };
+  return { scenario, configuration, world: new World(initial), systemPrompts, channels, firstStimuli, rhythms, materials };
 }
 
 /**
