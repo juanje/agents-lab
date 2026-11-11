@@ -72,3 +72,9 @@ Feature: Everything an agent does is recorded
     And the run's time limit is 100 milliseconds
     When the run ends
     Then the log's tool call line for agent "a"'s "take" call gives the outcome "cut_off"
+
+  Scenario: An effector call records which agents applied the changes since its agent's last sensing
+    Given agent "a" runs on a scripted model that calls "look", then calls "take" with slot 1, then ends without a tool call
+    And agent "b" runs on a scripted model whose "take" of slot 1 lands while agent "a"'s "take" is under way
+    When the run ends
+    Then the log's tool call line for agent "a"'s "take" call gives 1 change since its last sensing, applied by agent "b"
