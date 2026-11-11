@@ -129,7 +129,7 @@ Then(
       const number = at + 1;
       const { match } = lineAt(
         lines,
-        new RegExp(`^Run ${number} of ${index.length} completed in ${NUMBER} s: ${NUMBER} activations, ${NUMBER} model turns, cost \\$${NUMBER}$`),
+        new RegExp(`^Run ${number} of ${index.length} completed in ${NUMBER} s: ${NUMBER} activations?, ${NUMBER} model turns?, cost \\$${NUMBER}$`),
         `saying run ${number} completed, with its duration, activations, model turns and cost`,
       );
       const [, seconds, done, turns, cost] = match.map(Number);
@@ -172,7 +172,7 @@ Then(
     for (const [at, { runId }] of index.entries()) {
       const number = at + 1;
       const during = linesDuring(lines, number, index.length);
-      const progress = new RegExp(`^Run ${number} of ${index.length} running: ${NUMBER} s, ${NUMBER} of ${budget} activations, ${NUMBER} model turns, cost \\$${NUMBER}$`);
+      const progress = new RegExp(`^Run ${number} of ${index.length} running: ${NUMBER} s, ${NUMBER} of ${budget} activations, ${NUMBER} model turns?, cost \\$${NUMBER}$`);
       assert.ok(during.length >= least, `it printed ${during.length} lines during run ${number}:\n${during.join("\n")}`);
       const log = recorded(this, runId);
       let lastSeconds = 0;
