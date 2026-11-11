@@ -38,3 +38,14 @@ export function put(space: Places, entity: string, place: string): Places {
 export function where(space: Places, entity: string): Where | undefined {
   return Object.hasOwn(space.whereabouts, entity) ? space.whereabouts[entity] : undefined;
 }
+
+/** A place one passage away, with the passage's length. */
+export interface Exit {
+  place: string;
+  length: number;
+}
+
+/** The places one passage away from a place, each with the passage's length, in the order the passages are declared. */
+export function exits(_space: Places, _place: string): Exit[] {
+  return [];
+}

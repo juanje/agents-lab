@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { BeforeStep, Given, Then } from "@cucumber/cucumber";
-import { type Places, layout, put, where } from "../../src/engine/places.ts";
+import { type Places, exits, layout, put, where } from "../../src/engine/places.ts";
 import type { Context } from "../support/context.ts";
 
 Given(
@@ -41,4 +41,18 @@ Given("entity {string} is in {string}", function (this: Context, entity: string,
 Then("entity {string} is nowhere in the space", function (this: Context, entity: string) {
   const found = where(current(this), entity);
   assert.equal(found, undefined, `expected entity "${entity}" nowhere, it is ${JSON.stringify(found)}`);
+});
+
+Then(
+  "{string} has the exits {string}, of length {int}, and {string}, of length {int}",
+  function (this: Context, place: string, first: string, firstLength: number, second: string, secondLength: number) {
+    assert.deepEqual(exits(current(this), place), [
+      { place: first, length: firstLength },
+      { place: second, length: secondLength },
+    ]);
+  },
+);
+
+Then("{string} has the exit {string}, of length {int}", function (this: Context, place: string, exit: string, length: number) {
+  assert.deepEqual(exits(current(this), place), [{ place: exit, length }]);
 });
