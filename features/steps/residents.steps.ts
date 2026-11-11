@@ -95,6 +95,13 @@ Then("{string}'s {string} call failed with {string}", function (this: Context, r
   this.lastToolCall = call;
 });
 
+Then("{string} made no {string} call", function (this: Context, resident: string, tool: string) {
+  modelOf(this, resident);
+  assert.ok(this.toolCalls !== undefined, "the run gave no tool calls");
+  const made = this.toolCalls.filter((call) => call.agent === resident && call.tool === tool);
+  assert.equal(made.length, 0, `resident "${resident}" made ${made.length} "${tool}" calls`);
+});
+
 Then("the call recorded its target as sensed: {string}", function (this: Context, sensed: string) {
   assert.ok(this.lastToolCall !== undefined, "no call was checked before");
   assert.equal(this.lastToolCall.targetAsSensed, sensed);
