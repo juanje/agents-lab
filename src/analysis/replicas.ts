@@ -116,3 +116,8 @@ export function summarizeRuns(directory: string, name: string = directory): Summ
     });
   });
 }
+
+/** A stub that gives nothing, for the test to fail on its assertions. */
+export function summaryMarkdown(_rows: readonly SummaryRow[]): string {
+  return "";
+}

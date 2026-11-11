@@ -2,6 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } fro
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { summarizeRuns, summaryMarkdown } from "../src/analysis/replicas.ts";
 import { type LabEnvironment, lab } from "../src/cli/lab.ts";
 import { ScriptedModel } from "../src/engine/scripted-model.ts";
 import { slotsScenario } from "./fixtures/slots.ts";
@@ -30,7 +31,7 @@ function experimentFile(lines: { scenario?: string; models?: string } = {}): str
 }
 
 /** How the command is used, as an error for other arguments says. */
-const USAGE = "Usage: lab run <experiment.toml> [--progress-interval-ms <ms>] or lab inventory <experiment.toml>";
+const USAGE = "Usage: lab run <experiment.toml> [--progress-interval-ms <ms>], lab inventory <experiment.toml> or lab summarize <runs-dir> [--json]";
 
 /** A directory to run "lab" in, holding the experiment file, and the environment it runs with. */
 function setUp(file: string) {
@@ -165,6 +166,8 @@ describe("lab run", () => {
     ["more than one experiment file", ["run", "e-test.toml", "e-other.toml"]],
     ["no experiment file to list", ["inventory"]],
     ["a progress interval for the inventory", ["inventory", "e-test.toml", "--progress-interval-ms", "100"]],
+    ["no runs directory to summarize", ["summarize"]],
+    ["another option for the summary", ["summarize", "runs/e-test", "--csv"]],
   ])("refuses %s, saying how the command is used", async (_case, args) => {
     const { environment } = setUp(experimentFile());
 
@@ -187,5 +190,34 @@ describe("lab inventory", () => {
     expect(printed.split("\n").filter((line) => line.startsWith("## "))).toEqual(['## Condition "baseline"', '## Condition "five-slots"']);
     expect(resolved).toEqual([]);
     expect(existsSync(join(directory, "runs"))).toBe(false);
+  });
+});
+
+describe("lab summarize", () => {
+  it("prints the summary of a runs directory under its directory as Markdown, or as JSON with --json, without resolving any model", async () => {
+    const { directory, path, environment } = setUp(experimentFile());
+    await lab(["run", path], environment);
+    const resolved: string[] = [];
+    const summarize = async (options: string[]) => {
+      let printed = "";
+      await lab(["summarize", "runs/e-test", ...options], {
+        ...environment,
+        model: (name) => (resolved.push(name), environment.model(name)),
+        print: (text) => (printed += text),
+      });
+      return printed;
+    };
+    const rows = summarizeRuns(join(directory, "runs", "e-test"));
+
+    expect(rows.length).toBeGreaterThan(0);
+    expect(await summarize([])).toBe(summaryMarkdown(rows));
+    expect(JSON.parse(await summarize(["--json"]))).toEqual(rows);
+    expect(resolved).toEqual([]);
+  });
+
+  it("refuses a directory without an index, naming it as it was given", async () => {
+    const { environment } = setUp(experimentFile());
+
+    await expect(lab(["summarize", "runs/missing"], environment)).rejects.toThrow(/"runs\/missing" has no index/);
   });
 });

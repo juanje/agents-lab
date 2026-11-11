@@ -2,7 +2,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { quartiles, summarizeRuns } from "../src/analysis/replicas.ts";
+import { quartiles, summarizeRuns, summaryMarkdown } from "../src/analysis/replicas.ts";
 
 describe("quartiles", () => {
   it("gives the minimum, the quartiles and the maximum by linear interpolation between the sorted values", () => {
@@ -71,5 +71,24 @@ describe("summarizeRuns", () => {
     const directory = mkdtempSync(join(tmpdir(), "agents-lab-runs-"));
 
     expect(() => summarizeRuns(directory, "runs/missing")).toThrow(/"runs\/missing" has no index/);
+  });
+});
+
+describe("summaryMarkdown", () => {
+  it("gives the rows as a Markdown table, with each list of values and replicas in one cell and no quartiles as a dash", () => {
+    const rows = [
+      { condition: "baseline", model: "m/one", metric: "held", completed: 2, stopped: 1, values: [1, 3], replicas: [1, 2], nulls: 0, minimum: 1, lowerQuartile: 1.5, median: 2, upperQuartile: 2.5, maximum: 3 },
+      { condition: "baseline", model: "m/two", metric: "slot of", key: "a", completed: 1, stopped: 0, ...empty, nulls: 1 },
+    ];
+
+    expect(summaryMarkdown(rows)).toBe(
+      [
+        "| Condition | Model | Metric | Key | Completed | Stopped | Values | Replicas | Nulls | Minimum | Lower quartile | Median | Upper quartile | Maximum |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+        "| baseline | m/one | held |  | 2 | 1 | 1, 3 | 1, 2 | 0 | 1 | 1.5 | 2 | 2.5 | 3 |",
+        "| baseline | m/two | slot of | a | 1 | 0 |  |  | 1 | - | - | - | - | - |",
+        "",
+      ].join("\n"),
+    );
   });
 });
