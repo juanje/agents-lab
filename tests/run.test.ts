@@ -6,6 +6,7 @@ import { AgentSession } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it, vi } from "vitest";
 import type { ToolCall } from "../src/engine/adapter.ts";
 import { type RunSettings, run } from "../src/engine/run.ts";
+import { ParallelismLimit } from "../src/engine/parallelism.ts";
 import { ScriptedModel } from "../src/engine/scripted-model.ts";
 import { type Rhythm, type Scenario, loadScenario } from "../src/engine/scenario.ts";
 import type { Stimuli } from "../src/engine/stimuli.ts";
@@ -48,7 +49,14 @@ const withTakeTaking = (durationMs: number) =>
 const newLogDirectory = () => mkdtempSync(join(tmpdir(), "agents-lab-logs-"));
 
 /** Settings for a run whose test looks at none of them. */
-const settings: RunSettings = { logDirectory: newLogDirectory(), modelTurnTimeoutMs: 10_000, parallelismLimit: 10, timeLimitMs: 60_000, thinkingLevel: "off" };
+const settings: RunSettings = {
+  logDirectory: newLogDirectory(),
+  modelTurnTimeoutMs: 10_000,
+  parallelismLimit: 10,
+  timeLimitMs: 60_000,
+  thinkingLevel: "off",
+  compaction: { enabled: false },
+};
 
 /** What a run of an experiment runs, for a test that gives one and checks only where it is written. */
 const setup = {
@@ -1669,5 +1677,77 @@ describe("run, with components", () => {
       `"${name}"`,
     );
     expect(model.received).toEqual([]);
+  });
+});
+
+describe("run, with compaction", () => {
+  /** What the agent writes as it looks: about 500 tokens a turn, so its context fills a 4000-token window within 8 turns. */
+  const reflection = "I look at the slots again, to see which of them are empty and which are held. ".repeat(26);
+
+  /** A model with a 4000-token window whose agent looks with a long reflection in 8 turns, then ends, and writes this summary. */
+  const filling = () =>
+    new ScriptedModel(
+      [...Array.from({ length: 8 }, () => ({ text: reflection, toolCalls: [{ name: "look", arguments: {} }], delayMs: 0 })), { text: "Done.", delayMs: 0 }],
+      "small",
+      { contextWindow: 4000, summary: "Summary: I looked." },
+    );
+
+  const compactionOn = { enabled: true, triggerAt: 0.5, keepRecentTokens: 500 } as const;
+
+  it("compacts an agent's context once it fills the share of the model's window, and records the compaction: why, when, the context before and after, the summary the context holds, and the tokens and cost of its call", async () => {
+    const model = filling();
+    const logDirectory = newLogDirectory();
+
+    const { runId, turns } = await run(slots(), [{ name: "a", model, activations: 1 }], seed, { ...settings, logDirectory, compaction: compactionOn });
+
+    const lines = logOf(logDirectory, runId) as { type: string }[];
+    const compactions = lines.filter((line) => line.type === "compaction") as unknown as Record<string, number & string>[];
+    expect(compactions.length).toBeGreaterThanOrEqual(1);
+    const [first] = compactions;
+    expect(first).toEqual({
+      type: "compaction",
+      agent: "a",
+      reason: "threshold",
+      startedAtMs: expect.any(Number),
+      endedAtMs: expect.any(Number),
+      contextTokensBefore: expect.any(Number),
+      contextTokensAfter: expect.any(Number),
+      summary: expect.stringContaining("Summary: I looked."),
+      tokens: { input: expect.any(Number), output: expect.any(Number), cacheRead: expect.any(Number), cacheWrite: expect.any(Number), totalTokens: expect.any(Number) },
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    });
+    expect(first.contextTokensBefore).toBeGreaterThan(2000);
+    expect(first.contextTokensAfter).toBeLessThan(first.contextTokensBefore);
+    expect(first.tokens.totalTokens).toBeGreaterThan(0);
+    expect(first.startedAtMs).toBeLessThanOrEqual(first.endedAtMs);
+    // The summary the context holds is the one recorded: the turns after the compaction received it.
+    const after = model.received.filter((messages) => JSON.stringify(messages).includes(JSON.stringify(first.summary).slice(1, -1)));
+    expect(after.length).toBeGreaterThan(0);
+    // The call that wrote the summary is no model turn of the agent's.
+    expect(turns).toHaveLength(9);
+    expect(lines.filter((line) => line.type === "model_turn")).toHaveLength(9);
+    expect(model.summaryRequests.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("compacts nothing with compaction off, however full the context", async () => {
+    const model = filling();
+    const logDirectory = newLogDirectory();
+
+    const { runId } = await run(slots(), [{ name: "a", model, activations: 1 }], seed, { ...settings, logDirectory, compaction: { enabled: false } });
+
+    expect((logOf(logDirectory, runId) as { type: string }[]).filter((line) => line.type === "compaction")).toEqual([]);
+    expect(model.summaryRequests).toEqual([]);
+  });
+
+  it("makes the call that writes a summary take a slot under the parallelism limit, as a model turn does", async () => {
+    const model = filling();
+    const acquire = vi.spyOn(ParallelismLimit.prototype, "acquire");
+
+    try {
+      await run(slots(), [{ name: "a", model, activations: 1 }], seed, { ...settings, compaction: compactionOn });
+      expect(acquire).toHaveBeenCalledTimes(9 + model.summaryRequests.length);
+    } finally {
+      acquire.mockRestore();
+    }
   });
 });
