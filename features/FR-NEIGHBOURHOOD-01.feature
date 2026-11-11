@@ -29,3 +29,8 @@ Feature: A neighbourhood from a seed
     Given the configuration sets "rhythm.min_ms" to 100 and "rhythm.max_ms" to 200
     When the engine loads it with the seed 42
     Then every interval each resident's rhythm draws is from 100 to 200 milliseconds
+
+  Scenario: The world's rules come from the configuration and are in every system prompt
+    Given the configuration sets "world_rules" to "Each cell holds one resident."
+    When the engine loads it with the seed 42
+    Then each resident's system prompt says "Each cell holds one resident."
