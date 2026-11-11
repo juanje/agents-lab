@@ -2,9 +2,10 @@ import { describe, expect, it } from "vitest";
 import { parse } from "smol-toml";
 import { entitiesAt } from "../src/engine/grid.ts";
 import { Random } from "../src/engine/random.ts";
+import type { Configuration } from "../src/engine/scenario.ts";
 import { neighbourhoodScenario } from "../src/scenarios/neighbourhood.ts";
 
-const configuration = (width: number, height: number, residents: number) => ({
+const configuration = (width: number, height: number, residents: number): Configuration => ({
   ...parse(neighbourhoodScenario.baseConfiguration),
   width,
   height,

@@ -22,26 +22,39 @@ function residentsOf(configuration: Configuration): string[] {
   return Array.from({ length: sizesOf(configuration).residents }, (_, index) => `resident ${index + 1}`);
 }
 
+/** A resident's kind: kinds alternate in the order the residents are named, so half are of each. */
+function kindOf(configuration: Configuration, resident: string): Kind {
+  const index = residentsOf(configuration).indexOf(resident);
+  if (index === -1) throw new Error(`The neighbourhood has no resident "${resident}"`);
+  return KINDS[index % KINDS.length];
+}
+
 /** The neighbourhood scenario. */
 export const neighbourhoodScenario: Scenario<Neighbourhood> = {
   name: "neighbourhood",
   agents: residentsOf,
-  // Each resident in turn takes an empty cell drawn from the replica's sequence; kinds alternate, so half are of each.
+  // Each resident in turn takes an empty cell drawn from the replica's sequence.
   initialState: (configuration, random) => {
     const { width, height } = sizesOf(configuration);
     let grid = emptyGrid(width, height, 1);
     const kinds: Record<string, Kind> = {};
-    for (const [index, resident] of residentsOf(configuration).entries()) {
+    for (const resident of residentsOf(configuration)) {
       const cell = randomEmptyCell(grid, random);
       if (cell === undefined) throw new Error(`the ${width} by ${height} grid has no empty cell left for ${resident}`);
       grid = place(grid, resident, cell);
-      kinds[resident] = KINDS[index % KINDS.length];
+      kinds[resident] = kindOf(configuration, resident);
     }
     return { grid, kinds };
   },
   tools: [],
   channels: () => [{ name: "rhythm", source: "rhythm", stimulus: "You wake up." }],
   metrics: {},
-  systemPrompt: () => "You are a resident.",
-  baseConfiguration: ["width = 6", "height = 6", "residents = 10", ""].join("\n"),
+  // It describes the resident and its kind; a preference or rule comes only from the configuration, which a condition
+  // sets (FR-NEIGHBOURHOOD-01).
+  systemPrompt: (configuration, resident) => {
+    const description = `You are "${resident}", a resident of a neighbourhood. Your kind is "${kindOf(configuration, resident)}".`;
+    const rule = configuration.rule as string;
+    return rule === "" ? description : `${description}\n\n${rule}`;
+  },
+  baseConfiguration: ["width = 6", "height = 6", "residents = 10", 'rule = ""', ""].join("\n"),
 };
