@@ -84,4 +84,10 @@ describe("askOnce", () => {
 
     expect(answer.calls).toEqual([{ name: "verdict", arguments: { verdict: "maybe" } }]);
   });
+
+  it("fails with the provider's message when the model answers with an error", async () => {
+    const model = new ScriptedModel([{ error: "quota exceeded", delayMs: 0 }]);
+
+    await expect(askOnce(model, { systemPrompt: "You judge.", thinkingLevel: "off" }, verdict, "Is the sky blue?")).rejects.toThrow("quota exceeded");
+  });
 });
