@@ -27,17 +27,31 @@ export function materialReference(value: TomlValue): MaterialReference | undefin
   return { path: value.file };
 }
 
-/** The materials of an experiment, read from the directory its file is in. */
+/** A material's file, read: the material, with the hash of its content, and its text. */
+interface Read {
+  material: Material;
+  text: string;
+}
+
+/**
+ * The materials of an experiment, read from the directory its file is in. Each file is read once, when a condition
+ * first sets a value to it, so every run of the experiment uses the text, and the hash, read before its first run.
+ */
 export class Materials {
   readonly #directory: string;
+  readonly #read = new Map<string, Read>();
 
   constructor(directory: string) {
     this.#directory = directory;
   }
 
-  /** A material's file, read: the material, with the hash of its content, and its text. */
-  read({ path }: MaterialReference): { material: Material; text: string } {
+  /** A material's file, as it was first read. */
+  read({ path }: MaterialReference): Read {
+    const known = this.#read.get(path);
+    if (known !== undefined) return known;
     const content = readFileSync(join(this.#directory, path));
-    return { material: { path, hash: `sha256:${createHash("sha256").update(content).digest("hex")}` }, text: content.toString("utf8") };
+    const read = { material: { path, hash: `sha256:${createHash("sha256").update(content).digest("hex")}` }, text: content.toString("utf8") };
+    this.#read.set(path, read);
+    return read;
   }
 }
