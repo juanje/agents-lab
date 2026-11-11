@@ -793,6 +793,24 @@ const sensedAt = (state: Workplace, toolCalls: readonly ToolCall[]) => firstEnd(
 /** When the worker first took, put or gave one of each situation's things. */
 const actedAt = (state: Workplace, toolCalls: readonly ToolCall[]) => firstEnd(state, toolCalls, actedOn);
 
+/**
+ * For each situation the worker sensed, its calls after the one that first sensed it, up to the one during which its
+ * predicates last changed, or up to now while they have not.
+ */
+function exploration(state: Workplace, toolCalls: readonly ToolCall[]): Record<string, number> {
+  const calls = workerCalls(toolCalls);
+  const settled = settledAt(state);
+  return Object.fromEntries(
+    Object.entries(state.situations).flatMap(([id, { things }]) => {
+      const sensing = calls.findIndex((call) => sensedOne(call, things));
+      if (sensing === -1) return [];
+      const after = calls.slice(sensing + 1);
+      const until = settled[id];
+      return [[id, until === undefined ? after.length : after.filter(({ startedAtMs }) => startedAtMs <= until).length]];
+    }),
+  );
+}
+
 /** The worker's tools, in the order the SPEC gives them. */
 const TOOLS: readonly Tool<Workplace>[] = [look, read, examine, go, take, putDown, give, record, note];
 
@@ -820,7 +838,7 @@ export const workplaceScenario: Scenario<Workplace> = {
   agents: () => [WORKER],
   initialState,
   tools: TOOLS,
-  metrics: { holds, predicates, sensed_at_ms: sensedAt, acted_at_ms: actedAt, settled_at_ms: settledAt },
+  metrics: { holds, predicates, sensed_at_ms: sensedAt, acted_at_ms: actedAt, settled_at_ms: settledAt, exploration },
   channels: (configuration) => [
     ...rhythmChannels(configuration),
     { name: PERSON_CHANNEL, source: configuration.task_giver as string, stimulus: textsIn(configuration, "person") },
