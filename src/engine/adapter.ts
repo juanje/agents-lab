@@ -11,6 +11,7 @@ import {
   createExtensionRuntime,
 } from "@earendil-works/pi-coding-agent";
 import { type Api, type AssistantMessage, type Model, type Provider, type Usage, getCurrentSystemMessage } from "@earendil-works/pi-ai";
+import type { ChangesSinceSensing } from "./changes.ts";
 import { waitAtLeast } from "./clock.ts";
 import type { ParallelismLimit } from "./parallelism.ts";
 import { SCRIPT_EXHAUSTED_MESSAGE } from "./scripted-model.ts";
@@ -106,6 +107,11 @@ export interface ToolCall {
   result?: string;
   /** For an effector call the tool ran, what the agent last sensed of its target before the call (FR-TOOL-04). */
   targetAsSensed?: TargetAsSensed;
+  /**
+   * For an effector call whose effect was checked, the effects other agents applied between its agent's last sensing
+   * and that moment; absent when the agent had not sensed.
+   */
+  changesSinceSensing?: number;
 }
 
 /** Where a session's model turns and tool calls go as each ends: the run's log and what the run gives. */
@@ -135,6 +141,7 @@ export async function openSession<State>(
   records: Records,
   stimuli: Stimuli,
   sensings: Sensings,
+  changes: ChangesSinceSensing,
 ): Promise<AgentSession> {
   const executed = new Map<string, Executed>();
   const { session } = await createAgentSession({
@@ -144,7 +151,7 @@ export async function openSession<State>(
     model: agent.model.model,
     // The allowlist leaves out Pi's built-in tools and filters custom tools too, so it names every scenario tool.
     tools: tools.map((tool) => tool.name),
-    customTools: tools.map((tool) => definition(world, tool, agent.name, executed, sensings, settings.timeLimit)),
+    customTools: tools.map((tool) => definition(world, tool, agent.name, executed, sensings, changes, settings.timeLimit)),
     resourceLoader: resources(settings.systemPrompt),
     sessionManager: SessionManager.inMemory(),
     // Neither the person's nor any project's Pi settings reach the session. A provider's error ends the activation
@@ -339,6 +346,7 @@ function definition<State>(
   agent: string,
   executed: Map<string, Executed>,
   sensings: Sensings,
+  changes: ChangesSinceSensing,
   timeLimit: AbortSignal,
 ): ToolDefinition {
   return {
@@ -348,8 +356,8 @@ function definition<State>(
     parameters: tool.parameters as ToolDefinition["parameters"],
     execute: async (id, args: Record<string, unknown>) => {
       const startedAtMs = performance.now();
-      const { outcome, text, targetAsSensed } =
-        undeclared(tool, args) ?? (await perform(world, tool, { agent, arguments: args }, sensings.last(agent), timeLimit));
+      const { outcome, text, ...perceived } =
+        undeclared(tool, args) ?? (await perform(world, tool, { agent, arguments: args }, sensings.last(agent), changes, timeLimit));
       const endedAtMs = performance.now();
       const sensed = tool.kind === "sensor" && outcome === "success";
       executed.set(id, {
@@ -357,9 +365,12 @@ function definition<State>(
         startedAtMs,
         endedAtMs,
         ...(sensed ? { result: text } : {}),
-        ...(targetAsSensed === undefined ? {} : { targetAsSensed }),
+        ...perceived,
       });
-      if (sensed) sensings.record(agent, { tool: tool.name, result: text, atMs: endedAtMs });
+      if (sensed) {
+        sensings.record(agent, { tool: tool.name, result: text, atMs: endedAtMs });
+        changes.sensed(agent);
+      }
       // A failure is marked as one: an agent told that a failure succeeded would act on a world it misreads.
       return { content: [{ type: "text", text }], details: undefined, isError: outcome !== "success" };
     },
@@ -370,13 +381,17 @@ function definition<State>(
 const CUT_OFF = "cut_off" as const;
 
 /** A call the tool ran: its outcome, when it started and ended, a sensor's result and an effector's target as sensed. */
-type Executed = Pick<ToolCall, "outcome" | "startedAtMs" | "endedAtMs" | "result" | "targetAsSensed">;
+type Executed = Pick<ToolCall, "outcome" | "startedAtMs" | "endedAtMs" | "result" | "targetAsSensed" | "changesSinceSensing">;
 
-/** What a call gives: its outcome, the text the agent receives, and for an effector's call, its target as sensed. */
+/**
+ * What a call gives: its outcome, the text the agent receives, and for an effector's call, its target as sensed and the
+ * changes since its agent last sensed.
+ */
 interface CallResult {
   outcome: string;
   text: string;
   targetAsSensed?: TargetAsSensed;
+  changesSinceSensing?: number;
 }
 
 /**
@@ -404,11 +419,16 @@ async function perform<State>(
   tool: Tool<State>,
   call: AgentCall,
   sensing: Sensing | undefined,
+  changes: ChangesSinceSensing,
   timeLimit: AbortSignal,
 ): Promise<CallResult> {
   const targetAsSensed = tool.kind === "effector" ? (sensing === undefined ? "not_sensed" : tool.readTarget(sensing, call)) : undefined;
   await waitAtLeast(tool.durationMs(world.state, call), timeLimit);
-  const result = timeLimit.aborted ? { outcome: CUT_OFF, text: CUT_OFF } : tool.kind === "sensor" ? sense(world, tool, call) : effect(world, tool, call);
+  const result = timeLimit.aborted
+    ? { outcome: CUT_OFF, text: CUT_OFF }
+    : tool.kind === "sensor"
+      ? sense(world, tool, call)
+      : effect(world, tool, call, changes);
   return targetAsSensed === undefined ? result : { ...result, targetAsSensed };
 }
 
@@ -419,10 +439,12 @@ function sense<State>(world: World<State>, sensor: Sensor<State>, call: AgentCal
 
 /**
  * Applies an effector's call through the arbiter, against the world as it is now; the agent receives its outcome:
- * "success" or the failure's reason.
+ * "success" or the failure's reason. The changes since the agent last sensed are counted at this moment, beside it.
  */
-function effect<State>(world: World<State>, effector: Effector<State>, call: AgentCall): CallResult {
+function effect<State>(world: World<State>, effector: Effector<State>, call: AgentCall, changes: ChangesSinceSensing): CallResult {
+  const changesSinceSensing = changes.since(call.agent);
   const result = world.apply(effector.action, call);
+  if (result.applied) changes.applied(call.agent);
   const outcome = result.applied ? "success" : result.reason;
-  return { outcome, text: outcome };
+  return { outcome, text: outcome, ...(changesSinceSensing === undefined ? {} : { changesSinceSensing }) };
 }
