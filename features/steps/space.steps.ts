@@ -7,10 +7,10 @@ import {
   move,
   neighbours,
   place,
+  position,
   randomEmptyCell,
   window,
 } from "../../src/engine/grid.ts";
-import * as space from "../../src/engine/grid.ts";
 import { Random } from "../../src/engine/random.ts";
 import { World } from "../../src/engine/world.ts";
 import type { Context } from "../support/context.ts";
@@ -126,17 +126,11 @@ Then("entity {string} is still at {int}, {int}", function (this: Context, entity
   assert.deepEqual(entitiesAt(this.gridWorld.state, { x, y }), [entity]);
 });
 
-/** The grid's answer to where an entity is, failing on an assertion while the grid cannot answer it. */
-function positionIn(grid: Grid, entity: string) {
-  assert.equal(typeof space.position, "function", "the grid does not answer which cell an entity is in");
-  return space.position(grid, entity);
-}
-
 Then("entity {string}'s position is {int}, {int}", function (this: Context, entity: string, x: number, y: number) {
-  assert.deepEqual(positionIn(this.grid, entity), { x, y });
+  assert.deepEqual(position(this.grid, entity), { x, y });
 });
 
 Then("entity {string} has no position", function (this: Context, entity: string) {
-  const found = positionIn(this.grid, entity);
+  const found = position(this.grid, entity);
   assert.equal(found, undefined, `expected entity ${entity} to have no position, got ${JSON.stringify(found)}`);
 });

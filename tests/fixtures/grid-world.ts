@@ -1,13 +1,7 @@
-import { type Grid, type Position, distance, move } from "../../src/engine/grid.ts";
+import { type Grid, distance, move, position } from "../../src/engine/grid.ts";
 import type { Scenario } from "../../src/engine/scenario.ts";
 import type { AgentCall, Effector, Tool } from "../../src/engine/tools.ts";
 import { rhythmChannel } from "./slots.ts";
-
-/** The cell an entity is in, or none when the grid does not hold it. */
-export function cellOf(grid: Grid, entity: string): Position | undefined {
-  const index = grid.cells.findIndex((cell) => cell.includes(entity));
-  return index === -1 ? undefined : { x: index % grid.width, y: Math.floor(index / grid.width) };
-}
 
 /** A call of the effector "walk" as the grid's move reads it: the calling agent moves to the cell its arguments give. */
 function walkCall({ agent, arguments: args }: AgentCall) {
@@ -31,7 +25,7 @@ export function walkTool(msPerCell: number): Effector<Grid> {
     },
     durationMs: (grid, call) => {
       const { entity, to } = walkCall(call);
-      const from = cellOf(grid, entity);
+      const from = position(grid, entity);
       if (from === undefined) throw new Error(`the test grid world holds no agent ${entity} to walk`);
       return msPerCell * distance(from, to);
     },

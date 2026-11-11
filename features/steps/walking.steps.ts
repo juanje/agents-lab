@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { Given, Then } from "@cucumber/cucumber";
-import { CELL_FULL, type Grid, type Position, emptyGrid, entitiesAt, place } from "../../src/engine/grid.ts";
+import { CELL_FULL, type Grid, type Position, emptyGrid, entitiesAt, place, position } from "../../src/engine/grid.ts";
 import type { Effector } from "../../src/engine/tools.ts";
-import { cellOf, walkTool } from "../../tests/fixtures/grid-world.ts";
+import { walkTool } from "../../tests/fixtures/grid-world.ts";
 import type { Context } from "../support/context.ts";
 import { stateAt } from "./acting.steps.ts";
 import { callOf, callWithThenEnd, script } from "./tool.steps.ts";
@@ -33,7 +33,7 @@ function gridEffector(context: Context, name: string): Effector<Grid> {
 
 /** Where the grid holds an agent once the run has ended, or before it starts. */
 function assertAt(grid: Grid, agent: string, at: Position): void {
-  assert.deepEqual(cellOf(grid, agent), at, `agent "${agent}" is at ${JSON.stringify(cellOf(grid, agent))}`);
+  assert.deepEqual(position(grid, agent), at, `agent "${agent}" is at ${JSON.stringify(position(grid, agent))}`);
 }
 
 // The contract says "agent … is at" both to set the grid up and to check it once the run has ended.

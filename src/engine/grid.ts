@@ -71,6 +71,11 @@ function indexOf(grid: Grid, { x, y }: Position): number {
   return y * grid.width + x;
 }
 
+/** The cell at an index of `cells`, the inverse of `indexOf`. */
+function cellAt(grid: Grid, index: number): Position {
+  return { x: index % grid.width, y: Math.floor(index / grid.width) };
+}
+
 /** The entities a cell holds. */
 export function entitiesAt(grid: Grid, at: Position): readonly string[] {
   return grid.cells[indexOf(grid, at)];
@@ -79,7 +84,7 @@ export function entitiesAt(grid: Grid, at: Position): readonly string[] {
 /** The cell an entity is in, or none when the grid does not hold it. */
 export function position(grid: Grid, entity: string): Position | undefined {
   const index = grid.cells.findIndex((cell) => cell.includes(entity));
-  return index === -1 ? undefined : { x: index % grid.width, y: Math.floor(index / grid.width) };
+  return index === -1 ? undefined : cellAt(grid, index);
 }
 
 /**
@@ -103,7 +108,7 @@ export function place(grid: Grid, entity: string, at: Position): Grid {
 export function randomEmptyCell(grid: Grid, random: Random): Position | undefined {
   const empty: Position[] = [];
   grid.cells.forEach((cell, index) => {
-    if (cell.length === 0) empty.push({ x: index % grid.width, y: Math.floor(index / grid.width) });
+    if (cell.length === 0) empty.push(cellAt(grid, index));
   });
   if (empty.length === 0) return undefined;
   return empty[Math.floor(random.next() * empty.length)];
@@ -119,7 +124,7 @@ export const move: Action<Grid, { entity: string; to: Position }> = {
   precondition: (grid, { entity, to }) => {
     const where = `cannot move entity ${entity} to cell ${to.x}, ${to.y}`;
     assertInside(grid, to, where);
-    if (!grid.cells.some((cell) => cell.includes(entity))) throw new Error(`${where}: the grid holds no entity ${entity}`);
+    if (position(grid, entity) === undefined) throw new Error(`${where}: the grid holds no entity ${entity}`);
     return entitiesAt(grid, to).length < grid.capacity ? { holds: true } : { holds: false, reason: CELL_FULL };
   },
   effect: (grid, { entity, to }) => {
