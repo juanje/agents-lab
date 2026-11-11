@@ -197,6 +197,18 @@ describe("the neighbourhood scenario", () => {
     expect(world.version).toBe(0);
   });
 
+  it("fails a move to the resident's own cell with already_there, at once and changing nothing", () => {
+    const move = toolNamed("move");
+    if (move.kind !== "effector") throw new Error("move is not an effector");
+    const world = new World(residentsAt(5, 5, { lookRadius: 1, msPerCell: 100 }));
+    const before = world.state;
+
+    expect(move.durationMs(world.state, { agent: "r1", arguments: { dx: 0, dy: 0 } })).toBe(0);
+    expect(world.apply(move.action, { agent: "r1", arguments: { dx: 0, dy: 0 } })).toEqual({ applied: false, reason: "already_there" });
+    expect(world.state).toBe(before);
+    expect(world.version).toBe(0);
+  });
+
   it("declares the text a move tells the resident for each of its outcomes", () => {
     const move = toolNamed("move");
     if (move.kind !== "effector") throw new Error("move is not an effector");
@@ -205,6 +217,7 @@ describe("the neighbourhood scenario", () => {
       success: "You moved.",
       cell_full: "Someone already lives in that cell; you have not moved.",
       invalid_target: "That cell is beyond the edge of the neighbourhood; you have not moved.",
+      already_there: "You are already in that cell; you have not moved.",
     });
   });
 

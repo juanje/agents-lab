@@ -46,6 +46,7 @@ export function assembled(context: Context, agents: readonly string[]): LoadedSc
   };
   const world = new World<Neighbourhood>({ ...empty, grid, kinds });
   context.neighbourhoodWorld = world;
+  context.versionBefore = world.version;
   const systemPrompts = new Map(agents.map((agent) => [agent, scenario.systemPrompt(configuration, agent)]));
   const rhythms = new Map(agents.map((agent) => [agent, scenario.rhythm(configuration, agent)]));
   return { scenario, configuration, world, systemPrompts, channels: scenario.channels(configuration), rhythms };
@@ -105,6 +106,11 @@ Then("resident {string} is still at {int}, {int}", function (this: Context, resi
   const placed = this.residents.find(({ name }) => name === resident);
   assert.deepEqual(placed && { x: placed.x, y: placed.y }, { x, y }, `resident "${resident}" did not start at ${x}, ${y}`);
   assertAt(this, resident, { x, y });
+});
+
+Then("the world's version did not change", function (this: Context) {
+  assert.ok(this.neighbourhoodWorld !== undefined, "the neighbourhood did not run");
+  assert.equal(this.neighbourhoodWorld.version, this.versionBefore);
 });
 
 Then("{string}'s {string} call failed with {string}", function (this: Context, resident: string, tool: string, reason: string) {
