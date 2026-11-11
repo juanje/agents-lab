@@ -1640,4 +1640,18 @@ describe("run, with components", () => {
     expect(withOther).toEqual(alone);
     expect(otherSeed).not.toEqual(alone);
   });
+
+  it.each([
+    ["an agent and a component", ["a"], ["a"]],
+    ["two components", [], ["porter", "porter"]],
+  ])("refuses a run that gives %s the same name before any model call, naming it", async (_case, agents, components) => {
+    const model = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
+    const loaded = slots({ ...agentsNamed(...agents), components: () => components.map((name) => drawing(name, [])) });
+    const name = agents[0] ?? components[0];
+
+    await expect(run(loaded, agents.map((agent) => ({ name: agent, model, activations: 1 })), seed, { ...settings, logDirectory: newLogDirectory() })).rejects.toThrow(
+      `"${name}"`,
+    );
+    expect(model.received).toEqual([]);
+  });
 });
