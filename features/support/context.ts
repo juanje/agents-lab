@@ -42,6 +42,12 @@ export class Context extends CucumberWorld {
   stateBefore: unknown;
   /** Checks that what the scenario set up happened as it said, run once the run ends. */
   readonly setupChecks: (() => void)[] = [];
+  /** The directory the run writes its log into: one of the scenario's own, under its home. */
+  logDirectory!: string;
+  /** The id the run gave itself, which names its log file. */
+  runId?: string;
+  /** The error the run stopped on, for a scenario whose run stops. */
+  runError?: Error;
   /** The tool calls the run gave. */
   toolCalls?: RunResult["toolCalls"];
   /** What the engine kept of each agent's sensing, as the run gave it. */
