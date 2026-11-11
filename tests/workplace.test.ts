@@ -1059,4 +1059,89 @@ rounds = ["09:00"]
 
     expect(actions.map(({ name }) => name)).toEqual(['appear in "a" carrying nothing', 'walk to "b"', 'walk to "d"', "put down nothing in \"d\"", 'walk to "b"', 'walk to "a"', "leave"]);
   });
+
+  // Ana is a visitor instead of a person: she comes to the hall for the key, bringing a letter, and waits 20 minutes.
+  const visitorDay = (values: { arrivesBetween?: [string, string]; comesFor?: string[] } = {}): Configuration => {
+    const visitor = `
+[[visitors]]
+id = "ana"
+name = "Ana"
+description = "A visitor."
+enters = "hall"
+arrives_between = ${JSON.stringify(values.arrivesBetween ?? ["09:05", "09:05"])}
+waits_minutes = 20
+comes_for = ${JSON.stringify(values.comesFor ?? ["key"])}
+`;
+    const situations = `
+[situations.letter]
+places = ["office"]
+[[situations.letter.things]]
+id = "envelope"
+name = "an envelope"
+brought_by = "ana"
+`;
+    const world = withDay("09:00").replace(/\[\[people\]\][^[]*$/, "") + visitor;
+    return configuration({ world, time_scale: 6000, situations, chosen_situations: ["letter"] });
+  };
+
+  it("keeps a visitor, a person of the space, and what they bring in no place until they arrive", () => {
+    const state = scenario.initialState(visitorDay(), new Random(1));
+
+    expect(state.people.ana).toEqual({ name: "Ana", description: "A visitor." });
+    expect(where(state.space, "ana")).toBeUndefined();
+    expect(where(state.space, "envelope")).toBeUndefined();
+  });
+
+  it("brings a visitor once, at the drawn time, with what they bring, which they put down; they leave when their wait runs out", () => {
+    const configured = visitorDay();
+    const { actions, state } = drive(componentOf(configured, "ana"), scenario.initialState(configured, new Random(1)));
+
+    expect(actions.map(({ name, startedAtMs, outcome }) => ({ name, startedAtMs, outcome }))).toEqual([
+      { name: 'appear in "hall" bringing "envelope"', startedAtMs: 50, outcome: "success" },
+      { name: "leave", startedAtMs: 250, outcome: "success" },
+    ]);
+    expect(where(actions[0].landed.space, "ana")).toEqual({ place: "hall" });
+    expect(where(actions[0].landed.space, "envelope")).toEqual({ place: "hall" });
+    expect(where(state.space, "ana")).toBeUndefined();
+  });
+
+  it("lets a visitor leave, keeping it, within a depot second of holding every thing they came for", () => {
+    const configured = visitorDay();
+    const start = scenario.initialState(configured, new Random(1));
+    // She is given the key 30 ms after she arrives: the cycle reads the world it is given, so it is given her the key then.
+    const ana = componentOf(configured, "ana");
+    const cycle = ana.cycle(new Random(1));
+    let state = start;
+    let sinceStartMs = 0;
+    const names: string[] = [];
+    for (let steps = 0; steps < 10_000; steps += 1) {
+      if (sinceStartMs >= 80 && state.held.key === undefined) state = { ...state, inside: {}, held: { key: "ana" } };
+      const step = cycle.next(state, undefined, sinceStartMs);
+      if (step.kind === "end") break;
+      if (step.kind === "wait") {
+        sinceStartMs += step.ms;
+        continue;
+      }
+      names.push(`${step.name} at ${Math.round(sinceStartMs)}`);
+      state = step.action.effect(state, { component: "ana", atMs: sinceStartMs });
+    }
+
+    // A depot second is 1000 / 6000 ms of the run.
+    expect(names[0]).toBe('appear in "hall" bringing "envelope" at 50');
+    expect(names[1]).toMatch(/^leave at 80$/);
+    expect(where(state.space, "ana")).toBeUndefined();
+    expect(state.held.key).toBe("ana");
+  });
+
+  it("draws a visitor's arrival between the two times, from the visitor's own sequence", () => {
+    const configured = visitorDay({ arrivesBetween: ["09:00", "09:30"] });
+    const arrivals = [1, 2, 3, 4, 5].map((seed) => drive(componentOf(configured, "ana"), scenario.initialState(configured, new Random(1)), new Random(seed)).actions[0].startedAtMs);
+
+    for (const ms of arrivals) {
+      expect(ms).toBeGreaterThanOrEqual(0);
+      expect(ms).toBeLessThanOrEqual(300);
+    }
+    expect(new Set(arrivals).size).toBeGreaterThan(1);
+    expect(drive(componentOf(configured, "ana"), scenario.initialState(configured, new Random(1)), new Random(3)).actions[0].startedAtMs).toBe(arrivals[2]);
+  });
 });
