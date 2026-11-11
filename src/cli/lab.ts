@@ -20,6 +20,8 @@ export interface LabEnvironment {
   scenarios: ReadonlyMap<string, LibraryScenario>;
   /** The model a name in Pi's provider/id form names; it fails, naming it, for a name it does not know. */
   model: (name: string) => Promise<AgentModel>;
+  /** Aborts when the command is interrupted (Ctrl-C, or a termination signal): `lab run` then ends the run in progress as a stopped one (FR-RUN-05). */
+  interruption?: AbortSignal;
 }
 
 /** How often `lab run` prints a run's progress, unless it is given another interval (FR-RUN-04). */
@@ -70,7 +72,7 @@ async function run(experiment: Experiment, scenario: LibraryScenario, environmen
   for (const name of experiment.models) models.set(name, await environment.model(name));
   const progress = new Progress(environment.print, { intervalMs: progressIntervalMs });
   try {
-    await runExperiment(experiment, scenario, models, join(environment.directory, "runs", experiment.id), progress);
+    await runExperiment(experiment, scenario, models, join(environment.directory, "runs", experiment.id), progress, environment.interruption);
   } finally {
     // Also when a run stopped the experiment: its total says how far it got (FR-RUN-04).
     progress.experimentEnded();
