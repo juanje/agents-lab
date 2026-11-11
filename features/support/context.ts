@@ -11,7 +11,7 @@ import type { Action, ActionResult, World } from "../../src/engine/world.ts";
 import type { Tool } from "../../src/engine/tools.ts";
 import type { LibraryScenario } from "../../src/scenarios/library.ts";
 import type { Neighbourhood } from "../../src/scenarios/neighbourhood.ts";
-import { type Slots, rhythmChannel, slotTools } from "../../tests/fixtures/slots.ts";
+import { type Slots, rhythmChannel, slotTools, slotsScenario } from "../../tests/fixtures/slots.ts";
 
 /**
  * What one scenario's steps share. Cucumber builds a fresh one for each scenario, so no state leaks
@@ -76,6 +76,8 @@ export class Context extends CucumberWorld {
   stimuli!: Stimuli;
   /** The tools the scenario declares: the test world's, as the scenario sets them. */
   tools: readonly Tool<Slots>[] = slotTools;
+  /** The metrics the scenario declares: the test world's, and any the scenario adds. */
+  metrics: Scenario<Slots>["metrics"] = slotsScenario.metrics;
   /** The system prompt the scenario declares. */
   systemPrompt = "";
   /** How long a model turn may run, unless the scenario says: long enough for any scripted turn here. */

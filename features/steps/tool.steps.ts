@@ -94,6 +94,7 @@ export async function runTheScenario(context: Context): Promise<void> {
     agents: () => agents,
     tools: context.tools,
     channels: () => context.channels,
+    metrics: context.metrics,
     systemPrompt: () => context.systemPrompt,
     rhythm: rhythmsOf(context),
   };

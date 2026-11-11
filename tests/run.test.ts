@@ -1139,3 +1139,32 @@ describe("run's time limit", () => {
     expect(sensings.last("a")).toBeUndefined();
   });
 });
+
+describe("run's metric samples", () => {
+  /** The metric sample lines of a run's log, in the order they were written. */
+  const samplesOf = (logDirectory: string, runId: string) =>
+    logOf(logDirectory, runId).filter((line) => (line as { type: string }).type === "metric_sample") as {
+      atMs: number;
+      version: number;
+      metrics: Record<string, unknown>;
+    }[];
+
+  it("samples the scenario's metrics at the start and at the end, each with when and the world's version it was computed from", async () => {
+    const model = new ScriptedModel([
+      { toolCalls: [{ name: "take", arguments: { slot: 1 } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+    const logDirectory = newLogDirectory();
+
+    const { runId, startedAtMs } = await run(slots(), [{ name: "a", model, activations: 1 }], seed, { ...settings, logDirectory });
+
+    const samples = samplesOf(logDirectory, runId);
+    expect(samples).toEqual([
+      { type: "metric_sample", atMs: expect.any(Number), version: 0, metrics: { held: 0 } },
+      { type: "metric_sample", atMs: expect.any(Number), version: 1, metrics: { held: 1 } },
+    ]);
+    expect(samples[0].atMs).toBe(startedAtMs);
+    const lines = logOf(logDirectory, runId) as { type: string }[];
+    expect(lines.at(-1)?.type).toBe("metric_sample");
+  });
+});
