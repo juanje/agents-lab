@@ -70,3 +70,21 @@ Then("every metric sample gives {string} as null", function (this: Context, metr
     assert.equal(sample.metrics[metric], null, `sample ${index + 1} gives "${metric}" as ${JSON.stringify(sample.metrics[metric])}`);
   }
 });
+
+Given(
+  "the world's metric {string} gives, for each agent that holds a slot, the number of its slot",
+  function (this: Context, metric: string) {
+    this.metrics = {
+      ...this.metrics,
+      [metric]: (slots) => Object.fromEntries(slots.flatMap((holder, index) => (holder === null ? [] : [[holder, index + 1]]))),
+    };
+  },
+);
+
+Then(
+  "the log's last metric sample gives {string} as agent {string} with {int}",
+  function (this: Context, metric: string, agent: string, value: number) {
+    const last = samplesOf(this).at(-1);
+    assert.deepEqual(last?.metrics[metric], { [agent]: value });
+  },
+);

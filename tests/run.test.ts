@@ -1182,3 +1182,19 @@ describe("run's metric samples of a metric with no value", () => {
     for (const sample of samples) expect(sample).toMatchObject({ metrics: { held: 0, "first holder": null } });
   });
 });
+
+describe("run's metric samples of a metric with a value per agent", () => {
+  it("records a metric with one value per agent with each agent's value, by its name", async () => {
+    const model = new ScriptedModel([
+      { toolCalls: [{ name: "take", arguments: { slot: 2 } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+    const logDirectory = newLogDirectory();
+    const slotOf = (state: Slots) => Object.fromEntries(state.flatMap((holder, index) => (holder === null ? [] : [[holder, index + 1]])));
+
+    const { runId } = await run(slots({ metrics: { "slot of": slotOf } }), [{ name: "a", model, activations: 1 }], seed, { ...settings, logDirectory });
+
+    const samples = logOf(logDirectory, runId).filter((line) => (line as { type: string }).type === "metric_sample");
+    expect(samples).toMatchObject([{ metrics: { "slot of": {} } }, { metrics: { "slot of": { a: 2 } } }]);
+  });
+});
