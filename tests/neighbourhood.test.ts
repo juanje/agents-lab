@@ -197,6 +197,17 @@ describe("the neighbourhood scenario", () => {
     expect(world.version).toBe(0);
   });
 
+  it("declares the text a move tells the resident for each of its outcomes", () => {
+    const move = toolNamed("move");
+    if (move.kind !== "effector") throw new Error("move is not an effector");
+
+    expect(move.texts).toEqual({
+      success: "You moved.",
+      cell_full: "Someone already lives in that cell; you have not moved.",
+      invalid_target: "That cell is beyond the edge of the neighbourhood; you have not moved.",
+    });
+  });
+
   it("takes the configured time per cell for the distance from where the resident is to its target", () => {
     const move = toolNamed("move");
     const state = residentsAt(5, 5, { lookRadius: 1, msPerCell: 40 });
