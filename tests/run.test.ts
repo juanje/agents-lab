@@ -1062,6 +1062,26 @@ describe("run", () => {
     expect(toolCalls.find((call) => call.tool === "take")).toMatchObject({ outcome: "success", targetAsSensed: "held" });
   });
 
+  it("gives an effector's target reading the agent's last sensing by each sensor, whatever it sensed after it", async () => {
+    // A second sensor, called after "look": the reading finds "look"'s sensing by its name.
+    const glance: Sensor<Slots> = { ...(slotTools[0] as Sensor<Slots>), name: "glance", sense: () => "glanced" };
+    const take: Effector<Slots> = {
+      ...(slotTools[1] as Effector<Slots>),
+      readTarget: (sensing, _call, _state, lastBy) => (sensing.tool === "glance" && lastBy("look")?.result === "seen" ? "free" : "not_sensed"),
+    };
+    const look: Sensor<Slots> = { ...(slotTools[0] as Sensor<Slots>), sense: () => "seen" };
+    const model = new ScriptedModel([
+      { toolCalls: [{ name: "look", arguments: {} }], delayMs: 0 },
+      { toolCalls: [{ name: "glance", arguments: {} }], delayMs: 0 },
+      { toolCalls: [{ name: "take", arguments: { slot: 1 } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+
+    const { toolCalls } = await run(slots({ tools: [look, glance, take] }), [{ name: "a", model, activations: 1 }], seed, settings);
+
+    expect(toolCalls.find((call) => call.tool === "take")).toMatchObject({ outcome: "success", targetAsSensed: "free" });
+  });
+
   it("keeps no sensing of an effector's call, nor of a sensor's call it rejected", async () => {
     const model = new ScriptedModel([
       { toolCalls: [{ name: "take", arguments: { slot: 1 } }], delayMs: 0 },
