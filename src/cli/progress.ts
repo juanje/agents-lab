@@ -24,6 +24,7 @@ export class Progress implements ExperimentObserver {
   readonly #startedAtMs: number;
   #tally: Tally | undefined;
   #completed = 0;
+  #stopped = 0;
   #cost = 0;
 
   /** Prints with `print`, a run's progress every `intervalMs`, timing by `now`, in milliseconds, from now on. */
@@ -60,14 +61,15 @@ export class Progress implements ExperimentObserver {
     clearInterval(tally.timer);
     this.#tally = undefined;
     if (status === "completed") this.#completed += 1;
+    else this.#stopped += 1;
     this.#cost += tally.cost;
     const counts = `${counted(tally.activations, "activation")}, ${counted(tally.turns, "model turn")}, ${cost(tally.cost)}`;
     this.#print(`${runName(tally.run)} ${status} in ${seconds(this.#now() - tally.startedAtMs)}: ${counts}\n`);
   }
 
-  /** Prints how many runs completed, how long the experiment took and what it cost. */
+  /** Prints how many runs completed and how many stopped, how long the experiment took and what it cost. */
   experimentEnded(): void {
-    this.#print(`${counted(this.#completed, "run")} completed in ${seconds(this.#now() - this.#startedAtMs)}, ${cost(this.#cost)}\n`);
+    this.#print(`${counted(this.#completed, "run")} completed and ${this.#stopped} stopped in ${seconds(this.#now() - this.#startedAtMs)}, ${cost(this.#cost)}\n`);
   }
 
   #current(): Tally {

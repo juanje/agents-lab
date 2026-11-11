@@ -69,6 +69,10 @@ async function run(experiment: Experiment, scenario: LibraryScenario, environmen
   const models = new Map<string, AgentModel>();
   for (const name of experiment.models) models.set(name, await environment.model(name));
   const progress = new Progress(environment.print, { intervalMs: progressIntervalMs });
-  await runExperiment(experiment, scenario, models, join(environment.directory, "runs", experiment.id), progress);
-  progress.experimentEnded();
+  try {
+    await runExperiment(experiment, scenario, models, join(environment.directory, "runs", experiment.id), progress);
+  } finally {
+    // Also when a run stopped the experiment: its total says how far it got (FR-RUN-04).
+    progress.experimentEnded();
+  }
 }
