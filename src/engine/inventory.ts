@@ -29,6 +29,8 @@ export interface ConditionInventory {
   /** The thinking level every session uses (FR-EXPERIMENT-05). */
   thinkingLevel: ThinkingLevel;
   limits: Limits;
+  /** Each material the condition sets a value to, by its path, with the hash of its content (FR-EXPERIMENT-04). */
+  materials: { path: string; hash: string }[];
 }
 
 /** A tool as its agents see it, with its duration as the scenario describes it and the text for each of its outcomes. */
@@ -83,7 +85,7 @@ export function inventory<State>(experiment: Experiment, scenario: Partial<Scena
 function conditionInventory<State>(
   { models, thinkingLevel, limits }: Experiment,
   condition: string,
-  { scenario, configuration, systemPrompts, channels }: LoadedScenario<State>,
+  { scenario, configuration, systemPrompts, channels, materials }: LoadedScenario<State>,
 ): ConditionInventory {
   return {
     condition,
@@ -106,6 +108,7 @@ function conditionInventory<State>(
     models: [...models],
     thinkingLevel,
     limits: { ...limits },
+    materials: materials.map(({ path, hash }) => ({ path, hash })),
   };
 }
 
@@ -131,6 +134,7 @@ export function inventoryMarkdown({ experiment, scenario, conditions }: Inventor
       `### Environment processes\n\n${condition.environmentProcesses}\n`,
       `### How fast information travels\n\n${condition.informationSpeed}\n`,
       modelsAndLimitsMarkdown(condition),
+      materialsMarkdown(condition),
     ].join("\n"),
   );
   return [`# Environment inventory of experiment "${experiment}", scenario "${scenario}"\n`, ...sections].join("\n");
@@ -186,6 +190,11 @@ function modelsAndLimitsMarkdown({ models, thinkingLevel, limits }: ConditionInv
     `- Model turn timeout: ${limits.modelTurnTimeoutMs} ms`,
     "",
   ].join("\n");
+}
+
+function materialsMarkdown({ materials }: ConditionInventory): string {
+  if (materials.length === 0) return `### Materials\n\n${NONE}\n`;
+  return ["### Materials\n", ...materials.map(({ path, hash }) => `- ${path}: ${hash}`), ""].join("\n");
 }
 
 /** A text as a fenced block, with a fence longer than any run of backticks in it, so the text is given whole. */

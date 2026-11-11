@@ -84,6 +84,7 @@ describe("inventory", () => {
       models: ["scripted/one"],
       thinkingLevel: "off",
       limits: { activationsPerAgent: 3, timeLimitMs: 1000, parallelismLimit: 2, modelTurnTimeoutMs: 500 },
+      materials: [],
     });
     expect(listed).toEqual({ experiment: "e-test", scenario: "slots", conditions: [condition("baseline"), condition("crowded")] });
     // As data, it goes into a log line whole.
