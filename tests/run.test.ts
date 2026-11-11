@@ -160,6 +160,46 @@ describe("run", () => {
     expect(takes.find((call) => call.agent === "b")).not.toHaveProperty("changesSinceSensing");
   });
 
+  it("stops on an error a tool throws: it ends its log saying so, stops every agent, and fails with the error", async () => {
+    const broken = () => {
+      throw new Error("the jam broke");
+    };
+    const jam = {
+      kind: "effector" as const,
+      name: "jam",
+      description: "Jam the slots.",
+      parameters: { type: "object", properties: {} },
+      durationMs: () => 0,
+      action: { precondition: broken, effect: broken },
+      readTarget: () => "not_sensed" as const,
+    };
+    const a = new ScriptedModel([
+      { toolCalls: [{ name: "jam", arguments: {} }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+    // "b" rests long before it wakes: a run that did not stop it would wait for it.
+    const b = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
+    const logDirectory = newLogDirectory();
+    const startedAtMs = performance.now();
+
+    const running = run(
+      slots({ tools: [...slotTools, jam] }),
+      [
+        { name: "a", model: a, activations: 1, rhythm: noWait },
+        { name: "b", model: b, activations: 1, rhythm: () => 3_000 },
+      ],
+      seed,
+      { ...settings, logDirectory },
+    );
+
+    await expect(running).rejects.toThrow('agent "a"\'s "jam" call failed: the jam broke');
+    expect(performance.now() - startedAtMs).toBeLessThan(2_000);
+    const [file] = readdirSync(logDirectory);
+    const lines = readFileSync(join(logDirectory, file), "utf8").trimEnd().split("\n").map((line) => JSON.parse(line));
+    expect(lines.at(-1)).toEqual({ type: "run_stopped", error: 'agent "a"\'s "jam" call failed: the jam broke' });
+    expect(b.received).toEqual([]);
+  });
+
   it("starts an activation with the rhythm channel's stimulus, which the model reads with its source", async () => {
     const model = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
 
