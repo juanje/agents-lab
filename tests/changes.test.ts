@@ -27,6 +27,6 @@ describe("ChangesSinceSensing", () => {
     const changes = new ChangesSinceSensing();
     changes.applied("b");
 
-    expect(changes.since("a")).toBeUndefined();
+    expect(changes.since("a")).toBeNull();
   });
 });
