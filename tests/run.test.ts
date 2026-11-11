@@ -431,6 +431,19 @@ describe("run", () => {
     ]);
   });
 
+  it.each([
+    [["a", "c"], 'The run\'s agents are not those of scenario "slots": "b" is missing; "c" is not declared'],
+    [["a"], 'The run\'s agents are not those of scenario "slots": "b" is missing'],
+    [["a", "b", "c"], 'The run\'s agents are not those of scenario "slots": "c" is not declared'],
+  ])("refuses a run of agents %j in a scenario of agents a and b before any model call, naming the difference", async (names, message) => {
+    const models = names.map(() => new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]));
+    const agents = names.map((name, index) => ({ name, model: models[index], activations: 1, rhythm: noWait }));
+
+    await expect(run(slots(agentsNamed("a", "b")), agents, seed, settings)).rejects.toThrow(message);
+
+    expect(models.map((model) => model.received)).toEqual(names.map(() => []));
+  });
+
   it("opens its sessions in the lab's Pi directory, and leaves the person's as it was", async () => {
     const persons = join(homedir(), ".pi", "agent");
     mkdirSync(persons, { recursive: true });
