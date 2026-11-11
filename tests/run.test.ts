@@ -1115,7 +1115,12 @@ describe("run", () => {
       asked.push(state);
       return durationMs;
     },
-    start: { precondition: (state, { agent }) => take.precondition(state, { agent, slot: 1 }), effect: (state, { agent }) => take.effect(state, { agent, slot: 1 }) },
+    start: {
+      precondition: (state, { agent }) => take.precondition(state, { agent, slot: 1 }),
+      effect: (state, { agent }) => take.effect(state, { agent, slot: 1 }),
+      // What the start changes, as the effector describes it, from the state before it.
+      describe: (state) => ({ took: 1, before: state[0] }),
+    },
     action: {
       precondition: (state, { agent }) => take.precondition(state, { agent, slot: 2 }),
       effect: (state, { agent }) => [null, agent, ...state.slice(2)],
@@ -1154,6 +1159,23 @@ describe("run", () => {
     expect(cross).toMatchObject({ outcome: "success" });
     expect(loaded.world.state).toEqual([null, "a", null]);
     expect(loaded.world.version).toBe(2);
+  });
+
+  it("records an effector's start in its log as it is applied, before its call's line: the agent, the tool, the moment the call started, and the change as the effector describes it", async () => {
+    const a = new ScriptedModel([
+      { toolCalls: [{ name: "cross", arguments: {} }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+    const logDirectory = newLogDirectory();
+
+    const { runId, toolCalls } = await run(slots({ tools: [...slotTools, crossing(50)] }), [{ name: "a", model: a, activations: 1 }], seed, { ...settings, logDirectory });
+
+    const lines = logOf(logDirectory, runId) as { type: string }[];
+    const startAt = lines.findIndex((line) => line.type === "effector_start");
+    const callAt = lines.findIndex((line) => line.type === "tool_call");
+    expect(lines[startAt]).toEqual({ type: "effector_start", agent: "a", tool: "cross", atMs: toolCalls[0].startedAtMs, change: { took: 1, before: null } });
+    expect(startAt).toBeLessThan(callAt);
+    expect(lines.filter((line) => line.type === "effector_start")).toHaveLength(1);
   });
 
   it("counts an effector's start among the changes since sensing of another agent's effector call", async () => {
