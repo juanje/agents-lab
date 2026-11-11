@@ -14,7 +14,7 @@ import { declaring } from "./scenario.steps.ts";
 const TAKE_TEXTS = { success: "You took the slot.", slot_taken: "Someone holds that slot." };
 
 Given(
-  "an experiment file {string} for the test scenario {string}, with agents {string} and {string}, the model {string}, {int} activations per agent, a time limit of {int} milliseconds, a parallelism limit of {int}, a model turn timeout of {int} milliseconds, and the conditions {string}, with no change, and {string}, which sets {string} to {int}",
+  "an experiment file {string} for the test scenario {string}, with agents {string} and {string}, the model {string}, {int} activations per agent, a time limit of {int} milliseconds, a parallelism limit of {int}, a model turn timeout of {int} milliseconds, and the conditions {string}, with no change, and {string}, which sets {string} to {int}, with the thinking level {string}",
   function (
     this: Context,
     id: string,
@@ -30,6 +30,7 @@ Given(
     changed: string,
     path: string,
     value: number,
+    thinkingLevel: string,
   ) {
     assert.equal(slotsScenario.name, scenario);
     const declared = declaring(slotsScenario, [first, second]);
@@ -47,7 +48,7 @@ Given(
       id,
       scenario,
       models: [model],
-      thinking_level: "off",
+      thinking_level: thinkingLevel,
       replicas: 1,
       seed: 1,
       limits: {
@@ -187,12 +188,13 @@ Then("each section lists the channel {string} with its source and text", functio
   }
 });
 
-Then("each section gives the model {string} and the limits", function (this: Context, model: string) {
+Then("each section gives the model {string}, the thinking level {string} and the limits", function (this: Context, model: string, thinkingLevel: string) {
   const limits = this.experimentFile.limits as Record<string, number>;
   for (const { name, section } of conditionsOf(this)) {
     const part = under(section, "### Model and limits");
     const where = `condition "${name}"`;
     assert.equal(itemOf(part, "Models"), model, where);
+    assert.equal(itemOf(part, "Thinking level"), thinkingLevel, where);
     assert.equal(itemOf(part, "Activations per agent"), String(limits.activations_per_agent), where);
     assert.equal(itemOf(part, "Time limit"), `${limits.time_limit_ms} ms`, where);
     assert.equal(itemOf(part, "Parallelism limit"), String(limits.parallelism_limit), where);

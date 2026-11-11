@@ -36,7 +36,7 @@ function printed(experiment: ReturnType<typeof experimentOf>, scenario: Scenario
 }
 
 describe("inventory", () => {
-  it("is data: for each condition, its agents, tools, channels, what the engine does not provide, the outcomes the engine gives, and the model and limits", () => {
+  it("is data: for each condition, its agents, tools, channels, what the engine does not provide, the outcomes the engine gives, and the model, its thinking level and the limits", () => {
     const [look, take] = slotsScenario.tools;
     const texts = { success: "You took the slot.", slot_taken: "Someone holds that slot." };
     const scenario = slotsWith({ tools: [look, { ...take, texts } as typeof take] });
@@ -82,6 +82,7 @@ describe("inventory", () => {
       environmentProcesses: "none",
       informationSpeed: "Every sensor and channel is instant.",
       models: ["scripted/one"],
+      thinkingLevel: "off",
       limits: { activationsPerAgent: 3, timeLimitMs: 1000, parallelismLimit: 2, modelTurnTimeoutMs: 500 },
     });
     expect(listed).toEqual({ experiment: "e-test", scenario: "slots", conditions: [condition("baseline"), condition("crowded")] });
@@ -171,7 +172,7 @@ describe("inventory", () => {
     expect(listed.slice(listed.indexOf('## Condition "loud"'))).toContain(channels("Wake up!"));
   });
 
-  it("gives the experiment's models and limits in each condition", () => {
+  it("gives the experiment's models, thinking level and limits in each condition", () => {
     const listed = printed(experimentOf(["[conditions.baseline]"]), slotsWith());
 
     expect(listed).toContain(
@@ -179,6 +180,7 @@ describe("inventory", () => {
         "### Model and limits",
         "",
         "- Models: scripted/one",
+        "- Thinking level: off",
         "- Activations per agent: 3",
         "- Time limit: 1000 ms",
         "- Parallelism limit: 2",
