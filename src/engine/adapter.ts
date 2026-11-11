@@ -777,8 +777,13 @@ export interface OfferedTool {
   parameters: object;
 }
 
-/** What a model answered one question with: the tool calls it made, as it made them, and the call's tokens and cost. */
+/**
+ * What a model answered one question with: how the call ended, the provider's message for a model error, the tool calls
+ * it made, as it made them, and the call's tokens and cost.
+ */
 export interface OneAnswer {
+  outcome: "success" | "model_error" | "timeout";
+  message?: string;
   calls: { name: string; arguments: unknown }[];
   tokens: Omit<Usage, "cost">;
   cost: Usage["cost"];
@@ -791,7 +796,7 @@ export interface OneAnswer {
  * cost; a turn that ended in an error fails with the provider's message. Like a run's sessions, it reads nothing of the
  * person's Pi directory (NFR-08), and Pi neither retries the call nor compacts the session.
  */
-export async function askOnce(model: AgentModel, { systemPrompt, thinkingLevel }: { systemPrompt: string; thinkingLevel: ThinkingLevel }, tool: OfferedTool, question: string): Promise<OneAnswer> {
+export async function askOnce(model: AgentModel, { systemPrompt, thinkingLevel }: { systemPrompt: string; thinkingLevel: ThinkingLevel; timeoutMs: number }, tool: OfferedTool, question: string): Promise<OneAnswer> {
   const runtime = await openRuntime([model.provider]);
   const answering: ToolDefinition = {
     name: tool.name,
@@ -813,7 +818,8 @@ export async function askOnce(model: AgentModel, { systemPrompt, thinkingLevel }
     if (answer.stopReason === "error") throw new Error(`the model answered the question with an error: ${answer.errorMessage ?? "no message"}`);
     const { cost, ...tokens } = answer.usage;
     const calls = answer.content.flatMap((block) => (block.type === "toolCall" ? [{ name: block.name, arguments: block.arguments }] : []));
-    return { calls, tokens, cost };
+    // A stub of the outcome, for the tests to fail on their assertions.
+    return { outcome: "success", calls, tokens, cost };
   } finally {
     session.dispose();
   }

@@ -65,13 +65,14 @@ describe("askOnce", () => {
       { text: "A second turn.", delayMs: 0 },
     ]);
 
-    const answer = await askOnce(model, { systemPrompt: "You judge.", thinkingLevel: "off" }, verdict, "Is the sky blue?");
+    const answer = await askOnce(model, { systemPrompt: "You judge.", thinkingLevel: "off", timeoutMs: 5_000 }, verdict, "Is the sky blue?");
 
     expect(model.received).toHaveLength(1);
     const [received] = model.received;
     expect(getCurrentSystemPrompt(received)).toBe("You judge.");
     expect(getCurrentSystemMessage(received)?.toolsAdded?.map((tool) => tool.name)).toEqual(["verdict"]);
     expect(JSON.stringify(received.filter((message) => message.role !== "system"))).toContain("Is the sky blue?");
+    expect(answer.outcome).toBe("success");
     expect(answer.calls).toEqual([{ name: "verdict", arguments: { verdict: "yes" } }]);
     expect(answer.tokens.totalTokens).toBeGreaterThan(0);
     expect(typeof answer.cost.total).toBe("number");
@@ -80,14 +81,26 @@ describe("askOnce", () => {
   it("gives the calls as the model made them, even those Pi would reject", async () => {
     const model = new ScriptedModel([{ toolCalls: [{ name: "verdict", arguments: { verdict: "maybe" } }], delayMs: 0 }]);
 
-    const answer = await askOnce(model, { systemPrompt: "You judge.", thinkingLevel: "off" }, verdict, "Is the sky blue?");
+    const answer = await askOnce(model, { systemPrompt: "You judge.", thinkingLevel: "off", timeoutMs: 5_000 }, verdict, "Is the sky blue?");
 
     expect(answer.calls).toEqual([{ name: "verdict", arguments: { verdict: "maybe" } }]);
   });
 
-  it("fails with the provider's message when the model answers with an error", async () => {
+  it("gives the outcome model_error, with the provider's message, when the model answers with an error", async () => {
     const model = new ScriptedModel([{ error: "quota exceeded", delayMs: 0 }]);
 
-    await expect(askOnce(model, { systemPrompt: "You judge.", thinkingLevel: "off" }, verdict, "Is the sky blue?")).rejects.toThrow("quota exceeded");
+    const answer = await askOnce(model, { systemPrompt: "You judge.", thinkingLevel: "off", timeoutMs: 5_000 }, verdict, "Is the sky blue?");
+
+    expect(answer).toMatchObject({ outcome: "model_error", message: "quota exceeded", calls: [] });
+  });
+
+  it("aborts a call that runs longer than the timeout, with the outcome timeout and no calls", async () => {
+    const model = new ScriptedModel([{ toolCalls: [{ name: "verdict", arguments: { verdict: "yes" } }], delayMs: 10_000 }]);
+    const startedAtMs = performance.now();
+
+    const answer = await askOnce(model, { systemPrompt: "You judge.", thinkingLevel: "off", timeoutMs: 50 }, verdict, "Is the sky blue?");
+
+    expect(answer).toMatchObject({ outcome: "timeout", calls: [] });
+    expect(performance.now() - startedAtMs).toBeLessThan(2_000);
   });
 });

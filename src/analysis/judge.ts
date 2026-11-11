@@ -132,7 +132,7 @@ export async function judgeRuns(
         file.write({ runId, situation, key, verdict: "no", quoted: null, reason: "no text on the channel", ...settings, tokens: null, cost: null });
         continue;
       }
-      const answer = await askOnce(agentModel, { systemPrompt: judge.instructions.text, thinkingLevel: judge.thinkingLevel }, VERDICT, questionOf(question));
+      const answer = await askOnce(agentModel, { systemPrompt: judge.instructions.text, thinkingLevel: judge.thinkingLevel, timeoutMs: 60_000 }, VERDICT, questionOf(question));
       file.write({ runId, situation, key, ...verdictOf(answer, question), ...settings, tokens: answer.tokens, cost: answer.cost });
     }
   } finally {
