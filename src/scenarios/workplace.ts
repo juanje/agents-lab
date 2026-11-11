@@ -811,6 +811,17 @@ function exploration(state: Workplace, toolCalls: readonly ToolCall[]): Record<s
   );
 }
 
+/** For each situation the worker sensed, how many of these written things were written since it first sensed it. */
+function writtenSince(state: Workplace, toolCalls: readonly ToolCall[], written: readonly Written[]): Record<string, number> {
+  return Object.fromEntries(Object.entries(sensedAt(state, toolCalls)).map(([id, sensed]) => [id, written.filter(({ atMs }) => atMs >= sensed).length]));
+}
+
+/** The worker's book entries since it first sensed each situation. */
+const entriesAfter = (state: Workplace, toolCalls: readonly ToolCall[]) => writtenSince(state, toolCalls, state.book);
+
+/** The worker's notes since it first sensed each situation. */
+const notesAfter = (state: Workplace, toolCalls: readonly ToolCall[]) => writtenSince(state, toolCalls, state.notes);
+
 /** The worker's tools, in the order the SPEC gives them. */
 const TOOLS: readonly Tool<Workplace>[] = [look, read, examine, go, take, putDown, give, record, note];
 
@@ -838,7 +849,7 @@ export const workplaceScenario: Scenario<Workplace> = {
   agents: () => [WORKER],
   initialState,
   tools: TOOLS,
-  metrics: { holds, predicates, sensed_at_ms: sensedAt, acted_at_ms: actedAt, settled_at_ms: settledAt, exploration },
+  metrics: { holds, predicates, sensed_at_ms: sensedAt, acted_at_ms: actedAt, settled_at_ms: settledAt, exploration, entries_after: entriesAfter, notes_after: notesAfter },
   channels: (configuration) => [
     ...rhythmChannels(configuration),
     { name: PERSON_CHANNEL, source: configuration.task_giver as string, stimulus: textsIn(configuration, "person") },
