@@ -120,6 +120,14 @@ describe("the neighbourhood scenario", () => {
     expect([typeof min_ms, typeof max_ms]).toEqual(["number", "number"]);
   });
 
+  it("describes each resident's rhythm with its configuration's rhythm.min_ms and rhythm.max_ms", () => {
+    const base = configuration(3, 2, 2);
+
+    const described = neighbourhoodScenario.describeRhythm({ ...base, rhythm: { ...(base.rhythm as object), min_ms: 100, max_ms: 200 } }, "resident 1");
+
+    expect(described).toBe("An interval drawn uniformly between 100 and 200 ms before each activation.");
+  });
+
   it("keeps the configured look radius and time per cell of distance in its state, for its tools to read", () => {
     const base = parse(neighbourhoodScenario.baseConfiguration);
     const state = neighbourhoodScenario.initialState({ ...configuration(3, 2, 2), look_radius: 2, ms_per_cell: 40 }, new Random(1));

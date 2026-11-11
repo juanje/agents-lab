@@ -95,6 +95,7 @@ export const slotsScenario: Scenario<Slots> = {
     const intervalMs = (configuration.rhythm as { interval_ms: number }).interval_ms;
     return () => intervalMs;
   },
+  describeRhythm: (configuration) => `Every agent waits ${(configuration.rhythm as { interval_ms: number }).interval_ms} ms before each activation.`,
   // It names the agent it describes, quoted, so each agent's prompt can be told from another's.
   systemPrompt: (_configuration, agent) => `You are agent "${agent}", in a world of slots.`,
   // Its [rhythm] table gives the rhythm channel's source and text, the same as the test world's rhythm channel, and
