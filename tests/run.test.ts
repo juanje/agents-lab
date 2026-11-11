@@ -239,6 +239,28 @@ describe("run", () => {
     expect(a.received).toEqual([]);
   });
 
+  it("runs a turn's calls one after another, and records a call the time limit leaves unrun as cut_off, with no target read", async () => {
+    const model = new ScriptedModel([
+      {
+        toolCalls: [
+          { name: "look", arguments: {} },
+          { name: "take", arguments: { slot: 1 } },
+        ],
+        delayMs: 0,
+      },
+      { text: "Done.", delayMs: 0 },
+    ]);
+    const loaded = slots({ tools: withLookTaking(300) });
+
+    const { toolCalls } = await run(loaded, [{ name: "a", model, activations: 1, rhythm: noWait }], seed, { ...settings, timeLimitMs: 100 });
+
+    const [look, take] = toolCalls;
+    expect(look).toMatchObject({ tool: "look", outcome: "cut_off" });
+    expect(take).toEqual({ agent: "a", tool: "take", arguments: { slot: 1 }, outcome: "cut_off", ...timed });
+    expect(take.startedAtMs).toBeGreaterThanOrEqual(look.endedAtMs);
+    expect(loaded.world.version).toBe(0);
+  });
+
   it("starts an activation with the rhythm channel's stimulus, which the model reads with its source", async () => {
     const model = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
 
