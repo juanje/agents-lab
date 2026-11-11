@@ -199,6 +199,38 @@ export interface SessionSettings {
   clock: RunClock;
 }
 
+/**
+ * A Pi session of the lab's own: its system prompt sent exactly as given, its custom tools and no others, and no setting,
+ * resource or file of the person's or of any project's (NFR-08, NFR-04). A provider's error ends the turn, since Pi does
+ * not retry it: a retry would turn the provider's failure into another turn (FR-ADAPTER-02). Compaction is the one
+ * given, never Pi's default, at the same share of whatever window the model has (FR-ADAPTER-03).
+ */
+async function isolatedSession(
+  runtime: ModelRuntime,
+  model: AgentModel,
+  { systemPrompt, thinkingLevel, compaction }: { systemPrompt: string; thinkingLevel: ThinkingLevel; compaction: Compaction },
+  customTools: ToolDefinition[],
+): Promise<AgentSession> {
+  const { session } = await createAgentSession({
+    // Pi falls back to the person's directory (~/.pi/agent/) wherever a path is left out (NFR-08).
+    agentDir: labPiDirectory(),
+    modelRuntime: runtime,
+    model: model.model,
+    thinkingLevel,
+    // The allowlist leaves out Pi's built-in tools and filters custom tools too, so it names every custom tool.
+    tools: customTools.map((tool) => tool.name),
+    customTools,
+    resourceLoader: resources(systemPrompt),
+    sessionManager: SessionManager.inMemory(),
+    settingsManager: SettingsManager.inMemory({
+      retry: { enabled: false },
+      compaction: piCompactionSettings(compaction, model.model.contextWindow),
+    }),
+  });
+  forceSystemPrompt(session, systemPrompt);
+  return session;
+}
+
 /** Opens the Pi session an agent keeps for the whole run (FR-ADAPTER-02). */
 export async function openSession<State>(
   world: World<State>,
@@ -213,26 +245,8 @@ export async function openSession<State>(
   changes: ChangesSinceSensing,
 ): Promise<AgentSession> {
   const executed = new Map<string, Executed>();
-  const { session } = await createAgentSession({
-    // Pi falls back to the person's directory (~/.pi/agent/) wherever a path is left out (NFR-08).
-    agentDir: labPiDirectory(),
-    modelRuntime: runtime,
-    model: agent.model.model,
-    thinkingLevel: settings.thinkingLevel,
-    // The allowlist leaves out Pi's built-in tools and filters custom tools too, so it names every scenario tool.
-    tools: tools.map((tool) => tool.name),
-    customTools: tools.map((tool) => definition(world, tool, agent.name, executed, sensings, changes, records, settings)),
-    resourceLoader: resources(settings.systemPrompt),
-    sessionManager: SessionManager.inMemory(),
-    // Neither the person's nor any project's Pi settings reach the session. A provider's error ends the activation
-    // (FR-ADAPTER-02), so Pi does not retry it: a retry would turn the provider's failure into another turn. Compaction
-    // is the experiment's, never Pi's default, at the same share of whatever window the model has (FR-ADAPTER-03).
-    settingsManager: SettingsManager.inMemory({
-      retry: { enabled: false },
-      compaction: piCompactionSettings(settings.compaction, agent.model.model.contextWindow),
-    }),
-  });
-  forceSystemPrompt(session, settings.systemPrompt);
+  const customTools = tools.map((tool) => definition(world, tool, agent.name, executed, sensings, changes, records, settings));
+  const session = await isolatedSession(runtime, agent.model, settings, customTools);
   // A turn's calls run one after another until SPEC decides otherwise; Pi's default runs them all at once.
   session.agent.toolExecution = "sequential";
   runTurns(session, agent.name, settings, parallelism, records, new Compactions(session, agent.name, records, settings, parallelism));
@@ -779,27 +793,15 @@ export interface OneAnswer {
  */
 export async function askOnce(model: AgentModel, { systemPrompt, thinkingLevel }: { systemPrompt: string; thinkingLevel: ThinkingLevel }, tool: OfferedTool, question: string): Promise<OneAnswer> {
   const runtime = await openRuntime([model.provider]);
-  const { session } = await createAgentSession({
-    agentDir: labPiDirectory(),
-    modelRuntime: runtime,
-    model: model.model,
-    thinkingLevel,
-    tools: [tool.name],
-    customTools: [
-      {
-        name: tool.name,
-        label: tool.name,
-        description: tool.description,
-        parameters: tool.parameters as ToolDefinition["parameters"],
-        execute: async () => ({ content: [{ type: "text", text: "Received." }], details: undefined }),
-      },
-    ],
-    resourceLoader: resources(systemPrompt),
-    sessionManager: SessionManager.inMemory(),
-    settingsManager: SettingsManager.inMemory({ retry: { enabled: false }, compaction: piCompactionSettings({ enabled: false }, model.model.contextWindow) }),
-  });
+  const answering: ToolDefinition = {
+    name: tool.name,
+    label: tool.name,
+    description: tool.description,
+    parameters: tool.parameters as ToolDefinition["parameters"],
+    execute: async () => ({ content: [{ type: "text", text: "Received." }], details: undefined }),
+  };
+  const session = await isolatedSession(runtime, model, { systemPrompt, thinkingLevel, compaction: { enabled: false } }, [answering]);
   try {
-    forceSystemPrompt(session, systemPrompt);
     // One model turn: Pi would otherwise answer the tool's call with its result and ask the model again.
     session.agent.finishTurn = async () => ({ action: "end" as const });
     let answer: AssistantMessage | undefined;

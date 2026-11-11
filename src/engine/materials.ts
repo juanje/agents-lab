@@ -91,6 +91,6 @@ export function hidingHeldOut(configuration: Configuration, materials: readonly 
 }
 
 /** A copy of a table with a value at a path of keys, each but the last naming a table in it. */
-function settingAt(table: Configuration, [key, ...rest]: readonly string[], value: TomlValue): Configuration {
+export function settingAt(table: Configuration, [key, ...rest]: readonly string[], value: TomlValue): Configuration {
   return { ...table, [key]: rest.length === 0 ? value : settingAt(table[key] as Configuration, rest, value) };
 }

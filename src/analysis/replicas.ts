@@ -1,8 +1,8 @@
-import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { LogLine } from "../engine/recorder.ts";
 import type { IndexLine } from "../engine/runner.ts";
 import type { MetricValue } from "../engine/scenario.ts";
+import { indexOf, linesOf } from "./runs.ts";
 
 /** The five numbers that show a distribution of values: none, when there are no values. */
 export interface Quartiles {
@@ -44,14 +44,6 @@ export interface SummaryRow extends Quartiles {
   nulls: number;
 }
 
-/** The lines of a JSONL file, parsed. */
-function linesOf<Line>(path: string): Line[] {
-  return readFileSync(path, "utf8")
-    .split("\n")
-    .filter((line) => line !== "")
-    .map((line) => JSON.parse(line) as Line);
-}
-
 /** The values of a completed run's last metric sample, by metric; none when its log has no sample. */
 function lastSample(directory: string, runId: string): Record<string, MetricValue> {
   const samples = linesOf<LogLine>(join(directory, `${runId}.jsonl`)).filter((line) => line.type === "metric_sample");
@@ -84,9 +76,7 @@ function valuesOf(metrics: Record<string, MetricValue>): { rowKey: RowKey; value
  * It refuses a directory without an index, naming it as it was given.
  */
 export function summarizeRuns(directory: string, name: string = directory): SummaryRow[] {
-  const indexPath = join(directory, "index.jsonl");
-  if (!existsSync(indexPath)) throw new Error(`"${name}" has no index (index.jsonl): it is not the runs directory of an experiment`);
-  const index = linesOf<IndexLine>(indexPath);
+  const index = indexOf(directory, name);
   const last = new Map(index.filter((run) => run.status === "completed").map((run) => [run.runId, valuesOf(lastSample(directory, run.runId))]));
   const rowKeys = new Map<string, RowKey>();
   for (const given of last.values()) for (const { rowKey } of given) if (!rowKeys.has(nameOf(rowKey))) rowKeys.set(nameOf(rowKey), rowKey);

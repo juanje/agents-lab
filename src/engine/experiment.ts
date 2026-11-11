@@ -208,7 +208,7 @@ const modelIds: Kind<string[]> = {
 };
 
 /** The thinking levels Pi knows (pi-agent-core 1.5.0), in its order, from none to the most. */
-const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
+export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 
 /** A thinking level Pi knows. */
 export type ThinkingLevel = (typeof THINKING_LEVELS)[number];

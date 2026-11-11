@@ -1,14 +1,14 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { type TomlTable, type TomlValue, parse } from "smol-toml";
+import { type TomlValue, parse } from "smol-toml";
 import { type AgentModel, type OfferedTool, type OneAnswer, askOnce } from "../engine/adapter.ts";
-import type { ThinkingLevel } from "../engine/experiment.ts";
+import { THINKING_LEVELS, type ThinkingLevel } from "../engine/experiment.ts";
 import { JsonlFile } from "../engine/jsonl.ts";
-import { Materials, materialReference } from "../engine/materials.ts";
+import { Materials, materialReference, settingAt } from "../engine/materials.ts";
 import type { LogLine, RunSetup } from "../engine/recorder.ts";
-import type { IndexLine } from "../engine/runner.ts";
 import type { Configuration, Judgeable, Scenario } from "../engine/scenario.ts";
+import { indexOf, linesOf } from "./runs.ts";
 
 /** A judge file, read (FR-ANALYSIS-02): the judge's model, its thinking level, and its instructions, with their hash. */
 export interface JudgeFile {
@@ -16,9 +16,6 @@ export interface JudgeFile {
   thinkingLevel: ThinkingLevel;
   instructions: { path: string; hash: string; text: string };
 }
-
-/** The thinking levels Pi knows (pi-agent-core 1.5.0), as an experiment file gives them (FR-EXPERIMENT-05). */
-const THINKING_LEVELS: readonly string[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 
 /**
  * Reads a judge file: its `model`, its `thinking_level` and its `instructions`, a material read from beside the file,
@@ -33,20 +30,12 @@ export function readJudgeFile(path: string): JudgeFile {
     return file[field];
   };
   const model = given("model", (value) => typeof value === "string", "a model's name in Pi's provider/id form") as string;
-  const thinkingLevel = given("thinking_level", (value) => THINKING_LEVELS.includes(value as string), `one of ${THINKING_LEVELS.join(", ")}`) as ThinkingLevel;
+  const thinkingLevel = given("thinking_level", (value) => (THINKING_LEVELS as readonly TomlValue[]).includes(value), `one of ${THINKING_LEVELS.join(", ")}`) as ThinkingLevel;
   const reference = materialReference(given("instructions", (value) => materialReference(value) !== undefined, 'a material, as { file = "…" }'));
   if (reference === undefined) throw new Error(`The judge file "${path}"'s field "instructions" must be a material`);
   const read = new Materials(dirname(path)).read(reference);
   if (read === undefined) throw new Error(`The judge file "${path}"'s instructions "${reference.path}" do not exist`);
   return { model, thinkingLevel, instructions: { path: reference.path, ...read } };
-}
-
-/** The lines of a JSONL file, parsed. */
-function linesOf<Line>(path: string): Line[] {
-  return readFileSync(path, "utf8")
-    .split("\n")
-    .filter((line) => line !== "")
-    .map((line) => JSON.parse(line) as Line);
 }
 
 /** The tool the judge answers each question with. */
@@ -69,11 +58,6 @@ function questionOf({ statement, asks, texts }: Judgeable): string {
   const listed = texts.map(({ text }, at) => `${at + 1}. ${text}`).join("\n");
   const asked = asks === "says" ? "Does one of the texts say what the statement states?" : "Does one of the texts reveal what the statement states?";
   return `Statement: ${statement}\n\nTexts:\n${listed}\n\n${asked}`;
-}
-
-/** A configuration with a value at a path of keys, each but the last naming a table in it. */
-function settingAt(table: Configuration, [key, ...rest]: readonly string[], value: TomlValue): Configuration {
-  return { ...table, [key]: rest.length === 0 ? value : settingAt(table[key] as TomlTable, rest, value) };
 }
 
 /**
@@ -123,10 +107,8 @@ export async function judgeRuns(
   model: (name: string) => Promise<AgentModel>,
 ): Promise<string> {
   const judge = readJudgeFile(judgeFile);
-  const indexPath = join(runsDirectory, "index.jsonl");
-  if (!existsSync(indexPath)) throw new Error(`"${runsDirectory}" has no index (index.jsonl): it is not the runs directory of an experiment`);
   const materials = new Materials(dirname(judgeFile));
-  const questions = linesOf<IndexLine>(indexPath)
+  const questions = indexOf(runsDirectory)
     .filter((run) => run.status === "completed")
     .flatMap(({ runId }): Question[] => {
       const log = linesOf<LogLine>(join(runsDirectory, `${runId}.jsonl`));
