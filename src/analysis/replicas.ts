@@ -21,3 +21,24 @@ export function quartiles(values: readonly number[]): Quartiles {
   };
   return { minimum: at(0), lowerQuartile: at(0.25), median: at(0.5), upperQuartile: at(0.75), maximum: at(1) };
 }
+
+/**
+ * A row of the summary of an experiment's runs: a condition, a model and a metric, and the agent or situation the
+ * metric gives a value for, when it gives one for each.
+ */
+export interface SummaryRow extends Quartiles {
+  condition: string;
+  model: string;
+  metric: string;
+  key?: string;
+  completed: number;
+  stopped: number;
+  values: number[];
+  replicas: number[];
+  nulls: number;
+}
+
+/** A stub that gives no rows and refuses nothing, for the test to fail on its assertions. */
+export function summarizeRuns(_directory: string, _name: string = _directory): SummaryRow[] {
+  return [];
+}
