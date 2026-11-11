@@ -84,6 +84,19 @@ export interface Porter {
   rounds: readonly Round[];
 }
 
+/**
+ * A visitor (FR-WORKPLACE-05), a person of the space: the place they enter, the two clock times their arrival is drawn
+ * between, in depot seconds since midnight, how long they wait, in depot seconds, the things they come for, and the
+ * things they bring.
+ */
+export interface Visitor {
+  enters: string;
+  arrivesBetween: readonly [number, number];
+  waitsSeconds: number;
+  comesFor: readonly string[];
+  brings: readonly string[];
+}
+
 /** Something written in the world, with the moment it was written, by `performance.now()`. */
 export interface Written {
   atMs: number;
@@ -110,6 +123,8 @@ export interface Workplace {
   clock: Clock;
   /** The porter, when the world has one. */
   porter?: Porter;
+  /** The world's visitors, by their ids. */
+  visitors: Readonly<Record<string, Visitor>>;
 }
 
 /** A thing moved from one location to another, with the moment it landed. */
@@ -169,6 +184,19 @@ interface ThingText {
   portable?: boolean;
   /** The porter's round it arrives with, for a thing of the world (FR-WORKPLACE-05). */
   arrives?: string;
+  /** The visitor who brings it, for a situation's thing (FR-WORKPLACE-05). */
+  brought_by?: string;
+}
+
+/** A visitor as a world's text declares them. */
+interface VisitorText {
+  id: string;
+  name: string;
+  description: string;
+  enters: string;
+  arrives_between: [string, string];
+  waits_minutes: number;
+  comes_for: string[];
 }
 
 /** The porter as a world's text declares him. */
@@ -190,6 +218,7 @@ interface WorldText {
   things?: ThingText[];
   people?: { id: string; name: string; description: string; place: string }[];
   porter?: PorterText;
+  visitors?: VisitorText[];
 }
 
 /** A situation as its text declares it: the places it can be in, and the things it brings. */
@@ -264,6 +293,8 @@ function initialState(configuration: Configuration, random: Random): Workplace {
   const arriving = new Map<string, string>();
   for (const thing of world.things ?? []) if (thing.arrives !== undefined) arriving.set(thing.id, thing.arrives);
   const arrivals = arrivalsOf(configuration);
+  // The visitor who brings each thing a visitor brings; until they arrive, it is in no place.
+  const brought = new Map<string, string>();
   for (const id of configuration.chosen_situations as string[]) {
     if (!Object.hasOwn(declared, id)) throw new Error(`the chosen situation "${id}" is not declared`);
     const situation = declared[id];
@@ -272,6 +303,7 @@ function initialState(configuration: Configuration, random: Random): Workplace {
     // A situation that arrives is where the porter puts it down.
     const place = round !== undefined && world.porter !== undefined ? world.porter.drops_in : situation.places[Math.floor(draw * situation.places.length)];
     if (round !== undefined) for (const thing of situation.things ?? []) if (thing.in === undefined) arriving.set(thing.id, round);
+    for (const thing of situation.things ?? []) if (thing.in === undefined && thing.brought_by !== undefined) brought.set(thing.id, thing.brought_by);
     const reserved = (keys[id] ?? {}) as TomlTable;
     // Its things: those it brings, then those its predicates name, which can be things of the world.
     const things = new Set([...(situation.things ?? []).map((thing) => thing.id), ...predicatesOf(reserved).map(({ thing }) => thing)]);
@@ -289,7 +321,7 @@ function initialState(configuration: Configuration, random: Random): Workplace {
     if (thing.in !== undefined) {
       if (!things[thing.in].container) throw new Error(`the thing "${thing.id}" is inside "${thing.in}", which is not a container`);
       inside[thing.id] = thing.in;
-    } else if (!arriving.has(thing.id)) {
+    } else if (!arriving.has(thing.id) && !brought.has(thing.id)) {
       assertPlace(places, thing.place as string, `the thing "${thing.id}" is in`);
       space = put(space, thing.id, thing.place as string);
     }
@@ -302,6 +334,12 @@ function initialState(configuration: Configuration, random: Random): Workplace {
   const porter = world.porter === undefined ? undefined : porterOf(world.porter, space, arriving);
   // The porter is a person of the space, in no place until he appears.
   if (world.porter !== undefined) people[world.porter.id] = { name: world.porter.name, description: world.porter.description };
+  // So is each visitor, until they arrive.
+  const visitors: Record<string, Visitor> = {};
+  for (const visitor of world.visitors ?? []) {
+    people[visitor.id] = { name: visitor.name, description: visitor.description };
+    visitors[visitor.id] = visitorOf(visitor, space, brought);
+  }
   const book = configuration.book as string;
   if (!Object.hasOwn(things, book)) throw new Error(`the configuration's "book" names "${book}", which is no thing of the world`);
   const settings = {
@@ -312,7 +350,7 @@ function initialState(configuration: Configuration, random: Random): Workplace {
   };
   // A world that declares no day starts its clocks at midnight.
   const clock = { startSeconds: secondsOf(world.day?.start ?? "00:00", "the world's \"[day] start\""), timeScale: configuration.time_scale as number };
-  const state: Workplace = { space, things, inside, held: {}, people, situations, book: [], notes: [], moves: [], settings, clock, ...(porter === undefined ? {} : { porter }) };
+  const state: Workplace = { space, things, inside, held: {}, people, situations, book: [], notes: [], moves: [], settings, clock, visitors, ...(porter === undefined ? {} : { porter }) };
   for (const [id, { keys: reserved }] of Object.entries(situations)) assertPredicates(state, id, predicatesOf(reserved));
   return state;
 }
@@ -353,6 +391,19 @@ function porterOf(text: PorterText, space: Places, arriving: ReadonlyMap<string,
     things: [...arriving].filter(([, round]) => round === time).map(([thing]) => thing),
   }));
   return { id: text.id, enters: text.enters, dropsIn: text.drops_in, rounds };
+}
+
+/** A visitor as the world's text declares them, with the things they bring, in the order the situations give them. */
+function visitorOf(text: VisitorText, space: Places, brought: ReadonlyMap<string, string>): Visitor {
+  assertPlace(space.places, text.enters, `the visitor "${text.id}" enters`);
+  const [from, to] = text.arrives_between.map((time) => secondsOf(time, `the visitor "${text.id}"'s "arrives_between"`));
+  return {
+    enters: text.enters,
+    arrivesBetween: [from, to],
+    waitsSeconds: text.waits_minutes * 60,
+    comesFor: text.comes_for,
+    brings: [...brought].filter(([, by]) => by === text.id).map(([thing]) => thing),
+  };
 }
 
 /** The location of a thing the worker holds. */
@@ -996,6 +1047,11 @@ function leavingTheSpace(person: string): Action<Workplace, unknown> {
   });
 }
 
+/** Someone appears in a place with some things, which they put down there. */
+function appearingWith(person: string, place: string, things: readonly string[]): Action<Workplace, unknown> {
+  return always((state) => things.reduce((changed, thing) => ({ ...changed, space: put(changed.space, thing, place) }), { ...state, space: put(state.space, person, place) }));
+}
+
 /** Things someone holds are put down in a place. */
 function puttingDown(things: readonly string[], place: string): Action<Workplace, unknown> {
   return always((state) => things.reduce((changed, thing) => ({ ...outOfHands(changed, thing), space: put(changed.space, thing, place) }), state));
@@ -1065,19 +1121,43 @@ function* porterSteps(now: () => Now): Generator<Step<Workplace>, void, void> {
   }
 }
 
-/** The workplace's components: the porter, when the world has one (FR-WORKPLACE-05). */
+/**
+ * A visitor's cycle: once, at a time drawn between the two times they arrive between from their own sequence, they
+ * appear where they enter with what they bring and put it down; they wait there, noticing what they hold each depot
+ * second, and leave once they hold every thing they came for, or once their wait has run out.
+ */
+function visitorSteps(id: string, random: Random): (now: () => Now) => Generator<Step<Workplace>, void, void> {
+  const draw = random.next();
+  return function* (now) {
+    const { enters, arrivesBetween: [from, to], waitsSeconds, comesFor, brings } = now().state.visitors[id];
+    yield* waitUntil(now, from + draw * (to - from));
+    yield { kind: "action", name: `appear in "${enters}" bringing ${listed(brings)}`, durationMs: 0, action: appearingWith(id, enters, brings) };
+    const { clock } = now().state;
+    const leavesAtMs = now().sinceStartMs + (waitsSeconds / clock.timeScale) * 1000;
+    const depotSecondMs = 1000 / clock.timeScale;
+    while (!comesFor.every((thing) => now().state.held[thing] === id) && now().sinceStartMs < leavesAtMs) {
+      yield { kind: "wait", ms: Math.min(depotSecondMs, leavesAtMs - now().sinceStartMs) };
+    }
+    yield { kind: "action", name: "leave", durationMs: 0, action: leavingTheSpace(id) };
+  };
+}
+
+/** The workplace's components: the porter, when the world has one, and each visitor (FR-WORKPLACE-05). */
 function components(configuration: Configuration): Component<Workplace>[] {
   const world = textOf(configuration, "world") as unknown as WorldText;
-  if (world.porter === undefined) return [];
-  const { id, enters, drops_in: dropsIn, rounds } = world.porter;
-  return [
-    {
-      name: id,
-      kind: "world",
-      description: `The porter: at each round (${rounds.join(", ")}) he appears in "${enters}" carrying that round's arrivals, walks to "${dropsIn}" by the shortest way, puts them down there, walks back and leaves.`,
-      cycle: () => cycleOf(porterSteps),
-    },
-  ];
+  const porter = (text: PorterText): Component<Workplace> => ({
+    name: text.id,
+    kind: "world",
+    description: `The porter: at each round (${text.rounds.join(", ")}) he appears in "${text.enters}" carrying that round's arrivals, walks to "${text.drops_in}" by the shortest way, puts them down there, walks back and leaves.`,
+    cycle: () => cycleOf(porterSteps),
+  });
+  const visitor = (text: VisitorText): Component<Workplace> => ({
+    name: text.id,
+    kind: "world",
+    description: `A visitor: once, at a time drawn between ${text.arrives_between.join(" and ")}, appears in "${text.enters}" with what they bring and puts it down; leaves once they hold ${listed(text.comes_for)}, or after ${text.waits_minutes} minutes.`,
+    cycle: (random) => cycleOf(visitorSteps(text.id, random)),
+  });
+  return [...(world.porter === undefined ? [] : [porter(world.porter)]), ...(world.visitors ?? []).map(visitor)];
 }
 
 /** The worker's tools, in the order the SPEC gives them: its sensors, then its effectors. */
