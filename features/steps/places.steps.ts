@@ -160,3 +160,36 @@ Then("entity {string} does not have in sight {string} or {string}", function (th
 Then("entity {string} does not have in sight {string}", function (this: Context, entity: string, other: string) {
   assertNotInSight(this, entity, [other]);
 });
+
+When(
+  "a space is built with the places {string} and {string} and a passage of length {int} between {string} and {string}",
+  function (this: Context, first: string, second: string, length: number, one: string, other: string) {
+    try {
+      this.places = layout([first, second], [{ between: [one, other], length }]);
+    } catch (error) {
+      this.spaceError = error as Error;
+    }
+  },
+);
+
+/**
+ * Checks that what the scenario did was refused with an error whose message holds the given words, and, for an action
+ * on the space, that the arbiter applied nothing.
+ */
+function assertRefused(context: Context, named: string): void {
+  assert.ok(context.spaceError, `expected a refusal that names ${named}, got ${JSON.stringify(context.result)}`);
+  assert.ok(context.spaceError.message.includes(named), `expected the error to name ${named}: ${context.spaceError.message}`);
+  if (context.placesWorld !== undefined) assert.equal(context.placesWorld.version, context.versionBefore, "a refused action applied something");
+}
+
+Then("it is refused with an error that names the place {string}", function (this: Context, place: string) {
+  assertRefused(this, `place "${place}"`);
+});
+
+Then("it is refused with an error that names entity {string}", function (this: Context, entity: string) {
+  assertRefused(this, `entity "${entity}"`);
+});
+
+Then("it is refused with an error that names the length {int}", function (this: Context, length: number) {
+  assertRefused(this, `length ${length}`);
+});
