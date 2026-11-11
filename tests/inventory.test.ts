@@ -299,8 +299,8 @@ describe("inventory", () => {
       { start: "08:30", timeScale: 60 },
     ]);
     const markdown = printed(experiment, scenario);
-    expect(markdown).toContain("### Clock\n\n- Start: 08:30\n- Time scale: 60 depot seconds for each second of the run\n");
-    expect(markdown).toContain("### Clock\n\n- Start: 08:30\n- Time scale: 1 depot seconds for each second of the run\n");
+    expect(markdown).toContain("### Clock\n\n- Start: 08:30\n- Time scale: 60 world seconds for each second of the run\n");
+    expect(markdown).toContain("### Clock\n\n- Start: 08:30\n- Time scale: 1 world seconds for each second of the run\n");
   });
 
   it("has no clock for a scenario without one", () => {

@@ -41,6 +41,8 @@ export interface ConditionInventory {
   situations?: string[];
   /** Each component the condition declares, with its kind and its cycle as the scenario describes it, for a scenario that has components (FR-PROCESS-01). */
   components?: { name: string; kind: Component<unknown>["kind"]; cycle: string }[];
+  /** The world's clock as the condition sets it, for a scenario that has one (FR-WORKPLACE-05). */
+  clock?: { start: string; timeScale: number };
 }
 
 /** A tool as its agents see it, with its duration as the scenario describes it and the text for each of its outcomes. */
@@ -128,6 +130,7 @@ function conditionInventory<State>(
     materials: materials.map(({ path, hash, heldOut }) => (heldOut ? { path } : { path, hash })),
     ...(scenario.situations === undefined ? {} : { situations: [...scenario.situations(configuration)] }),
     ...(scenario.components === undefined ? {} : { components: components.map(({ name, kind, description }) => ({ name, kind, cycle: description })) }),
+    ...(scenario.clock === undefined ? {} : { clock: scenario.clock(configuration) }),
   };
 }
 
@@ -156,6 +159,7 @@ export function inventoryMarkdown({ experiment, scenario, conditions }: Inventor
       materialsMarkdown(condition),
       ...(condition.situations === undefined ? [] : [situationsMarkdown(condition.situations)]),
       ...(condition.components === undefined ? [] : [componentsMarkdown(condition.components)]),
+      ...(condition.clock === undefined ? [] : [clockMarkdown(condition.clock)]),
     ].join("\n"),
   );
   return [`# Environment inventory of experiment "${experiment}", scenario "${scenario}"\n`, ...sections].join("\n");
@@ -236,6 +240,11 @@ function componentsMarkdown(components: NonNullable<ConditionInventory["componen
   if (components.length === 0) return `### Components\n\n${NONE}\n`;
   const listed = components.map(({ name, kind, cycle }) => [`#### Component "${name}"\n`, `- Kind: ${COMPONENT_KINDS[kind]}`, `- Cycle: ${cycle}`, ""].join("\n"));
   return ["### Components\n", ...listed].join("\n");
+}
+
+/** The world's clock, in Markdown: the time it shows when the run starts, and how fast it goes. */
+function clockMarkdown({ start, timeScale }: NonNullable<ConditionInventory["clock"]>): string {
+  return `### Clock\n\n- Start: ${start}\n- Time scale: ${timeScale} world seconds for each second of the run\n`;
 }
 
 /** A text as a fenced block, with a fence longer than any run of backticks in it, so the text is given whole. */

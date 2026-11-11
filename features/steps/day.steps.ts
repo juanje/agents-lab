@@ -511,5 +511,5 @@ Given("the visitor {string} is declared while the person {string} is also declar
 Then("it gives the clock's start time {string} and the time scale {int}", function (this: Context, start: string, scale: number) {
   const clock = under(under(this.labOutput ?? "", '## Condition "base"'), "### Clock");
   assert.equal(itemOf(clock, "Start"), start);
-  assert.equal(itemOf(clock, "Time scale"), `${scale} depot seconds for each second of the run`);
+  assert.equal(itemOf(clock, "Time scale"), `${scale} world seconds for each second of the run`);
 });

@@ -52,6 +52,11 @@ export interface Scenario<State> {
    * lists them by id only (FR-WORKPLACE-01).
    */
   situations?: (configuration: Configuration) => readonly string[];
+  /**
+   * The world's clock, for a scenario that keeps one: the time it shows when the run starts ("HH:MM") and how many of
+   * its seconds pass per second of the run, from the resolved configuration; the inventory gives both (FR-WORKPLACE-05).
+   */
+  clock?: (configuration: Configuration) => { start: string; timeScale: number };
   /** The components besides the agents, from the resolved configuration; none when the scenario declares none (FR-PROCESS-01). */
   components?: (configuration: Configuration) => readonly Component<State>[];
 }

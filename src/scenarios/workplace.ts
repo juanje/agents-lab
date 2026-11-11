@@ -369,11 +369,16 @@ function initialState(configuration: Configuration, random: Random): Workplace {
     durations: configuration.durations as unknown as Durations,
     taskGiver: configuration.task_giver as string,
   };
-  // A world that declares no day starts its clocks at midnight.
-  const clock = { startSeconds: secondsOf(world.day?.start ?? "00:00", "the world's \"[day] start\""), timeScale: configuration.time_scale as number };
+  const clock = { startSeconds: secondsOf(clockOf(configuration).start, "the world's \"[day] start\""), timeScale: configuration.time_scale as number };
   const state: Workplace = { space, things, inside, held: {}, people, situations, book: [], notes: [], moves: [], settings, clock, visitors, ...(porter === undefined ? {} : { porter }) };
   for (const [id, { keys: reserved }] of Object.entries(situations)) assertPredicates(state, id, predicatesOf(reserved));
   return state;
+}
+
+/** The depot's clock as the configuration sets it: the world's day's start, midnight when it has none, and the time scale. */
+function clockOf(configuration: Configuration): { start: string; timeScale: number } {
+  const world = textOf(configuration, "world") as unknown as WorldText;
+  return { start: world.day?.start ?? "00:00", timeScale: configuration.time_scale as number };
 }
 
 /** A clock time as the world's texts and the configuration write it. */
@@ -1246,6 +1251,7 @@ export const workplaceScenario: Scenario<Workplace> = {
   describeRhythm: describeUniformRhythm,
   situations: (configuration) => configuration.chosen_situations as string[],
   components,
+  clock: clockOf,
   baseConfiguration: [
     'identity = "You work here."',
     'world_rules = ""',
