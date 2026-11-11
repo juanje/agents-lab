@@ -117,9 +117,9 @@ const withFactors = [
   "",
 ].join("\n");
 
-/** A condition as the tests compare it: its name, its change as a table, and its levels. */
-function described({ name, change, levels }: Experiment["conditions"][number]) {
-  return { name, change: { ...parse(change) }, levels };
+/** A condition as the tests compare it: its name, its change as a table, and its levels, when it has any. */
+function described({ name, change, ...rest }: Experiment["conditions"][number]) {
+  return { name, change: { ...parse(change) }, ...("levels" in rest ? { levels: rest.levels } : {}) };
 }
 
 describe("readExperiment with factors", () => {
@@ -132,10 +132,17 @@ describe("readExperiment with factors", () => {
     );
   });
 
+  it("gives the file's own conditions no levels", () => {
+    expect(readExperiment(valid).conditions.map(described)).toEqual([
+      { name: "baseline", change: {} },
+      { name: "five-slots", change: { slots: { count: 5 } } },
+    ]);
+  });
+
   it("gives the baseline, with no change and no levels, then each combination of levels, named after them, the first factor's changing slowest", () => {
     const { conditions } = readExperiment(withFactors);
     expect(conditions.map(described)).toEqual([
-      { name: "baseline", change: {}, levels: {} },
+      { name: "baseline", change: {} },
       { name: "count=three,held=none", change: { slots: { count: 3 } }, levels: { count: "three", held: "none" } },
       { name: "count=three,held=two", change: { slots: { count: 3, held: 2 } }, levels: { count: "three", held: "two" } },
       { name: "count=five,held=none", change: { slots: { count: 5 } }, levels: { count: "five", held: "none" } },

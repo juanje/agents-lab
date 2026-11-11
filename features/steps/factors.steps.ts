@@ -160,7 +160,7 @@ Then("every run had {string} as {int}", function (this: Context, path: string, v
   }
 });
 
-/** The levels a condition's run gives in its setup line and in its index line. */
+/** The levels a condition's run gives in its setup line and in its index line, or undefined where it gives none. */
 function levelsOf(context: Context, condition: string): { setup: unknown; index: unknown } {
   const index = indexLineOf(context, condition) as unknown as Record<string, unknown>;
   return { setup: setupLineOf(context, condition).levels, index: index.levels };
@@ -178,8 +178,8 @@ Then(
 
 Then("those of the run of {string} give no levels", function (this: Context, condition: string) {
   const { setup, index } = levelsOf(this, condition);
-  assert.deepEqual(setup, {}, "the setup line gives levels");
-  assert.deepEqual(index, {}, "the index line gives levels");
+  assert.equal(setup, undefined, "the setup line gives levels");
+  assert.equal(index, undefined, "the index line gives levels");
 });
 
 Then("in every run agent {string}'s rhythm stimulus has the content {string}", function (this: Context, agent: string, content: string) {
