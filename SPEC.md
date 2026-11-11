@@ -246,7 +246,7 @@ The engine computes the scenario's metrics from the world's state at the start o
 #### FR-RECORD-02: A run records what it ran
 The first line of each run's log holds:
 - the resolved configuration and the condition's name;
-- the seeds and the model;
+- the seeds, the model and its sampling settings;
 - the commit of the code;
 - the environment inventory.
 
@@ -398,13 +398,26 @@ Every tool call takes time and every effector spends energy, as the scenario dec
 Every outcome comes from the world's rules applied to the world's state. What an agent perceived never changes an outcome; it is recorded beside it.
 *Why:* physical events, such as two agents reaching for the same place, happen whatever each agent knew; mixing the agent's knowledge into the world's rules would make the world depend on the agent, and hide the difference between what was and what was perceived.
 
+#### NFR-12: Information takes time to travel
+Every sensor and channel declares the medium its information travels through, with its speed. What an agent perceives at a distance is the world, or the message, as it was when the signal left. Instant information exists only when the scenario declares it so, and the inventory shows it.
+*Why:* in real systems information takes time to arrive, by distance and medium, for everything an agent perceives, not only for messages; systems use fast media for what needs a quick reaction and slow ones for what does not. Instant perception at a distance removes part of the lag the experiments study.
+
+#### NFR-13: Variability and perturbations are declared conditions
+Agents of one kind start alike unless the condition gives them attributes drawn, with the seed, from declared distributions (for example rhythm, durations, energy, perception radius or the value of a rule); otherwise their differences come only from their own sampling and experience. The world has perturbations or noise (variable durations, efforts or processes, unplanned events) only as the condition declares, with the seed. Both are recorded with the run.
+*Why:* diversity and variability are levers that raise or lower a system's complexity, and experiments fix one to study another; the drift between agents of one kind is a result to measure, not something to inject by default.
+
 ## Draft notes
 
 - v0.2 will need, at least:
   - channels between agents with topology and delay;
+  - media with a speed for sensors and channels, and the world's past states to read them from (NFR-12); until then every sensor and channel is instant, and the inventory must say so;
   - event masks with pending stimuli;
   - votes with a deadline.
 - v0.3 will need memory across runs: a workspace for each agent's memory files. `@earendil-works/pi-durable` (experimental in Pi 1.5.0) may help with long runs.
 - Open: whether real time is enough for E16's vote deadlines to be repeatable, or simulated time is needed.
 - Later: sensors that return partial or wrong information, and stimuli an agent may not notice (by distance or attention), both declared in the inventory; the world stays as it is, only what reaches the agent changes.
 - A call left unrun because its message was cut at the token limit needs its own outcome.
+- Later, for NFR-13: per-agent attributes drawn from distributions; noise in durations, efforts and processes; unplanned events.
+- After the pilot: rule-based agents that perceive and act through the same tools, durations and arbiter as Pi agents, as a weak-agent baseline for the same scenario.
+- Later: an open population, with agents that enter and leave during a run (birth, death, migration), for selection and extinction.
+- Metrics report distributions across agents and over time, not only means; the drift between agents of one kind is one of them.
