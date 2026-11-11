@@ -24,3 +24,8 @@ Feature: A neighbourhood from a seed
     Given the configuration sets the rhythm channel's source to "your own pace" and its text to "Time passes."
     When the engine loads it with the seed 42
     Then each resident's stimuli on the channel "rhythm" have the source "your own pace" and the content "Time passes."
+
+  Scenario: Each resident's rhythm comes from the configuration
+    Given the configuration sets "rhythm.min_ms" to 100 and "rhythm.max_ms" to 200
+    When the engine loads it with the seed 42
+    Then every interval each resident's rhythm draws is from 100 to 200 milliseconds
