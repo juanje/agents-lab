@@ -294,8 +294,14 @@ function initialState(configuration: Configuration, random: Random): Workplace {
   // The round each thing that arrives with the porter comes with: the world's things marked so, and the things of the
   // situations the configuration's arrivals list for a round. Until then, they are in no place.
   const arriving = new Map<string, string>();
+  // The porter's rounds are times before anything is checked against them.
+  for (const time of world.porter?.rounds ?? []) secondsOf(time, `the porter "${world.porter?.id}"'s round`);
   for (const thing of world.things ?? []) {
     if (thing.arrives === undefined) continue;
+    if (world.porter === undefined) throw new Error(`the thing "${thing.id}" arrives at "${thing.arrives}", but the world has no porter to bring it`);
+    if (!world.porter.rounds.includes(thing.arrives)) {
+      throw new Error(`the thing "${thing.id}" arrives at "${thing.arrives}", which is not one of the porter's rounds`);
+    }
     // It is put down where the porter drops it.
     if (thing.place !== undefined && thing.place !== world.porter?.drops_in) {
       throw new Error(`the thing "${thing.id}" arrives with the porter, who puts it down in "${world.porter?.drops_in}", but gives the place "${thing.place}"`);
@@ -343,13 +349,16 @@ function initialState(configuration: Configuration, random: Random): Workplace {
     people[id] = { name, description };
     space = put(space, id, place);
   }
+  // A porter or a visitor is a person of the space, in no place until they appear, with an id no thing or person has.
+  const addPerson = ({ id, name, description }: { id: string; name: string; description: string }, who: string) => {
+    if (Object.hasOwn(things, id) || Object.hasOwn(people, id)) throw new Error(`the ${who} "${id}" has an id that a ${Object.hasOwn(things, id) ? "thing" : "person"} of the world already has`);
+    people[id] = { name, description };
+  };
   const porter = world.porter === undefined ? undefined : porterOf(world.porter, space, arriving);
-  // The porter is a person of the space, in no place until he appears.
-  if (world.porter !== undefined) people[world.porter.id] = { name: world.porter.name, description: world.porter.description };
-  // So is each visitor, until they arrive.
+  if (world.porter !== undefined) addPerson(world.porter, "porter");
   const visitors: Record<string, Visitor> = {};
   for (const visitor of world.visitors ?? []) {
-    people[visitor.id] = { name: visitor.name, description: visitor.description };
+    addPerson(visitor, "visitor");
     visitors[visitor.id] = visitorOf(visitor, space, brought);
   }
   const book = configuration.book as string;
@@ -411,6 +420,9 @@ function arrivalsOf(configuration: Configuration, world: WorldText, declared: Re
 /** The porter as the world's text declares him, with each round's things, in the order they arrive. */
 function porterOf(text: PorterText, space: Places, arriving: ReadonlyMap<string, string>): Porter {
   for (const place of [text.enters, text.drops_in]) assertPlace(space.places, place, `the porter "${text.id}" names`);
+  if (shortestWay(space, text.enters, text.drops_in) === undefined) {
+    throw new Error(`the porter "${text.id}" enters "${text.enters}" and drops what he brings in "${text.drops_in}", but no passages join them`);
+  }
   const rounds = text.rounds.map((time) => ({
     time,
     seconds: secondsOf(time, `the porter "${text.id}"'s round`),
@@ -1139,8 +1151,9 @@ function* walking(person: string, way: readonly { place: string; length: number 
  */
 function* porterSteps(now: () => Now): Generator<Step<Workplace>, void, void> {
   const porter = now().state.porter as Porter;
-  const there = shortestWay(now().state.space, porter.enters, porter.dropsIn) ?? [];
-  const back = shortestWay(now().state.space, porter.dropsIn, porter.enters) ?? [];
+  // A porter with no way between them is refused as the world is built.
+  const there = shortestWay(now().state.space, porter.enters, porter.dropsIn) as { place: string; length: number }[];
+  const back = shortestWay(now().state.space, porter.dropsIn, porter.enters) as { place: string; length: number }[];
   for (const { seconds, things } of porter.rounds) {
     yield* waitUntil(now, seconds);
     yield { kind: "action", name: `appear in "${porter.enters}" carrying ${listed(things)}`, durationMs: 0, action: appearing(porter.id, porter.enters, things) };
