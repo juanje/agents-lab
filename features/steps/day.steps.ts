@@ -13,7 +13,7 @@ import { stateAt } from "./acting.steps.ts";
 import { experimentFileOf, idleModels } from "./lab.steps.ts";
 import { DURATIONS, MODEL } from "./measures.steps.ts";
 import { withBase } from "./neighbourhood.steps.ts";
-import { logLines } from "./record.steps.ts";
+import { linesOf, logLines } from "./record.steps.ts";
 import { runScenario } from "./tool.steps.ts";
 import { editText } from "./workplace.steps.ts";
 import { WORLD, situations } from "./workplace-tools.steps.ts";
@@ -297,7 +297,9 @@ async function runDay(context: Context, scenario: typeof workplaceScenario): Pro
   const model = context.labModels.get(MODEL);
   assert.ok(model !== undefined, "the worker runs on no model");
   await runScenario(context, { ...loaded, world: context.workplaceWorld, components }, [{ name: WORKER, model, activations: context.activations.get(WORKER) ?? 1 }]);
-  const actions = logLines(context)
+  // This run's own log, among any an earlier run of the scenario wrote.
+  const actions = linesOf(context, `${context.runId}.jsonl`)
+    .map((line) => JSON.parse(line) as Record<string, unknown>)
     .filter((line) => line.type === "component_action")
     .map((line) => line as unknown as DayRun["actions"][number]);
   dayRunsOf(context).push({ startedAtMs: context.runStartedAtMs as number, draws, actions });
@@ -334,11 +336,16 @@ function stateAtEnd(context: Context): Workplace {
   return context.workplaceWorld.state;
 }
 
-/** Whether the workplace holds an entity, a thing or a person, in no place: not in its space, inside nothing and held by no one. */
+/**
+ * Checks that the workplace holds an entity, a thing or a person, in no place: neither it nor what it is inside, if
+ * anything, is in the space or held by anyone.
+ */
 function assertNowhere(state: Workplace, id: string, when: string): void {
-  assert.equal(where(state.space, id), undefined, `${when}, "${id}" was ${JSON.stringify(where(state.space, id))}`);
-  assert.ok(!Object.hasOwn(state.inside, id), `${when}, "${id}" was inside "${state.inside[id]}"`);
-  assert.ok(!Object.hasOwn(state.held, id), `${when}, "${id}" was held by "${state.held[id]}"`);
+  let outermost = id;
+  while (Object.hasOwn(state.inside, outermost)) outermost = state.inside[outermost];
+  const what = outermost === id ? `"${id}"` : `"${outermost}", which "${id}" is inside,`;
+  assert.equal(where(state.space, outermost), undefined, `${when}, ${what} was ${JSON.stringify(where(state.space, outermost))}`);
+  assert.ok(!Object.hasOwn(state.held, outermost), `${when}, ${what} was held by "${state.held[outermost]}"`);
 }
 
 /** Checks that an entity is in a place. */

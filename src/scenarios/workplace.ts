@@ -1,10 +1,11 @@
 import { type TomlTable, type TomlValue, parse } from "smol-toml";
 import { type Passage, type Places, arrive, entitiesIn, entitiesInPassage, exits, layout, leave, put, where } from "../engine/places.ts";
 import type { ToolCall } from "../engine/adapter.ts";
+import type { Component, Cycle, Step } from "../engine/components.ts";
 import type { Configuration, Scenario } from "../engine/scenario.ts";
 import { Random } from "../engine/random.ts";
 import type { AgentCall, Effector, LandingCall, LastBy, Sensor, TargetAsSensed, Tool } from "../engine/tools.ts";
-import type { Check } from "../engine/world.ts";
+import type { Action, Check } from "../engine/world.ts";
 import { describeUniformRhythm, rhythmChannels, uniformRhythm } from "./rhythm.ts";
 
 /** A thing in the workplace, as anyone in its place sees it. */
@@ -65,6 +66,24 @@ export interface Clock {
   timeScale: number;
 }
 
+/** A round of the porter: its clock time, in depot seconds since midnight, and the things it brings, in order. */
+export interface Round {
+  time: string;
+  seconds: number;
+  things: readonly string[];
+}
+
+/**
+ * The porter (FR-WORKPLACE-05), a person of the space: the place he enters, the place he drops what he brings, and his
+ * rounds.
+ */
+export interface Porter {
+  id: string;
+  enters: string;
+  dropsIn: string;
+  rounds: readonly Round[];
+}
+
 /** Something written in the world, with the moment it was written, by `performance.now()`. */
 export interface Written {
   atMs: number;
@@ -89,6 +108,8 @@ export interface Workplace {
   moves: readonly Move[];
   settings: Settings;
   clock: Clock;
+  /** The porter, when the world has one. */
+  porter?: Porter;
 }
 
 /** A thing moved from one location to another, with the moment it landed. */
@@ -146,6 +167,18 @@ interface ThingText {
   properties?: TomlTable;
   container?: boolean;
   portable?: boolean;
+  /** The porter's round it arrives with, for a thing of the world (FR-WORKPLACE-05). */
+  arrives?: string;
+}
+
+/** The porter as a world's text declares him. */
+interface PorterText {
+  id: string;
+  name: string;
+  description: string;
+  enters: string;
+  drops_in: string;
+  rounds: string[];
 }
 
 /** A world as its text declares it. */
@@ -156,6 +189,7 @@ interface WorldText {
   passages?: Passage[];
   things?: ThingText[];
   people?: { id: string; name: string; description: string; place: string }[];
+  porter?: PorterText;
 }
 
 /** A situation as its text declares it: the places it can be in, and the things it brings. */
@@ -225,11 +259,19 @@ function initialState(configuration: Configuration, random: Random): Workplace {
   space = put(space, WORKER, world.worker.place);
   const situations: Record<string, Situation> = {};
   const held: ThingText[] = [...(world.things ?? [])];
+  // The round each thing that arrives with the porter comes with: the world's things marked so, and the things of the
+  // situations the configuration's arrivals list for a round. Until then, they are in no place.
+  const arriving = new Map<string, string>();
+  for (const thing of world.things ?? []) if (thing.arrives !== undefined) arriving.set(thing.id, thing.arrives);
+  const arrivals = arrivalsOf(configuration);
   for (const id of configuration.chosen_situations as string[]) {
     if (!Object.hasOwn(declared, id)) throw new Error(`the chosen situation "${id}" is not declared`);
     const situation = declared[id];
     const draw = Random.derive(situationsSeed, `situation ${id}`).next();
-    const place = situation.places[Math.floor(draw * situation.places.length)];
+    const round = arrivals.get(id);
+    // A situation that arrives is where the porter puts it down.
+    const place = round !== undefined && world.porter !== undefined ? world.porter.drops_in : situation.places[Math.floor(draw * situation.places.length)];
+    if (round !== undefined) for (const thing of situation.things ?? []) if (thing.in === undefined) arriving.set(thing.id, round);
     const reserved = (keys[id] ?? {}) as TomlTable;
     // Its things: those it brings, then those its predicates name, which can be things of the world.
     const things = new Set([...(situation.things ?? []).map((thing) => thing.id), ...predicatesOf(reserved).map(({ thing }) => thing)]);
@@ -247,7 +289,7 @@ function initialState(configuration: Configuration, random: Random): Workplace {
     if (thing.in !== undefined) {
       if (!things[thing.in].container) throw new Error(`the thing "${thing.id}" is inside "${thing.in}", which is not a container`);
       inside[thing.id] = thing.in;
-    } else {
+    } else if (!arriving.has(thing.id)) {
       assertPlace(places, thing.place as string, `the thing "${thing.id}" is in`);
       space = put(space, thing.id, thing.place as string);
     }
@@ -257,6 +299,9 @@ function initialState(configuration: Configuration, random: Random): Workplace {
     people[id] = { name, description };
     space = put(space, id, place);
   }
+  const porter = world.porter === undefined ? undefined : porterOf(world.porter, space, arriving);
+  // The porter is a person of the space, in no place until he appears.
+  if (world.porter !== undefined) people[world.porter.id] = { name: world.porter.name, description: world.porter.description };
   const book = configuration.book as string;
   if (!Object.hasOwn(things, book)) throw new Error(`the configuration's "book" names "${book}", which is no thing of the world`);
   const settings = {
@@ -267,7 +312,7 @@ function initialState(configuration: Configuration, random: Random): Workplace {
   };
   // A world that declares no day starts its clocks at midnight.
   const clock = { startSeconds: secondsOf(world.day?.start ?? "00:00", "the world's \"[day] start\""), timeScale: configuration.time_scale as number };
-  const state: Workplace = { space, things, inside, held: {}, people, situations, book: [], notes: [], moves: [], settings, clock };
+  const state: Workplace = { space, things, inside, held: {}, people, situations, book: [], notes: [], moves: [], settings, clock, ...(porter === undefined ? {} : { porter }) };
   for (const [id, { keys: reserved }] of Object.entries(situations)) assertPredicates(state, id, predicatesOf(reserved));
   return state;
 }
@@ -291,6 +336,23 @@ function clockTime({ startSeconds, timeScale }: Clock, sinceStartMs: number): st
   const minutes = Math.floor(seconds / 60);
   const two = (value: number) => String(value).padStart(2, "0");
   return `${two(Math.floor(minutes / 60))}:${two(minutes % 60)}`;
+}
+
+/** The round each situation the configuration's arrivals list arrives with, by the situation's id. */
+function arrivalsOf(configuration: Configuration): Map<string, string> {
+  const listed = textOf(configuration, "arrivals") as Record<string, string[]>;
+  return new Map(Object.entries(listed).flatMap(([round, ids]) => ids.map((id) => [id, round] as const)));
+}
+
+/** The porter as the world's text declares him, with each round's things, in the order they arrive. */
+function porterOf(text: PorterText, space: Places, arriving: ReadonlyMap<string, string>): Porter {
+  for (const place of [text.enters, text.drops_in]) assertPlace(space.places, place, `the porter "${text.id}" names`);
+  const rounds = text.rounds.map((time) => ({
+    time,
+    seconds: secondsOf(time, `the porter "${text.id}"'s round`),
+    things: [...arriving].filter(([, round]) => round === time).map(([thing]) => thing),
+  }));
+  return { id: text.id, enters: text.enters, dropsIn: text.drops_in, rounds };
 }
 
 /** The location of a thing the worker holds. */
@@ -330,20 +392,31 @@ function assertPredicates(state: Workplace, situation: string, predicates: reado
   }
 }
 
-/** Where a thing directly is: the worker's hands ("held"), a person who holds it, the container it is in, or its place. */
-function locationOf(state: Workplace, thing: string): string {
+/**
+ * Where a thing directly is: the worker's hands ("held"), a person who holds it, the container it is in, or its place;
+ * none for a thing that is in no place yet, such as one that has not arrived (FR-WORKPLACE-05).
+ */
+function locationOf(state: Workplace, thing: string): string | undefined {
   const holder = state.held[thing];
   if (holder !== undefined) return holder === WORKER ? HELD : `${PERSON}${holder}`;
   if (Object.hasOwn(state.inside, thing)) return state.inside[thing];
   const at = where(state.space, thing);
-  if (at === undefined || !("place" in at)) throw new Error(`the workplace holds the thing "${thing}" nowhere: ${JSON.stringify(at)}`);
+  if (at === undefined) return undefined;
+  if (!("place" in at)) throw new Error(`the workplace holds the thing "${thing}" in a passage: ${JSON.stringify(at)}`);
   return at.place;
 }
 
+/** Where a thing the worker moves directly is: it reaches it, so it is somewhere. */
+function locatedOf(state: Workplace, thing: string): string {
+  const location = locationOf(state, thing);
+  if (location === undefined) throw new Error(`the worker moved the thing "${thing}", which is in no place`);
+  return location;
+}
+
 /** Whether a predicate holds with its thing at a location; the worker is no person, so a thing it holds is given to no one. */
-function holdsAt({ key, locations }: Predicate, location: string): boolean {
-  if (key === "not_given") return !location.startsWith(PERSON);
-  const located = locations.includes(location);
+function holdsAt({ key, locations }: Predicate, location: string | undefined): boolean {
+  if (key === "not_given") return location === undefined || !location.startsWith(PERSON);
+  const located = location !== undefined && locations.includes(location);
   return key === "where" ? located : !located;
 }
 
@@ -374,7 +447,7 @@ function settledAt(state: Workplace): Record<string, number> {
     const named = new Set(given.map(({ thing }) => thing));
     const moves = state.moves.filter(({ thing }) => named.has(thing));
     const at = new Map([...named].map((thing) => [thing, moves.find((move) => move.thing === thing)?.from ?? locationOf(state, thing)]));
-    const values = () => given.map((predicate) => holdsAt(predicate, at.get(predicate.thing) as string)).join();
+    const values = () => given.map((predicate) => holdsAt(predicate, at.get(predicate.thing))).join();
     let before = values();
     let changedAtMs: number | undefined;
     for (const { thing, to, atMs } of moves) {
@@ -666,7 +739,7 @@ function moving(effect: (state: Workplace, call: LandingCall) => Workplace): (st
   return (state, call) => {
     const thing = thingOf(call.arguments);
     const moved = effect(state, call);
-    return { ...moved, moves: [...moved.moves, { thing, from: locationOf(state, thing), to: locationOf(moved, thing), atMs: call.atMs }] };
+    return { ...moved, moves: [...moved.moves, { thing, from: locatedOf(state, thing), to: locatedOf(moved, thing), atMs: call.atMs }] };
   };
 }
 
@@ -871,6 +944,142 @@ const entriesAfter = (state: Workplace, toolCalls: readonly ToolCall[]) => writt
 /** The worker's notes since it first sensed each situation. */
 const notesAfter = (state: Workplace, toolCalls: readonly ToolCall[]) => writtenSince(state, toolCalls, state.notes);
 
+/** The world and the run's time as a component's cycle chooses its next step. */
+interface Now {
+  state: Workplace;
+  sinceStartMs: number;
+}
+
+/**
+ * A component's cycle from the steps it takes in order, each chosen once the step before has ended, reading the world and
+ * the run's time as they are then; it ends when its steps do.
+ */
+function cycleOf(steps: (now: () => Now) => Generator<Step<Workplace>, void, void>): Cycle<Workplace> {
+  let now: Now | undefined;
+  const taken = steps(() => now as Now);
+  return {
+    next: (state, _outcome, sinceStartMs) => {
+      now = { state, sinceStartMs };
+      const step = taken.next();
+      return step.done === true ? { kind: "end" } : step.value;
+    },
+  };
+}
+
+/** The time since the run started at which the depot's clocks show a clock time, in depot seconds since midnight. */
+function runMsAt({ startSeconds, timeScale }: Clock, seconds: number): number {
+  return ((seconds - startSeconds) / timeScale) * 1000;
+}
+
+/** A wait until the depot's clocks show a time, or none when they already have. */
+function* waitUntil(now: () => Now, seconds: number): Generator<Step<Workplace>, void, void> {
+  const left = runMsAt(now().state.clock, seconds) - now().sinceStartMs;
+  if (left > 0) yield { kind: "wait", ms: left };
+}
+
+/** An action that holds whenever it lands, with this effect. */
+const always = (effect: (state: Workplace) => Workplace): Action<Workplace, unknown> => ({ precondition: () => ({ holds: true }), effect });
+
+/** Things as an action's name lists them: "crate", "box", or nothing. */
+const listed = (things: readonly string[]): string => (things.length === 0 ? "nothing" : things.map((thing) => `"${thing}"`).join(", "));
+
+/** Someone appears in a place, holding some things. */
+function appearing(person: string, place: string, things: readonly string[]): Action<Workplace, unknown> {
+  return always((state) => ({ ...state, space: put(state.space, person, place), held: { ...state.held, ...Object.fromEntries(things.map((thing) => [thing, person])) } }));
+}
+
+/** Someone leaves the space, keeping what they hold. */
+function leavingTheSpace(person: string): Action<Workplace, unknown> {
+  return always((state) => {
+    const { [person]: _gone, ...whereabouts } = state.space.whereabouts;
+    return { ...state, space: { ...state.space, whereabouts } };
+  });
+}
+
+/** Things someone holds are put down in a place. */
+function puttingDown(things: readonly string[], place: string): Action<Workplace, unknown> {
+  return always((state) => things.reduce((changed, thing) => ({ ...outOfHands(changed, thing), space: put(changed.space, thing, place) }), state));
+}
+
+/**
+ * The places someone walks through from one place to another by the shortest way through the passages, each with the
+ * passage's length, in order; none when no way joins them. Of two ways as short, the one by passages declared first.
+ */
+function shortestWay(space: Places, from: string, to: string): { place: string; length: number }[] | undefined {
+  const distance = new Map<string, number>([[from, 0]]);
+  const before = new Map<string, { place: string; length: number }>();
+  const done = new Set<string>();
+  for (;;) {
+    const open = [...distance].filter(([place]) => !done.has(place));
+    if (open.length === 0) return undefined;
+    const [here, far] = open.reduce((nearest, each) => (each[1] < nearest[1] ? each : nearest));
+    if (here === to) break;
+    done.add(here);
+    for (const { place, length } of exits(space, here)) {
+      if (far + length < (distance.get(place) ?? Infinity)) {
+        distance.set(place, far + length);
+        before.set(place, { place: here, length });
+      }
+    }
+  }
+  const way: { place: string; length: number }[] = [];
+  for (let place = to; place !== from; place = (before.get(place) as { place: string }).place) way.unshift({ place, length: (before.get(place) as { length: number }).length });
+  return way;
+}
+
+/** Someone walks a way, one passage at a time: they leave as each crossing starts and arrive as it ends (FR-SPACE-03). */
+function* walking(person: string, way: readonly { place: string; length: number }[], now: () => Now): Generator<Step<Workplace>, void, void> {
+  for (const { place, length } of way) {
+    yield {
+      kind: "action",
+      name: `walk to "${place}"`,
+      durationMs: now().state.settings.durations.ms_per_length * length,
+      start: {
+        precondition: (state) => leave.precondition(state.space, { entity: person, towards: place }),
+        effect: (state) => ({ ...state, space: leave.effect(state.space, { entity: person, towards: place }) }),
+      },
+      action: {
+        precondition: (state) => arrive.precondition(state.space, { entity: person }),
+        effect: (state) => ({ ...state, space: arrive.effect(state.space, { entity: person }) }),
+      },
+    };
+  }
+}
+
+/**
+ * The porter's cycle: at each round's time he appears where he enters, carrying that round's arrivals, walks to where he
+ * drops them by the shortest way, puts them down, walks back and leaves.
+ */
+function* porterSteps(now: () => Now): Generator<Step<Workplace>, void, void> {
+  const porter = now().state.porter as Porter;
+  const there = shortestWay(now().state.space, porter.enters, porter.dropsIn) ?? [];
+  const back = shortestWay(now().state.space, porter.dropsIn, porter.enters) ?? [];
+  for (const { seconds, things } of porter.rounds) {
+    yield* waitUntil(now, seconds);
+    yield { kind: "action", name: `appear in "${porter.enters}" carrying ${listed(things)}`, durationMs: 0, action: appearing(porter.id, porter.enters, things) };
+    yield* walking(porter.id, there, now);
+    const putMs = now().state.settings.durations.put_ms;
+    yield { kind: "action", name: `put down ${listed(things)} in "${porter.dropsIn}"`, durationMs: putMs, action: puttingDown(things, porter.dropsIn) };
+    yield* walking(porter.id, back, now);
+    yield { kind: "action", name: "leave", durationMs: 0, action: leavingTheSpace(porter.id) };
+  }
+}
+
+/** The workplace's components: the porter, when the world has one (FR-WORKPLACE-05). */
+function components(configuration: Configuration): Component<Workplace>[] {
+  const world = textOf(configuration, "world") as unknown as WorldText;
+  if (world.porter === undefined) return [];
+  const { id, enters, drops_in: dropsIn, rounds } = world.porter;
+  return [
+    {
+      name: id,
+      kind: "world",
+      description: `The porter: at each round (${rounds.join(", ")}) he appears in "${enters}" carrying that round's arrivals, walks to "${dropsIn}" by the shortest way, puts them down there, walks back and leaves.`,
+      cycle: () => cycleOf(porterSteps),
+    },
+  ];
+}
+
 /** The worker's tools, in the order the SPEC gives them: its sensors, then its effectors. */
 const TOOLS: readonly Tool<Workplace>[] = [look, read, examine, checkTime, go, take, putDown, give, record, note];
 
@@ -912,6 +1121,7 @@ export const workplaceScenario: Scenario<Workplace> = {
   describeDuration,
   describeRhythm: describeUniformRhythm,
   situations: (configuration) => configuration.chosen_situations as string[],
+  components,
   baseConfiguration: [
     'identity = "You work here."',
     'world_rules = ""',
