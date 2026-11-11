@@ -46,7 +46,7 @@ const withTakeTaking = (durationMs: number) =>
 const newLogDirectory = () => mkdtempSync(join(tmpdir(), "agents-lab-logs-"));
 
 /** Settings for a run whose test looks at none of them. */
-const settings: RunSettings = { logDirectory: newLogDirectory(), modelTurnTimeoutMs: 10_000, parallelismLimit: 10, timeLimitMs: 60_000 };
+const settings: RunSettings = { logDirectory: newLogDirectory(), modelTurnTimeoutMs: 10_000, parallelismLimit: 10, timeLimitMs: 60_000, thinkingLevel: "off" };
 
 /** What a run of an experiment runs, for a test that gives one and checks only where it is written. */
 const setup = {
@@ -221,29 +221,29 @@ describe("run", () => {
     expect(b.received).toEqual([]);
   });
 
-  it("writes the setup it is given first, once the sessions are open, with each session's thinking level and the provider's defaults for every other sampling parameter, before any stimulus onStart delivers", async () => {
-    const plain = new ScriptedModel([]);
-    const thinking = new ScriptedModel([]);
-    // A model that can reason, so Pi gives its session its default thinking level rather than "off".
-    const reasoning = { model: { ...thinking.model, reasoning: true }, provider: thinking.provider };
+  it("gives every session the thinking level it is given, and writes the setup it is given first, once the sessions are open, with each session's thinking level and the provider's defaults for every other sampling parameter, before any stimulus onStart delivers", async () => {
+    // Models that can reason, so a thinking level other than "off" is one they can use.
+    const a = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }], "a", { reasoning: true });
+    const b = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }], "b", { reasoning: true });
     const logDirectory = newLogDirectory();
 
     const { runId } = await run(
       slots({ ...agentsNamed("a", "b"), channels: () => [rhythmChannel, bell] }),
       [
-        { name: "a", model: plain, activations: 0 },
-        { name: "b", model: reasoning, activations: 0 },
+        { name: "a", model: a, activations: 1 },
+        { name: "b", model: b, activations: 1 },
       ],
       seed,
-      { ...settings, logDirectory, setup, onStart: (stimuli) => stimuli.deliver("a", "bell") },
+      { ...settings, logDirectory, setup, thinkingLevel: "low", onStart: (stimuli) => stimuli.deliver("a", "bell") },
     );
 
+    expect([...a.reasoningLevels, ...b.reasoningLevels]).toEqual(["low", "low"]);
     const [first, second] = logOf(logDirectory, runId) as { type: string }[];
     expect(first).toEqual({
       type: "run_setup",
       runId,
       ...setup,
-      sampling: { thinkingLevels: { a: "off", b: "medium" }, otherParameters: "the provider's defaults" },
+      sampling: { thinkingLevels: { a: "low", b: "low" }, otherParameters: "the provider's defaults" },
     });
     expect(second.type).toBe("stimulus");
   });

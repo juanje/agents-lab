@@ -74,6 +74,15 @@ describe("runExperiment", () => {
     expect(seed).toBe(replicaSeed(7, 1));
   });
 
+  it("gives every session of every run the experiment's thinking level", async () => {
+    const answers = () => Array.from({ length: 10 }, () => ({ text: "Nothing to do.", delayMs: 0 }));
+    const models = new Map(experiment.models.map((name) => [name, new ScriptedModel(answers(), undefined, { reasoning: true })]));
+
+    await runExperiment({ ...experiment, thinkingLevel: "high" }, slotsScenario, models, newRunsDirectory());
+
+    for (const model of models.values()) expect(model.reasoningLevels).toEqual(["high", "high", "high", "high"]);
+  });
+
   it("samples each run's metrics at the experiment's interval", async () => {
     const directory = newRunsDirectory();
     const models = new Map([["scripted/one", new ScriptedModel([{ text: "Waiting.", delayMs: 250 }])]]);
