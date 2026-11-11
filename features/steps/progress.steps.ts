@@ -2,12 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { Given, Then } from "@cucumber/cucumber";
-import { ScriptedModel } from "../../src/engine/scripted-model.ts";
 import type { Context } from "../support/context.ts";
-import { logOf, runLogs } from "./lab.steps.ts";
-
-/** How many answers each scripted model holds: more than all the turns of an experiment here. */
-const ANSWERS = 50;
+import { idleModels, indexOf, logOf, runLogs } from "./lab.steps.ts";
 
 Given(
   "an experiment file {string} for the scenario {string}, with the model {string}, {int} replicas, the base seed {int}, {int} activation per agent, and the condition {string}, with no change",
@@ -29,11 +25,7 @@ Given(
 
 Given("each scripted turn takes {int} milliseconds", function (this: Context, delayMs: number) {
   assert.ok(this.labModels.size > 0, "the scenario set up no scripted model");
-  for (const name of this.labModels.keys()) {
-    const model = new ScriptedModel(Array.from({ length: ANSWERS }, () => ({ text: "Nothing to do.", delayMs })), name.split("/")[1]);
-    this.models.set(name, model);
-    this.labModels.set(name, model);
-  }
+  idleModels(this, [...this.labModels.keys()], { delayMs });
 });
 
 Given('"lab run" reports progress every {int} milliseconds', function (this: Context, intervalMs: number) {
@@ -50,21 +42,6 @@ function printedLines(context: Context): string[] {
 function completedLines(context: Context): string[] {
   assert.equal(context.labError, undefined, `"lab run" failed: ${context.labError?.message}`);
   return printedLines(context);
-}
-
-/** A line of the experiment's index. */
-interface IndexLine {
-  runId: string;
-  condition: string;
-  model: string;
-  replica: number;
-  seed: number;
-}
-
-/** The lines of the experiment's index, in the order the runs ran. */
-function indexOf(context: Context): IndexLine[] {
-  const text = readFileSync(join(context.home, "runs", String(context.experimentFile.id), "index.jsonl"), "utf8");
-  return text.slice(0, -1).split("\n").map((line) => JSON.parse(line) as IndexLine);
 }
 
 /** The model turns and the cost a run's log records. */

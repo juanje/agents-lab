@@ -32,6 +32,19 @@ function scriptedModels(): Map<string, ScriptedModel> {
   return new Map(experiment.models.map((name) => [name, new ScriptedModel(answers())]));
 }
 
+/**
+ * A model whose sessions cannot open, so a run with it stops: it can use the thinking level "off", but opening a session
+ * reads its provider, which fails.
+ */
+const unopenable = {
+  model: {
+    reasoning: false,
+    get provider(): never {
+      throw new Error("this model cannot be given to a session");
+    },
+  } as never,
+};
+
 /** A new, empty directory for an experiment's runs. */
 const newRunsDirectory = () => join(mkdtempSync(join(tmpdir(), "agents-lab-runs-")), "e-test");
 
@@ -145,18 +158,9 @@ describe("runExperiment", () => {
   it("stops at a run that stops on an error: its index line says it stopped, no run starts after it, and it fails naming the run", async () => {
     const directory = newRunsDirectory();
     const models = scriptedModels();
-    // The second model's sessions cannot open, so the first run with it stops: it can use the thinking level "off",
-    // but opening a session reads its provider, which fails.
-    const failing = {
-      model: {
-        reasoning: false,
-        get provider(): never {
-          throw new Error("this model cannot be given to a session");
-        },
-      } as never,
-    };
 
-    const running = runExperiment(experiment, slotsScenario, new Map([...models].map(([name, model]) => [name, name === "scripted/two" ? failing : model])), directory);
+    // The second model's sessions cannot open, so the first run with it stops.
+    const running = runExperiment(experiment, slotsScenario, new Map([...models].map(([name, model]) => [name, name === "scripted/two" ? unopenable : model])), directory);
 
     await expect(running).rejects.toThrow('the run of condition "baseline", model "scripted/two", replica 1 stopped');
     const index = indexOf(directory);
@@ -196,17 +200,8 @@ describe("runExperiment", () => {
       recorded: ({ type }) => events.push({ line: type }),
       runEnded: (status) => events.push({ ended: status }),
     };
-    // Opening a session reads its model's provider, which fails.
-    const failing = {
-      model: {
-        reasoning: false,
-        get provider(): never {
-          throw new Error("this model cannot be given to a session");
-        },
-      } as never,
-    };
 
-    const running = runExperiment({ ...experiment, models: ["scripted/one"] }, slotsScenario, new Map([["scripted/one", failing]]), directory, observer);
+    const running = runExperiment({ ...experiment, models: ["scripted/one"] }, slotsScenario, new Map([["scripted/one", unopenable]]), directory, observer);
 
     await expect(running).rejects.toThrow("stopped");
     expect(events).toEqual([{ started: 1 }, { line: "run_setup" }, { line: "run_stopped" }, { ended: "stopped" }]);

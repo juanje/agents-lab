@@ -28,10 +28,13 @@ Given(
   },
 );
 
-/** Scripted models by name, whose agents end every turn without a tool call, for "lab" to resolve; they can reason or not. */
-function idleModels(context: Context, names: readonly string[], reasoning = false): void {
+/**
+ * Scripted models by name, whose agents end every turn without a tool call after the delay, for "lab" to resolve; they
+ * can reason or not.
+ */
+export function idleModels(context: Context, names: readonly string[], { reasoning = false, delayMs = 0 } = {}): void {
   for (const name of names) {
-    const model = new ScriptedModel(Array.from({ length: ANSWERS }, () => ({ text: "Nothing to do.", delayMs: 0 })), name.split("/")[1], { reasoning });
+    const model = new ScriptedModel(Array.from({ length: ANSWERS }, () => ({ text: "Nothing to do.", delayMs })), name.split("/")[1], { reasoning });
     // Kept by name, so "no model was called" checks every one of them.
     context.models.set(name, model);
     context.labModels.set(name, model);
@@ -50,7 +53,7 @@ Given("the scripted model {string}, whose agents end every turn without a tool c
 });
 
 Given("the scripted model {string}, which can reason, whose agents end every turn without a tool call", function (this: Context, name: string) {
-  idleModels(this, [name], true);
+  idleModels(this, [name], { reasoning: true });
 });
 
 Given("the scripted model {string}, which cannot reason", function (this: Context, name: string) {
@@ -210,8 +213,8 @@ interface IndexLine {
   status: string;
 }
 
-/** The lines of the experiment's index, parsed. */
-function indexOf(context: Context): IndexLine[] {
+/** The lines of the experiment's index, parsed, in the order the runs ran. */
+export function indexOf(context: Context): IndexLine[] {
   const path = join(runsDirectory(context), "index.jsonl");
   assert.ok(existsSync(path), `"lab run" wrote no index${context.labError === undefined ? "" : `; it failed: ${context.labError.message}`}`);
   const text = readFileSync(path, "utf8");
