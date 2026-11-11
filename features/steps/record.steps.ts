@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { Then } from "@cucumber/cucumber";
+import { rhythmChannel } from "../../tests/fixtures/slots.ts";
 import type { Context } from "../support/context.ts";
+import { turnsOf } from "./adapter.steps.ts";
 
 /** The log files in the scenario's log directory, by name, in no particular order. */
 function logFiles(context: Context): string[] {
@@ -35,3 +37,51 @@ Then("every line of it is a JSON object", function (this: Context) {
     assert.ok(typeof parsed === "object" && parsed !== null && !Array.isArray(parsed), `line ${index + 1} is not a JSON object: ${line}`);
   }
 });
+
+/** A line of a log, as JSON gives it back. */
+type Line = Record<string, unknown> & { type: string };
+
+/** The lines of the only log the scenario's run wrote, parsed. */
+export function logLines(context: Context): Line[] {
+  return linesOf(context, theLog(context)).map((line) => JSON.parse(line) as Line);
+}
+
+/** The log's only line of a type for an agent that also has these fields. */
+function lineOf(context: Context, type: string, agent: string, fields: Record<string, unknown> = {}): Line {
+  const lines = logLines(context).filter(
+    (line) => line.type === type && line.agent === agent && Object.entries(fields).every(([name, value]) => line[name] === value),
+  );
+  assert.equal(lines.length, 1, `the log has ${lines.length} ${type} lines for agent "${agent}" with ${JSON.stringify(fields)}`);
+  return lines[0];
+}
+
+/** A field of a log line that holds a time, by performance.now(). */
+function timeIn(line: Line, field: string): number {
+  const value = line[field];
+  assert.equal(typeof value, "number", `the ${line.type} line has no time "${field}": ${JSON.stringify(line)}`);
+  return value as number;
+}
+
+Then("the log has an activation line for agent {string}, with when it woke and when it ended", function (this: Context, agent: string) {
+  const activation = lineOf(this, "activation", agent);
+  // The agent's only activation holds its model turns.
+  const turns = turnsOf(this, agent);
+  assert.ok(turns.length > 0, `agent "${agent}" made no model turn`);
+  assert.ok(timeIn(activation, "wokeAtMs") <= turns[0].startedAtMs, "the activation woke after its first model turn started");
+  assert.ok(timeIn(activation, "endedAtMs") >= turns[turns.length - 1].endedAtMs, "the activation ended before its last model turn");
+});
+
+Then(
+  "a stimulus line for agent {string} from the channel {string}, with its source, its content and when it was delivered",
+  function (this: Context, agent: string, channel: string) {
+    assert.equal(channel, rhythmChannel.name);
+    const stimulus = lineOf(this, "stimulus", agent, { channel });
+    assert.equal(stimulus.source, rhythmChannel.source);
+    assert.equal(stimulus.content, rhythmChannel.stimulus);
+    // The rhythm's stimulus is delivered as the agent wakes, before its first model turn.
+    const activation = lineOf(this, "activation", agent);
+    const deliveredAtMs = timeIn(stimulus, "deliveredAtMs");
+    assert.ok(timeIn(activation, "wokeAtMs") <= deliveredAtMs, "the stimulus was delivered before the agent woke");
+    assert.ok(deliveredAtMs <= turnsOf(this, agent)[0].startedAtMs, "the stimulus was delivered after the first model turn started");
+  },
+);
