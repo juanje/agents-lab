@@ -45,7 +45,10 @@ export interface Settings {
   taskGiver: string;
 }
 
-/** A chosen situation: the place the seed put it in, its reserved keys, and the ids of the things it brings. */
+/**
+ * A chosen situation: the place the seed put it in, its reserved keys, and the ids of its things: those it brings, then
+ * those its predicates name, which can be things of the world.
+ */
 export interface Situation {
   place: string;
   keys: TomlTable;
@@ -215,7 +218,10 @@ function initialState(configuration: Configuration, random: Random): Workplace {
     const situation = declared[id];
     const draw = Random.derive(situationsSeed, `situation ${id}`).next();
     const place = situation.places[Math.floor(draw * situation.places.length)];
-    situations[id] = { place, keys: (keys[id] ?? {}) as TomlTable, things: (situation.things ?? []).map((thing) => thing.id) };
+    const reserved = (keys[id] ?? {}) as TomlTable;
+    // Its things: those it brings, then those its predicates name, which can be things of the world.
+    const things = new Set([...(situation.things ?? []).map((thing) => thing.id), ...predicatesOf(reserved).map(({ thing }) => thing)]);
+    situations[id] = { place, keys: reserved, things: [...things] };
     held.push(...(situation.things ?? []).map((thing) => (thing.in === undefined ? { ...thing, place } : thing)));
   }
   const things: Record<string, Thing> = {};
