@@ -31,7 +31,7 @@ function experimentFile(lines: { scenario?: string; models?: string } = {}): str
 }
 
 /** How the command is used, as an error for other arguments says. */
-const USAGE = "Usage: lab run <experiment.toml> [--progress-interval-ms <ms>], lab inventory <experiment.toml> or lab summarize <runs-dir> [--json]";
+const USAGE = "Usage: lab run <experiment.toml> [--progress-interval-ms <ms>], lab inventory <experiment.toml>, lab summarize <runs-dir> [--json] or lab judge <runs-dir> <judge.toml>";
 
 /** A directory to run "lab" in, holding the experiment file, and the environment it runs with. */
 function setUp(file: string) {
@@ -168,6 +168,8 @@ describe("lab run", () => {
     ["a progress interval for the inventory", ["inventory", "e-test.toml", "--progress-interval-ms", "100"]],
     ["no runs directory to summarize", ["summarize"]],
     ["another option for the summary", ["summarize", "runs/e-test", "--csv"]],
+    ["no judge file", ["judge", "runs/e-test"]],
+    ["an option for the judge", ["judge", "runs/e-test", "judge.toml", "--json"]],
   ])("refuses %s, saying how the command is used", async (_case, args) => {
     const { environment } = setUp(experimentFile());
 
@@ -219,5 +221,14 @@ describe("lab summarize", () => {
     const { environment } = setUp(experimentFile());
 
     await expect(lab(["summarize", "runs/missing"], environment)).rejects.toThrow(/"runs\/missing" has no index/);
+  });
+});
+
+describe("lab judge", () => {
+  it("reads the judge file and the runs directory from its directory", async () => {
+    const { directory, environment } = setUp(experimentFile());
+    writeFileSync(join(directory, "judge.toml"), 'thinking_level = "off"\ninstructions = { file = "judge.md" }\n');
+
+    await expect(lab(["judge", "runs/e-test", "judge.toml"], environment)).rejects.toThrow(`The judge file "${join(directory, "judge.toml")}" lacks the field "model"`);
   });
 });

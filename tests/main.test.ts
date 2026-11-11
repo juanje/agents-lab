@@ -27,7 +27,7 @@ describe("the lab command's process", () => {
     const { status, stderr } = labProcess(["walk"]);
 
     expect(status).toBe(1);
-    expect(stderr.trim()).toBe('lab was given ["walk"]. Usage: lab run <experiment.toml> [--progress-interval-ms <ms>], lab inventory <experiment.toml> or lab summarize <runs-dir> [--json]');
+    expect(stderr.trim()).toBe('lab was given ["walk"]. Usage: lab run <experiment.toml> [--progress-interval-ms <ms>], lab inventory <experiment.toml>, lab summarize <runs-dir> [--json] or lab judge <runs-dir> <judge.toml>');
   });
 
   it("runs an experiment file from its current directory with the lab's scenario library", () => {
