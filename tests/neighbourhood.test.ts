@@ -168,6 +168,16 @@ describe("the neighbourhood scenario", () => {
     expect(move.readTarget({ ...sensing, tool: "another sensor" }, { agent: "r1", arguments: { dx: 1, dy: 1 } })).toBe("not_sensed");
   });
 
+  it("reads a move's target that the last look showed outside the grid as not sensed, as it is neither free nor held", () => {
+    const look = toolNamed("look");
+    const move = toolNamed("move");
+    if (look.kind !== "sensor" || move.kind !== "effector") throw new Error("look is not a sensor or move is not an effector");
+    const sensing = { tool: "look", result: look.sense(residentsAt(5, 5, { lookRadius: 1, msPerCell: 100 }), "r1"), atMs: 0 };
+
+    expect(move.readTarget(sensing, { agent: "r1", arguments: { dx: -1, dy: 0 } })).toBe("not_sensed");
+    expect(move.readTarget(sensing, { agent: "r1", arguments: { dx: 1, dy: -1 } })).toBe("not_sensed");
+  });
+
   it("draws the cells from the random sequence it is given", () => {
     const cellsOf = (seed: number) => neighbourhoodScenario.initialState(configuration(6, 6, 10), new Random(seed)).grid;
     const where = (seed: number) =>
