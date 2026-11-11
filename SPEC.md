@@ -431,7 +431,7 @@ The workplace is in the scenario library. The worker refers to things, people an
 - **take** `thing` (effector, `take_ms`): a thing in the worker's place, or in a container there, into its hands. It fails, checked in this order, with `already_held`, `not_here`, `not_portable` or `hands_full`.
 - **put** `thing`, optionally `into` (effector, `put_ms`): a thing the worker holds into its place, or into a container there. It fails, checked in this order, with `not_held`, `not_here` (the container) or `not_a_container`.
 - **give** `thing`, `person` (effector, `give_ms`): a thing the worker holds to a person in its place, who then holds it. It fails, checked in this order, with `not_held` or `not_here` (the person).
-- **record** `entry` (effector, `ms_per_word` for each word): an entry in the workplace's book, the thing the configuration's `book` names, with the moment it was written. The worker must be where the book is; otherwise it fails with `not_here`.
+- **record** `entry` (effector, `ms_per_word` for each word): an entry in the workplace's book, the thing the configuration's `book` names, with the moment it was written; a `book` that names no thing of the world fails before any model call, with an error that names it. The worker must be where the book is; otherwise it fails with `not_here`.
 - **note** `text` (effector, `ms_per_word` for each word): a note to the person who gave the task, kept in the world with the moment it was sent; it reaches no agent.
 
 The text the worker receives for each outcome:
@@ -457,7 +457,7 @@ The text the worker receives for each outcome:
 | record | not_here | The book is not here; nothing has been recorded. |
 | note | success | Your note has been sent. |
 
-Each effector reads its target in the worker's last sensing (FR-TOOL-04): `go`, from the exits of its last look; `take` and `examine`'s thing, `put`'s container and `give`'s person, from the things and people of its last look; `free` when that look, taken where the worker is now, showed the target there; for `go`, `outside` when it showed no exit to that place; `not_sensed` otherwise. `record` and `note` have no target and record `not_sensed`.
+Each effector reads its target in the worker's last look taken where it is now (FR-TOOL-04); a `read` or `examine` after that look does not replace it: `go`, from the look's exits; `take`'s thing, `put`'s container and `give`'s person, from its things and people. The target is `free` when that look showed it there; for `go`, `outside` when it showed no exit to that place; `not_sensed` when there is no such look or it did not show the target. `record` and `note` have no target and record `not_sensed`.
 *Why:* in E1–E4 what the worker did in each situation is read from the world (where things ended up, what was recorded, what was said to the person), not judged from a text. Every action takes time, and reading and writing take longer the longer the text.
 
 #### FR-WORKPLACE-03: The task comes from a person, and each text has a declared place

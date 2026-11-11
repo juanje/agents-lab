@@ -111,3 +111,16 @@ Feature: The worker senses and acts through the workplace's tools
     Then the "take" call recorded its target as "free"
     And the first "go" call recorded its target as "free"
     And the second "go" call, after a look taken in "store", recorded its target as "not_sensed"
+
+  Scenario: A read or examine after a look does not replace it for the next target
+    Given the worker is in "store"
+    And the worker called "look"
+    When the worker calls "read" with the thing "note"
+    And the worker calls "examine" with the thing "box"
+    And the worker calls "take" with the thing "note"
+    Then the "take" call recorded its target as "free"
+
+  Scenario: A book that names no thing of the world fails before any model call
+    Given the configuration sets "book" to "ledger"
+    When the engine loads it with the seed 42
+    Then loading fails with an error that names "ledger"
