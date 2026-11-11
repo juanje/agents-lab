@@ -291,6 +291,10 @@ describe("the workplace's tools", () => {
     expect(state.settings).toEqual({ book: "sign", carryLimit: 1, durations: DURATIONS });
   });
 
+  it("refuse a book that names no thing of the world, naming it", () => {
+    expect(() => start({ book: "ledger" })).toThrow('the configuration\'s "book" names "ledger", which is no thing of the world');
+  });
+
   describe("look", () => {
     it("gives the place, its exits, the things in it with what is inside each container, its people and what the worker holds", () => {
       const state = inPlace(start(), "office");
