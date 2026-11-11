@@ -1,19 +1,24 @@
 import assert from "node:assert/strict";
 import { BeforeStep, Given, Then, When } from "@cucumber/cucumber";
 import { type Places, arrive, entitiesIn, exits, inSight, layout, leave, put, where } from "../../src/engine/places.ts";
+import type { LoadedScenario } from "../../src/engine/scenario.ts";
 import { type Action, World } from "../../src/engine/world.ts";
+import { goTool, placesScenario } from "../../tests/fixtures/places-world.ts";
 import type { Context } from "../support/context.ts";
+import { stateAt } from "./acting.steps.ts";
+import { assembled, callOf, callWithThenEnd, script } from "./tool.steps.ts";
 
 Given(
   "a space with the places {string}, {string} and {string}, a passage of length {int} between {string} and {string}, and a passage of length {int} between {string} and {string}",
   function (this: Context, first: string, second: string, third: string, length1: number, from1: string, to1: string, length2: number, from2: string, to2: string) {
-    this.places = layout(
+    this.placesLayout = layout(
       [first, second, third],
       [
         { between: [from1, to1], length: length1 },
         { between: [from2, to2], length: length2 },
       ],
     );
+    this.places = this.placesLayout;
   },
 );
 
@@ -193,3 +198,50 @@ Then("it is refused with an error that names entity {string}", function (this: C
 Then("it is refused with an error that names the length {int}", function (this: Context, length: number) {
   assertRefused(this, `length ${length}`);
 });
+
+Given(
+  "a test place world with the same layout, where the effector {string} moves the calling agent to a place, taking {int} milliseconds per unit of length",
+  function (this: Context, name: string, msPerUnit: number) {
+    const go = goTool(msPerUnit);
+    assert.equal(go.name, name);
+    // The world has the background's layout, and holds only the agents the scenario puts in it.
+    this.places = this.placesLayout;
+    this.assembleRun = (agents) => {
+      this.placesWorld = new World(this.places);
+      return assembled(placesScenario(this.places, [go], agents), this.placesWorld) as LoadedScenario<unknown>;
+    };
+  },
+);
+
+Given(
+  "agent {string} is in {string} and runs on a scripted model that calls {string} to {string}, then ends without a tool call",
+  function (this: Context, agent: string, place: string, tool: string, towards: string) {
+    this.places = put(this.places, agent, place);
+    script(this, agent, callWithThenEnd(tool, { place: towards }, 0));
+  },
+);
+
+Given(
+  "agent {string} is in {string} and runs on a scripted model that ends without a tool call",
+  function (this: Context, agent: string, place: string) {
+    this.places = put(this.places, agent, place);
+    script(this, agent, [{ text: "Nothing to do.", delayMs: 0 }]);
+  },
+);
+
+Then("agent {string} is in {string}", function (this: Context, agent: string, place: string) {
+  assert.deepEqual(where(current(this), agent), { place }, `agent "${agent}" is ${JSON.stringify(where(current(this), agent))}`);
+});
+
+Then(
+  "{int} milliseconds after agent {string}'s {string} call started, agent {string} was in the passage between {string} and {string}, neither {string} nor {string} held it, and agent {string} had it in sight",
+  function (this: Context, afterMs: number, agent: string, tool: string, walker: string, one: string, other: string, first: string, second: string, seer: string) {
+    const { startedAtMs, endedAtMs } = callOf(this, agent, tool);
+    assert.ok(startedAtMs + afterMs < endedAtMs, `agent "${agent}"'s "${tool}" call had ended ${afterMs} ms after it started`);
+    const space = stateAt<Places>(this, startedAtMs + afterMs);
+    const at = where(space, walker);
+    assert.ok(isPassageBetween(at, one, other), `agent "${walker}" was ${JSON.stringify(at)}`);
+    for (const place of [first, second]) assert.ok(!entitiesIn(space, place).includes(walker), `"${place}" held agent "${walker}"`);
+    assert.ok(inSight(space, seer).includes(walker), `agent "${seer}" had in sight ${JSON.stringify(inSight(space, seer))}`);
+  },
+);

@@ -135,6 +135,8 @@ export class Context extends CucumberWorld {
   gridTools?: readonly Tool<Grid>[];
   /** Whether the step running is one that checks an outcome (a Then), for words the contract uses both to set up and to check. */
   checking = false;
+  /** The layout of places and passages the scenario sets up, holding no entity. */
+  placesLayout!: Places;
   /** The space of places the scenario sets up. */
   places!: Places;
   /** A world whose state is the space of places, for what goes through its arbiter. */

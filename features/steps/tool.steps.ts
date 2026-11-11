@@ -110,7 +110,7 @@ function rhythmsOf(context: Context): Scenario<unknown>["rhythm"] {
 }
 
 /** A scenario assembled around a world as loading would give it, with no configuration. */
-function assembled<State>(scenario: Scenario<State>, world: World<State>): LoadedScenario<State> {
+export function assembled<State>(scenario: Scenario<State>, world: World<State>): LoadedScenario<State> {
   const agents = scenario.agents({});
   const systemPrompts = new Map(agents.map((agent) => [agent, scenario.systemPrompt({}, agent)]));
   const rhythms = new Map(agents.map((agent) => [agent, scenario.rhythm({}, agent)]));
