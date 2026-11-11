@@ -27,6 +27,8 @@ export async function runExperiment<State>(
   models: ReadonlyMap<string, AgentModel>,
   runsDirectory: string,
 ): Promise<void> {
+  // Each condition is loaded once before the first run, so one the scenario refuses fails before any model call.
+  for (const condition of experiment.conditions) loadScenario(scenario, experiment.seed, condition);
   mkdirSync(runsDirectory, { recursive: true });
   // Created exclusively, as a run's log is: an experiment never writes to an existing file.
   const index = openSync(join(runsDirectory, "index.jsonl"), "wx");
