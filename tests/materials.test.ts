@@ -94,6 +94,12 @@ describe("materials", () => {
     expect(inventoryMarkdown(listed)).toContain(`### Materials\n\n- materials/wake.md: ${hash}\n`);
   });
 
+  it("whose file does not exist are refused, with an error that names the condition, the key and the material's path", () => {
+    expect(() => loadedWith('rhythm.text = { file = "materials/missing.md" }')).toThrow(
+      `Condition "baseline" sets rhythm.text to the material "materials/missing.md", whose file does not exist: ${join(directory, "materials/missing.md")}`,
+    );
+  });
+
   describe("held out", () => {
     const heldOut = 'slots.keys = { file = "materials/keys.toml", held_out = true }';
 
