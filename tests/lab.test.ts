@@ -81,4 +81,14 @@ describe("lab run", () => {
     expect(existsSync(join(directory, "runs"))).toBe(false);
     for (const model of models.values()) expect(model.received).toHaveLength(0);
   });
+
+  it.each([
+    ["another command", ["walk", "e-test.toml"]],
+    ["no experiment file", ["run"]],
+    ["more than one experiment file", ["run", "e-test.toml", "e-other.toml"]],
+  ])("refuses %s, saying how the command is used", async (_case, args) => {
+    const { environment } = setUp(experimentFile());
+
+    await expect(lab(args, environment)).rejects.toThrow("Usage: lab run <experiment.toml>");
+  });
 });
