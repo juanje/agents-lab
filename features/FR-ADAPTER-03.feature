@@ -41,3 +41,15 @@ Feature: Context compaction is declared and recorded
       | the file gives no compaction                                     | "compaction"          |
       | the file's compaction is enabled, with "trigger_at" 1.2          | "trigger_at"          |
       | the file's compaction is enabled, with no "keep_recent_tokens"   | "keep_recent_tokens"  |
+
+  Scenario Outline: A compaction that does not finish is recorded with its outcome
+    Given the file's compaction is enabled, with "trigger_at" 0.5 and "keep_recent_tokens" 500, and a model turn timeout of 500 milliseconds
+    And <summary>
+    When "lab run" runs the experiment file
+    Then agent "a"'s log has a compaction line with the outcome "<outcome>", no summary, and the tokens and cost spent
+
+    Examples:
+      | summary                                                                                  | outcome     |
+      | the scripted model answers the summary call with a provider error                        | model_error |
+      | the scripted model takes 1000 milliseconds to answer the summary call                    | timeout     |
+      | the scripted model takes 1000 milliseconds to answer the summary call, and the run's time limit passes while it waits | cut_off |
