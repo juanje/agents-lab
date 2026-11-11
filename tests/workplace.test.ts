@@ -494,7 +494,7 @@ class = "control"
 });
 
 describe("the workplace's tools", () => {
-  const DURATIONS = { look_ms: 10, examine_ms: 11, take_ms: 12, put_ms: 13, give_ms: 14, ms_per_word: 5, ms_per_length: 20 };
+  const DURATIONS = { look_ms: 10, examine_ms: 11, check_time_ms: 9, take_ms: 12, put_ms: 13, give_ms: 14, ms_per_word: 5, ms_per_length: 20 };
   // The hall holds the worker and the sign, which serves as the book; the office, the cupboard with the key, and Ana.
   const settings = (values: Configuration = {}) =>
     configuration({ world: WORLD, book: "sign", carry_limit: 1, durations: DURATIONS, ...values });
@@ -516,11 +516,12 @@ describe("the workplace's tools", () => {
     return { result, state: world.state };
   };
 
-  it("are look, read, examine, go, take, put, give, record and note, in that order", () => {
+  it("are look, read, examine, check_time, go, take, put, give, record and note, in that order", () => {
     expect(scenario.tools.map(({ name, kind }) => `${kind} ${name}`)).toEqual([
       "sensor look",
       "sensor read",
       "sensor examine",
+      "sensor check_time",
       "effector go",
       "effector take",
       "effector put",
@@ -827,6 +828,7 @@ describe("the workplace's tools", () => {
       look: "10 ms.",
       read: "5 ms for each word of the text, at least 10 ms.",
       examine: "11 ms.",
+      check_time: "9 ms.",
       go: "20 ms for each unit of the passage's length; no time when there is no passage to that place.",
       take: "12 ms.",
       put: "13 ms.",

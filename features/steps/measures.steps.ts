@@ -108,6 +108,7 @@ const ARGUMENTS: Readonly<Record<string, readonly string[]>> = {
   look: [],
   read: ["thing"],
   examine: ["thing"],
+  check_time: [],
   take: ["thing"],
   put: ["thing", "into"],
   give: ["thing", "person"],

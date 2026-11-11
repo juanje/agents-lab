@@ -510,7 +510,9 @@ Then(
     assert.ok(scenario?.describeDuration !== undefined, "the library's scenario describes no durations");
     const configuration = parse(scenario.baseConfiguration ?? "");
     const tools = under(under(this.labOutput ?? "", '## Condition "base"'), "### Tools");
-    assert.deepEqual(headings(tools, 4), names.map((name) => `#### Tool "${name}"`));
+    // These tools, in this order, among any others the workplace has gained since (FR-WORKPLACE-05's "check_time").
+    const listed = headings(tools, 4).filter((heading) => names.some((name) => heading === `#### Tool "${name}"`));
+    assert.deepEqual(listed, names.map((name) => `#### Tool "${name}"`));
     for (const name of names) {
       const duration = itemOf(under(tools, `#### Tool "${name}"`), "Duration");
       assert.equal(duration, scenario.describeDuration(configuration, name), `tool "${name}"`);

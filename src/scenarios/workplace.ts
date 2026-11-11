@@ -26,6 +26,7 @@ export interface Person {
 /** How long each of the worker's tools takes, as the configuration's `[durations]` gives it, in milliseconds. */
 export interface Durations {
   look_ms: number;
+  check_time_ms: number;
   examine_ms: number;
   take_ms: number;
   put_ms: number;
@@ -55,6 +56,15 @@ export interface Situation {
   things: readonly string[];
 }
 
+/**
+ * The depot's clocks: the time they show when the run starts, in depot seconds since midnight, and how many depot seconds
+ * pass per second of the run (FR-WORKPLACE-05).
+ */
+export interface Clock {
+  startSeconds: number;
+  timeScale: number;
+}
+
 /** Something written in the world, with the moment it was written, by `performance.now()`. */
 export interface Written {
   atMs: number;
@@ -78,6 +88,7 @@ export interface Workplace {
   /** Each move of a thing, in the order they landed: from where it directly was to where it is (as `locationOf` gives them). */
   moves: readonly Move[];
   settings: Settings;
+  clock: Clock;
 }
 
 /** A thing moved from one location to another, with the moment it landed. */
@@ -139,6 +150,7 @@ interface ThingText {
 
 /** A world as its text declares it. */
 interface WorldText {
+  day?: { start?: string };
   worker: { place: string };
   places: { name: string }[];
   passages?: Passage[];
@@ -253,9 +265,32 @@ function initialState(configuration: Configuration, random: Random): Workplace {
     durations: configuration.durations as unknown as Durations,
     taskGiver: configuration.task_giver as string,
   };
-  const state: Workplace = { space, things, inside, held: {}, people, situations, book: [], notes: [], moves: [], settings };
+  // A world that declares no day starts its clocks at midnight.
+  const clock = { startSeconds: secondsOf(world.day?.start ?? "00:00", "the world's \"[day] start\""), timeScale: configuration.time_scale as number };
+  const state: Workplace = { space, things, inside, held: {}, people, situations, book: [], notes: [], moves: [], settings, clock };
   for (const [id, { keys: reserved }] of Object.entries(situations)) assertPredicates(state, id, predicatesOf(reserved));
   return state;
+}
+
+/** A clock time as the world's texts and the configuration write it. */
+const CLOCK_TIME = /^([01]\d|2[0-3]):([0-5]\d)$/;
+
+/** The seconds since midnight of a clock time ("HH:MM"); any other text is refused, naming it and what gives it (`naming`). */
+function secondsOf(time: string, naming: string): number {
+  const match = CLOCK_TIME.exec(time);
+  if (match === null) throw new Error(`${naming} is "${time}", which is not a time "HH:MM"`);
+  return (Number(match[1]) * 60 + Number(match[2])) * 60;
+}
+
+/** The seconds in a day, after which the clocks go round. */
+const DAY_SECONDS = 24 * 60 * 60;
+
+/** The time the depot's clocks show at a time since the run started, to the minute ("HH:MM"). */
+function clockTime({ startSeconds, timeScale }: Clock, sinceStartMs: number): string {
+  const seconds = (startSeconds + Math.floor((sinceStartMs / 1000) * timeScale)) % DAY_SECONDS;
+  const minutes = Math.floor(seconds / 60);
+  const two = (value: number) => String(value).padStart(2, "0");
+  return `${two(Math.floor(minutes / 60))}:${two(minutes % 60)}`;
 }
 
 /** The location of a thing the worker holds. */
@@ -512,6 +547,16 @@ const examine: Sensor<Workplace> = {
     const { name, properties } = state.things[thing];
     return JSON.stringify({ name, properties });
   },
+};
+
+/** "check_time": the time on the worker's watch, to the minute; nothing else gives the worker the time (FR-WORKPLACE-05). */
+const checkTime: Sensor<Workplace> = {
+  kind: "sensor",
+  name: "check_time",
+  description: "Check the time on your watch.",
+  parameters: { type: "object", properties: {} },
+  durationMs: (state) => state.settings.durations.check_time_ms,
+  sense: (state, _agent, _args, sinceStartMs) => clockTime(state.clock, sinceStartMs),
 };
 
 /**
@@ -826,8 +871,8 @@ const entriesAfter = (state: Workplace, toolCalls: readonly ToolCall[]) => writt
 /** The worker's notes since it first sensed each situation. */
 const notesAfter = (state: Workplace, toolCalls: readonly ToolCall[]) => writtenSince(state, toolCalls, state.notes);
 
-/** The worker's tools, in the order the SPEC gives them. */
-const TOOLS: readonly Tool<Workplace>[] = [look, read, examine, go, take, putDown, give, record, note];
+/** The worker's tools, in the order the SPEC gives them: its sensors, then its effectors. */
+const TOOLS: readonly Tool<Workplace>[] = [look, read, examine, checkTime, go, take, putDown, give, record, note];
 
 /** Each tool's duration as the inventory describes it, from the configuration's durations. */
 function describeDuration(configuration: Configuration, tool: string): string {
@@ -836,6 +881,7 @@ function describeDuration(configuration: Configuration, tool: string): string {
     look: `${durations.look_ms} ms.`,
     read: `${durations.ms_per_word} ms for each word of the text, at least ${durations.look_ms} ms.`,
     examine: `${durations.examine_ms} ms.`,
+    check_time: `${durations.check_time_ms} ms.`,
     go: `${durations.ms_per_length} ms for each unit of the passage's length; no time when there is no passage to that place.`,
     take: `${durations.take_ms} ms.`,
     put: `${durations.put_ms} ms.`,
@@ -889,9 +935,12 @@ export const workplaceScenario: Scenario<Workplace> = {
     "chosen_situations = []",
     'book = "book"',
     "carry_limit = 1",
+    "time_scale = 1",
+    'arrivals = ""',
     "[durations]",
     "look_ms = 100",
     "examine_ms = 100",
+    "check_time_ms = 100",
     "take_ms = 100",
     "put_ms = 100",
     "give_ms = 100",
