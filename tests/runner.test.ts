@@ -127,6 +127,21 @@ describe("runExperiment", () => {
     for (const model of models.values()) expect(model.received).toHaveLength(0);
   });
 
+  it("refuses a thinking level one of its models cannot use, naming the model and the level, before any run, even when that model comes last", async () => {
+    const directory = newRunsDirectory();
+    const answers = () => Array.from({ length: 10 }, () => ({ text: "Nothing to do.", delayMs: 0 }));
+    const models = new Map([
+      ["scripted/one", new ScriptedModel(answers(), undefined, { reasoning: true })],
+      ["scripted/two", new ScriptedModel(answers())],
+    ]);
+
+    const running = runExperiment({ ...experiment, thinkingLevel: "high" }, slotsScenario, models, directory);
+
+    await expect(running).rejects.toThrow('The model "scripted/two" cannot use the thinking level "high"; it can use: off');
+    expect(existsSync(directory)).toBe(false);
+    for (const model of models.values()) expect(model.received).toHaveLength(0);
+  });
+
   it("stops at a run that stops on an error: its index line says it stopped, no run starts after it, and it fails naming the run", async () => {
     const directory = newRunsDirectory();
     const models = scriptedModels();
