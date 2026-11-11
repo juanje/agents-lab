@@ -9,12 +9,14 @@ export type Kind = (typeof KINDS)[number];
 
 /**
  * The neighbourhood's state: its grid, where each resident is, and each resident's kind; and, as the configuration sets
- * them, how far a resident sees and how long moving takes per cell of distance, which its tools read.
+ * them, how far a resident sees, how long a look takes and how long moving takes per cell of distance, which its tools
+ * read.
  */
 export interface Neighbourhood {
   grid: Grid;
   kinds: Readonly<Record<string, Kind>>;
   lookRadius: number;
+  msPerLook: number;
   msPerCell: number;
 }
 
@@ -53,7 +55,7 @@ const look: Sensor<Neighbourhood> = {
   description:
     'See the cells around you, as a JSON array of rows from the top, each row from the left, with you in the middle: "you" is your cell, "same" a resident of your kind, "other" a resident of the other kind, "empty" an empty cell and "outside" beyond the edge of the neighbourhood.',
   parameters: { type: "object", properties: {} },
-  durationMs: () => 0,
+  durationMs: (state) => state.msPerLook,
   sense: (state, resident) => {
     const at = whereIs(state, resident);
     const mark = (cell: { x: number; y: number; outside: boolean }): Mark => {
@@ -130,8 +132,8 @@ export const neighbourhoodScenario: Scenario<Neighbourhood> = {
       grid = place(grid, resident, cell);
       kinds[resident] = kindOf(configuration, resident);
     }
-    const { look_radius: lookRadius, ms_per_cell: msPerCell } = configuration as { look_radius: number; ms_per_cell: number };
-    return { grid, kinds, lookRadius, msPerCell };
+    const settings = configuration as { look_radius: number; ms_per_look: number; ms_per_cell: number };
+    return { grid, kinds, lookRadius: settings.look_radius, msPerLook: settings.ms_per_look, msPerCell: settings.ms_per_cell };
   },
   tools: [look, move],
   channels: (configuration) => {
@@ -152,6 +154,7 @@ export const neighbourhoodScenario: Scenario<Neighbourhood> = {
     "residents = 10",
     'rule = ""',
     "look_radius = 1",
+    "ms_per_look = 100",
     "ms_per_cell = 100",
     "[rhythm]",
     'source = "rhythm"',

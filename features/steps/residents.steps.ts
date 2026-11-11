@@ -11,9 +11,15 @@ import { withBase } from "./neighbourhood.steps.ts";
 import { callOf, callWithThenEnd, modelOf, returned, script } from "./tool.steps.ts";
 
 Given(
-  "the neighbourhood scenario with a grid {int} cells wide and {int} cells high, a look radius of {int}, and moving taking {int} milliseconds per cell",
-  function (this: Context, width: number, height: number, radius: number, msPerCell: number) {
-    this.neighbourhood = withBase(neighbourhoodScenario, { width, height, look_radius: radius, ms_per_cell: msPerCell });
+  "the neighbourhood scenario with a grid {int} cells wide and {int} cells high, a look radius of {int}, looking taking {int} milliseconds, and moving taking {int} milliseconds per cell",
+  function (this: Context, width: number, height: number, radius: number, msPerLook: number, msPerCell: number) {
+    this.neighbourhood = withBase(neighbourhoodScenario, {
+      width,
+      height,
+      look_radius: radius,
+      ms_per_look: msPerLook,
+      ms_per_cell: msPerCell,
+    });
     this.assembleRun = (agents) => assembled(this, agents) as LoadedScenario<unknown>;
   },
 );
