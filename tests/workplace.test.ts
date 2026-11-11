@@ -434,6 +434,30 @@ class = "control"
     expect(settled({ ...moved(initial, "key", { held: { key: "worker" } }), moves: [move("key", "cupboard", "held", 2)] })).toEqual({});
   });
 
+  it("counts the worker's calls after the one that first sensed each situation, up to the one that settled it, or up to now", () => {
+    const initial = start();
+    const calls = [
+      made("read", { thing: "label" }, 50, "success", "Fragile."),
+      made("take", { thing: "label" }, 60),
+      made("put", { thing: "label", into: "cupboard" }, 70),
+      made("record", { entry: "A label." }, 80, "not_here"),
+      made("examine", { thing: "mug" }, 90, "success", '{"name":"a mug","properties":{}}'),
+    ];
+    const settledAt = (atMs: number): Workplace => ({
+      ...moved(initial, "label", { inside: { label: "cupboard" } }),
+      moves: [{ thing: "label", from: "parcel", to: "held", atMs: atMs - 10 }, { thing: "label", from: "held", to: "cupboard", atMs }],
+    });
+    const exploration = (state: Workplace, made: ToolCall[]) => metric("exploration")(state, made);
+
+    // The put that settled the parcel landed at 69, during its call: the take and the put. The mug was sensed last.
+    expect(exploration(settledAt(69), calls)).toEqual({ parcel: 2, mug: 0 });
+    // Not settled: every call after the read.
+    expect(exploration(initial, calls)).toEqual({ parcel: 4, mug: 0 });
+    // Settled before it was sensed: no call.
+    expect(exploration(settledAt(30), calls)).toEqual({ parcel: 0, mug: 0 });
+    expect(exploration(initial, [])).toEqual({});
+  });
+
   it("refuses a predicate that names a thing, place, container or person the world does not have, naming it", () => {
     const refusal = (keys: string) => () => start(keys);
 
