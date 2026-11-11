@@ -1,4 +1,4 @@
-import type { Scenario } from "../../src/engine/scenario.ts";
+import type { Configuration, Scenario } from "../../src/engine/scenario.ts";
 import type { Channel } from "../../src/engine/stimuli.ts";
 import type { AgentCall, Tool } from "../../src/engine/tools.ts";
 import type { Action } from "../../src/engine/world.ts";
@@ -64,6 +64,12 @@ export const slotTools: readonly Tool<Slots>[] = [
 /** The test world's rhythm channel, which wakes each agent. */
 export const rhythmChannel: Channel = { name: "rhythm", source: "rhythm", stimulus: "You wake up." };
 
+/** The rhythm channel's source and text, as the slots test scenario's configuration gives them in its [rhythm] table. */
+export function rhythmOf(configuration: Configuration): { source: string; text: string } {
+  const { source, text } = configuration.rhythm as { source: string; text: string };
+  return { source, text };
+}
+
 /** Who holds the slots a configuration has held at the start. */
 export const START_HOLDER = "start";
 
@@ -80,7 +86,7 @@ export const slotsScenario: Scenario<Slots> = {
   },
   tools: slotTools,
   channels: (configuration) => {
-    const { source, text } = configuration.rhythm as { source: string; text: string };
+    const { source, text } = rhythmOf(configuration);
     return [{ name: "rhythm", source, stimulus: text }];
   },
   metrics: { held: (slots) => slots.filter((holder) => holder !== null).length },

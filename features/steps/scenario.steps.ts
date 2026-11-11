@@ -5,7 +5,7 @@ import { getCurrentSystemPrompt, getCurrentTools } from "@earendil-works/pi-ai";
 import { run } from "../../src/engine/run.ts";
 import { type Condition, type LoadedScenario, type Scenario, loadScenario } from "../../src/engine/scenario.ts";
 import { RHYTHM_CHANNEL } from "../../src/engine/stimuli.ts";
-import { type Slots, slotsScenario } from "../../tests/fixtures/slots.ts";
+import { type Slots, rhythmOf, slotsScenario } from "../../tests/fixtures/slots.ts";
 import type { Context } from "../support/context.ts";
 import { asRead, userTexts } from "./stimulus.steps.ts";
 import { modelOf, script } from "./tool.steps.ts";
@@ -237,12 +237,6 @@ Then("agent {string}'s system prompt names {string}", function (this: Context, a
     if (prompt.includes(`"${other}"`)) assert.fail(`expected agent "${agent}"'s system prompt not to name "${other}", got: ${prompt}`);
   }
 });
-
-/** The rhythm channel's source and text, as the slots test scenario's configuration gives them. */
-function rhythmOf(configuration: TomlTable): { source: string; text: string } {
-  const { source, text } = configuration.rhythm as { source: string; text: string };
-  return { source, text };
-}
 
 Given(
   "the test scenario {string}, whose rhythm channel's text is {string} in its configuration",
