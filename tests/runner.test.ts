@@ -83,9 +83,24 @@ describe("runExperiment", () => {
       code: { commit: git("rev-parse", "HEAD").trim(), uncommittedChanges: git("status", "--porcelain").trim() !== "" },
       inventory: inventory(once, slotsScenario).conditions[0],
       materials: [],
+      levels: {},
       sampling: { thinkingLevels: { a: "off" }, otherParameters: "the provider's defaults" },
     });
     expect(seed).toBe(replicaSeed(7, 1));
+  });
+
+  it("gives the level of each factor of a run's condition in its setup line and its index line, and none for a condition without levels", async () => {
+    const directory = newRunsDirectory();
+    const models = new Map([["scripted/one", new ScriptedModel(Array.from({ length: 2 }, () => ({ text: "Nothing to do.", delayMs: 0 })))]]);
+    const levels = { count: "five", held: "none" };
+    const conditions = [{ name: "baseline", change: "" }, { ...experiment.conditions[1], name: "count=five,held=none", levels }];
+
+    await runExperiment({ ...experiment, models: ["scripted/one"], replicas: 1, conditions }, slotsScenario, models, directory);
+
+    const index = indexOf(directory);
+    const setups = index.map(({ runId }) => JSON.parse(readFileSync(join(directory, `${String(runId)}.jsonl`), "utf8").split("\n")[0]));
+    expect(index.map((line) => line.levels)).toEqual([{}, levels]);
+    expect(setups.map((line) => line.levels)).toEqual([{}, levels]);
   });
 
   it("gives every session of every run the experiment's thinking level", async () => {
