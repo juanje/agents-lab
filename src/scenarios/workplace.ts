@@ -2,7 +2,7 @@ import { type TomlTable, type TomlValue, parse } from "smol-toml";
 import { type Passage, type Places, arrive, entitiesIn, entitiesInPassage, exits, layout, leave, put, where } from "../engine/places.ts";
 import type { ToolCall } from "../engine/adapter.ts";
 import type { Component, Cycle, Step } from "../engine/components.ts";
-import type { Configuration, Scenario } from "../engine/scenario.ts";
+import type { Configuration, Judgeable, Scenario } from "../engine/scenario.ts";
 import { Random } from "../engine/random.ts";
 import type { AgentCall, Effector, LandingCall, LastBy, Sensor, TargetAsSensed, Tool } from "../engine/tools.ts";
 import type { Action, Check } from "../engine/world.ts";
@@ -987,6 +987,43 @@ const note: Effector<Workplace> = {
   readTarget: () => "not_sensed",
 };
 
+/** The worker's texts each channel of a `said` gives: its notes, its book entries, or both. */
+const CHANNELS: Readonly<Record<string, readonly string[]>> = { note: ["note"], book: ["record"], either: ["note", "record"] };
+
+/** The text a successful call of a writing tool wrote: a note's or a book entry's. */
+const WRITTEN: Readonly<Record<string, string>> = { note: "text", record: "entry" };
+
+/**
+ * What can be judged in a workplace run (FR-ANALYSIS-02): for each chosen situation, in the order chosen, its `said`, with
+ * the worker's texts on its channel, then its `not_said`, with all its texts, since a note or an entry can reveal it.
+ * The texts are those of the worker's writing calls that succeeded, in the order they ended, each with when it ended.
+ * A `said` without a known channel or a statement, and a `not_said` that is no text, are refused, naming the situation.
+ */
+function judged(configuration: Configuration, toolCalls: readonly ToolCall[]): Judgeable[] {
+  const keys = textOf(configuration, "situation_keys");
+  const written = (tools: readonly string[]) =>
+    workerCalls(toolCalls)
+      .filter(({ tool, outcome }) => outcome === "success" && tools.includes(tool))
+      .map(({ tool, arguments: args, endedAtMs }) => ({ text: (args as Record<string, string>)[WRITTEN[tool]], atMs: endedAtMs }));
+  return (configuration.chosen_situations as string[]).flatMap((situation) => {
+    const reserved = (keys[situation] ?? {}) as TomlTable;
+    const judgeable: Judgeable[] = [];
+    if (reserved.said !== undefined) {
+      const { channel, about } = reserved.said as TomlTable;
+      if (typeof channel !== "string" || !Object.hasOwn(CHANNELS, channel)) {
+        throw new Error(`the situation "${situation}"'s "said" gives the channel ${JSON.stringify(channel)}; it must be "note", "book" or "either"`);
+      }
+      if (typeof about !== "string") throw new Error(`the situation "${situation}"'s "said" gives no statement as "about"`);
+      judgeable.push({ situation, key: "said", statement: about, asks: "says", texts: written(CHANNELS[channel]) });
+    }
+    if (reserved.not_said !== undefined) {
+      if (typeof reserved.not_said !== "string") throw new Error(`the situation "${situation}"'s "not_said" is not a text`);
+      judgeable.push({ situation, key: "not_said", statement: reserved.not_said, asks: "reveals", texts: written(CHANNELS.either) });
+    }
+    return judgeable;
+  });
+}
+
 /** The worker's calls among the run's, in the order it made them: one agent's calls never overlap, so the order they ended in. */
 function workerCalls(toolCalls: readonly ToolCall[]): ToolCall[] {
   return toolCalls.filter(({ agent }) => agent === WORKER);
@@ -1252,8 +1289,7 @@ export const workplaceScenario: Scenario<Workplace> = {
   situations: (configuration) => configuration.chosen_situations as string[],
   components,
   clock: clockOf,
-  // A stub that declares nothing, for the test to fail on its assertions.
-  judged: () => [],
+  judged,
   baseConfiguration: [
     'identity = "You work here."',
     'world_rules = ""',
