@@ -1,4 +1,4 @@
-import type { Experiment, Limits } from "./experiment.ts";
+import type { Experiment, Limits, ThinkingLevel } from "./experiment.ts";
 import { type LoadedScenario, type Scenario, loadScenario } from "./scenario.ts";
 import type { Tool } from "./tools.ts";
 
@@ -26,6 +26,8 @@ export interface ConditionInventory {
   /** How fast information travels (NFR-12). */
   informationSpeed: string;
   models: string[];
+  /** The thinking level every session uses (FR-EXPERIMENT-05). */
+  thinkingLevel: ThinkingLevel;
   limits: Limits;
 }
 
@@ -79,7 +81,7 @@ export function inventory<State>(experiment: Experiment, scenario: Partial<Scena
 
 /** What the agents meet in a condition, from the scenario as that condition loads it. */
 function conditionInventory<State>(
-  { models, limits }: Experiment,
+  { models, thinkingLevel, limits }: Experiment,
   condition: string,
   { scenario, configuration, systemPrompts, channels }: LoadedScenario<State>,
 ): ConditionInventory {
@@ -102,6 +104,7 @@ function conditionInventory<State>(
     environmentProcesses: NONE,
     informationSpeed: "Every sensor and channel is instant.",
     models: [...models],
+    thinkingLevel,
     limits: { ...limits },
   };
 }
@@ -172,10 +175,11 @@ function channelsMarkdown({ channels }: ConditionInventory): string {
   return ["### Stimulus channels\n", ...listed].join("\n");
 }
 
-function modelsAndLimitsMarkdown({ models, limits }: ConditionInventory): string {
+function modelsAndLimitsMarkdown({ models, thinkingLevel, limits }: ConditionInventory): string {
   return [
     "### Model and limits\n",
     `- Models: ${models.join(", ")}`,
+    `- Thinking level: ${thinkingLevel}`,
     `- Activations per agent: ${limits.activationsPerAgent}`,
     `- Time limit: ${limits.timeLimitMs} ms`,
     `- Parallelism limit: ${limits.parallelismLimit}`,
