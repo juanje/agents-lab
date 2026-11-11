@@ -1,5 +1,6 @@
 import { World as CucumberWorld, setWorldConstructor } from "@cucumber/cucumber";
 import type { Grid, Position, WindowCell } from "../../src/engine/grid.ts";
+import type { Places } from "../../src/engine/places.ts";
 import type { TomlTable } from "smol-toml";
 import type { Experiment } from "../../src/engine/experiment.ts";
 import type { Condition, Configuration, LoadedScenario, Rhythm, Scenario } from "../../src/engine/scenario.ts";
@@ -132,6 +133,12 @@ export class Context extends CucumberWorld {
   moveError?: Error;
   /** The test grid world's tools, when the scenario runs its agents on the grid rather than in the slots world. */
   gridTools?: readonly Tool<Grid>[];
+  /** Whether the step running is one that checks an outcome (a Then), for words the contract uses both to set up and to check. */
+  checking = false;
+  /** The space of places the scenario sets up. */
+  places!: Places;
+  /** A world whose state is the space of places, for what goes through its arbiter. */
+  placesWorld?: World<Places>;
   /** The neighbourhood scenario as the scenario configures it. */
   neighbourhood!: Partial<Scenario<Neighbourhood>>;
   /** Each neighbourhood the engine loaded, in order. */
