@@ -62,6 +62,11 @@ describe("readExperiment", () => {
     expect(readExperiment(valid).metricIntervalMs).toBeUndefined();
   });
 
+  it("gives how many runs are in progress at once: parallel_runs when the file gives it, and 1 when it does not", () => {
+    expect(readExperiment(withSet("parallel_runs", 3)).parallelRuns).toBe(3);
+    expect(readExperiment(valid).parallelRuns).toBe(1);
+  });
+
   it("gives each condition its name and its change, in TOML, in the order the file gives them", () => {
     const { conditions } = readExperiment(valid);
     expect(conditions.map(({ name }) => name)).toEqual(["baseline", "five-slots"]);
@@ -114,6 +119,9 @@ describe("readExperiment", () => {
     ["conditions.baseline", 5, "a table"],
     ["metric_interval_ms", 0, atLeastOne],
     ["metric_interval_ms", "100", atLeastOne],
+    ["parallel_runs", 0, atLeastOne],
+    ["parallel_runs", 1.5, atLeastOne],
+    ["parallel_runs", "2", atLeastOne],
     ["compaction", true, "a table"],
     ["compaction.enabled", "yes", "true or false"],
     ["compaction.trigger_at", 0, share],
