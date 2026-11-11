@@ -76,6 +76,28 @@ describe("loadScenario", () => {
     expect(loaded.channels).toEqual([{ name: "rhythm", source: "clock", stimulus: "Later." }]);
   });
 
+  it("gives each agent the channels whose stimuli it receives as it first wakes, from the resolved configuration; none when the scenario gives none", () => {
+    const notice = { name: "notice", source: "board", stimulus: "A notice is posted." };
+    const loaded = loadScenario(
+      {
+        ...withBase("agents = ['a', 'b']\nfirst = 'notice'\n[slots]\ncount = 2\nheld = 0\n"),
+        agents: (configuration) => configuration.agents as string[],
+        channels: () => [rhythmChannel, notice],
+        firstStimuli: (configuration, agent) => (agent === "a" ? [configuration.first as string] : []),
+      },
+      seed,
+    );
+
+    expect(loaded.firstStimuli).toEqual(new Map([["a", ["notice"]], ["b", []]]));
+    expect(loadScenario(withBase("[slots]\ncount = 2\nheld = 0\n"), seed).firstStimuli).toEqual(new Map([["a", []]]));
+  });
+
+  it("refuses a first stimulus from a channel the scenario does not declare, naming the channel and the agent", () => {
+    const scenario = { ...withBase("[slots]\ncount = 2\nheld = 0\n"), firstStimuli: () => ["notice"] };
+
+    expect(() => loadScenario(scenario, seed)).toThrow('Scenario "slots" gives agent "a" a first stimulus on the channel "notice", which it does not declare');
+  });
+
   it("applies the condition's change over the base configuration, keeping what the change does not set", () => {
     const loaded = loadScenario(
       withBase("label = 'base'\nmode = 'plain'\n[slots]\ncount = 2\nheld = 0\n"),
