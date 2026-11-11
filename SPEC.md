@@ -141,6 +141,7 @@ A scenario provides:
 - its stimulus channels, from its configuration;
 - its metrics;
 - a system prompt for each agent, from its configuration and the agent;
+- each agent's rhythm, from its configuration: how its waits between activations are drawn;
 - a base configuration in TOML.
 
 A system prompt that holds nothing besides whitespace, or a base configuration that sets no key, counts as missing. A system prompt describes its agent, never the state of the world. A run whose agents are not exactly the scenario's agents is refused before any model call, with an error that names the agents missing and the agents not declared.

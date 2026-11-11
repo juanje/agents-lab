@@ -92,3 +92,9 @@ Feature: A scenario plugs into the engine
     When a run is given agents "a" and "c"
     Then the run fails with an error that names "b" and "c"
     And no model was called
+
+  Scenario: A condition changes the agents' rhythm
+    Given the test scenario "slots", whose agents wait "rhythm.interval_ms" between activations
+    And a condition "slow" that sets "rhythm.interval_ms" to 300
+    When agent "a" runs with the condition "slow" on a scripted model that ends its first turn without a tool call
+    Then agent "a"'s first activation began at least 300 milliseconds after the run started
