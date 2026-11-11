@@ -41,7 +41,7 @@ function metric(context: Context, name: string): ReturnType<(typeof neighbourhoo
 /** Each resident's share, by its name, as the "shares" metric gives them. */
 function shares(context: Context): Readonly<Record<string, number>> {
   const value = metric(context, "shares");
-  assert.ok(typeof value === "object", `the "shares" metric gives ${JSON.stringify(value)}, not a share for each resident`);
+  assert.ok(typeof value === "object" && value !== null, `the "shares" metric gives ${JSON.stringify(value)}, not a share for each resident`);
   return value;
 }
 
@@ -82,4 +82,15 @@ Given(
 Then("the moves metric is {int}", function (this: Context, moves: number) {
   assert.ok(this.toolCalls !== undefined, "the neighbourhood did not run");
   assert.equal(metric(this, "moves"), moves);
+});
+
+Given(
+  "residents of kind {string} at {int}, {int} and of kind {string} at {int}, {int}",
+  function (this: Context, one: string, x1: number, y1: number, other: string, x2: number, y2: number) {
+    this.residents.push({ name: "resident 1", kind: one, x: x1, y: y1 }, { name: "resident 2", kind: other, x: x2, y: y2 });
+  },
+);
+
+Then("the segregation has no value", function (this: Context) {
+  assert.equal(metric(this, "segregation"), null);
 });

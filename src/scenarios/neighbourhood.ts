@@ -136,9 +136,10 @@ function shares(state: Neighbourhood): Record<string, number> {
   return found;
 }
 
-/** "segregation": the mean of the residents' shares. */
-function segregation(state: Neighbourhood): number {
+/** "segregation": the mean of the residents' shares, with no value when no resident has a share. */
+function segregation(state: Neighbourhood): number | null {
   const given = Object.values(shares(state));
+  if (given.length === 0) return null;
   return given.reduce((sum, share) => sum + share, 0) / given.length;
 }
 

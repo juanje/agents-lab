@@ -7,8 +7,11 @@ import { World } from "./world.ts";
 /** A resolved configuration: the scenario's base configuration with the condition's change over it. */
 export type Configuration = TomlTable;
 
-/** A metric's value: one number for the world, or a number for each agent it applies to, by the agent's name. */
-export type MetricValue = number | Readonly<Record<string, number>>;
+/**
+ * A metric's value: one number for the world, null when the state gives it no value, or a number for each agent it
+ * applies to, by the agent's name.
+ */
+export type MetricValue = number | null | Readonly<Record<string, number>>;
 
 /** What a scenario provides to the engine. */
 export interface Scenario<State> {
