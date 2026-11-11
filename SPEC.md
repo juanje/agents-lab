@@ -73,13 +73,14 @@ Experiments are written outside this repository, in the experiment language (FR-
 24. FR-METRIC-01
 25. FR-METRIC-02
 26. FR-RECORD-02
-27. FR-INVENTORY-01
-28. FR-EXPERIMENT-02
-29. FR-EXPERIMENT-03
-30. FR-EXPERIMENT-04
-31. FR-RUN-02
-32. FR-RUN-03
-33. FR-ANALYSIS-01
+27. FR-EXPERIMENT-05
+28. FR-INVENTORY-01
+29. FR-EXPERIMENT-02
+30. FR-EXPERIMENT-03
+31. FR-EXPERIMENT-04
+32. FR-RUN-02
+33. FR-RUN-03
+34. FR-ANALYSIS-01
 
 ## Invariants
 
@@ -317,6 +318,10 @@ An experiment or a condition can reference materials by path, relative to the ex
 The engine reads them at run time, writes each path with a content hash to the run's log, and lists them in the inventory, except files marked as held out, which are listed by name only. A referenced file that does not exist fails the run before it starts.
 *Why:* texts are reviewed and changed as files, and a result must say exactly which version of each text produced it.
 
+
+#### FR-EXPERIMENT-05: An experiment file sets the model's thinking level
+An experiment file gives the thinking level of its models: one of `off`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max`. Every session of every run uses it. A level that one of the file's models cannot use is refused before any model call, with an error that names the model and the level; the engine never lowers it silently.
+*Why:* the thinking level changes how an agent behaves, so it is part of the model a run uses and must be declared, not left to the harness's default.
 #### FR-RUN-01: An experiment runs every condition, model and replica
 `lab run <experiment.toml>` runs each condition with each model, for the configured number of replicas, one after another, each replica with its own seed. Every agent of a run uses that run's model. Replica r's seed is derived from the base seed and r, so it is the same in every condition and model.
 
