@@ -241,6 +241,20 @@ describe("the neighbourhood scenario", () => {
     expect(neighbourhoodScenario.metrics.segregation(crowded)).toBeCloseTo((0.5 + 1 / 3 + 0.5 + 1) / 4, 12);
   });
 
+  it("counts as its moves only the moves the arbiter applied, from none in its initial state", () => {
+    const move = toolNamed("move");
+    if (move.kind !== "effector") throw new Error("move is not an effector");
+    const initial = neighbourhoodScenario.initialState(configuration(3, 2, 2), new Random(1));
+    const world = new World(residentsAt(5, 5, { lookRadius: 1, msPerCell: 100 }));
+
+    expect(neighbourhoodScenario.metrics.moves(initial)).toBe(0);
+    expect(world.apply(move.action, { agent: "r1", arguments: { dx: 1, dy: 0 } })).toEqual({ applied: false, reason: "cell_full" });
+    expect(world.apply(move.action, { agent: "r1", arguments: { dx: -1, dy: 0 } })).toEqual({ applied: false, reason: "invalid_target" });
+    expect(world.apply(move.action, { agent: "r1", arguments: { dx: 2, dy: 2 } })).toEqual({ applied: true });
+    expect(world.apply(move.action, { agent: "r1", arguments: { dx: 1, dy: 1 } })).toEqual({ applied: true });
+    expect(neighbourhoodScenario.metrics.moves(world.state)).toBe(2);
+  });
+
   it("draws the cells from the random sequence it is given", () => {
     const cellsOf = (seed: number) => neighbourhoodScenario.initialState(configuration(6, 6, 10), new Random(seed)).grid;
     const where = (seed: number) =>
