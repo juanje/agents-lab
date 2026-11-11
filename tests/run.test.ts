@@ -20,6 +20,9 @@ const seed = 1;
 /** The slots test scenario as loaded with 3 empty slots, with any of its parts replaced. */
 const slots = (parts: Partial<Scenario<Slots>> = {}) => loadScenario({ ...slotsScenario, ...parts }, seed);
 
+/** The part of the slots test scenario that names its agents, naming these; its base configuration names only "a". */
+const agentsNamed = (...names: string[]) => ({ agents: () => names });
+
 /** A channel besides the rhythm, for stimuli the test delivers. */
 const bell = { name: "bell", source: "town bell", stimulus: "The bell rings." };
 
@@ -147,7 +150,7 @@ describe("run", () => {
     ]);
 
     const { toolCalls } = await run(
-      slots({ tools: withTakeTaking(100) }),
+      slots({ tools: withTakeTaking(100), ...agentsNamed("a", "b") }),
       [
         { name: "a", model: a, activations: 1, rhythm: () => 50 },
         { name: "b", model: b, activations: 1, rhythm: noWait },
@@ -184,7 +187,7 @@ describe("run", () => {
     const startedAtMs = performance.now();
 
     const running = run(
-      slots({ tools: [...slotTools, jam] }),
+      slots({ tools: [...slotTools, jam], ...agentsNamed("a", "b") }),
       [
         { name: "a", model: a, activations: 1, rhythm: noWait },
         { name: "b", model: b, activations: 1, rhythm: () => 3_000 },
@@ -219,7 +222,7 @@ describe("run", () => {
 
     try {
       const running = run(
-        slots(),
+        slots(agentsNamed("a", "b")),
         [
           { name: "a", model: a, activations: 1, rhythm: noWait },
           { name: "b", model: unopenable, activations: 1, rhythm: noWait },
@@ -402,7 +405,7 @@ describe("run", () => {
   it("gives the agent's model the scenario's system prompt and nothing else", async () => {
     const model = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
 
-    await run(slots({ systemPrompt: "You live in a row of slots." }), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
+    await run(slots({ systemPrompt: () => "You live in a row of slots." }), [{ name: "a", model, activations: 1, rhythm: noWait }], seed, settings);
 
     expect(model.received.map(getCurrentSystemPrompt)).toEqual(["You live in a row of slots."]);
   });
@@ -410,7 +413,7 @@ describe("run", () => {
   it("gives each agent's model that agent's own system prompt", async () => {
     const a = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
     const b = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
-    const loaded = slots({ agents: () => ["a", "b"], systemPrompt: (_configuration, agent) => `You are "${agent}".` });
+    const loaded = slots({ ...agentsNamed("a", "b"), systemPrompt: (_configuration, agent) => `You are "${agent}".` });
 
     await run(loaded, [{ name: "a", model: a, activations: 1, rhythm: noWait }, { name: "b", model: b, activations: 1, rhythm: noWait }], seed, settings);
 
@@ -488,7 +491,7 @@ describe("run", () => {
     const answersAfter50 = () => new ScriptedModel([{ text: "Nothing to do.", delayMs: 50 }]);
 
     const { turns } = await run(
-      slots(),
+      slots(agentsNamed("a", "b", "c")),
       ["a", "b", "c"].map((name) => ({ name, model: answersAfter50(), activations: 1, rhythm: noWait })),
       seed,
       { ...settings, parallelismLimit: 2 },
@@ -503,7 +506,7 @@ describe("run", () => {
   });
 
   it("gives each agent's model turns to that agent's own model", async () => {
-    const loaded = slots();
+    const loaded = slots(agentsNamed("a", "b"));
     const { world } = loaded;
     const takes = (slot: number) =>
       new ScriptedModel([
@@ -530,7 +533,7 @@ describe("run", () => {
       const draws: number[] = [];
       const answers = (delayMs: number) => new ScriptedModel(Array.from({ length: 4 }, () => ({ text: "resting", delayMs })));
       await run(
-        slots({ tools: [] }),
+        slots({ tools: [], ...agentsNamed("a", "b") }),
         [
           { name: "a", model: answers(0), activations: 4, rhythm: (source) => (draws.push(source.next()), 5) },
           { name: "b", model: answers(bDelayMs), activations: 4, rhythm: (source) => source.next() * 5 },
@@ -552,7 +555,7 @@ describe("run", () => {
     async function drawsOfB(names: readonly string[]): Promise<number[]> {
       const draws: number[] = [];
       await run(
-        slots({ tools: [] }),
+        slots({ tools: [], ...agentsNamed(...names) }),
         names.map((name) => ({
           name,
           model: new ScriptedModel(Array.from({ length: 3 }, () => ({ text: "resting", delayMs: 0 }))),
@@ -752,7 +755,7 @@ describe("run", () => {
       { name: "b", model: taking, activations: 1, rhythm: noWait },
     ];
 
-    const { toolCalls } = await run(slots({ tools: withLookTaking(100) }), agents, seed, settings);
+    const { toolCalls } = await run(slots({ tools: withLookTaking(100), ...agentsNamed("a", "b") }), agents, seed, settings);
 
     const look = toolCalls.find((call) => call.tool === "look");
     const take = toolCalls.find((call) => call.tool === "take");
@@ -848,7 +851,7 @@ describe("run", () => {
       { name: "b", model: taking, activations: 1, rhythm: noWait },
     ];
 
-    const { toolCalls } = await run(slots({ tools: withTakeTaking(100) }), agents, seed, settings);
+    const { toolCalls } = await run(slots({ tools: withTakeTaking(100), ...agentsNamed("a", "b") }), agents, seed, settings);
 
     const take = toolCalls.find((call) => call.agent === "a" && call.tool === "take");
     expect(take).toMatchObject({ outcome: "slot_taken", targetAsSensed: "free" });

@@ -30,9 +30,9 @@ Given(
   "the test scenario {string} with {int} slots, whose system prompt describes a resident who wants a slot of its own",
   function (this: Context, name: string, count: number) {
     assert.equal(name, slotsScenario.name);
-    const condition = { name: `${count} slots`, change: `[slots]\ncount = ${count}\n` };
-    this.loaded = loadScenario({ ...slotsScenario, systemPrompt: RESIDENT_PROMPT }, this.seed, condition);
-    this.world = this.loaded.world;
+    // Loaded once the agents are named, as the scenario declares the agents that run.
+    this.scenario = { ...slotsScenario, systemPrompt: () => RESIDENT_PROMPT };
+    this.condition = { name: `${count} slots`, change: `[slots]\ncount = ${count}\n` };
   },
 );
 
@@ -44,6 +44,11 @@ Given(
     // A real model answers in seconds, not milliseconds; the turn timeout only catches a call that hangs.
     this.modelTurnTimeoutMs = 120_000;
     for (const agent of [first, second]) this.realModels.set(agent, await labModel(name));
+    const { condition } = this;
+    assert.ok(condition !== undefined, "the scenario gives the slots world before its agents");
+    const declared = { ...condition, change: `agents = ${JSON.stringify([first, second])}\n${condition.change}` };
+    this.loaded = loadScenario(this.scenario, this.seed, declared);
+    this.world = this.loaded.world;
   },
 );
 

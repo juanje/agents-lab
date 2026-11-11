@@ -3,7 +3,7 @@ import { Given, Then, When } from "@cucumber/cucumber";
 import { type JsonObject, getCurrentTools } from "@earendil-works/pi-ai";
 import { run } from "../../src/engine/run.ts";
 import { type ScriptedAnswer, ScriptedModel } from "../../src/engine/scripted-model.ts";
-import type { LoadedScenario } from "../../src/engine/scenario.ts";
+import type { LoadedScenario, Scenario } from "../../src/engine/scenario.ts";
 import { type Action, World } from "../../src/engine/world.ts";
 import { gridScenario } from "../../tests/fixtures/grid-world.ts";
 import { SLOT_TAKEN, type Seen, type Slots, slotTools, slotsScenario } from "../../tests/fixtures/slots.ts";
@@ -76,18 +76,28 @@ export async function runTheScenario(context: Context): Promise<void> {
   // Most of these scenarios set up their world and the scenario's parts step by step rather than from a base
   // configuration, so the scenario is assembled around them as loading would give it: the test grid world when the
   // scenario declared its tools, the slots world otherwise.
+  // Its agents are the ones the scenario runs.
+  const agents = [...context.models.keys(), ...context.realModels.keys()];
   if (context.gridTools !== undefined) {
     context.gridWorld = new World(context.grid);
-    await runScenario(context, { scenario: gridScenario(context.grid, context.gridTools), configuration: {}, world: context.gridWorld });
+    await runScenario(context, assembled(gridScenario(context.grid, context.gridTools, agents), context.gridWorld));
     return;
   }
   context.versionBefore = context.world.version;
-  const loaded: LoadedScenario<Slots> = context.loaded ?? {
-    scenario: { ...slotsScenario, tools: context.tools, channels: context.channels, systemPrompt: context.systemPrompt },
-    configuration: {},
-    world: context.world,
+  const scenario: Scenario<Slots> = {
+    ...slotsScenario,
+    agents: () => agents,
+    tools: context.tools,
+    channels: context.channels,
+    systemPrompt: () => context.systemPrompt,
   };
-  await runScenario(context, loaded);
+  await runScenario(context, context.loaded ?? assembled(scenario, context.world));
+}
+
+/** A scenario assembled around a world as loading would give it, with no configuration. */
+function assembled<State>(scenario: Scenario<State>, world: World<State>): LoadedScenario<State> {
+  const systemPrompts = new Map(scenario.agents({}).map((agent) => [agent, scenario.systemPrompt({}, agent)]));
+  return { scenario, configuration: {}, world, systemPrompts };
 }
 
 /** Runs the scenario's agents in a loaded scenario, watching its arbiter, and keeps what the run gave. */

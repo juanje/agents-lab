@@ -94,7 +94,7 @@ export async function run<State>(
 
 /** Runs the agents of a run whose log is open. */
 async function runAgents<State>(
-  { world, scenario }: LoadedScenario<State>,
+  { world, scenario, systemPrompts }: LoadedScenario<State>,
   agents: readonly Agent[],
   seed: number,
   settings: RunSettings,
@@ -104,7 +104,6 @@ async function runAgents<State>(
   stop: (error: Error) => void,
 ): Promise<Omit<RunResult, "runId">> {
   const sessionSettings = {
-    systemPrompt: scenario.systemPrompt,
     modelTurnTimeoutMs: settings.modelTurnTimeoutMs,
     runEnd: runEnd.signal,
     stop,
@@ -130,7 +129,7 @@ async function runAgents<State>(
   // fails to open stops the run, once the others have opened, and those are closed.
   const opening = await Promise.allSettled(
     agents.map((agent) =>
-      openSession(world, scenario.tools, agent, runtime, sessionSettings, parallelism, records, stimuli, sensings, changes).catch((error: unknown) => {
+      openSession(world, scenario.tools, agent, runtime, { ...sessionSettings, systemPrompt: systemPromptOf(systemPrompts, agent.name) }, parallelism, records, stimuli, sensings, changes).catch((error: unknown) => {
         throw failure(`the session of agent "${agent.name}" failed to open`, error);
       }),
     ),
@@ -163,6 +162,13 @@ async function runAgents<State>(
     clearTimeout(timer);
   }
   return { turns, toolCalls, messages, sensings, startedAtMs };
+}
+
+/** The system prompt the loaded scenario gives an agent. */
+function systemPromptOf(systemPrompts: ReadonlyMap<string, string>, agent: string): string {
+  const systemPrompt = systemPrompts.get(agent);
+  if (systemPrompt === undefined) throw new Error(`the scenario gives no system prompt to agent "${agent}"`);
+  return systemPrompt;
 }
 
 /**

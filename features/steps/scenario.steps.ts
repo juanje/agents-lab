@@ -64,7 +64,7 @@ Given("the test scenario {string} without its {}", function (this: Context, name
 
 /** A text part that holds nothing: a system prompt of whitespace only, a base configuration that sets no key. */
 const emptyParts: Readonly<Record<string, Partial<Scenario<Slots>>>> = {
-  "system prompt": { systemPrompt: " \n\t\r\n" },
+  "system prompt": { systemPrompt: () => " \n\t\r\n" },
   "base configuration": { baseConfiguration: "# no key is set\n\n" },
 };
 
@@ -182,7 +182,8 @@ Then("agent {string}'s model was offered exactly the scenario's tools", function
 });
 
 Then("the system prompt agent {string}'s model received is exactly the scenario's", function (this: Context, agent: string) {
-  const { systemPrompt } = loadedOf(this).scenario;
+  const systemPrompt = loadedOf(this).systemPrompts.get(agent);
+  assert.ok(systemPrompt !== undefined, `the loaded scenario has no agent "${agent}"`);
   for (const [turn, messages] of modelOf(this, agent).received.entries()) {
     assert.equal(getCurrentSystemPrompt(messages), systemPrompt, `turn ${turn + 1} received another system prompt`);
   }

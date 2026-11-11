@@ -38,15 +38,16 @@ export function walkTool(msPerCell: number): Effector<Grid> {
   };
 }
 
-/** The test grid world as a scenario, with the grid it starts from and its tools. */
-export function gridScenario(start: Grid, tools: readonly Tool<Grid>[]): Scenario<Grid> {
+/** The test grid world as a scenario, with the grid it starts from, its tools and its agents. */
+export function gridScenario(start: Grid, tools: readonly Tool<Grid>[], agents: readonly string[]): Scenario<Grid> {
   return {
     name: "grid",
+    agents: () => agents,
     initialState: () => start,
     tools,
     channels: [rhythmChannel],
     metrics: {},
-    systemPrompt: "You are an agent on a grid.",
+    systemPrompt: () => "You are an agent on a grid.",
     baseConfiguration: "",
   };
 }

@@ -10,6 +10,8 @@ export type Configuration = TomlTable;
 /** What a scenario provides to the engine. */
 export interface Scenario<State> {
   name: string;
+  /** The names of the agents that run in the scenario, from the resolved configuration. */
+  agents: (configuration: Configuration) => readonly string[];
   /** Builds the world's initial state from the resolved configuration, drawing any chance from its own sequence. */
   initialState: (configuration: Configuration, random: Random) => State;
   /** The agents' only interface with the world: its sensors and effectors. */
@@ -18,7 +20,8 @@ export interface Scenario<State> {
   channels: readonly Channel[];
   /** Each metric by its name, computed from the world's state. */
   metrics: Readonly<Record<string, (state: State) => number>>;
-  systemPrompt: string;
+  /** What an agent is told it is, from the resolved configuration and the agent's name; never the world's state. */
+  systemPrompt: (configuration: Configuration, agent: string) => string;
   /** The base configuration, in TOML. */
   baseConfiguration: string;
 }
@@ -30,11 +33,16 @@ export interface Condition {
   change: string;
 }
 
-/** A scenario ready to run as one replica: its parts, its resolved configuration and its world in its initial state. */
+/**
+ * A scenario ready to run as one replica: its parts, its resolved configuration, its world in its initial state, and
+ * each of its agents with its system prompt.
+ */
 export interface LoadedScenario<State> {
   scenario: Scenario<State>;
   configuration: Configuration;
   world: World<State>;
+  /** The scenario's agents, in the order it names them, each with its system prompt. */
+  systemPrompts: ReadonlyMap<string, string>;
 }
 
 /** Each part a scenario must provide, and how an error names it. */
@@ -66,16 +74,21 @@ export function loadScenario<State>(
   if (!scenario.channels.some((channel) => channel.name === RHYTHM_CHANNEL)) {
     throw new Error(`Scenario "${scenario.name}" declares no stimulus channel named "${RHYTHM_CHANNEL}", which wakes each agent`);
   }
-  // A text part that holds nothing gives the agents nothing, so it counts as missing.
-  if (scenario.systemPrompt.trim() === "") throw lacks("system prompt");
   const base = parse(scenario.baseConfiguration);
+  // A text part that holds nothing gives the agents nothing, so it counts as missing.
   if (Object.keys(base).length === 0) throw lacks("base configuration");
   const configuration =
     condition === undefined
       ? base
       : applyChange(base, parse(condition.change), [], { condition: condition.name, scenario: scenario.name });
+  const systemPrompts = new Map<string, string>();
+  for (const agent of scenario.agents(configuration)) {
+    const systemPrompt = scenario.systemPrompt(configuration, agent);
+    if (systemPrompt.trim() === "") throw lacks(`system prompt for agent "${agent}"`);
+    systemPrompts.set(agent, systemPrompt);
+  }
   const initial = scenario.initialState(configuration, Random.derive(seed, "initial state"));
-  return { scenario, configuration, world: new World(initial) };
+  return { scenario, configuration, world: new World(initial), systemPrompts };
 }
 
 /** The names of the condition being applied and of the scenario whose base configuration it changes, for errors. */
