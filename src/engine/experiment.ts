@@ -28,6 +28,8 @@ export interface Experiment {
   limits: Limits;
   /** How long each run waits between metric samples; without it, each run samples only at its start and its end. */
   metricIntervalMs?: number;
+  /** How many runs are in progress at once, 1 unless the file gives another (FR-RUN-06). */
+  parallelRuns: number;
   /** Its conditions, each a named change over the scenario's base configuration, in the order the file gives them. */
   conditions: readonly Condition[];
 }
@@ -61,6 +63,7 @@ export function readExperiment(toml: string, directory?: string): Experiment {
       modelTurnTimeoutMs: limits.model_turn_timeout_ms,
     },
     ...(file.metric_interval_ms === undefined ? {} : { metricIntervalMs: file.metric_interval_ms }),
+    parallelRuns: file.parallel_runs ?? 1,
     conditions: conditionsOf(file).map((condition) => ({ ...condition, ...materials })),
   };
 }
@@ -254,6 +257,7 @@ const fileSchema = {
 /** The fields the file may leave out. */
 const optionalFileSchema = {
   metric_interval_ms: atLeastOne,
+  parallel_runs: atLeastOne,
   conditions: namedConditions,
   factors: namedFactors,
   baseline: trueOrFalse,
