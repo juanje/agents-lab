@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { Given, Then, When } from "@cucumber/cucumber";
+import { After, Given, Then, When } from "@cucumber/cucumber";
+import type { Api, Model } from "@earendil-works/pi-ai";
+import { AgentSession } from "@earendil-works/pi-coding-agent";
 import { rhythmChannel } from "../../tests/fixtures/slots.ts";
 import type { Context } from "../support/context.ts";
 import { landsWhileUnderWay } from "./acting.steps.ts";
@@ -215,4 +217,43 @@ Then("the last line of the run's log says the run stopped and gives the error", 
   assert.ok(this.throwingTool !== undefined, "the scenario declares no effector that throws");
   assert.match(stopLine(this).error as string, new RegExp(this.throwingTool.message));
   assert.match(this.runError?.message ?? "", new RegExp(this.throwingTool.message));
+});
+
+Then("the last line of the run's log says the run stopped and names agent {string}", function (this: Context, agent: string) {
+  assert.match(stopLine(this).error as string, new RegExp(`agent "${agent}"`));
+  assert.match(this.runError?.message ?? "", new RegExp(`agent "${agent}"`));
+});
+
+/** Watches every Pi session close, by its model's provider, without changing what closing does. */
+function watchSessionsClose(context: Context): void {
+  const closed: string[] = [];
+  context.closedSessions = closed;
+  const dispose = AgentSession.prototype.dispose;
+  AgentSession.prototype.dispose = function (this: AgentSession) {
+    closed.push(this.model?.provider ?? "");
+    dispose.call(this);
+  };
+  context.unwatch.push(() => {
+    AgentSession.prototype.dispose = dispose;
+  });
+}
+
+After(function (this: Context) {
+  for (const unwatch of this.unwatch) unwatch();
+});
+
+Given("agent {string} runs on a model whose session fails to open", function (this: Context, agent: string) {
+  watchSessionsClose(this);
+  this.realModels.set(agent, {
+    // Opening the session asks for its model, and this one has none to give.
+    get model(): Model<Api> {
+      throw new Error("this model cannot be given to a session");
+    },
+  });
+});
+
+Then("agent {string}'s session is closed", function (this: Context, agent: string) {
+  const { provider } = this.models.get(agent)?.model ?? {};
+  assert.ok(provider !== undefined, `agent "${agent}" runs on no scripted model`);
+  assert.ok(this.closedSessions?.includes(provider), `agent "${agent}"'s session was not closed`);
 });

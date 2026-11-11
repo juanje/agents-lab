@@ -50,6 +50,10 @@ export class Context extends CucumberWorld {
   previousLog?: { file: string; content: string };
   /** The tool the scenario declares to throw an error when it runs, and that error's message. */
   throwingTool?: { name: string; message: string };
+  /** The provider of each session's model, as each session was closed, for a scenario that watches them close. */
+  closedSessions?: string[];
+  /** Puts back what the scenario watched, once it ends. */
+  readonly unwatch: (() => void)[] = [];
   /** The error the run stopped on, for a scenario whose run stops. */
   runError?: Error;
   /** The tool calls the run gave. */
