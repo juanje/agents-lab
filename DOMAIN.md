@@ -9,7 +9,7 @@ What the words mean here, how the pieces fit together, and how the tools behave 
 | Agent | One participant in a world: a model, the harness that runs it (a Pi session for the whole run) and the memory it keeps. | The model alone. Two agents can use the same model. |
 | Tool | An agent's only interface with the world: a sensor or an effector, declared by the scenario with its description, arguments, duration, effort and failure reasons. | A function of the engine. Tools are what the agent's session offers. |
 | Sensor | A tool that returns part of the world as seen from where the agent is, when its duration ends. It changes nothing. | An observation handed to the agent. Nothing is handed; the agent senses. |
-| Effector | A tool that changes the world through the arbiter, when its duration ends. | Text the agent writes, which acts on nothing. |
+| Effector | A tool that changes the world through the arbiter, when its duration ends. One under way in the world, such as crossing a passage, can also declare a start, applied through the arbiter as its call starts, once its duration is taken (FR-SPACE-03). | Text the agent writes, which acts on nothing. |
 | Reflection | The text an agent writes in a model turn. It is recorded and reaches no one. | An action. |
 | Stimulus | A message delivered into an agent's session through a declared channel, with its source (another agent or a mechanism of the world). | A tool result, which the agent asked for. |
 | Channel | A declared path by which stimuli reach agents, naming their source (for example the agent's rhythm). | A tool. |
@@ -42,7 +42,7 @@ What the words mean here, how the pieces fit together, and how the tools behave 
 ## How the pieces fit
 
 - **Each agent is a Pi session** that lasts the run, driven by an async loop on Node's event loop: wait the rhythm, wake with a stimulus, run model turns and tool calls until a turn makes no call, then wait again.
-- **Every tool call goes through the world:** a sensor reads it when its duration ends; an effector's effect is checked and applied by the arbiter when its duration ends. The arbiter is the only writer of the world's state.
+- **Every tool call goes through the world:** a sensor reads it when its duration ends; an effector's effect is checked and applied by the arbiter when its duration ends. An effector's start, when it declares one, is applied as the call starts and counts among other agents' changes since sensing; a start the world refuses stops the run, as a tool that throws does. The arbiter is the only writer of the world's state.
 - **Stimuli** from channels enter the session at the agent's next model turn, or when it wakes.
 - **Processes** change the world on their own schedule, through the arbiter.
 - **The recorder writes a line per event.** The inventory and the run's setup go first.
