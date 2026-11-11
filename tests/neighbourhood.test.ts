@@ -40,6 +40,33 @@ describe("the neighbourhood scenario", () => {
     );
   });
 
+  it("tells each resident who it is and its kind, the kind its initial state gives it, and no rule by default", () => {
+    const base = configuration(3, 2, 2);
+    const { kinds } = neighbourhoodScenario.initialState(base, new Random(1));
+
+    expect(base.rule).toBe("");
+    expect(neighbourhoodScenario.systemPrompt(base, "resident 1")).toBe(
+      `You are "resident 1", a resident of a neighbourhood. Your kind is "${kinds["resident 1"]}".`,
+    );
+    expect(neighbourhoodScenario.systemPrompt(base, "resident 2")).toBe(
+      `You are "resident 2", a resident of a neighbourhood. Your kind is "${kinds["resident 2"]}".`,
+    );
+  });
+
+  it("adds the configured rule at the end of the system prompt, after a blank line", () => {
+    const ruled = { ...configuration(3, 2, 2), rule: "Stay put." };
+
+    expect(neighbourhoodScenario.systemPrompt(ruled, "resident 2")).toBe(
+      'You are "resident 2", a resident of a neighbourhood. Your kind is "amber".\n\nStay put.',
+    );
+  });
+
+  it("refuses a system prompt for an agent that is not one of its residents, naming it", () => {
+    expect(() => neighbourhoodScenario.systemPrompt(configuration(3, 2, 2), "resident 3")).toThrow(
+      'The neighbourhood has no resident "resident 3"',
+    );
+  });
+
   it("draws the cells from the random sequence it is given", () => {
     const cellsOf = (seed: number) => neighbourhoodScenario.initialState(configuration(6, 6, 10), new Random(seed)).grid;
     const where = (seed: number) =>
