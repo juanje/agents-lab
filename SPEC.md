@@ -91,7 +91,8 @@ Experiments are written outside this repository, in the experiment language (FR-
 13. FR-RUN-02
 14. FR-ANALYSIS-02
 15. FR-WORKPLACE-07 (the worker can wait), before E1's pilot
-16. FR-WORKPLACE-06 (the depot's hours, light, closed doors, and weather as a perturbation), when an experiment needs it
+16. FR-RUN-06 (runs in parallel), before E1's pilot
+17. FR-WORKPLACE-06 (the depot's hours, light, closed doors, and weather as a perturbation), when an experiment needs it
 
 **Small known gaps** (to close when convenient): `lab summarize` prints numbers at full precision; a completed run whose log has no metric sample gives no values without saying so; a run in the index whose log is missing fails with Node's own error. The `wait` tool's description does not state `wait_max_minutes`, so the worker learns the limit only from a refusal; `wait_max_minutes` is not checked when the configuration loads.
 
@@ -357,7 +358,7 @@ The engine reads every material before the first run, writes each path with a ha
 An experiment file gives the thinking level of its models: one of `off`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max`. Every session of every run uses it. A level that one of the file's models cannot use is refused before any model call, with an error that names the model and the level; the engine never lowers it silently.
 *Why:* the thinking level changes how an agent behaves, so it is part of the model a run uses and must be declared, not left to the harness's default.
 #### FR-RUN-01: An experiment runs every condition, model and replica
-`lab run <experiment.toml>` runs each condition with each model, for the configured number of replicas, one after another, each replica with its own seed. Every agent of a run uses that run's model. Replica r's seed is derived from the base seed and r, so it is the same in every condition and model.
+`lab run <experiment.toml>` runs each condition with each model, for the configured number of replicas, one after another unless the file runs them in parallel (FR-RUN-06), each replica with its own seed. Every agent of a run uses that run's model. Replica r's seed is derived from the base seed and r, so it is the same in every condition and model.
 
 It fails before any model call when the file names an unknown scenario or model, or a condition the scenario's configuration refuses, with an error that names it.
 
@@ -394,6 +395,12 @@ What it prints is read from what the run records, and nothing it prints goes to 
 #### FR-RUN-05: An interrupted experiment ends its run like a stopped one
 When `lab run` is interrupted (Ctrl-C, or a termination signal), it ends the run in progress the way a run that stops on an error ends: every agent stops, every session closes, the log's last line says the run stopped because it was interrupted, `index.jsonl` lists the run as stopped, and the experiment's total is printed. No later run starts.
 *Why:* a run stopped by hand is still a run of the experiment; without a trace, its partial log reads as a run that crashed or never existed.
+
+#### FR-RUN-06: Runs can run in parallel
+An experiment file can give `parallel_runs`, a whole number of at least 1 (by default 1): how many runs are in progress at once. Runs start in the experiment's usual order (condition, then model, then replica), and each next one starts as soon as one ends, so no more than `parallel_runs` are ever in progress. Each run keeps its own `parallelism_limit`, seed, sessions and log; each run's setup line gives `parallel_runs`, and its line in the index is added when it ends.
+
+While several runs are in progress, the progress lines (FR-RUN-04) give each run in progress by its number. A run that stops on an error stops the experiment: the runs still in progress end as stopped, with the reason that the experiment stopped, and no new run starts. An interrupted experiment (FR-RUN-05) ends every run in progress the same way, each saying it was interrupted.
+*Why:* an experiment's runs are independent worlds, and the provider's load does not depend on a handful of calls; running a replica's conditions at once both saves hours and puts them through the same provider conditions, while the one-at-a-time default keeps the earlier experiments as they ran.
 
 #### FR-ADAPTER-03: Context compaction is declared and recorded
 An experiment file gives its `[compaction]`: `enabled` (true or false), and, when enabled, `trigger_at` (the share of the model's context window, above 0 and below 1, whose filling starts a compaction) and `keep_recent_tokens` (how much of the most recent context the compaction keeps as it is). The table is required, like the thinking level (FR-EXPERIMENT-05). Every session of every run uses it; the engine turns `trigger_at` into Pi's reserve for each model's window, so models with different windows compact at the same share. With compaction off, a context that overflows ends the model turn with `model_error` (FR-ADAPTER-02).
