@@ -1,4 +1,5 @@
 import { type TomlTable, type TomlValue, parse, stringify } from "smol-toml";
+import { Materials } from "./materials.ts";
 import { Random } from "./random.ts";
 import { type Condition, isTable } from "./scenario.ts";
 
@@ -29,10 +30,14 @@ export interface Experiment {
   conditions: readonly Condition[];
 }
 
-/** Reads an experiment file, in TOML, and validates it against the experiment schema before anything runs. */
-export function readExperiment(toml: string): Experiment {
+/**
+ * Reads an experiment file, in TOML, and validates it against the experiment schema before anything runs. Its
+ * conditions read their materials from the directory the file is in, when given.
+ */
+export function readExperiment(toml: string, directory?: string): Experiment {
   const file = readTable(parse(toml), [], fileSchema, optionalFileSchema);
   const limits = readTable(file.limits, ["limits"], limitsSchema);
+  const materials = directory === undefined ? {} : { materials: new Materials(directory) };
   return {
     id: file.id,
     scenario: file.scenario,
@@ -51,6 +56,7 @@ export function readExperiment(toml: string): Experiment {
     conditions: Object.keys(file.conditions).map((name) => ({
       name,
       change: stringify(field(file.conditions, ["conditions", name], table)),
+      ...materials,
     })),
   };
 }

@@ -1,4 +1,5 @@
 import { type TomlTable, type TomlValue, parse } from "smol-toml";
+import { type MaterialReference, type Materials, materialReference } from "./materials.ts";
 import { Random } from "./random.ts";
 import { type Channel, RHYTHM_CHANNEL } from "./stimuli.ts";
 import type { Tool } from "./tools.ts";
@@ -46,6 +47,8 @@ export interface Condition {
   name: string;
   /** The change, in TOML. */
   change: string;
+  /** Where the materials the change refers to are read from (FR-EXPERIMENT-04). */
+  materials?: Materials;
 }
 
 /**
@@ -97,7 +100,7 @@ export function loadScenario<State>(
   const configuration =
     condition === undefined
       ? base
-      : applyChange(base, parse(condition.change), [], { condition: condition.name, scenario: scenario.name });
+      : applyChange(base, parse(condition.change), [], { condition: condition.name, scenario: scenario.name, materials: condition.materials });
   const channels = scenario.channels(configuration);
   // Each agent wakes by its rhythm's stimulus: without that channel the run would fail at the first wake.
   if (!channels.some((channel) => channel.name === RHYTHM_CHANNEL)) {
@@ -115,10 +118,14 @@ export function loadScenario<State>(
   return { scenario, configuration, world: new World(initial), systemPrompts, channels, rhythms };
 }
 
-/** The names of the condition being applied and of the scenario whose base configuration it changes, for errors. */
+/**
+ * The names of the condition being applied and of the scenario whose base configuration it changes, for errors, and
+ * where the condition's materials are read from.
+ */
 interface Applying {
   condition: string;
   scenario: string;
+  materials?: Materials;
 }
 
 /** Whether a TOML value is a table: an object that is neither an array nor a date and time. */
@@ -129,11 +136,12 @@ export function isTable(value: TomlValue): value is TomlTable {
 /**
  * Applies a condition's change over a configuration: a value replaces the one under the same key, and a table is
  * applied the same way inside the configuration's table, so the keys it does not name keep their values. A key the
- * configuration lacks is refused: a misspelled key would otherwise leave the condition the same as the baseline.
+ * configuration lacks is refused: a misspelled key would otherwise leave the condition the same as the baseline. Where
+ * the configuration has no table, a table that refers to a material gives the material's text instead.
  */
 function applyChange(configuration: TomlTable, change: TomlTable, path: readonly string[], applying: Applying): TomlTable {
   const changed: TomlTable = { ...configuration };
-  for (const [key, value] of Object.entries(change)) {
+  for (const [key, given] of Object.entries(change)) {
     const keyPath = [...path, key];
     if (!Object.hasOwn(configuration, key)) {
       throw new Error(
@@ -141,6 +149,8 @@ function applyChange(configuration: TomlTable, change: TomlTable, path: readonly
       );
     }
     const current = configuration[key];
+    const reference = isTable(current) ? undefined : materialReference(given);
+    const value = reference === undefined ? given : materialText(reference, keyPath, applying);
     if (kindOf(value) !== kindOf(current)) {
       throw new Error(
         `Condition "${applying.condition}" gives ${keyPath.join(".")} ${kindOf(value)}, where the base configuration of scenario "${applying.scenario}" has ${kindOf(current)}`,
@@ -149,6 +159,16 @@ function applyChange(configuration: TomlTable, change: TomlTable, path: readonly
     changed[key] = isTable(value) && isTable(current) ? applyChange(current, value, keyPath, applying) : value;
   }
   return changed;
+}
+
+/** The text of the material a condition sets a key to, read where the condition's materials are. */
+function materialText(reference: MaterialReference, keyPath: readonly string[], applying: Applying): string {
+  if (applying.materials === undefined) {
+    throw new Error(
+      `Condition "${applying.condition}" sets ${keyPath.join(".")} to the material "${reference.path}", but was given no directory to read materials from`,
+    );
+  }
+  return applying.materials.text(reference);
 }
 
 /**

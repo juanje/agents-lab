@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { AgentModel } from "../engine/adapter.ts";
 import { type Experiment, readExperiment } from "../engine/experiment.ts";
 import { inventory, inventoryMarkdown } from "../engine/inventory.ts";
@@ -37,7 +37,7 @@ const USAGE = "Usage: lab run <experiment.toml> [--progress-interval-ms <ms>] or
  */
 export async function lab(args: readonly string[], environment: LabEnvironment): Promise<void> {
   const command = parse(args);
-  const experiment = readExperiment(readFileSync(command.path, "utf8"));
+  const experiment = readExperiment(readFileSync(command.path, "utf8"), dirname(command.path));
   const scenario = environment.scenarios.get(experiment.scenario);
   if (scenario === undefined) throw new Error(`The scenario library has no scenario "${experiment.scenario}"`);
   if (command.name === "inventory") {
