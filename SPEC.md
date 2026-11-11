@@ -288,7 +288,7 @@ An experiment file (TOML) gives:
 - the run limits (time, activations per agent, parallelism, timeout);
 - its conditions, each a named change over the scenario's base configuration.
 
-The engine validates the file against the experiment schema before anything runs. An invalid file fails with an error that names the field and what was expected.
+The engine validates the file against the experiment schema before anything runs. An invalid file fails with an error that names the field and what was expected; a key the schema does not know is invalid.
 *Why:* people write these files to design experiments, and an error found after model calls wastes the run.
 
 #### FR-EXPERIMENT-02: Factors expand into conditions
