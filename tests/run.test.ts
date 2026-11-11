@@ -758,6 +758,20 @@ describe("run", () => {
     expect(model.received[1]?.at(-1)).toMatchObject({ role: "toolResult", isError: true, content: [{ type: "text", text: "Someone holds that slot." }] });
     expect(model.received[2]?.at(-1)).toMatchObject({ role: "toolResult", isError: false, content: [{ type: "text", text: "You took it." }] });
   });
+  it("records the text an effector's agent received beside the call's outcome, in what the run gives and in its log", async () => {
+    const logDirectory = newLogDirectory();
+    const texts = { slot_taken: "Someone holds that slot." };
+    const loaded = slots({ tools: slotTools.map((tool) => (tool.kind === "effector" ? { ...tool, texts } : tool)), baseConfiguration: slotsScenario.baseConfiguration.replace("held = 0", "held = 1") });
+    const model = new ScriptedModel([
+      { toolCalls: [{ name: "take", arguments: { slot: 1 } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+
+    const { toolCalls, runId } = await run(loaded, [{ name: "a", model, activations: 1 }], seed, { ...settings, logDirectory });
+
+    expect(toolCalls).toMatchObject([{ tool: "take", outcome: "slot_taken", text: "Someone holds that slot." }]);
+    expect(logOf(logDirectory, runId)).toContainEqual(expect.objectContaining({ type: "tool_call", tool: "take", outcome: "slot_taken", text: "Someone holds that slot." }));
+  });
   it("gives the agent the outcome itself for an outcome the effector declares no text for", async () => {
     const loaded = slots({ tools: slotTools.map((tool) => (tool.kind === "effector" ? { ...tool, texts: { slot_taken: "Someone holds that slot." } } : tool)) });
     const model = new ScriptedModel([
