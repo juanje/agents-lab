@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Given, Then, When } from "@cucumber/cucumber";
+import { BeforeStep, Given, Then, When } from "@cucumber/cucumber";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { type TomlTable, stringify } from "smol-toml";
 import { lab } from "../../src/cli/lab.ts";
@@ -185,17 +185,24 @@ export async function runLab(context: Context, command: string): Promise<void> {
     if (found === undefined) throw new Error(`No model is named "${name}"`);
     return found;
   };
-  let printed = "";
+  context.labOutput = "";
+  const print = (text: string) => {
+    context.labOutput += text;
+  };
   try {
-    await lab([command, file, ...context.labOptions], { directory: context.home, print: (text) => (printed += text), scenarios: library, model });
+    await lab([command, file, ...context.labOptions], { directory: context.home, print, scenarios: library, model, interruption: context.labInterruption.signal });
   } catch (error) {
     context.labError = error as Error;
   }
-  context.labOutput = printed;
 }
 
-When('"lab run" runs the experiment file', async function (this: Context) {
-  await runLab(this, "run");
+// "lab run" goes on while the steps that act on it during its run do; a step that checks an outcome waits for it to end.
+When('"lab run" runs the experiment file', function (this: Context) {
+  this.labRunning = runLab(this, "run");
+});
+
+BeforeStep(async function (this: Context, { pickleStep }) {
+  if (pickleStep.type === "Outcome") await this.labRunning;
 });
 
 /** The experiment's runs directory, under the directory "lab run" ran in. */

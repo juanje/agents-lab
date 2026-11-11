@@ -56,6 +56,8 @@ export class Context extends CucumberWorld {
   throwingTool?: { name: string; message: string };
   /** The provider of each session's model, as each session was closed, for a scenario that watches them close. */
   closedSessions?: string[];
+  /** The id of each session, as each session was closed, for a scenario that watches them close. */
+  closedSessionIds?: string[];
   /** Puts back what the scenario watched, once it ends. */
   readonly unwatch: (() => void)[] = [];
   /** The error the run stopped on, for a scenario whose run stops. */
@@ -155,8 +157,12 @@ export class Context extends CucumberWorld {
   readonly labModels = new Map<string, AgentModel>();
   /** The error "lab run" or "lab inventory" failed with, if it failed. */
   labError?: Error;
-  /** What "lab run" or "lab inventory" printed, whether or not it failed. */
+  /** What "lab run" or "lab inventory" printed, whether or not it failed; while it runs, what it printed so far. */
   labOutput?: string;
+  /** "lab run" while it runs, which a step that acts on it during its run leaves running. */
+  labRunning?: Promise<void>;
+  /** Interrupts "lab run", as Ctrl-C or a termination signal would. */
+  readonly labInterruption = new AbortController();
   /** The options "lab run" is given after the experiment file, as the scenario sets them. */
   readonly labOptions: string[] = [];
   /** The tool and the milliseconds the scenario last found its duration described with, for a step that says "does not". */

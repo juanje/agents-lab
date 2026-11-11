@@ -233,13 +233,16 @@ Then("the last line of the run's log says the run stopped and names agent {strin
   assert.match(this.runError?.message ?? "", new RegExp(`agent "${agent}"`));
 });
 
-/** Watches every Pi session close, by its model's provider, without changing what closing does. */
-function watchSessionsClose(context: Context): void {
+/** Watches every Pi session close, by its model's provider and by its id, without changing what closing does. */
+export function watchSessionsClose(context: Context): void {
   const closed: string[] = [];
+  const ids: string[] = [];
   context.closedSessions = closed;
+  context.closedSessionIds = ids;
   const dispose = AgentSession.prototype.dispose;
   AgentSession.prototype.dispose = function (this: AgentSession) {
     closed.push(this.model?.provider ?? "");
+    ids.push(this.sessionId);
     dispose.call(this);
   };
   context.unwatch.push(() => {

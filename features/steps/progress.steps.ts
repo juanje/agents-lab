@@ -177,6 +177,11 @@ Then(
   },
 );
 
+Then("it printed, last, a line saying {int} runs completed and {int} stopped", function (this: Context, completed: number, stopped: number) {
+  assert.ok(this.labError !== undefined, '"lab run" did not fail');
+  assertTotalLine(this, printedLines(this), completed, stopped);
+});
+
 Then(
   "during each run it printed at least {int} progress lines, each with the time since the run started, the activations done out of {int}, the model turns and the cost so far",
   function (this: Context, least: number, budget: number) {

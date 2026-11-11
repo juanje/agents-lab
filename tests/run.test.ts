@@ -316,6 +316,52 @@ describe("run", () => {
     expect(a.received).toEqual([]);
   });
 
+  it("stops when it is interrupted: it ends its log saying it was interrupted, stops every agent, closes every session, and fails saying so", async () => {
+    const models = { a: new ScriptedModel([{ text: "Nothing to do.", delayMs: 500 }]), b: new ScriptedModel([{ text: "Nothing to do.", delayMs: 500 }]) };
+    const closed: (string | undefined)[] = [];
+    const close = AgentSession.prototype.dispose;
+    const watch = vi.spyOn(AgentSession.prototype, "dispose").mockImplementation(function (this: AgentSession) {
+      closed.push(this.model?.provider);
+      close.call(this);
+    });
+    const logDirectory = newLogDirectory();
+    const interruption = new AbortController();
+    const startedAtMs = performance.now();
+
+    try {
+      const running = run(
+        slots(agentsNamed("a", "b")),
+        [
+          { name: "a", model: models.a, activations: 3 },
+          { name: "b", model: models.b, activations: 3 },
+        ],
+        seed,
+        // Interrupted while both agents' first model turns are running.
+        { ...settings, logDirectory, interruption: interruption.signal, onStart: () => setTimeout(() => interruption.abort(), 100) },
+      );
+
+      await expect(running).rejects.toThrow("the run was interrupted");
+    } finally {
+      watch.mockRestore();
+    }
+    // The turns are cut short, not waited for.
+    expect(performance.now() - startedAtMs).toBeLessThan(450);
+    const [file] = readdirSync(logDirectory);
+    const lines = readFileSync(join(logDirectory, file), "utf8").trimEnd().split("\n").map((line) => JSON.parse(line));
+    expect(lines.at(-1)).toEqual({ type: "run_stopped", error: "the run was interrupted" });
+    expect(closed.sort()).toEqual([models.a.model.provider, models.b.model.provider].sort());
+  });
+
+  it("stops at once when it is interrupted before it starts, running no model turn", async () => {
+    const model = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
+    const logDirectory = newLogDirectory();
+
+    const running = run(slots(), [{ name: "a", model, activations: 1 }], seed, { ...settings, logDirectory, interruption: AbortSignal.abort() });
+
+    await expect(running).rejects.toThrow("the run was interrupted");
+    expect(model.received).toEqual([]);
+  });
+
   it("runs a turn's calls one after another, and records a call the time limit leaves unrun as cut_off, with no target read", async () => {
     const model = new ScriptedModel([
       {
