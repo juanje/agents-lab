@@ -14,6 +14,7 @@ Feature: Same-kind shares
   Scenario: Segregation is the mean of the shares
     Then the segregation is 0.5
 
-  Scenario: Moves count the applied moves
-    Given resident at 0, 2 moves to 1, 1
+  Scenario: Moves count only the moves applied
+    Given the resident at 0, 2 runs on a scripted model that calls "move" with dx 1 and dy -1, then calls "move" with dx 1 and dy -1, then ends without a tool call
+    When the run ends
     Then the moves metric is 1
