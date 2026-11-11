@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import type { ModelTurn, ToolCall } from "./adapter.ts";
 import { JsonlFile } from "./jsonl.ts";
+import type { MetricValue } from "./scenario.ts";
 import type { Stimulus } from "./stimuli.ts";
 
 /** A line of a run's log: one event of the run. Every time in it is by performance.now(). */
@@ -10,6 +11,7 @@ export type LogLine =
   | ({ type: "stimulus"; agent: string; deliveredAtMs: number } & Stimulus)
   | ({ type: "model_turn" } & ModelTurn)
   | ({ type: "tool_call" } & ToolCall)
+  | { type: "metric_sample"; atMs: number; version: number; metrics: Record<string, MetricValue> }
   | { type: "run_stopped"; error: string };
 
 /** Writes a run's log: one new JSONL file, named with the run's id, with a line for each event (FR-RECORD-01). */

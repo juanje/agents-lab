@@ -6,9 +6,10 @@ import { failure } from "./failure.ts";
 import { ParallelismLimit } from "./parallelism.ts";
 import { Random } from "./random.ts";
 import { Recorder } from "./recorder.ts";
-import type { LoadedScenario, Rhythm } from "./scenario.ts";
+import type { LoadedScenario, Rhythm, Scenario } from "./scenario.ts";
 import { Sensings } from "./sensings.ts";
 import { Stimuli } from "./stimuli.ts";
+import type { World } from "./world.ts";
 
 /** An agent in a run: its name, the model it works with, and how many activations it has; its rhythm is the scenario's. */
 export interface Agent {
@@ -161,6 +162,7 @@ async function runAgents<State>(
   }
   const sessions = opening.map((opened) => (opened as PromiseFulfilledResult<AgentSession>).value);
   const startedAtMs = performance.now();
+  sampleMetrics(world, scenario.metrics, recorder, startedAtMs);
   const timer = setTimeout(() => runEnd.abort(), settings.timeLimitMs);
   try {
     await Promise.all(
@@ -182,7 +184,17 @@ async function runAgents<State>(
     // A run that ends at its budget must not leave its time limit pending.
     clearTimeout(timer);
   }
+  sampleMetrics(world, scenario.metrics, recorder, performance.now());
   return { turns, toolCalls, messages, sensings, startedAtMs };
+}
+
+/**
+ * Writes one metric sample to the log: each of the scenario's metrics computed from the world's state, never by a
+ * model, with the version it was computed from and when (FR-METRIC-02).
+ */
+function sampleMetrics<State>(world: World<State>, metrics: Scenario<State>["metrics"], recorder: Recorder, atMs: number): void {
+  const values = Object.fromEntries(Object.entries(metrics).map(([name, metric]) => [name, metric(world.state)]));
+  recorder.record({ type: "metric_sample", atMs, version: world.version, metrics: values });
 }
 
 /** The rhythm the loaded scenario gives an agent. */
