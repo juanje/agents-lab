@@ -264,6 +264,9 @@ function declaredSituations(configuration: Configuration, world: WorldText, plac
         throw new Error(`the thing "${thing.id}" of the situation "${id}" gives its own place "${thing.place}"; a situation's thing is in the situation's place`);
       }
       assertContainerDeclared(thing, ids);
+      if (thing.brought_by !== undefined && !(world.visitors ?? []).some((visitor) => visitor.id === thing.brought_by)) {
+        throw new Error(`the thing "${thing.id}" of the situation "${id}" is brought by "${thing.brought_by}", who is no visitor of the world`);
+      }
     }
   }
   return declared;
@@ -291,12 +294,21 @@ function initialState(configuration: Configuration, random: Random): Workplace {
   // The round each thing that arrives with the porter comes with: the world's things marked so, and the things of the
   // situations the configuration's arrivals list for a round. Until then, they are in no place.
   const arriving = new Map<string, string>();
-  for (const thing of world.things ?? []) if (thing.arrives !== undefined) arriving.set(thing.id, thing.arrives);
-  const arrivals = arrivalsOf(configuration);
+  for (const thing of world.things ?? []) {
+    if (thing.arrives === undefined) continue;
+    // It is put down where the porter drops it.
+    if (thing.place !== undefined && thing.place !== world.porter?.drops_in) {
+      throw new Error(`the thing "${thing.id}" arrives with the porter, who puts it down in "${world.porter?.drops_in}", but gives the place "${thing.place}"`);
+    }
+    arriving.set(thing.id, thing.arrives);
+  }
+  for (const id of configuration.chosen_situations as string[]) {
+    if (!Object.hasOwn(declared, id)) throw new Error(`the chosen situation "${id}" is not declared`);
+  }
+  const arrivals = arrivalsOf(configuration, world, declared);
   // The visitor who brings each thing a visitor brings; until they arrive, it is in no place.
   const brought = new Map<string, string>();
   for (const id of configuration.chosen_situations as string[]) {
-    if (!Object.hasOwn(declared, id)) throw new Error(`the chosen situation "${id}" is not declared`);
     const situation = declared[id];
     const draw = Random.derive(situationsSeed, `situation ${id}`).next();
     const round = arrivals.get(id);
@@ -376,9 +388,23 @@ function clockTime({ startSeconds, timeScale }: Clock, sinceStartMs: number): st
   return `${two(Math.floor(minutes / 60))}:${two(minutes % 60)}`;
 }
 
-/** The round each situation the configuration's arrivals list arrives with, by the situation's id. */
-function arrivalsOf(configuration: Configuration): Map<string, string> {
+/**
+ * The round each situation the configuration's arrivals list arrives with, by the situation's id. A round that is not
+ * one of the porter's, and a situation that is not chosen or cannot be where he drops it, are refused, naming them.
+ */
+function arrivalsOf(configuration: Configuration, world: WorldText, declared: Readonly<Record<string, SituationText>>): Map<string, string> {
   const listed = textOf(configuration, "arrivals") as Record<string, string[]>;
+  const chosen = configuration.chosen_situations as string[];
+  for (const [round, ids] of Object.entries(listed)) {
+    if (!(world.porter?.rounds ?? []).includes(round)) throw new Error(`the configuration's "arrivals" lists the round "${round}", which is not one of the porter's rounds`);
+    const dropsIn = (world.porter as PorterText).drops_in;
+    for (const id of ids) {
+      if (!chosen.includes(id)) throw new Error(`the configuration's "arrivals" lists the situation "${id}" for "${round}", but it is not chosen`);
+      if (!declared[id].places.includes(dropsIn)) {
+        throw new Error(`the situation "${id}" arrives with the porter, who puts it down in "${dropsIn}", but it cannot be in "${dropsIn}"`);
+      }
+    }
+  }
   return new Map(Object.entries(listed).flatMap(([round, ids]) => ids.map((id) => [id, round] as const)));
 }
 
@@ -397,6 +423,7 @@ function porterOf(text: PorterText, space: Places, arriving: ReadonlyMap<string,
 function visitorOf(text: VisitorText, space: Places, brought: ReadonlyMap<string, string>): Visitor {
   assertPlace(space.places, text.enters, `the visitor "${text.id}" enters`);
   const [from, to] = text.arrives_between.map((time) => secondsOf(time, `the visitor "${text.id}"'s "arrives_between"`));
+  if (from > to) throw new Error(`the visitor "${text.id}" arrives between "${text.arrives_between[0]}" and "${text.arrives_between[1]}", the first after the second`);
   return {
     enters: text.enters,
     arrivesBetween: [from, to],
