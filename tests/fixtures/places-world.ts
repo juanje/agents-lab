@@ -29,6 +29,8 @@ export function goTool(msPerUnit: number): Effector<Places> {
     start: {
       precondition: (space, call) => leave.precondition(space, goCall(call)),
       effect: (space, call) => leave.effect(space, goCall(call)),
+      // The place the agent left, and the place it heads for.
+      describe: (space, call) => ({ left: (where(space, call.agent) as { place: string }).place, towards: goCall(call).towards }),
     },
     action: {
       precondition: (space, { agent }) => arrive.precondition(space, { entity: agent }),

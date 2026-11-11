@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
-import type { ModelTurn, ToolCall } from "./adapter.ts";
+import type { EffectorStart, ModelTurn, ToolCall } from "./adapter.ts";
 import type { CodeVersion } from "./code-version.ts";
 import type { ConditionInventory } from "./inventory.ts";
 import { JsonlFile } from "./jsonl.ts";
@@ -47,6 +47,7 @@ export type LogLine =
   | ({ type: "stimulus"; agent: string; deliveredAtMs: number } & Stimulus)
   | ({ type: "model_turn" } & ModelTurn)
   | ({ type: "tool_call" } & ToolCall)
+  | ({ type: "effector_start" } & EffectorStart)
   | { type: "metric_sample"; atMs: number; version: number; metrics: Record<string, MetricValue> }
   | { type: "run_stopped"; error: string };
 

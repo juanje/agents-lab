@@ -43,6 +43,14 @@ export interface Sensor<State> extends Declared<State> {
  */
 export type TargetAsSensed = "free" | "held" | "outside" | "not_sensed";
 
+/**
+ * The change an effector under way makes as its call starts (FR-SPACE-03), and how the scenario describes it for the
+ * run's log, from the state before it and the call (FR-RECORD-01).
+ */
+export interface Start<State> extends Action<State, AgentCall> {
+  describe(state: State, call: AgentCall): Readonly<Record<string, unknown>>;
+}
+
 /** A tool that changes the world through the arbiter. */
 export interface Effector<State> extends Declared<State> {
   kind: "effector";
@@ -51,7 +59,7 @@ export interface Effector<State> extends Declared<State> {
    * the arbiter, once its duration is taken from the state before it (FR-TOOL-04, FR-SPACE-03). It cannot fail: a start
    * the world refuses is a defect of the scenario, and stops the run.
    */
-  start?: Action<State, AgentCall>;
+  start?: Start<State>;
   /** The change the call makes when it lands, checked then against the world as it is (FR-TOOL-04). */
   action: Action<State, AgentCall>;
   /**

@@ -171,6 +171,7 @@ async function runAgents<State>(
       recorder.record({ type: "tool_call", ...call });
       toolCalls.push(call);
     },
+    start: (start) => recorder.record({ type: "effector_start", ...start }),
   };
   const sensings = new Sensings();
   const changes = new ChangesSinceSensing();

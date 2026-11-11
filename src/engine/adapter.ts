@@ -29,8 +29,8 @@ import type { ParallelismLimit } from "./parallelism.ts";
 import { SCRIPT_EXHAUSTED_MESSAGE } from "./scripted-model.ts";
 import type { Sensing, Sensings } from "./sensings.ts";
 import type { Stimuli, Stimulus } from "./stimuli.ts";
-import type { AgentCall, Effector, Sensor, TargetAsSensed, Tool } from "./tools.ts";
-import type { Action, World } from "./world.ts";
+import type { AgentCall, Effector, Sensor, Start, TargetAsSensed, Tool } from "./tools.ts";
+import type { World } from "./world.ts";
 
 /**
  * The model an agent works with, and the provider that serves it when Pi's model runtime does not already: a scripted
@@ -132,10 +132,24 @@ export interface ToolCall {
   changesSinceSensingBy?: string[] | null;
 }
 
-/** Where a session's model turns and tool calls go as each ends: the run's log and what the run gives. */
+/** The start of an effector's call, as it was applied (FR-SPACE-03, FR-RECORD-01). */
+export interface EffectorStart {
+  agent: string;
+  tool: string;
+  /** When it was applied: the moment the call started, by performance.now(). */
+  atMs: number;
+  /** The change it made, as the scenario describes it. */
+  change: Readonly<Record<string, unknown>>;
+}
+
+/**
+ * Where a session's model turns and tool calls go as each ends, and an effector's start as it is applied: the run's log
+ * and what the run gives.
+ */
 export interface Records {
   turn(turn: ModelTurn): void;
   toolCall(call: ToolCall): void;
+  start(start: EffectorStart): void;
 }
 
 /** What an agent's session is given besides its tools. */
@@ -177,7 +191,7 @@ export async function openSession<State>(
     thinkingLevel: settings.thinkingLevel,
     // The allowlist leaves out Pi's built-in tools and filters custom tools too, so it names every scenario tool.
     tools: tools.map((tool) => tool.name),
-    customTools: tools.map((tool) => definition(world, tool, agent.name, executed, sensings, changes, settings)),
+    customTools: tools.map((tool) => definition(world, tool, agent.name, executed, sensings, changes, records, settings)),
     resourceLoader: resources(settings.systemPrompt),
     sessionManager: SessionManager.inMemory(),
     // Neither the person's nor any project's Pi settings reach the session. A provider's error ends the activation
@@ -399,6 +413,7 @@ function definition<State>(
   executed: Map<string, Executed>,
   sensings: Sensings,
   changes: ChangesSinceSensing,
+  records: Records,
   { runEnd, stop }: SessionSettings,
 ): ToolDefinition {
   return {
@@ -409,11 +424,13 @@ function definition<State>(
     execute: async (id, args: Record<string, unknown>) => {
       const startedAtMs = performance.now();
       let called: CallResult;
+      // An effector's start is recorded as it is applied, at the moment the call started (FR-SPACE-03).
+      const started = (change: EffectorStart["change"]) => records.start({ agent, tool: tool.name, atMs: startedAtMs, change });
       try {
         // A call that comes after the run has ended is left unrun: it reads no target and applies nothing (FR-CLOCK-02).
         called = runEnd.aborted
           ? { outcome: CUT_OFF, text: CUT_OFF }
-          : (undeclared(tool, args) ?? (await perform(world, tool, { agent, arguments: args }, sensings.last(agent), changes, runEnd)));
+          : (undeclared(tool, args) ?? (await perform(world, tool, { agent, arguments: args }, sensings.last(agent), changes, runEnd, started)));
       } catch (error) {
         // A tool that throws is a defect of the scenario, not the agent's behaviour: no outcome fits it, and the run
         // stops on it rather than going on with a world it cannot trust.
@@ -520,10 +537,11 @@ async function perform<State>(
   sensing: Sensing | undefined,
   changes: ChangesSinceSensing,
   runEnd: AbortSignal,
+  started: (change: EffectorStart["change"]) => void,
 ): Promise<CallResult> {
   const targetAsSensed = tool.kind === "effector" ? (sensing === undefined ? "not_sensed" : tool.readTarget(sensing, call, world.state)) : undefined;
   const durationMs = tool.durationMs(world.state, call);
-  if (tool.kind === "effector" && tool.start !== undefined) start(world, tool.start, call, changes);
+  if (tool.kind === "effector" && tool.start !== undefined) started(start(world, tool.start, call, changes));
   await waitAtLeast(durationMs, runEnd);
   const result = runEnd.aborted
     ? { outcome: CUT_OFF, text: CUT_OFF }
@@ -535,12 +553,15 @@ async function perform<State>(
 
 /**
  * Applies the start of an effector's call under way through the arbiter, as the call starts (FR-SPACE-03), and counts it
- * among the changes other agents see since they sensed. A start the world refuses throws: it is the scenario's defect.
+ * among the changes other agents see since they sensed; it gives the change as the scenario describes it, from the
+ * state before it. A start the world refuses throws: it is the scenario's defect.
  */
-function start<State>(world: World<State>, action: Action<State, AgentCall>, call: AgentCall, changes: ChangesSinceSensing): void {
+function start<State>(world: World<State>, action: Start<State>, call: AgentCall, changes: ChangesSinceSensing): EffectorStart["change"] {
+  const change = action.describe(world.state, call);
   const result = world.apply(action, call);
   if (!result.applied) throw new Error(`its start was refused with "${result.reason}"`);
   changes.applied(call.agent);
+  return change;
 }
 
 /** Reads the world for a sensor's call, which then always succeeds. */
