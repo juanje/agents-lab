@@ -24,7 +24,7 @@ What the words mean here, how the pieces fit together, and how the tools behave 
 | World | The state of a scenario (entities, positions, quantities, energy) plus its arbiter. | The scenario, which also declares tools, channels and metrics. |
 | Arbiter | The part of the world that applies one effect at a time against the current state. | A scheduler. The arbiter never decides who acts next. |
 | Version | A counter of applied effects in a world. | A run id or a code version. |
-| Scenario | A TypeScript module in `src/scenarios/` (its agents, initial state, tools, channels, metrics and a system prompt for each agent; agents, channels and prompts from the configuration) plus its base configuration, reusable by several experiments. | An experiment, which runs a scenario under several conditions. |
+| Scenario | A TypeScript module in `src/scenarios/` (its agents, initial state, tools, channels, metrics, and a system prompt and a rhythm for each agent; agents, channels, prompts and rhythms from the configuration) plus its base configuration, reusable by several experiments. | An experiment, which runs a scenario under several conditions. |
 | Test scenario | A small scenario under `tests/fixtures/`, written only to test the engine. | A library scenario in `src/scenarios/`, which experiments use. |
 | Condition | A named change over a scenario's base configuration, written directly or produced by combining factor levels. | A run or a replica. |
 | Experiment | A file in the experiment language (TOML) in the experiments repository: scenario, factors and conditions, models, replicas, seeds, prediction and materials. | A hypothesis, which the experiment states and tests. |
@@ -50,7 +50,7 @@ What the words mean here, how the pieces fit together, and how the tools behave 
   - Lines: `activation`, `stimulus` (as it is delivered: a channel's when `Stimuli.deliver` is called, the rhythm's as the agent wakes), `model_turn`, `tool_call` and `run_stopped`. Every time in them is by `performance.now()`.
   - The first error that stops a run writes `run_stopped` with its message at once and aborts the run as its time limit does; nothing is written after it. A tool that throws, or a session that fails to open, stops the run: the scenario's defect, not the agent's behaviour, so the call that threw has no `tool_call` line.
 - **Metrics read the state** at the start, on an interval and at the end.
-- **The runner** expands an experiment into runs and executes them one after another.
+- **The runner** expands an experiment into runs (each condition with each model, for each replica, replica r's seed derived from the base seed and r) and executes them one after another, writing each run's log and a line per run in the experiment's `index.jsonl`. `lab run` resolves the scenario from the library and the models by name before any run.
 
 ## How the tools behave
 

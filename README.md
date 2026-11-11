@@ -22,7 +22,7 @@ Experiments (their designs, experiment files, materials and results) live in a s
 
 ## Status
 
-Early development, toward v0.1: what a first pilot of a Schelling experiment needs. `SPEC.md` lists the requirements and the order they are built in. The `lab` command is not built yet.
+Early development, toward v0.1: what a first pilot of a Schelling experiment needs. `SPEC.md` lists the requirements and the order they are built in. `lab run` runs an experiment file; summaries across replicas are not built yet.
 
 ## Setup
 
@@ -54,10 +54,10 @@ Run the smoke test, two agents on a real model (it makes real model calls):
 AGENTS_LAB_SMOKE_MODEL=openai/gpt-6-luna NODE_OPTIONS="--import tsx" npx cucumber-js -p smoke
 ```
 
-Once the runner is built, an experiment will run with:
+Run an experiment from the directory its results go under (it writes each run's log and an `index.jsonl` into `runs/<experiment id>/` there). The command is `lab run <experiment.toml>`; until `lab` is installed as a command, run its entry point with this repository's tsx:
 
 ```bash
-lab run <experiment.toml>
+node --import ~/git/agents-lab/node_modules/tsx/dist/loader.mjs ~/git/agents-lab/src/cli/main.ts run <experiment.toml>
 ```
 
 ## Documentation
