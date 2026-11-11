@@ -75,3 +75,12 @@ Feature: The depot's day goes on: time, the porter and visitors
       | the visitor "ferrer" arrives between "10:00" and "09:00"                     | "ferrer"            |
       | the porter's id is "worker"                                                  | "worker"            |
       | the thing "crate" also gives the place "counter"                             | "crate" and "counter" |
+      | the thing "crate" arrives "11:00" instead                                    | "crate" and "11:00" |
+      | the world has no porter                                                      | "crate"             |
+      | the place "cellar" is added with no passage, and the porter enters "cellar"  | "cellar" and "store" |
+      | the porter's id is "lamp"                                                    | "lamp"              |
+      | the visitor "ferrer" is declared while the person "ferrer" is also declared  | "ferrer"            |
+
+  Scenario: The inventory gives the clock's start time and the time scale
+    When "lab inventory" lists it
+    Then it gives the clock's start time "09:00" and the time scale 6000
