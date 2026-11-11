@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
 import { Given, Then } from "@cucumber/cucumber";
 import { parse } from "smol-toml";
-import { place } from "../../src/engine/grid.ts";
+import { type Position, place, position } from "../../src/engine/grid.ts";
 import { Random } from "../../src/engine/random.ts";
 import type { LoadedScenario, Scenario } from "../../src/engine/scenario.ts";
 import { World } from "../../src/engine/world.ts";
 import { KINDS, type Kind, type Neighbourhood, neighbourhoodScenario } from "../../src/scenarios/neighbourhood.ts";
 import type { Context } from "../support/context.ts";
 import { withBase } from "./neighbourhood.steps.ts";
-import { callWithThenEnd, modelOf, returned, script } from "./tool.steps.ts";
+import { callOf, callWithThenEnd, modelOf, returned, script } from "./tool.steps.ts";
 
 Given(
   "the neighbourhood scenario with a grid {int} cells wide and {int} cells high, a look radius of {int}, and moving taking {int} milliseconds per cell",
@@ -52,6 +52,32 @@ Given(
   "resident {string} runs on a scripted model that calls {string}, then ends without a tool call",
   function (this: Context, resident: string, tool: string) {
     script(this, resident, callWithThenEnd(tool, {}, 0));
+  },
+);
+
+Given(
+  "resident {string} runs on a scripted model that calls {string} with dx {int} and dy {int}, then ends without a tool call",
+  function (this: Context, resident: string, tool: string, dx: number, dy: number) {
+    script(this, resident, callWithThenEnd(tool, { dx, dy }, 0));
+  },
+);
+
+/** Where the neighbourhood holds a resident once the run has ended. */
+function assertAt(context: Context, resident: string, at: Position): void {
+  assert.ok(context.neighbourhoodWorld !== undefined, "the neighbourhood did not run");
+  const found = position(context.neighbourhoodWorld.state.grid, resident);
+  assert.deepEqual(found, at, `resident "${resident}" is at ${JSON.stringify(found)}`);
+}
+
+Then("resident {string} is at {int}, {int}", function (this: Context, resident: string, x: number, y: number) {
+  assertAt(this, resident, { x, y });
+});
+
+Then(
+  "{string}'s {string} call ended at least {int} milliseconds after it started",
+  function (this: Context, resident: string, tool: string, durationMs: number) {
+    const { startedAtMs, endedAtMs } = callOf(this, resident, tool);
+    assert.ok(endedAtMs - startedAtMs >= durationMs, `resident "${resident}"'s "${tool}" call took ${endedAtMs - startedAtMs} ms`);
   },
 );
 

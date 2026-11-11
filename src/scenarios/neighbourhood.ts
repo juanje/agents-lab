@@ -1,7 +1,7 @@
-import { type Grid, emptyGrid, entitiesAt, place, position, randomEmptyCell, window } from "../engine/grid.ts";
+import { type Grid, type Position, distance, emptyGrid, entitiesAt, move as moveOnGrid, place, position, randomEmptyCell, window } from "../engine/grid.ts";
 import type { Configuration, Scenario } from "../engine/scenario.ts";
 import { RHYTHM_CHANNEL } from "../engine/stimuli.ts";
-import type { Sensor } from "../engine/tools.ts";
+import type { AgentCall, Effector, Sensor } from "../engine/tools.ts";
 
 /** The two kinds a resident can be of. */
 export const KINDS = ["teal", "amber"] as const;
@@ -40,7 +40,7 @@ function kindOf(configuration: Configuration, resident: string): Kind {
 export type Mark = "you" | "same" | "other" | "empty" | "outside";
 
 /** Where the neighbourhood holds a resident; a resident it does not hold is a defect in the run, not a choice. */
-function whereIs({ grid }: Neighbourhood, resident: string): { x: number; y: number } {
+function whereIs({ grid }: Neighbourhood, resident: string): Position {
   const at = position(grid, resident);
   if (at === undefined) throw new Error(`The neighbourhood holds no resident "${resident}"`);
   return at;
@@ -69,6 +69,36 @@ const look: Sensor<Neighbourhood> = {
   },
 };
 
+/** A call of "move" as the grid's move reads it: the resident, from where it is, to the cell at the call's offset. */
+function moveCall(state: Neighbourhood, { agent, arguments: args }: AgentCall): { entity: string; from: Position; to: Position } {
+  const from = whereIs(state, agent);
+  return { entity: agent, from, to: { x: from.x + (args.dx as number), y: from.y + (args.dy as number) } };
+}
+
+/**
+ * "move dx dy": the resident moves to the cell at that offset, anywhere in the grid, taking the configured time per cell
+ * for the distance; it stays in its cell until it arrives, and the cell is checked then (FR-SPACE-02).
+ */
+const move: Effector<Neighbourhood> = {
+  kind: "effector",
+  name: "move",
+  description: "Move to the cell dx columns to the right (left if negative) and dy rows down (up if negative) of yours. The further it is, the longer it takes.",
+  parameters: {
+    type: "object",
+    properties: { dx: { type: "integer" }, dy: { type: "integer" } },
+    required: ["dx", "dy"],
+  },
+  durationMs: (state, call) => {
+    const { from, to } = moveCall(state, call);
+    return state.msPerCell * distance(from, to);
+  },
+  action: {
+    precondition: (state, call) => moveOnGrid.precondition(state.grid, moveCall(state, call)),
+    effect: (state, call) => ({ ...state, grid: moveOnGrid.effect(state.grid, moveCall(state, call)) }),
+  },
+  readTarget: () => "not_sensed",
+};
+
 /** The neighbourhood scenario. */
 export const neighbourhoodScenario: Scenario<Neighbourhood> = {
   name: "neighbourhood",
@@ -87,7 +117,7 @@ export const neighbourhoodScenario: Scenario<Neighbourhood> = {
     const { look_radius: lookRadius, ms_per_cell: msPerCell } = configuration as { look_radius: number; ms_per_cell: number };
     return { grid, kinds, lookRadius, msPerCell };
   },
-  tools: [look],
+  tools: [look, move],
   channels: (configuration) => {
     const { source, text } = configuration.rhythm as { source: string; text: string };
     return [{ name: RHYTHM_CHANNEL, source, stimulus: text }];
