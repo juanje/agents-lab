@@ -109,4 +109,34 @@ describe("Progress", () => {
       vi.useRealTimers();
     }
   });
+
+  it("gives, in one progress line, each run in progress by its number, and counts each line its log records for its own run", () => {
+    vi.useFakeTimers();
+    try {
+      const printed: string[] = [];
+      const progress = new Progress((text) => printed.push(text), { intervalMs: 100, now: () => Date.now() });
+
+      progress.runStarted(starting(1));
+      progress.runStarted(starting(2));
+      progress.recorded(2, activation);
+      progress.recorded(1, turnCosting(0.0012));
+      vi.advanceTimersByTime(100);
+      progress.runEnded(1, "completed");
+      vi.advanceTimersByTime(100);
+      progress.recorded(2, turnCosting(0.0002));
+      progress.runEnded(2, "stopped");
+      vi.advanceTimersByTime(300);
+
+      expect(printed).toEqual([
+        'Run 1 of 2 started: condition "baseline", model "scripted/one", replica 1, seed 11\n',
+        'Run 2 of 2 started: condition "baseline", model "scripted/one", replica 2, seed 12\n',
+        "Run 1 of 2 running: 0.1 s, 0 of 2 activations, 1 model turn, cost $0.0012; Run 2 of 2 running: 0.1 s, 1 of 2 activations, 0 model turns, cost $0.0000\n",
+        "Run 1 of 2 completed in 0.1 s: 0 activations, 1 model turn, cost $0.0012\n",
+        "Run 2 of 2 running: 0.2 s, 1 of 2 activations, 0 model turns, cost $0.0000\n",
+        "Run 2 of 2 stopped in 0.2 s: 1 activation, 1 model turn, cost $0.0002\n",
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
