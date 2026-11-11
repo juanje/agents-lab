@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { AgentModel } from "../engine/adapter.ts";
 import { type Experiment, readExperiment } from "../engine/experiment.ts";
-import { inventory } from "../engine/inventory.ts";
+import { inventory, inventoryMarkdown } from "../engine/inventory.ts";
 import { runExperiment } from "../engine/runner.ts";
 import type { LibraryScenario } from "../scenarios/library.ts";
 
@@ -37,7 +37,7 @@ export async function lab(args: readonly string[], environment: LabEnvironment):
   const scenario = environment.scenarios.get(experiment.scenario);
   if (scenario === undefined) throw new Error(`The scenario library has no scenario "${experiment.scenario}"`);
   if (command === "inventory") {
-    environment.print(inventory(experiment, scenario));
+    environment.print(inventoryMarkdown(inventory(experiment, scenario)));
     return;
   }
   await run(experiment, scenario, environment);

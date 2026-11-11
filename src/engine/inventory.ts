@@ -1,6 +1,47 @@
-import type { Experiment } from "./experiment.ts";
+import type { Experiment, Limits } from "./experiment.ts";
 import { type LoadedScenario, type Scenario, loadScenario } from "./scenario.ts";
 import type { Tool } from "./tools.ts";
+
+/**
+ * The environment inventory of an experiment: for each of its conditions, everything its agents meet in its scenario
+ * as that condition configures it (FR-INVENTORY-01). It is data: `lab inventory` prints it as Markdown, and a run's
+ * log holds its condition's part as JSON (FR-RECORD-02).
+ */
+export interface Inventory {
+  experiment: string;
+  scenario: string;
+  conditions: ConditionInventory[];
+}
+
+/** What the agents meet in one condition of an experiment. */
+export interface ConditionInventory {
+  condition: string;
+  agents: { name: string; rhythm: string; systemPrompt: string }[];
+  tools: ToolInventory[];
+  /** The outcomes the engine itself gives a call, whatever its tool, with the text the agent receives for each. */
+  engineOutcomes: Record<string, string>;
+  channels: { name: string; source: string; delivers: string }[];
+  energyModel: string;
+  environmentProcesses: string;
+  /** How fast information travels (NFR-12). */
+  informationSpeed: string;
+  models: string[];
+  limits: Limits;
+}
+
+/** A tool as its agents see it, with its duration as the scenario describes it and the text for each of its outcomes. */
+export interface ToolInventory {
+  name: string;
+  kind: Tool<unknown>["kind"];
+  description: string;
+  parameters: unknown;
+  duration: string;
+  effort: string;
+  /** The text the agent receives for each outcome the tool gives it. */
+  texts: Record<string, string>;
+  /** What the agent receives for any outcome the tool declares no text for (FR-TOOL-02). */
+  otherOutcomes: string;
+}
 
 /** The descriptions a scenario gives only for the inventory, and how an error names each. */
 const describedParts = [
@@ -8,85 +49,130 @@ const describedParts = [
   ["describeDuration", "description of its tools' durations"],
 ] as const satisfies readonly (readonly [keyof Scenario<unknown>, string])[];
 
-/**
- * What the engine does not provide yet, listed as "none", and how fast information travels until a medium exists
- * (NFR-12).
- */
-const NOT_PROVIDED = [
-  "### Energy model\n",
-  "none\n",
-  "### Environment processes\n",
-  "none\n",
-  "### How fast information travels\n",
-  "Every sensor and channel is instant.\n",
-].join("\n");
+/** What the engine does not provide yet. */
+const NONE = "none";
 
-/** What the agent receives for any outcome a tool declares no text for (FR-TOOL-02). */
-const OTHER_OUTCOME = "- any other outcome: the outcome's name";
+/** The outcome's name, which the agent receives for an outcome nothing gives a text for. */
+const OUTCOME_NAME = "the outcome's name";
+
+/** The outcomes the engine gives a call whatever its tool (FR-TOOL-02, FR-CLOCK-02), and what the agent receives. */
+const ENGINE_OUTCOMES = {
+  invalid_arguments: "the harness's explanation of the arguments it rejects",
+  unknown_tool: "the harness's explanation: Tool <name> not found",
+  cut_off: OUTCOME_NAME,
+};
 
 /**
- * The environment inventory of an experiment, in Markdown: for each of its conditions, everything its agents meet in
- * its scenario as that condition configures it (FR-INVENTORY-01). It runs nothing and calls no model.
+ * The environment inventory of an experiment over its scenario. It runs nothing and calls no model; a scenario without
+ * the descriptions it needs is refused, naming what it lacks.
  */
-export function inventory<State>(experiment: Experiment, scenario: Partial<Scenario<State>>): string {
+export function inventory<State>(experiment: Experiment, scenario: Partial<Scenario<State>>): Inventory {
   // Scenarios reach the engine as modules, not through the type checker, so a description may be missing.
   for (const [part, named] of describedParts) {
     if (scenario[part] === undefined) throw new Error(`Scenario "${scenario.name}" lacks its ${named}`);
   }
-  const sections = experiment.conditions.map((condition) => {
-    const loaded = loadScenario(scenario, experiment.seed, condition);
-    return [`## Condition "${condition.name}"\n`, agentsOf(loaded), toolsOf(loaded), channelsOf(loaded), NOT_PROVIDED, modelsAndLimitsOf(experiment)].join("\n");
-  });
-  return [`# Environment inventory of experiment "${experiment.id}", scenario "${scenario.name}"\n`, ...sections].join("\n");
+  const conditions = experiment.conditions.map((condition) =>
+    conditionInventory(experiment, condition.name, loadScenario(scenario, experiment.seed, condition)),
+  );
+  return { experiment: experiment.id, scenario: String(scenario.name), conditions };
 }
 
-/** Each agent of a loaded scenario, with its rhythm as the scenario describes it and its system prompt. */
-function agentsOf<State>({ scenario, configuration, systemPrompts }: LoadedScenario<State>): string {
-  const agents = [...systemPrompts].map(([agent, systemPrompt]) =>
-    [`#### Agent "${agent}"\n`, `- Rhythm: ${scenario.describeRhythm(configuration, agent)}\n`, "System prompt:\n", fenced(systemPrompt, "text")].join("\n"),
-  );
-  return ["### Agents\n", ...agents].join("\n");
-}
-
-/** Each tool of a loaded scenario, as its agents see it, with its duration as the scenario describes it. */
-function toolsOf<State>({ scenario, configuration }: LoadedScenario<State>): string {
-  const tools = scenario.tools.map((tool) =>
-    [
-      `#### Tool "${tool.name}"\n`,
-      `- Kind: ${tool.kind}`,
-      `- Duration: ${scenario.describeDuration(configuration, tool.name)}\n`,
-      "Description:\n",
-      fenced(tool.description, "text"),
-      "Parameters:\n",
-      fenced(JSON.stringify(tool.parameters, null, 2), "json"),
-      "Texts for each outcome:\n",
-      ...textsOf(tool),
-      OTHER_OUTCOME,
-      "",
-    ].join("\n"),
-  );
-  return ["### Tools\n", ...tools].join("\n");
+/** What the agents meet in a condition, from the scenario as that condition loads it. */
+function conditionInventory<State>(
+  { models, limits }: Experiment,
+  condition: string,
+  { scenario, configuration, systemPrompts, channels }: LoadedScenario<State>,
+): ConditionInventory {
+  return {
+    condition,
+    agents: [...systemPrompts].map(([name, systemPrompt]) => ({ name, rhythm: scenario.describeRhythm(configuration, name), systemPrompt })),
+    tools: scenario.tools.map((tool) => ({
+      name: tool.name,
+      kind: tool.kind,
+      description: tool.description,
+      parameters: tool.parameters,
+      duration: scenario.describeDuration(configuration, tool.name),
+      effort: NONE,
+      texts: textsOf(tool),
+      otherOutcomes: OUTCOME_NAME,
+    })),
+    engineOutcomes: { ...ENGINE_OUTCOMES },
+    channels: channels.map(({ name, source, stimulus }) => ({ name, source, delivers: stimulus })),
+    energyModel: NONE,
+    environmentProcesses: NONE,
+    informationSpeed: "Every sensor and channel is instant.",
+    models: [...models],
+    limits: { ...limits },
+  };
 }
 
 /**
  * The text the agent receives for each outcome a tool gives it: a sensor's success gives what it senses; an effector's
  * outcomes give the texts it declares.
  */
-function textsOf<State>(tool: Tool<State>): string[] {
-  if (tool.kind === "sensor") return ["- success: the part of the world it senses"];
-  return Object.entries(tool.texts ?? {}).map(([outcome, text]) => `- ${outcome}: ${text}`);
+function textsOf<State>(tool: Tool<State>): Record<string, string> {
+  if (tool.kind === "sensor") return { success: "the part of the world it senses" };
+  return { ...tool.texts };
 }
 
-/** Each stimulus channel of a loaded scenario, with its source and what it delivers. */
-function channelsOf<State>({ channels }: LoadedScenario<State>): string {
-  const listed = channels.map((channel) =>
-    [`#### Channel "${channel.name}"\n`, `- Source: ${channel.source}\n`, "Delivers:\n", fenced(channel.stimulus, "text")].join("\n"),
+/** An inventory in Markdown, as `lab inventory` prints it: a section for each condition. */
+export function inventoryMarkdown({ experiment, scenario, conditions }: Inventory): string {
+  const sections = conditions.map((condition) =>
+    [
+      `## Condition "${condition.condition}"\n`,
+      agentsMarkdown(condition),
+      toolsMarkdown(condition),
+      itemsMarkdown("Outcomes the engine gives", condition.engineOutcomes),
+      channelsMarkdown(condition),
+      `### Energy model\n\n${condition.energyModel}\n`,
+      `### Environment processes\n\n${condition.environmentProcesses}\n`,
+      `### How fast information travels\n\n${condition.informationSpeed}\n`,
+      modelsAndLimitsMarkdown(condition),
+    ].join("\n"),
+  );
+  return [`# Environment inventory of experiment "${experiment}", scenario "${scenario}"\n`, ...sections].join("\n");
+}
+
+function agentsMarkdown({ agents }: ConditionInventory): string {
+  const listed = agents.map(({ name, rhythm, systemPrompt }) =>
+    [`#### Agent "${name}"\n`, `- Rhythm: ${rhythm}\n`, "System prompt:\n", fenced(systemPrompt, "text")].join("\n"),
+  );
+  return ["### Agents\n", ...listed].join("\n");
+}
+
+function toolsMarkdown({ tools }: ConditionInventory): string {
+  const listed = tools.map((tool) =>
+    [
+      `#### Tool "${tool.name}"\n`,
+      `- Kind: ${tool.kind}`,
+      `- Duration: ${tool.duration}`,
+      `- Effort: ${tool.effort}\n`,
+      "Description:\n",
+      fenced(tool.description, "text"),
+      "Parameters:\n",
+      fenced(JSON.stringify(tool.parameters, null, 2), "json"),
+      "Texts for each outcome:\n",
+      ...Object.entries(tool.texts).map(([outcome, text]) => `- ${outcome}: ${text}`),
+      `- any other outcome: ${tool.otherOutcomes}`,
+      "",
+    ].join("\n"),
+  );
+  return ["### Tools\n", ...listed].join("\n");
+}
+
+/** A heading over a "- name: text" line for each entry. */
+function itemsMarkdown(heading: string, items: Record<string, string>): string {
+  return [`### ${heading}\n`, ...Object.entries(items).map(([name, text]) => `- ${name}: ${text}`), ""].join("\n");
+}
+
+function channelsMarkdown({ channels }: ConditionInventory): string {
+  const listed = channels.map(({ name, source, delivers }) =>
+    [`#### Channel "${name}"\n`, `- Source: ${source}\n`, "Delivers:\n", fenced(delivers, "text")].join("\n"),
   );
   return ["### Stimulus channels\n", ...listed].join("\n");
 }
 
-/** The models an experiment's agents work with, and the limits its runs run under. */
-function modelsAndLimitsOf({ models, limits }: Experiment): string {
+function modelsAndLimitsMarkdown({ models, limits }: ConditionInventory): string {
   return [
     "### Model and limits\n",
     `- Models: ${models.join(", ")}`,
