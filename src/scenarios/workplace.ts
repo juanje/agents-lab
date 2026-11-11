@@ -88,8 +88,9 @@ function assertContainerDeclared({ id, in: container }: ThingText, ids: Readonly
 }
 
 /**
- * Every declared situation, chosen or not, checked against the world: each place it can be in is the world's, and each
- * of its things inside another is inside one of its own things or of the world's.
+ * Every declared situation, chosen or not, checked against the world: each place it can be in is the world's, none of
+ * its things gives its own place, and each of its things inside another is inside one of its own things or of the
+ * world's.
  */
 function declaredSituations(configuration: Configuration, world: WorldText, places: readonly string[]): Record<string, SituationText> {
   const declared = (textOf(configuration, "situations").situations ?? {}) as unknown as Record<string, SituationText>;
@@ -97,7 +98,12 @@ function declaredSituations(configuration: Configuration, world: WorldText, plac
   for (const [id, situation] of Object.entries(declared)) {
     for (const place of situation.places) assertPlace(places, place, `the situation "${id}" can be in`);
     const ids = new Set([...worldIds, ...(situation.things ?? []).map((thing) => thing.id)]);
-    for (const thing of situation.things ?? []) assertContainerDeclared(thing, ids);
+    for (const thing of situation.things ?? []) {
+      if (thing.place !== undefined) {
+        throw new Error(`the thing "${thing.id}" of the situation "${id}" gives its own place "${thing.place}"; a situation's thing is in the situation's place`);
+      }
+      assertContainerDeclared(thing, ids);
+    }
   }
   return declared;
 }
@@ -114,6 +120,9 @@ function initialState(configuration: Configuration, random: Random): Workplace {
   const keys = textOf(configuration, "situation_keys");
   const places = world.places.map(({ name }) => name);
   const declared = declaredSituations(configuration, world, places);
+  for (const id of Object.keys(keys)) {
+    if (!Object.hasOwn(declared, id)) throw new Error(`the configuration's "situation_keys" gives keys for the situation "${id}", which is not declared`);
+  }
   let space = layout(places, world.passages ?? []);
   space = put(space, WORKER, world.worker.place);
   const situations: Record<string, { place: string; keys: TomlTable }> = {};
