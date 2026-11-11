@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { BeforeStep, Given, Then, When } from "@cucumber/cucumber";
-import { type Places, type Where, arrive, entitiesIn, exits, inSight, layout, leave, put, where } from "../../src/engine/places.ts";
+import { type Places, type Where, arrive, entitiesIn, entitiesInPassage, exits, inSight, layout, leave, put, where } from "../../src/engine/places.ts";
 import type { LoadedScenario } from "../../src/engine/scenario.ts";
 import { type Action, World } from "../../src/engine/world.ts";
 import { goTool, placesScenario } from "../../tests/fixtures/places-world.ts";
@@ -245,3 +245,14 @@ Then(
     assert.ok(inSight(space, seer).includes(walker), `agent "${seer}" had in sight ${JSON.stringify(inSight(space, seer))}`);
   },
 );
+
+Then(
+  "the entities in the passage between {string} and {string} are {string}",
+  function (this: Context, one: string, other: string, entity: string) {
+    assert.deepEqual(entitiesInPassage(current(this), one, other), [entity]);
+  },
+);
+
+Then("the passage between {string} and {string} holds no entities", function (this: Context, one: string, other: string) {
+  assert.deepEqual(entitiesInPassage(current(this), one, other), []);
+});

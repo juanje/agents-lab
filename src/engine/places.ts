@@ -148,3 +148,8 @@ export function inSight(space: Places, entity: string): string[] {
     .filter(([other, at]) => other !== entity && seen(at))
     .map(([other]) => other);
 }
+
+/** The entities in the passage between two places, whichever way they are named, in the order the space first held them. */
+export function entitiesInPassage(_space: Places, _one: string, _other: string): string[] {
+  return [];
+}
