@@ -102,7 +102,7 @@ When('"lab run" runs the experiment file', async function (this: Context) {
     return found;
   };
   try {
-    await lab(["run", file], { directory: this.home, scenarios: library, model });
+    await lab(["run", file], { directory: this.home, print: () => {}, scenarios: library, model });
   } catch (error) {
     this.labError = error as Error;
   }
