@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { readExperiment } from "../src/engine/experiment.ts";
+import { inventory, inventoryMarkdown } from "../src/engine/inventory.ts";
 import { loadScenario } from "../src/engine/scenario.ts";
 import { rhythmOf, slotsScenario } from "./fixtures/slots.ts";
 
@@ -78,6 +79,17 @@ describe("materials", () => {
 
     expect(rhythmOf(later.configuration).text).toBe("Morning comes.");
     expect(later.materials).toEqual([{ path: "materials/wake.md", hash: `sha256:${sha256("Morning comes.")}` }]);
+  });
+
+  it("are listed in the inventory of the condition that sets them, by their path and hash", () => {
+    writeMaterial("materials/wake.md", "Morning comes.");
+    const experiment = readExperiment(experimentFile('rhythm.text = { file = "materials/wake.md" }'), directory);
+
+    const listed = inventory(experiment, slotsScenario);
+
+    const hash = `sha256:${sha256("Morning comes.")}`;
+    expect(listed.conditions[0].materials).toEqual([{ path: "materials/wake.md", hash }]);
+    expect(inventoryMarkdown(listed)).toContain(`### Materials\n\n- materials/wake.md: ${hash}\n`);
   });
 });
 
