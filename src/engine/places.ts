@@ -150,6 +150,13 @@ export function inSight(space: Places, entity: string): string[] {
 }
 
 /** The entities in the passage between two places, whichever way they are named, in the order the space first held them. */
-export function entitiesInPassage(_space: Places, _one: string, _other: string): string[] {
-  return [];
+export function entitiesInPassage(space: Places, one: string, other: string): string[] {
+  return Object.entries(space.whereabouts)
+    .filter(([, at]) => "passage" in at && joins(at.passage, one, other))
+    .map(([entity]) => entity);
+}
+
+/** Whether a passage's two places are these two, whichever way they are named. */
+function joins(between: readonly [string, string], one: string, other: string): boolean {
+  return (between[0] === one && between[1] === other) || (between[0] === other && between[1] === one);
 }
