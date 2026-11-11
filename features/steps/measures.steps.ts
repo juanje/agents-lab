@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { Given, Then, When } from "@cucumber/cucumber";
 import type { JsonObject } from "@earendil-works/pi-ai";
 import type { TomlTable } from "smol-toml";
-import { ScriptedModel } from "../../src/engine/scripted-model.ts";
+import { type ScriptedAnswer, ScriptedModel } from "../../src/engine/scripted-model.ts";
 import { scenarioLibrary } from "../../src/scenarios/library.ts";
 import { type Workplace, workplaceScenario } from "../../src/scenarios/workplace.ts";
 import type { Context } from "../support/context.ts";
@@ -16,10 +16,10 @@ import { WORLD, situations } from "./workplace-tools.steps.ts";
 const WORKER = "worker";
 
 /** The scripted model the worker runs on, as "lab run" resolves it. */
-const MODEL = "faux/scripted";
+export const MODEL = "faux/scripted";
 
 /** FR-WORKPLACE-02's durations, as its contract's background gives them. */
-const DURATIONS = { look_ms: 10, examine_ms: 10, take_ms: 10, put_ms: 10, give_ms: 10, ms_per_word: 5, ms_per_length: 20 };
+export const DURATIONS = { look_ms: 10, examine_ms: 10, take_ms: 10, put_ms: 10, give_ms: 10, ms_per_word: 5, ms_per_length: 20 };
 
 /** The workplace's metrics, as the contract names them. */
 const METRICS = ["holds", "predicates", "sensed_at_ms", "acted_at_ms", "settled_at_ms", "exploration", "entries_after", "notes_after"];
@@ -127,8 +127,28 @@ function callOf(written: string): { tool: string; arguments: JsonObject } {
   return { tool, arguments: Object.fromEntries(names.map((name, index) => [name, values[index]])) };
 }
 
-Given(/^the worker's scripted turns call (.+), then end$/, function (this: Context, calls: string) {
-  const answers = calls.split(", then ").map((written) => ({ toolCalls: [{ name: callOf(written).tool, arguments: callOf(written).arguments }], delayMs: 0 }));
+/**
+ * The worker's answers as the contract writes its turns, such as call "look", then wait 130 milliseconds, then call
+ * "check_time": each call in an answer of its own, after the wait written before it, if any.
+ */
+function answersOf(turns: string): ScriptedAnswer[] {
+  const answers: ScriptedAnswer[] = [];
+  let delayMs = 0;
+  for (const written of turns.split(", then ")) {
+    const wait = /^wait (\d+) milliseconds$/.exec(written);
+    if (wait !== null) {
+      delayMs = Number(wait[1]);
+      continue;
+    }
+    const { tool, arguments: args } = callOf(written.replace(/^call /, ""));
+    answers.push({ toolCalls: [{ name: tool, arguments: args }], delayMs });
+    delayMs = 0;
+  }
+  return answers;
+}
+
+Given(/^the worker's scripted turns ((?:call|wait) .+), then end$/, function (this: Context, turns: string) {
+  const answers = answersOf(turns);
   const model = new ScriptedModel([...answers, { text: "Done.", delayMs: 0 }], MODEL.split("/")[1]);
   this.models.set(MODEL, model);
   this.labModels.set(MODEL, model);

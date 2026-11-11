@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { Given, Then, When } from "@cucumber/cucumber";
 import { type JsonObject, getCurrentTools } from "@earendil-works/pi-ai";
-import { run } from "../../src/engine/run.ts";
+import { type Agent, run } from "../../src/engine/run.ts";
 import { type ScriptedAnswer, ScriptedModel } from "../../src/engine/scripted-model.ts";
 import type { LoadedScenario, Scenario } from "../../src/engine/scenario.ts";
 import { type Action, World } from "../../src/engine/world.ts";
@@ -123,8 +123,11 @@ export function assembled<State>(scenario: Scenario<State>, world: World<State>)
   return { scenario, configuration: {}, world, systemPrompts, channels: scenario.channels({}), firstStimuli, rhythms, materials: [], components: scenario.components?.({}) ?? [] };
 }
 
-/** Runs the scenario's agents in a loaded scenario, watching its arbiter, and keeps what the run gave. */
-async function runScenario<State>(context: Context, loaded: LoadedScenario<State>): Promise<void> {
+/**
+ * Runs agents in a loaded scenario, watching its arbiter, and keeps what the run gave: by default the scenario's agents,
+ * each on the model the scenario gives it by its name.
+ */
+export async function runScenario<State>(context: Context, loaded: LoadedScenario<State>, agents = agentsOf(context)): Promise<void> {
   const { world } = loaded;
   context.stateBefore = world.state;
   // Watched, not changed: the arbiter still decides, and the scenario sees the order it applied effects in.
@@ -134,11 +137,6 @@ async function runScenario<State>(context: Context, loaded: LoadedScenario<State
     if (result.applied) context.applied.push({ action: action as Action<unknown, never>, args, atMs: performance.now() });
     return result;
   };
-  const agents = [...context.models, ...context.realModels].map(([name, model]) => ({
-    name,
-    model,
-    activations: context.activations.get(name) ?? 1,
-  }));
   const { turns, messages, toolCalls, sensings, startedAtMs, runId } = await run(loaded, agents, context.seed, {
     logDirectory: context.logDirectory,
     modelTurnTimeoutMs: context.modelTurnTimeoutMs,
@@ -165,6 +163,11 @@ async function runScenario<State>(context: Context, loaded: LoadedScenario<State
   context.toolCalls = toolCalls;
   context.sensings = sensings;
   for (const check of context.setupChecks) check();
+}
+
+/** The scenario's agents, each on the model it gives it by its name, for the activations it gives it, one otherwise. */
+function agentsOf(context: Context): Agent[] {
+  return [...context.models, ...context.realModels].map(([name, model]) => ({ name, model, activations: context.activations.get(name) ?? 1 }));
 }
 
 /** The scripted model agent runs on, which has made at least one turn. */
