@@ -49,6 +49,7 @@ describe("inventory", () => {
         name: agent,
         rhythm: "Every agent waits 0 ms before each activation.",
         systemPrompt: `You are agent "${agent}", in a world of slots.`,
+        firstStimuli: [],
       })),
       tools: [
         {
@@ -103,6 +104,27 @@ describe("inventory", () => {
     const slow = listed.slice(listed.indexOf('## Condition "slow"'));
     expect(baseline).toContain(["### Agents", "", agent("a", 0), agent("b", 0)].join("\n"));
     expect(slow).toContain(["### Agents", "", agent("a", 50), agent("b", 50)].join("\n"));
+  });
+
+  it("gives, beside an agent's system prompt, each stimulus it receives as it first wakes, with its channel and source", () => {
+    const bell = { name: "bell", source: "town bell", stimulus: "The bell rings." };
+    const scenario = slotsWith({
+      channels: (configuration) => [...slotsScenario.channels(configuration), bell],
+      firstStimuli: (_configuration, agent) => (agent === "a" ? ["bell"] : []),
+    });
+
+    const [condition] = inventory(experimentOf(["[conditions.baseline]"]), scenario).conditions;
+    const listed = printed(experimentOf(["[conditions.baseline]"]), scenario);
+
+    expect(condition.agents.map(({ name, firstStimuli }) => [name, firstStimuli])).toEqual([
+      ["a", [{ channel: "bell", source: "town bell", content: "The bell rings." }]],
+      ["b", []],
+    ]);
+    const prompt = (agent: string) => ["System prompt:", "", "```text", `You are agent "${agent}", in a world of slots.`, "```", ""];
+    expect(listed).toContain(
+      [...prompt("a"), 'First stimulus on the channel "bell", from town bell:', "", "```text", "The bell rings.", "```", "", '#### Agent "b"'].join("\n"),
+    );
+    expect(listed).toContain([...prompt("b"), "### Tools"].join("\n"));
   });
 
   it("lists each tool with its kind, the description and parameters its agents see, its duration as the scenario describes it in each condition, and the text for each outcome", () => {
