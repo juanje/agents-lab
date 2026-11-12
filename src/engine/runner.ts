@@ -43,6 +43,8 @@ export interface StartingRun {
  * by the run's number, since several runs can be in progress at once (FR-RUN-06).
  */
 export interface ExperimentObserver {
+  /** Told once, before the first run, when the experiment resumes: how many of its runs are already completed, and how many are left (FR-RUN-07). */
+  resumed?(counts: { completed: number; left: number }): void;
   runStarted(run: StartingRun): void;
   recorded(number: number, line: LogLine): void;
   runEnded(number: number, status: IndexLine["status"]): void;
@@ -93,6 +95,7 @@ export async function runExperiment<State>(
   const completed = new Set((resume ? indexLines(indexPath) : []).filter((line) => line.status === "completed").map(runKey));
   const left = planned.filter((next) => !completed.has(runKey({ condition: next.condition.name, model: next.modelName, replica: next.replica })));
   const index = resume ? JsonlFile.append(indexPath) : JsonlFile.create(indexPath);
+  if (resume) observer?.resumed?.({ completed: planned.length - left.length, left: left.length });
   // Aborts, with the reason each run in progress stops on, when the experiment stops: it is interrupted, or a run stops
   // on an error. Only the first reason is given.
   const runsEnd = new AbortController();
