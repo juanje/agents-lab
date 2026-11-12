@@ -7,7 +7,7 @@ import { THINKING_LEVELS, type ThinkingLevel } from "../engine/experiment.ts";
 import { JsonlFile } from "../engine/jsonl.ts";
 import { Materials, materialReference, settingAt } from "../engine/materials.ts";
 import type { LogLine, RunSetup } from "../engine/recorder.ts";
-import type { Configuration, Judgeable, Scenario } from "../engine/scenario.ts";
+import { type Configuration, type Judgeable, type Scenario, isTable } from "../engine/scenario.ts";
 import { indexOf, linesOf } from "./runs.ts";
 
 /** A judge file, read (FR-ANALYSIS-02): the judge's model, its thinking level, and its instructions, with their hash. */
@@ -50,6 +50,7 @@ export function readJudgeFile(path: string): JudgeFile {
   if (read === undefined) throw new Error(`The judge file "${path}"'s instructions "${reference.path}" do not exist`);
   const timeoutMs = given("timeout_ms", (value) => Number.isInteger(value) && (value as number) >= 1, "a whole number of milliseconds of at least 1") as number;
   const givenQuestions = file.questions ?? {};
+  if (!isTable(givenQuestions)) throw new Error(`The judge file "${path}"'s field "questions" must be a table, as [questions]`);
   const questions = { says: wordingOf("says"), reveals: wordingOf("reveals") };
   return { model, thinkingLevel, instructions: { path: reference.path, ...read }, timeoutMs, questions };
 
