@@ -577,7 +577,12 @@ function abortedBy(own: AbortSignal | undefined, ...others: AbortSignal[]): Abor
  * as its providers format it, such as "OpenAI API error (429): …" (pi-ai 1.5.0, utils/error-body.js).
  */
 export function isRateLimit(message: AssistantMessage): boolean {
-  return message.stopReason === "error" && /(?<![a-z0-9])429(?![a-z0-9])|rate.?limit|too many requests/i.test(message.errorMessage ?? "");
+  return message.stopReason === "error" && saysRateLimit(message.errorMessage ?? "");
+}
+
+/** Whether a provider's error message says it is a rate limit: `429` standing alone, "rate limit" or "too many requests". */
+export function saysRateLimit(message: string): boolean {
+  return /(?<![a-z0-9])429(?![a-z0-9])|rate.?limit|too many requests/i.test(message);
 }
 
 function outcomeOf(message: AssistantMessage): Pick<ModelTurn, "outcome" | "message"> {

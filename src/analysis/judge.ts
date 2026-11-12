@@ -3,7 +3,8 @@ import { mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { type TomlValue, parse } from "smol-toml";
 import type { Usage } from "@earendil-works/pi-ai";
-import { type AgentModel, type OfferedTool, type OneAnswer, askOnce, assertThinkingLevel, summed } from "../engine/adapter.ts";
+import { type AgentModel, type OfferedTool, type OneAnswer, askOnce, assertThinkingLevel, saysRateLimit, summed } from "../engine/adapter.ts";
+import { waitAtLeast } from "../engine/clock.ts";
 import { THINKING_LEVELS, type ThinkingLevel } from "../engine/experiment.ts";
 import { JsonlFile } from "../engine/jsonl.ts";
 import { Materials, materialReference, settingAt } from "../engine/materials.ts";
@@ -214,6 +215,15 @@ function decided(answers: readonly JudgeAnswer[]) {
   return { outcome: "success", verdict, quoted, reason, quoted_found, agreement: { agreeing: valid.filter((answer) => answer.verdict === majority).length, valid: valid.length } };
 }
 
+/**
+ * Whether a call that erred is worth asking again (FR-ANALYSIS-03): its provider's message says it is a rate limit, as
+ * FR-ADAPTER-02 reads one, or gives an HTTP status from 500 to 599, standing alone.
+ */
+function retriable(answer: OneAnswer): boolean {
+  const message = answer.message ?? "";
+  return answer.outcome === "model_error" && (saysRateLimit(message) || /(?<![a-z0-9])5\d\d(?![a-z0-9])/i.test(message));
+}
+
 /** The tokens and cost of these answers together. */
 function spentOn(answers: readonly Pick<JudgeAnswer, "tokens" | "cost">[]): Pick<JudgeAnswer, "tokens" | "cost"> {
   const { cost, ...tokens } = answers.map((answer): Usage => ({ ...answer.tokens, cost: answer.cost })).reduce(summed);
@@ -268,12 +278,24 @@ export async function judgeRuns(
       free();
     }
   };
-  /** Asks a question once, in a call of its own that holds a slot, and gives the answer. */
+  /**
+   * Asks a question once, in a call of its own that holds a slot, and gives the answer. A call the provider answers with
+   * a rate limit or a 5xx is asked again after the judge file's wait, doubling with each retry, up to its retries; the
+   * wait holds no slot, and the answer gives each retry and the tokens and cost of every call.
+   */
   const answerTo = async (question: Question, wording: string): Promise<JudgeAnswer> => {
-    const answer = await inSlot(() =>
-      askOnce(agentModel, { systemPrompt: judge.instructions.text, thinkingLevel: judge.thinkingLevel, timeoutMs: judge.timeoutMs }, VERDICT, questionOf(question, wording)),
-    );
-    const spent = { tokens: answer.tokens, cost: answer.cost, retries: [] };
+    const ask = () => inSlot(() => askOnce(agentModel, { systemPrompt: judge.instructions.text, thinkingLevel: judge.thinkingLevel, timeoutMs: judge.timeoutMs }, VERDICT, questionOf(question, wording)));
+    let answer = await ask();
+    const calls = [answer];
+    const retries: JudgeAnswer["retries"] = [];
+    for (let attempt = 1; attempt <= judge.retries && retriable(answer); attempt += 1) {
+      const waitMs = judge.retryWaitMs * 2 ** (attempt - 1);
+      retries.push({ attempt, waitMs, message: answer.message ?? "" });
+      await waitAtLeast(waitMs);
+      answer = await ask();
+      calls.push(answer);
+    }
+    const spent = { ...spentOn(calls), retries };
     if (answer.outcome !== "success") {
       const message = answer.message === undefined ? {} : { message: answer.message };
       return { outcome: answer.outcome, ...message, ...UNANSWERED, ...spent };
