@@ -9,6 +9,7 @@ import type { Context } from "../support/context.ts";
 import { completedIndex, experimentFileOf, idleModels, logOf, runLab } from "./lab.steps.ts";
 import { samplesIn } from "./metric.steps.ts";
 import { withBase } from "./neighbourhood.steps.ts";
+import { script } from "./tool.steps.ts";
 import { editText } from "./workplace.steps.ts";
 import { WORLD, situations } from "./workplace-tools.steps.ts";
 
@@ -128,7 +129,8 @@ function callOf(written: string): { tool: string; arguments: JsonObject } {
     assert.deepEqual(ARGUMENTS[tool], ["minutes"], `the workplace's "${tool}" takes no minutes`);
     return { tool, arguments: { minutes: Number(value) } };
   }
-  const match = /^"([^"]+)"(?: (?:with|to) "([^"]+)")?(?: (?:into|to) "([^"]+)")?$/.exec(written.trim());
+  // An argument may be written with its kind, as in "read" with the thing "book" or "record" with the entry "…".
+  const match = /^"([^"]+)"(?: (?:with|to)(?: the \w+)? "([^"]+)")?(?: (?:into|to)(?: the \w+)? "([^"]+)")?$/.exec(written.trim());
   assert.ok(match !== null, `the steps do not read the call ${written}`);
   const [, tool, first, second] = match;
   const names = ARGUMENTS[tool];
@@ -160,6 +162,11 @@ function answersOf(turns: string): ScriptedAnswer[] {
 
 Given(/^the worker's scripted turns ((?:call|wait) .+), then end$/, function (this: Context, turns: string) {
   const answers = answersOf(turns);
+  // FR-WORKPLACE-02 assembles its run around the worker's own model, by the worker's name.
+  if (this.assembleRun !== undefined) {
+    script(this, WORKER, [...answers, { text: "Done.", delayMs: 0 }]);
+    return;
+  }
   const model = new ScriptedModel([...answers, { text: "Done.", delayMs: 0 }], MODEL.split("/")[1]);
   this.models.set(MODEL, model);
   this.labModels.set(MODEL, model);

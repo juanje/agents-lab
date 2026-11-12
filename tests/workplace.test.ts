@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { parse } from "smol-toml";
 import { Random } from "../src/engine/random.ts";
 import type { Configuration, Scenario } from "../src/engine/scenario.ts";
@@ -596,6 +596,33 @@ describe("the workplace's tools", () => {
       expect(sensor("read").durationMs(long, call({ thing: "sign" }))).toBe(25);
       expect(sensor("read").durationMs(start(), call({ thing: "sign" }))).toBe(10);
       expect(sensor("read").durationMs(start(), call({ thing: "key" }))).toBe(10);
+    });
+
+    describe("the book", () => {
+      afterEach(() => {
+        vi.restoreAllMocks();
+      });
+
+      // The run started at 1000 ms by performance.now(), with the clocks at 09:00 and 6000 depot seconds per second: the
+      // entries were written 25 ms and 70 ms into the run, at 09:02:30 and 09:07.
+      const written = (): Workplace => ({
+        ...start(),
+        clock: { startSeconds: 9 * 3600, timeScale: 6000 },
+        book: [
+          { entry: "Two parcels in.", atMs: 1025 },
+          { entry: "Lamp to Ana.", atMs: 1070 },
+        ],
+      });
+
+      it("gives its text followed by each entry recorded so far, on its own line with the time the clocks showed when it was written", () => {
+        vi.spyOn(performance, "now").mockReturnValue(1100);
+
+        expect(sensor("read").sense(written(), "worker", { thing: "sign" }, 100)).toBe("Quiet, please.\n09:02 Two parcels in.\n09:07 Lamp to Ana.");
+      });
+
+      it("counts the entries' words, each with its time, in the time it takes", () => {
+        expect(sensor("read").durationMs(written(), call({ thing: "sign" }))).toBe(5 * (2 + 4 + 4));
+      });
     });
   });
 

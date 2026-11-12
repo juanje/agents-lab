@@ -87,18 +87,27 @@ function tableOf(world: TomlTable, key: string): TomlTable {
   return table;
 }
 
+/** Sets the world's key, such as "[day] start", to a clock time and the configuration's key to a time scale. */
+function setClock(context: Context, key: string, start: string, scaleKey: string, scale: number): void {
+  const [table, field] = /^\[(\w+)\] (\w+)$/.exec(key)?.slice(1) ?? [];
+  assert.ok(table !== undefined && field !== undefined, `the steps do not read the world's key ${key}`);
+  editWorld(context, (world) => {
+    tableOf(world, table)[field] = start;
+  });
+  context.libraryScenario = withBase(context.libraryScenario, { [scaleKey]: scale });
+}
+
 Given(
   "the world's {string} is {string} and the configuration's {string} is {int}, so one depot minute is {int} milliseconds of the run",
   function (this: Context, key: string, start: string, scaleKey: string, scale: number, minuteMs: number) {
-    const [table, field] = /^\[(\w+)\] (\w+)$/.exec(key)?.slice(1) ?? [];
-    assert.ok(table !== undefined && field !== undefined, `the steps do not read the world's key ${key}`);
-    editWorld(this, (world) => {
-      tableOf(world, table)[field] = start;
-    });
-    this.libraryScenario = withBase(this.libraryScenario, { [scaleKey]: scale });
+    setClock(this, key, start, scaleKey, scale);
     assert.equal((60 * 1000) / scale, minuteMs, `with "${scaleKey}" ${scale}, a depot minute is not ${minuteMs} ms`);
   },
 );
+
+Given("the world's {string} is {string} and the configuration's {string} is {int}", function (this: Context, key: string, start: string, scaleKey: string, scale: number) {
+  setClock(this, key, start, scaleKey, scale);
+});
 
 Given(
   "the world's {string} is {string}, named {string}, who enters {string}, drops in {string} and has the rounds [{}]",

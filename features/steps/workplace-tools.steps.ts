@@ -528,3 +528,52 @@ Then(
     }
   },
 );
+
+/** The number of words in a text. */
+function wordsIn(text: string): number {
+  return text.split(/\s+/).filter((word) => word !== "").length;
+}
+
+/** The time the depot's clocks showed a moment into the run, to the minute, from the world's day start and the time scale. */
+function depotTimeInto(context: Context, ms: number): string {
+  const configuration = parse(context.libraryScenario.baseConfiguration ?? "");
+  const start = ((parse(configuration.world as string).day ?? {}) as { start?: string }).start ?? "00:00";
+  const [hours, minutes] = start.split(":").map(Number);
+  const seconds = hours * 3600 + minutes * 60 + Math.floor((ms / 1000) * (configuration.time_scale as number));
+  const minute = Math.floor(seconds / 60) % (24 * 60);
+  const two = (value: number) => String(value).padStart(2, "0");
+  return `${two(Math.floor(minute / 60))}:${two(minute % 60)}`;
+}
+
+/** The worker's only call of a tool, as the run recorded it, which succeeded. */
+function onlyCallOf(context: Context, tool: string) {
+  assert.ok(context.toolCalls !== undefined, "the worker did not run");
+  const calls = context.toolCalls.filter((recorded) => recorded.agent === WORKER && recorded.tool === tool);
+  assert.equal(calls.length, 1, `the worker made ${calls.length} "${tool}" calls`);
+  const [{ outcome, result, startedAtMs, endedAtMs }] = calls;
+  assert.equal(outcome, "success", `the "${tool}" call failed`);
+  assert.ok(result !== undefined, `the "${tool}" call gave no result`);
+  return { result, startedAtMs, endedAtMs };
+}
+
+Then(
+  "the {string} call's result is {string} followed by a line giving the clock time the entry was written and {string}",
+  function (this: Context, tool: string, text: string, entry: string) {
+    const { result } = onlyCallOf(this, tool);
+    const written = workplaceNow(this).book.find((each) => each.entry === entry);
+    assert.ok(written !== undefined, `the book holds no entry "${entry}"`);
+    assert.ok(this.runStartedAtMs !== undefined, "the worker did not run");
+    const time = depotTimeInto(this, written.atMs - this.runStartedAtMs);
+    const lines = result.split("\n");
+    assert.equal(lines.length, 2, `the result ${JSON.stringify(result)} is not the text and one line`);
+    assert.equal(lines[0], text);
+    assert.deepEqual(lines[1].match(/\b\d{2}:\d{2}\b/g), [time], `the line ${JSON.stringify(lines[1])} does not give the time ${time}, alone`);
+    assert.ok(lines[1].includes(entry), `the line ${JSON.stringify(lines[1])} does not give the entry`);
+  },
+);
+
+Then("the {string} call took at least {int} milliseconds for each word of that result", function (this: Context, tool: string, msPerWord: number) {
+  const { result, startedAtMs, endedAtMs } = onlyCallOf(this, tool);
+  const atLeastMs = msPerWord * wordsIn(result);
+  assert.ok(endedAtMs - startedAtMs >= atLeastMs, `the call took ${endedAtMs - startedAtMs} ms, less than ${atLeastMs} ms for the ${wordsIn(result)} words of ${JSON.stringify(result)}`);
+});
