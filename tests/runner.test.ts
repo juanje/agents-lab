@@ -277,6 +277,19 @@ describe("runExperiment", () => {
     expect(indexOf(directory).map(({ status }) => status)).toEqual(["completed"]);
   });
 
+  it("retries a rate-limit answer in every run as the experiment's limits say (FR-ADAPTER-02)", async () => {
+    const directory = newRunsDirectory();
+    const rateLimited = { error: "OpenAI API error (429): Rate limit reached for requests", delayMs: 0 };
+    const models = new Map(experiment.models.map((name) => [name, new ScriptedModel([rateLimited, ...Array.from({ length: 10 }, () => ({ text: "Nothing to do.", delayMs: 0 }))])]));
+
+    await runExperiment({ ...experiment, replicas: 1, conditions: experiment.conditions.slice(0, 1), rateLimit: { retries: 1, waitMs: 10 } }, slotsScenario, models, directory);
+
+    const [first] = indexOf(directory);
+    const lines = logLinesOf(directory, String(first.runId)) as { type: string }[];
+    expect(lines.filter(({ type }) => type === "rate_limit_retry")).toEqual([{ type: "rate_limit_retry", agent: "a", attempt: 1, waitMs: 10, atMs: expect.any(Number) }]);
+    expect(lines.filter(({ type }) => type === "model_turn")).toEqual([expect.objectContaining({ outcome: "success" })]);
+  });
+
   it("gives parallel_runs in each run's setup line", async () => {
     const directory = newRunsDirectory();
 
