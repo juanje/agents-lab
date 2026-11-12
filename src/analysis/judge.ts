@@ -6,6 +6,7 @@ import { type AgentModel, type OfferedTool, type OneAnswer, askOnce, assertThink
 import { THINKING_LEVELS, type ThinkingLevel } from "../engine/experiment.ts";
 import { JsonlFile } from "../engine/jsonl.ts";
 import { Materials, materialReference, settingAt } from "../engine/materials.ts";
+import { ParallelismLimit } from "../engine/parallelism.ts";
 import type { LogLine, RunSetup } from "../engine/recorder.ts";
 import { type Configuration, type Judgeable, type Scenario, isTable } from "../engine/scenario.ts";
 import { indexOf, linesOf } from "./runs.ts";
@@ -17,6 +18,8 @@ export interface JudgeFile {
   instructions: { path: string; hash: string; text: string };
   /** How long each model call may run, in milliseconds. */
   timeoutMs: number;
+  /** How many questions the judge asks at once. */
+  parallelQuestions: number;
   /** The wording that ends each question, by what it asks, with the hash of that wording. */
   questions: Record<Judgeable["asks"], { text: string; hash: string }>;
 }
@@ -32,7 +35,8 @@ const hashOf = (text: string) => `sha256:${createHash("sha256").update(text).dig
 /**
  * Reads a judge file: its `model`, its `thinking_level`, its `instructions`, a material read from beside the file, and
  * its `timeout_ms` for each call, every one required, and, optionally, `questions.says` and `questions.reveals`, each a
- * text or a material, in place of the default questions. A field that is missing or of another kind, and a material
+ * text or a material, in place of the default questions, and `parallel_questions`, how many questions are asked at once
+ * (1 by default). A field that is missing or of another kind, and a material
  * whose file does not exist, are refused, naming them.
  */
 export function readJudgeFile(path: string): JudgeFile {
@@ -49,10 +53,13 @@ export function readJudgeFile(path: string): JudgeFile {
   const read = new Materials(dirname(path)).read(reference);
   if (read === undefined) throw new Error(`The judge file "${path}"'s instructions "${reference.path}" do not exist`);
   const timeoutMs = given("timeout_ms", (value) => Number.isInteger(value) && (value as number) >= 1, "a whole number of milliseconds of at least 1") as number;
+  const parallelQuestions = Object.hasOwn(file, "parallel_questions")
+    ? (given("parallel_questions", (value) => Number.isInteger(value) && (value as number) >= 1, "a whole number of at least 1") as number)
+    : 1;
   const givenQuestions = file.questions ?? {};
   if (!isTable(givenQuestions)) throw new Error(`The judge file "${path}"'s field "questions" must be a table, as [questions]`);
   const questions = { says: wordingOf("says"), reveals: wordingOf("reveals") };
-  return { model, thinkingLevel, instructions: { path: reference.path, ...read }, timeoutMs, questions };
+  return { model, thinkingLevel, instructions: { path: reference.path, ...read }, timeoutMs, parallelQuestions, questions };
 
   /** The wording of a question the file gives, a text or a material, or its default, with the hash of the wording. */
   function wordingOf(asks: Judgeable["asks"]): { text: string; hash: string } {
@@ -136,7 +143,8 @@ const UNANSWERED = { verdict: null, quoted: null, reason: null, quoted_found: nu
  * to the judge's model, through Pi, limited by the judge file's timeout; one without is "no", with no call. Each
  * question is a line of a new file, `judgements/<judge run id>.jsonl`, whose path it gives: with its verdict and
  * whether its quoted words are in the texts, or, for a call that erred, timed out or gave no one valid verdict, with
- * that outcome and no verdict, and the judge goes on.
+ * that outcome and no verdict, and the judge goes on. Up to the judge file's `parallel_questions` questions are asked at
+ * once, each its own call, and each line is written as its answer comes.
  */
 export async function judgeRuns(
   runsDirectory: string,
@@ -164,29 +172,46 @@ export async function judgeRuns(
   const path = join(directory, `${randomUUID()}.jsonl`);
   const file = JsonlFile.create(path);
   const judged = { model: judge.model, thinkingLevel: judge.thinkingLevel, instructionsHash: judge.instructions.hash };
-  try {
-    for (const question of questions) {
-      const { runId, situation, key, texts } = question;
-      const wording = judge.questions[question.asks];
-      const settings = { ...judged, questionHash: wording.hash };
-      if (texts.length === 0) {
-        file.write({ runId, situation, key, outcome: "success", verdict: "no", quoted: null, reason: "no text on the channel", quoted_found: null, ...settings, tokens: null, cost: null });
-        continue;
-      }
-      const answer = await askOnce(agentModel, { systemPrompt: judge.instructions.text, thinkingLevel: judge.thinkingLevel, timeoutMs: judge.timeoutMs }, VERDICT, questionOf(question, wording.text));
-      const spent = { tokens: answer.tokens, cost: answer.cost };
-      if (answer.outcome !== "success") {
-        const message = answer.message === undefined ? {} : { message: answer.message };
-        file.write({ runId, situation, key, outcome: answer.outcome, ...message, ...UNANSWERED, ...settings, ...spent });
-        continue;
-      }
-      const verdict = verdictOf(answer);
-      if (verdict === undefined) {
-        file.write({ runId, situation, key, outcome: "invalid_verdict", ...UNANSWERED, ...settings, ...spent });
-        continue;
-      }
-      file.write({ runId, situation, key, outcome: "success", ...verdict, quoted_found: quotedFound(verdict.quoted, texts), ...settings, ...spent });
+  const limit = new ParallelismLimit(judge.parallelQuestions);
+  /**
+   * Asks one question, once a slot is free, and writes its line as its answer comes. A question without texts takes a
+   * slot too, so with one slot the lines keep the questions' order.
+   */
+  const ask = async (question: Question): Promise<void> => {
+    const free = await limit.acquire();
+    try {
+      await judgeQuestion(question);
+    } finally {
+      free();
     }
+  };
+  /** Asks one question, or answers it "no" when it has no texts, and writes its line. */
+  const judgeQuestion = async (question: Question): Promise<void> => {
+    const { runId, situation, key, texts } = question;
+    const wording = judge.questions[question.asks];
+    const settings = { ...judged, questionHash: wording.hash };
+    if (texts.length === 0) {
+      file.write({ runId, situation, key, outcome: "success", verdict: "no", quoted: null, reason: "no text on the channel", quoted_found: null, ...settings, tokens: null, cost: null });
+      return;
+    }
+    const answer = await askOnce(agentModel, { systemPrompt: judge.instructions.text, thinkingLevel: judge.thinkingLevel, timeoutMs: judge.timeoutMs }, VERDICT, questionOf(question, wording.text));
+    const spent = { tokens: answer.tokens, cost: answer.cost };
+    if (answer.outcome !== "success") {
+      const message = answer.message === undefined ? {} : { message: answer.message };
+      file.write({ runId, situation, key, outcome: answer.outcome, ...message, ...UNANSWERED, ...settings, ...spent });
+      return;
+    }
+    const verdict = verdictOf(answer);
+    if (verdict === undefined) {
+      file.write({ runId, situation, key, outcome: "invalid_verdict", ...UNANSWERED, ...settings, ...spent });
+      return;
+    }
+    file.write({ runId, situation, key, outcome: "success", ...verdict, quoted_found: quotedFound(verdict.quoted, texts), ...settings, ...spent });
+  };
+  try {
+    // Every question settles before the file closes, so none writes to it closed; the first failure, if any, is thrown.
+    const failed = (await Promise.allSettled(questions.map(ask))).find((settled) => settled.status === "rejected");
+    if (failed !== undefined) throw failed.reason;
   } finally {
     file.close();
   }
