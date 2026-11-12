@@ -2,10 +2,12 @@ import assert from "node:assert/strict";
 import { Given, Then, When } from "@cucumber/cucumber";
 import type { JsonObject } from "@earendil-works/pi-ai";
 import type { TomlTable } from "smol-toml";
+import { where } from "../../src/engine/places.ts";
 import { type ScriptedAnswer, ScriptedModel } from "../../src/engine/scripted-model.ts";
 import { scenarioLibrary } from "../../src/scenarios/library.ts";
 import { type Workplace, workplaceScenario } from "../../src/scenarios/workplace.ts";
 import type { Context } from "../support/context.ts";
+import { stateAt } from "./acting.steps.ts";
 import { completedIndex, experimentFileOf, idleModels, logOf, runLab } from "./lab.steps.ts";
 import { samplesIn } from "./metric.steps.ts";
 import { withBase } from "./neighbourhood.steps.ts";
@@ -141,11 +143,23 @@ function callOf(written: string): { tool: string; arguments: JsonObject } {
 }
 
 /**
- * The worker's answers as the contract writes its turns, such as call "look", then wait 130 milliseconds, then call
- * "check_time": each call in an answer of its own, after the wait written before it, if any.
+ * What the contract says of one of the worker's calls after it, as in "go" with "counter", which leaves "store" at once
+ * and arrives 40 milliseconds into the run: the call is the tool's nth by the worker, counted from 0.
  */
-function answersOf(turns: string): ScriptedAnswer[] {
+interface Claim {
+  tool: string;
+  nth: number;
+  claim: string;
+}
+
+/**
+ * The worker's answers as the contract writes its turns, such as call "look", then wait 130 milliseconds, then call
+ * "check_time": each call in an answer of its own, after the wait written before it, if any; and what the contract
+ * says of a call after it, with ", which", checked once the run has ended.
+ */
+function answersOf(turns: string): { answers: ScriptedAnswer[]; claims: Claim[] } {
   const answers: ScriptedAnswer[] = [];
+  const claims: Claim[] = [];
   let delayMs = 0;
   for (const written of turns.split(", then ")) {
     const wait = /^wait (\d+) milliseconds$/.exec(written);
@@ -153,15 +167,42 @@ function answersOf(turns: string): ScriptedAnswer[] {
       delayMs = Number(wait[1]);
       continue;
     }
-    const { tool, arguments: args } = callOf(written.replace(/^call /, ""));
+    const [call, claim] = written.split(", which ");
+    const { tool, arguments: args } = callOf(call.replace(/^call /, ""));
+    if (claim !== undefined) claims.push({ tool, nth: answers.filter(({ toolCalls }) => toolCalls?.[0]?.name === tool).length, claim });
     answers.push({ toolCalls: [{ name: tool, arguments: args }], delayMs });
     delayMs = 0;
   }
-  return answers;
+  return { answers, claims };
+}
+
+/** Less than this after the moment the contract gives, a call ended at it: the engine takes a moment to end a call. */
+const ENDED_WITHIN_MS = 20;
+
+/**
+ * Checks, once the run has ended, what the contract says of a call: that it leaves a place at once, as the run starts,
+ * and arrives a while into the run.
+ */
+function checkClaim(context: Context, { tool, nth, claim }: Claim): void {
+  const match = /^(?:leaves "([^"]+)" at once and )?arrives (\d+) milliseconds into the run$/.exec(claim);
+  assert.ok(match !== null, `the steps do not read what the contract says of the "${tool}" call: ${claim}`);
+  const [, leaves, arrivesAtMs] = match;
+  const call = context.toolCalls?.filter((each) => each.agent === WORKER && each.tool === tool)[nth];
+  assert.ok(call !== undefined && context.runStartedAtMs !== undefined, `the worker made no "${tool}" call number ${nth + 1}`);
+  const startedAtMs = call.startedAtMs - context.runStartedAtMs;
+  const endedAtMs = call.endedAtMs - context.runStartedAtMs;
+  if (leaves !== undefined) {
+    assert.ok(startedAtMs <= ENDED_WITHIN_MS, `the "${tool}" call started ${Math.round(startedAtMs)} ms into the run, not at once`);
+    const at = where(stateAt<Workplace>(context, call.startedAtMs).space, WORKER);
+    assert.deepEqual(at, { place: leaves }, `the worker was not in "${leaves}" as the "${tool}" call started`);
+  }
+  const arrives = Number(arrivesAtMs);
+  assert.ok(endedAtMs >= arrives && endedAtMs <= arrives + ENDED_WITHIN_MS, `the "${tool}" call arrived ${Math.round(endedAtMs)} ms into the run, not ${arrives}`);
 }
 
 Given(/^the worker's scripted turns ((?:call|wait) .+), then end$/, function (this: Context, turns: string) {
-  const answers = answersOf(turns);
+  const { answers, claims } = answersOf(turns);
+  for (const claim of claims) this.setupChecks.push(() => checkClaim(this, claim));
   // FR-WORKPLACE-02 assembles its run around the worker's own model, by the worker's name.
   if (this.assembleRun !== undefined) {
     script(this, WORKER, [...answers, { text: "Done.", delayMs: 0 }]);
