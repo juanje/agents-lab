@@ -329,8 +329,9 @@ function judgements(context: Context): Judgement[] {
   return text.split("\n").filter((line) => line !== "").map((line) => JSON.parse(line) as Judgement);
 }
 
-/** The one line for a situation and a key. */
+/** The one line for a situation and a key, which "it" and "its" name in the steps after it. */
 function lineFor(context: Context, situation: string, key: string): Judgement {
+  setupOf(context).last = { situation, key };
   const lines = judgements(context).filter((line) => line.situation === situation && line.key === key);
   assert.equal(lines.length, 1, `the judgements give ${lines.length} lines for "${situation}" and "${key}"`);
   return lines[0];
@@ -625,12 +626,6 @@ Given("the judge file gives {string} as {int} and {string} as {int}", function (
   writeHome(this, JUDGE_FILE, stringify(judgeFile));
 });
 
-/** The one line for a situation and a key, which "it" and "its" name in the steps after it. */
-function theLine(context: Context, situation: string, key: string): Judgement {
-  setupOf(context).last = { situation, key };
-  return lineFor(context, situation, key);
-}
-
 /** The line the last "the line for" step read. */
 function itsLine(context: Context): Judgement {
   const { last } = setupOf(context);
@@ -655,7 +650,7 @@ function assertAgreement(line: Judgement, agreeing: number, valid: number): void
 Then(
   "the line for {string} and {string} gives {string} as {int}, one answer with the verdict {string}, the verdict {string}, and the agreement {int} agreeing of {int} valid",
   function (this: Context, situation: string, key: string, field: string, value: number, answerVerdict: string, verdict: string, agreeing: number, valid: number) {
-    const line = theLine(this, situation, key);
+    const line = lineFor(this, situation, key);
     assert.equal(line[field], value);
     const answers = answersOf(line);
     assert.equal(answers.length, 1, `the line gives ${answers.length} answers`);
@@ -666,7 +661,7 @@ Then(
 );
 
 Then("the line for {string} and {string} gives no {string}", function (this: Context, situation: string, key: string, field: string) {
-  const line = theLine(this, situation, key);
+  const line = lineFor(this, situation, key);
   assert.equal(line[field], null, `the line gives "${field}": ${JSON.stringify(line[field])}`);
 });
 
@@ -689,7 +684,7 @@ Then("the scripted judge was asked {int} questions, each with nothing of the oth
 Then(
   "the line for {string} and {string} gives the outcome {string}, the verdict {string}, the quoted words {string}, and the agreement {int} agreeing of {int} valid",
   function (this: Context, situation: string, key: string, outcome: string, verdict: string, quoted: string, agreeing: number, valid: number) {
-    const line = theLine(this, situation, key);
+    const line = lineFor(this, situation, key);
     assert.equal(line.outcome, outcome);
     assert.equal(line.verdict, verdict);
     assert.equal(line.quoted, quoted);
@@ -750,7 +745,7 @@ Then("its tokens and cost are the sums of its answers'", function (this: Context
 Then(
   "the line for {string} and {string} gives the verdict {string} and the agreement {int} agreeing of {int} valid",
   function (this: Context, situation: string, key: string, verdict: string, agreeing: number, valid: number) {
-    const line = theLine(this, situation, key);
+    const line = lineFor(this, situation, key);
     assert.equal(line.verdict, verdict);
     assertAgreement(line, agreeing, valid);
   },
@@ -759,7 +754,7 @@ Then(
 Then(
   "the line for {string} and {string} gives the outcome {string}, the verdict {string} and the agreement {int} agreeing of {int} valid",
   function (this: Context, situation: string, key: string, outcome: string, verdict: string, agreeing: number, valid: number) {
-    const line = theLine(this, situation, key);
+    const line = lineFor(this, situation, key);
     assert.equal(line.outcome, outcome);
     assert.equal(line.verdict, verdict);
     assertAgreement(line, agreeing, valid);
@@ -776,7 +771,7 @@ Then("its first answer gives the outcome {string} and the message {string}", fun
 Then(
   "the line for {string} and {string} gives the outcome {string}, no verdict, no quoted words, and the agreement {int} agreeing of {int} valid",
   function (this: Context, situation: string, key: string, outcome: string, agreeing: number, valid: number) {
-    const line = theLine(this, situation, key);
+    const line = lineFor(this, situation, key);
     assert.equal(line.outcome, outcome);
     assert.equal(line.verdict, null);
     assert.equal(line.quoted, null);
@@ -792,14 +787,14 @@ Then("its answers give the outcomes {string}, {string} and {string}", function (
 });
 
 Then("the line for {string} and {string} gives the outcome {string}, no verdict and no agreement", function (this: Context, situation: string, key: string, outcome: string) {
-  const line = theLine(this, situation, key);
+  const line = lineFor(this, situation, key);
   assert.equal(line.outcome, outcome);
   assert.equal(line.verdict, null);
   assert.equal(line.agreement, null);
 });
 
 Then("the line for {string} and {string} gives the verdict {string}, no answers and no agreement", function (this: Context, situation: string, key: string, verdict: string) {
-  const line = theLine(this, situation, key);
+  const line = lineFor(this, situation, key);
   assert.equal(line.verdict, verdict);
   assert.equal(line.answers, null);
   assert.equal(line.agreement, null);
@@ -857,19 +852,19 @@ Then("the third call was asked at least {int} milliseconds after the first", fun
 });
 
 Then("the line for {string} and {string} gives the outcome {string} and its answer gives {int} retry/retries", function (this: Context, situation: string, key: string, outcome: string, count: number) {
-  assert.equal(theLine(this, situation, key).outcome, outcome);
+  assert.equal(lineFor(this, situation, key).outcome, outcome);
   assert.equal(retriesOf(itsAnswer(this)).length, count);
 });
 
 Then("the line for {string} and {string} gives the outcome {string} and its answer gives no retries", function (this: Context, situation: string, key: string, outcome: string) {
-  assert.equal(theLine(this, situation, key).outcome, outcome);
+  assert.equal(lineFor(this, situation, key).outcome, outcome);
   assert.deepEqual(retriesOf(itsAnswer(this)), []);
 });
 
 Then(
   "the line for {string} and {string} gives the outcome {string}, the message {string} and no verdict",
   function (this: Context, situation: string, key: string, outcome: string, message: string) {
-    const line = theLine(this, situation, key);
+    const line = lineFor(this, situation, key);
     assert.equal(line.outcome, outcome);
     assert.equal(line.message, message);
     assert.equal(line.verdict, null);
