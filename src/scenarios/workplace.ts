@@ -4,6 +4,7 @@ import type { ToolCall } from "../engine/adapter.ts";
 import type { Component, Cycle, Step } from "../engine/components.ts";
 import type { Configuration, Judgeable, Scenario } from "../engine/scenario.ts";
 import { Random } from "../engine/random.ts";
+import type { Channel } from "../engine/stimuli.ts";
 import type { AgentCall, Effector, LandingCall, LastBy, Sensor, TargetAsSensed, Tool } from "../engine/tools.ts";
 import type { Action, Check } from "../engine/world.ts";
 import { describeUniformRhythm, rhythmChannels, uniformRhythm } from "./rhythm.ts";
@@ -142,6 +143,9 @@ const WORKER = "worker";
 /** The channel of the person who gives the task: its source is that person, and it delivers their first message. */
 const PERSON_CHANNEL = "person";
 
+/** The porter's channel: its source is the porter, and it delivers his call once a round's arrivals are down (FR-WORKPLACE-05). */
+const PORTER_CHANNEL = "porter";
+
 /** The configuration's texts the worker meets, in the order each place joins them. */
 const TEXTS = ["identity", "world_rules", "norms", "rules", "task"] as const;
 
@@ -209,6 +213,8 @@ interface PorterText {
   enters: string;
   drops_in: string;
   rounds: string[];
+  /** What he calls out once he has put a round's arrivals down; a porter without one calls nothing. */
+  call?: string;
 }
 
 /** A world as its text declares it. */
@@ -1249,9 +1255,10 @@ function* walking(person: string, way: readonly { place: string; length: number 
 
 /**
  * The porter's cycle: at each round's time he appears where he enters, carrying that round's arrivals, walks to where he
- * drops them by the shortest way, puts them down, walks back and leaves.
+ * drops them by the shortest way, puts them down, calls out if he has a call, so the worker hears it wherever it is,
+ * walks back and leaves.
  */
-function* porterSteps(now: () => Now): Generator<Step<Workplace>, void, void> {
+function* porterSteps(calls: boolean, now: () => Now): Generator<Step<Workplace>, void, void> {
   const porter = now().state.porter as Porter;
   // A porter with no way between them is refused as the world is built.
   const there = shortestWay(now().state.space, porter.enters, porter.dropsIn) as { place: string; length: number }[];
@@ -1262,6 +1269,7 @@ function* porterSteps(now: () => Now): Generator<Step<Workplace>, void, void> {
     yield* walking(porter.id, there, now);
     const putMs = now().state.settings.durations.put_ms;
     yield { kind: "action", name: `put down ${listed(things)} in "${porter.dropsIn}"`, durationMs: putMs, action: puttingDown(things, porter.dropsIn) };
+    if (calls) yield { kind: "deliver", agent: WORKER, channel: PORTER_CHANNEL };
     yield* walking(porter.id, back, now);
     yield { kind: "action", name: "leave", durationMs: 0, action: leavingTheSpace(porter.id) };
   }
@@ -1294,8 +1302,8 @@ function components(configuration: Configuration): Component<Workplace>[] {
   const porter = (text: PorterText): Component<Workplace> => ({
     name: text.id,
     kind: "world",
-    description: `The porter: at each round (${text.rounds.join(", ")}) he appears in "${text.enters}" carrying that round's arrivals, walks to "${text.drops_in}" by the shortest way, puts them down there, walks back and leaves.`,
-    cycle: () => cycleOf(porterSteps),
+    description: `The porter: at each round (${text.rounds.join(", ")}) he appears in "${text.enters}" carrying that round's arrivals, walks to "${text.drops_in}" by the shortest way, puts them down there, ${text.call === undefined ? "" : "calls out to the worker, "}walks back and leaves.`,
+    cycle: () => cycleOf((now) => porterSteps(text.call !== undefined, now)),
   });
   const visitor = (text: VisitorText): Component<Workplace> => ({
     name: text.id,
@@ -1304,6 +1312,12 @@ function components(configuration: Configuration): Component<Workplace>[] {
     cycle: (random) => cycleOf(visitorSteps(text.id, random)),
   });
   return [...(world.porter === undefined ? [] : [porter(world.porter)]), ...(world.visitors ?? []).map(visitor)];
+}
+
+/** The porter's channel, when the world has a porter with a call: its source is his name, and it delivers his call. */
+function porterChannels(configuration: Configuration): Channel[] {
+  const { porter } = textOf(configuration, "world") as unknown as WorldText;
+  return porter?.call === undefined ? [] : [{ name: PORTER_CHANNEL, source: porter.name, stimulus: porter.call }];
 }
 
 /** The worker's tools, in the order the SPEC gives them: its sensors, then its effectors. */
@@ -1339,6 +1353,7 @@ export const workplaceScenario: Scenario<Workplace> = {
   channels: (configuration) => [
     ...rhythmChannels(configuration),
     { name: PERSON_CHANNEL, source: configuration.task_giver as string, stimulus: textsIn(configuration, "person") },
+    ...porterChannels(configuration),
   ],
   // The person's first message, when a text is placed there.
   firstStimuli: (configuration) => (textsIn(configuration, "person") === "" ? [] : [PERSON_CHANNEL]),
