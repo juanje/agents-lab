@@ -143,11 +143,14 @@ function conditionInventory<State>(
 
 /**
  * The text the agent receives for each outcome a tool gives it: a sensor's success gives what it senses; an effector's
- * outcomes give the texts it declares.
+ * outcomes give the texts it declares, each followed by what its sight sees for the outcomes the sight names.
  */
 function textsOf<State>(tool: Tool<State>): Record<string, string> {
   if (tool.kind === "sensor") return { success: "the part of the world it senses" };
-  return { ...tool.texts };
+  const { sight } = tool;
+  return Object.fromEntries(
+    Object.entries(tool.texts ?? {}).map(([outcome, text]) => [outcome, sight?.outcomes.includes(outcome) ? `${text} (followed by ${sight.of})` : text]),
+  );
 }
 
 /** An inventory in Markdown, as `lab inventory` prints it: a section for each condition. */

@@ -81,6 +81,22 @@ export interface EarlyEnd<State> {
   byStimulus(stimulus: Stimulus, call: AgentCall): boolean;
 }
 
+/**
+ * What an agent sees from where it is as an effector's call ends, which follows the text of some of its outcomes
+ * (FR-TOOL-02, FR-WORKPLACE-08). It is no sensing: it is kept apart, by the effector's name, for the agent's later calls.
+ */
+export interface Sight<State> {
+  /** The outcomes whose text it follows. */
+  outcomes: readonly string[];
+  /** What it is, as the inventory names it, such as "who is in sight". */
+  of: string;
+  /**
+   * What the agent sees, from the state as its call ends: the text that follows the outcome's, after one space, and what
+   * is kept of it, which its effectors' later calls read by the effector's name.
+   */
+  see(state: State, agent: string): { text: string; seen: string };
+}
+
 /** A tool that changes the world through the arbiter. */
 export interface Effector<State> extends Declared<State> {
   kind: "effector";
@@ -105,15 +121,19 @@ export interface Effector<State> extends Declared<State> {
   action?: Action<State, LandingCall>;
   /**
    * The text the agent receives for each outcome of its call's effect, success included, by the outcome; an outcome
-   * without one gives the outcome itself (FR-TOOL-02). It tells the agent only what happened to it, never the world's state.
+   * without one gives the outcome itself (FR-TOOL-02). It tells the agent only what happened to it, never the world's
+   * state, except what its sight follows it with.
    */
   texts?: Readonly<Record<string, string>>;
+  /** What the agent sees as the call ends, which follows the text of the outcomes it names (FR-WORKPLACE-08). */
+  sight?: Sight<State>;
   /**
    * What the agent's last sensing says of the call's target, which it finds from the state as the call starts;
-   * "not_sensed" when that sensing does not show it. `lastBy` gives the agent's last sensing by a sensor, by its name,
-   * whatever it sensed after it, for an effector that reads its target in what one sensor showed.
+   * "not_sensed" when that sensing does not show it, or when the agent has sensed nothing. `lastBy` gives the agent's last
+   * sensing by a sensor, or what an effector's sight last kept, by the tool's name, whatever came after it, for an
+   * effector that reads its target in what one tool showed.
    */
-  readTarget(sensing: Sensing, call: AgentCall, state: State, lastBy: LastBy): TargetAsSensed;
+  readTarget(sensing: Sensing | undefined, call: AgentCall, state: State, lastBy: LastBy): TargetAsSensed;
 }
 
 /** An agent's only interface with the world (FR-TOOL-01). */

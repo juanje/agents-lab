@@ -56,7 +56,7 @@ export const slotTools: readonly Tool<Slots>[] = [
     },
     // Its target is the slot it names, as "look" last showed it.
     readTarget: (sensing, call) => {
-      if (sensing.tool !== "look") return "not_sensed";
+      if (sensing?.tool !== "look") return "not_sensed";
       const seen = (JSON.parse(sensing.result) as Seen[])[takeCall(call).slot - 1];
       return seen === undefined ? "not_sensed" : seen === "held" ? "held" : "free";
     },

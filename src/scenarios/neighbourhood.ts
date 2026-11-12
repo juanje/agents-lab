@@ -122,7 +122,7 @@ const move: Effector<Neighbourhood> = {
   // Its target is the cell at the call's offset from where the resident is now, as its last look showed it, wherever it
   // looked from.
   readTarget: (sensing, call, state) => {
-    if (sensing.tool !== look.name || sensing.takenFrom === undefined) return "not_sensed";
+    if (sensing?.tool !== look.name || sensing.takenFrom === undefined) return "not_sensed";
     const { to } = moveCall(state, call);
     const rows = JSON.parse(sensing.result) as Mark[][];
     const middle = (rows.length - 1) / 2;

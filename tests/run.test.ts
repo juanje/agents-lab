@@ -1329,7 +1329,7 @@ describe("run", () => {
     const glance: Sensor<Slots> = { ...(slotTools[0] as Sensor<Slots>), name: "glance", sense: () => "glanced" };
     const take: Effector<Slots> = {
       ...(slotTools[1] as Effector<Slots>),
-      readTarget: (sensing, _call, _state, lastBy) => (sensing.tool === "glance" && lastBy("look")?.result === "seen" ? "free" : "not_sensed"),
+      readTarget: (sensing, _call, _state, lastBy) => (sensing?.tool === "glance" && lastBy("look")?.result === "seen" ? "free" : "not_sensed"),
     };
     const look: Sensor<Slots> = { ...(slotTools[0] as Sensor<Slots>), sense: () => "seen" };
     const model = new ScriptedModel([

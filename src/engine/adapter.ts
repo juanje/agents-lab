@@ -666,7 +666,7 @@ function definition<State>(
         stop(failure(`agent "${agent}"'s "${tool.name}" call failed`, error));
         throw error;
       }
-      const { outcome, text, takenFrom, ...perceived } = called;
+      const { outcome, text, takenFrom, seen, ...perceived } = called;
       const endedAtMs = performance.now();
       const sensed = tool.kind === "sensor" && outcome === "success";
       // An effector call the tool ran is one that read its target; its record keeps the text its agent received.
@@ -683,6 +683,8 @@ function definition<State>(
         sensings.record(agent, { tool: tool.name, result: text, ...(takenFrom === undefined ? {} : { takenFrom }), atMs: endedAtMs });
         changes.sensed(agent);
       }
+      // What an effector's sight saw is no sensing: the agent's last sensing, and the changes since it, stay as they were.
+      if (seen !== undefined) sensings.sighted(agent, { tool: tool.name, result: seen, atMs: endedAtMs });
       // A failure is marked as one: an agent told that a failure succeeded would act on a world it misreads.
       return { content: [{ type: "text", text }], details: undefined, isError: outcome !== "success" };
     },
@@ -734,6 +736,8 @@ interface CallResult {
   text: string;
   /** For a sensor's call that declares it, where the agent sensed from; kept with the sensing, not in the call's record. */
   takenFrom?: Position;
+  /** For an effector's call whose sight follows its outcome, what the sight kept of what the agent saw (FR-WORKPLACE-08). */
+  seen?: string;
   targetAsSensed?: TargetAsSensed;
   changesSinceSensing?: number | null;
   changesSinceSensingBy?: string[] | null;
@@ -789,7 +793,7 @@ async function perform<State>(
 ): Promise<CallResult> {
   const sensing = sensings.last(call.agent);
   const lastBy = (sensor: string) => sensings.lastBy(call.agent, sensor);
-  const targetAsSensed = tool.kind === "effector" ? (sensing === undefined ? "not_sensed" : tool.readTarget(sensing, call, world.state, lastBy)) : undefined;
+  const targetAsSensed = tool.kind === "effector" ? tool.readTarget(sensing, call, world.state, lastBy) : undefined;
   const durationMs = tool.durationMs(world.state, call);
   if (tool.kind === "effector" && tool.start !== undefined && (tool.start.appliesTo?.(world.state, call) ?? true)) {
     started(start(world, tool.start, call, changes));
@@ -862,7 +866,11 @@ function effect<State>(world: World<State>, effector: Effector<State>, call: Age
   const changesSinceSensingBy = changes.appliedBy(call.agent);
   const applied = effector.action === undefined ? "success" : applyCounted(world, changes, call.agent, effector.action, { ...call, atMs: performance.now() });
   const outcome = applied === "success" ? (endedEarly ?? applied) : applied;
-  return { outcome, text: effector.texts?.[outcome] ?? outcome, changesSinceSensing, changesSinceSensingBy };
+  const text = effector.texts?.[outcome] ?? outcome;
+  if (effector.sight === undefined || !effector.sight.outcomes.includes(outcome)) return { outcome, text, changesSinceSensing, changesSinceSensingBy };
+  // What the agent sees from where it is as its call ends: the world right after its effect, if any, was applied.
+  const sighting = effector.sight.see(world.state, call.agent);
+  return { outcome, text: `${text} ${sighting.text}`, seen: sighting.seen, changesSinceSensing, changesSinceSensingBy };
 }
 
 /** A tool a model is offered for one question: what it is called, what it is for, and what it takes. */
