@@ -5,7 +5,7 @@ import type { Component, Cycle, Step } from "../engine/components.ts";
 import type { Configuration, Judgeable, Scenario } from "../engine/scenario.ts";
 import { Random } from "../engine/random.ts";
 import type { Channel } from "../engine/stimuli.ts";
-import type { AgentCall, Effector, LandingCall, LastBy, Sensor, TargetAsSensed, Tool } from "../engine/tools.ts";
+import type { AgentCall, Effector, LandingCall, LastBy, Sensor, Sight, TargetAsSensed, Tool } from "../engine/tools.ts";
 import type { Action, Check } from "../engine/world.ts";
 import { describeUniformRhythm, rhythmChannels, uniformRhythm } from "./rhythm.ts";
 
@@ -630,14 +630,24 @@ interface Shown {
   inside?: Shown[];
 }
 
-/** What look gives, as JSON. */
-interface Seen {
+/** A person as look shows them: their id and name. */
+interface ShownPerson {
+  id: string;
+  name: string;
+}
+
+/** Who the worker sees from its place: the people in it, and those in each passage that leaves it and holds someone. */
+interface InSight {
   place: string;
+  people: ShownPerson[];
+  passages: { to: string; people: ShownPerson[] }[];
+}
+
+/** What look gives, as JSON. */
+interface Seen extends InSight {
   exits: { place: string; length: number }[];
   things: Shown[];
-  people: { id: string; name: string }[];
   holding: Shown[];
-  passages: { to: string; people: { id: string; name: string }[] }[];
 }
 
 /** A thing as look shows it. */
@@ -649,8 +659,44 @@ function shown(state: Workplace, thing: string): Shown {
 }
 
 /** The people among these entities, as look shows them. */
-function peopleAmong(state: Workplace, entities: readonly string[]): { id: string; name: string }[] {
+function peopleAmong(state: Workplace, entities: readonly string[]): ShownPerson[] {
   return entities.filter((entity) => Object.hasOwn(state.people, entity)).map((id) => ({ id, name: state.people[id].name }));
+}
+
+/** Who the worker sees from its place, as look shows it (FR-WORKPLACE-02, FR-SPACE-03). */
+function inSight(state: Workplace, agent: string): InSight {
+  const place = hereOf(state, agent);
+  return {
+    place,
+    people: peopleAmong(state, entitiesIn(state.space, place)),
+    passages: exits(state.space, place)
+      .map(({ place: to }) => ({ to, people: peopleAmong(state, entitiesInPassage(state.space, place, to)) }))
+      .filter(({ people }) => people.length > 0),
+  };
+}
+
+/** People as the worker is told of them, each by name and id. */
+const named = (people: readonly ShownPerson[]): string => people.map(({ id, name }) => `${name} (${id})`).join("; ");
+
+/** Who is in sight, as the worker is told of it: who is here, or that nobody is, then who is in each passage. */
+function toldInSight({ people, passages }: InSight): string {
+  const here = people.length === 0 ? "Nobody is here." : `Here: ${named(people)}.`;
+  return [here, ...passages.map(({ to, people: inPassage }) => `In the passage to ${to}: ${named(inPassage)}.`)].join(" ");
+}
+
+/**
+ * Who is in sight as a go or a wait ends, which follows its text (FR-WORKPLACE-08): the people look would show at that
+ * moment, and no things. It is kept as JSON, which give reads its person in.
+ */
+function whoIsInSight(outcomes: readonly string[]): Sight<Workplace> {
+  return {
+    outcomes,
+    of: "who is in sight",
+    see: (state, agent) => {
+      const seen = inSight(state, agent);
+      return { text: toldInSight(seen), seen: JSON.stringify(seen) };
+    },
+  };
 }
 
 /** The text a sensor gives for a thing the worker cannot reach. */
@@ -674,17 +720,16 @@ const look: Sensor<Workplace> = {
   parameters: { type: "object", properties: {} },
   durationMs: (state) => state.settings.durations.look_ms,
   sense: (state, agent) => {
-    const place = hereOf(state, agent);
-    const here = entitiesIn(state.space, place);
+    const { place, people, passages } = inSight(state, agent);
     const seen: Seen = {
       place,
       exits: exits(state.space, place),
-      things: here.filter((entity) => Object.hasOwn(state.things, entity)).map((thing) => shown(state, thing)),
-      people: peopleAmong(state, here),
+      things: entitiesIn(state.space, place)
+        .filter((entity) => Object.hasOwn(state.things, entity))
+        .map((thing) => shown(state, thing)),
+      people,
       holding: heldBy(state, agent).map((thing) => shown(state, thing)),
-      passages: exits(state.space, place)
-        .map(({ place: to }) => ({ to, people: peopleAmong(state, entitiesInPassage(state.space, place, to)) }))
-        .filter(({ people }) => people.length > 0),
+      passages,
     };
     return JSON.stringify(seen);
   },
@@ -762,6 +807,20 @@ function lastLook(lastBy: LastBy, state: Workplace, agent: string): Seen | undef
   return seen.place === hereOf(state, agent) ? seen : undefined;
 }
 
+/**
+ * Who the worker last saw: the later of its last look and its last go or wait that named who was there, each counted
+ * only when taken where the worker is now; none when none was (FR-WORKPLACE-08).
+ */
+function lastInSight(lastBy: LastBy, state: Workplace, agent: string): InSight | undefined {
+  const here = hereOf(state, agent);
+  const kept = [look.name, go.name, wait.name].flatMap((tool) => {
+    const last = lastBy(tool);
+    const seen = last === undefined ? undefined : (JSON.parse(last.result) as InSight);
+    return last === undefined || seen?.place !== here ? [] : [{ atMs: last.atMs, seen }];
+  });
+  return kept.reduce<{ atMs: number; seen: InSight } | undefined>((latest, each) => (latest === undefined || each.atMs > latest.atMs ? each : latest), undefined)?.seen;
+}
+
 /** Every thing a look shows, wherever: in the place, inside a container there, or in the worker's hands. */
 function shownIds(seen: Seen): string[] {
   const ids = (things: readonly Shown[]): string[] => things.flatMap((thing) => [thing.id, ...ids(thing.inside ?? [])]);
@@ -828,6 +887,7 @@ const go: Effector<Workplace> = {
     [INVALID_TARGET]: "There is no passage from here to that place; you have not moved.",
     [ALREADY_THERE]: "You are already there; you have not moved.",
   },
+  sight: whoIsInSight(["success"]),
   // Its target is the place, among the exits of the worker's last look.
   readTarget: (_sensing, call, state, lastBy) => {
     const seen = lastLook(lastBy, state, call.agent);
@@ -970,8 +1030,9 @@ const give: Effector<Workplace> = {
     [NOT_HELD]: "You are not holding it; you have given nothing.",
     [NOT_HERE]: "That person is not here; you are still holding it.",
   },
+  // Its target is the person, in the later of the last look and the last arrival or wait that named who was there.
   readTarget: (_sensing, call, state, lastBy) => {
-    const seen = lastLook(lastBy, state, call.agent);
+    const seen = lastInSight(lastBy, state, call.agent);
     return seen?.people.some(({ id }) => id === call.arguments.person) ? "free" : "not_sensed";
   },
 };
@@ -1049,6 +1110,7 @@ const wait: Effector<Workplace> = {
     byStimulus: () => true,
   },
   texts: { success: "You have waited.", [INTERRUPTED]: "Something happened where you are; you stopped waiting." },
+  sight: whoIsInSight(["success", INTERRUPTED]),
   // It has no target.
   readTarget: () => "not_sensed",
 };
