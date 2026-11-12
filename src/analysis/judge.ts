@@ -18,8 +18,14 @@ export interface JudgeFile {
   instructions: { path: string; hash: string; text: string };
   /** How long each model call may run, in milliseconds. */
   timeoutMs: number;
-  /** How many questions the judge asks at once. */
+  /** How many calls the judge makes at once. */
   parallelQuestions: number;
+  /** How many times each question with texts is asked, each time its own call (FR-ANALYSIS-03): an odd number. */
+  repeats: number;
+  /** How many times a call the provider answers with a rate limit or a 5xx is asked again (FR-ANALYSIS-03). */
+  retries: number;
+  /** The wait before the first retry of a call, in milliseconds, doubling with each retry. */
+  retryWaitMs: number;
   /** The wording that ends each question, by what it asks, with the hash of that wording. */
   questions: Record<Judgeable["asks"], { text: string; hash: string }>;
 }
@@ -35,9 +41,10 @@ const hashOf = (text: string) => `sha256:${createHash("sha256").update(text).dig
 /**
  * Reads a judge file: its `model`, its `thinking_level`, its `instructions`, a material read from beside the file, and
  * its `timeout_ms` for each call, every one required, and, optionally, `questions.says` and `questions.reveals`, each a
- * text or a material, in place of the default questions, and `parallel_questions`, how many questions are asked at once
- * (1 by default). A field that is missing or of another kind, and a material
- * whose file does not exist, are refused, naming them.
+ * text or a material, in place of the default questions, `parallel_questions`, how many calls are made at once (1 by
+ * default), `repeats`, how many times each question is asked, an odd number (1 by default), `retries`, how many times a
+ * call is retried (0 by default), and `retry_wait_ms`, the first retry's wait (1000 by default). A field that is missing
+ * or of another kind or out of its range, and a material whose file does not exist, are refused, naming them.
  */
 export function readJudgeFile(path: string): JudgeFile {
   const file = parse(readFileSync(path, "utf8"));
@@ -53,13 +60,19 @@ export function readJudgeFile(path: string): JudgeFile {
   const read = new Materials(dirname(path)).read(reference);
   if (read === undefined) throw new Error(`The judge file "${path}"'s instructions "${reference.path}" do not exist`);
   const timeoutMs = given("timeout_ms", (value) => Number.isInteger(value) && (value as number) >= 1, "a whole number of milliseconds of at least 1") as number;
-  const parallelQuestions = Object.hasOwn(file, "parallel_questions")
-    ? (given("parallel_questions", (value) => Number.isInteger(value) && (value as number) >= 1, "a whole number of at least 1") as number)
-    : 1;
+  /** A whole number the file can give, of at least `least`, or its default. */
+  const wholeNumber = (field: string, least: number, byDefault: number, holds: (value: number) => boolean = () => true, expected = "") =>
+    Object.hasOwn(file, field)
+      ? (given(field, (value) => Number.isInteger(value) && (value as number) >= least && holds(value as number), `a whole number${expected} of at least ${least}`) as number)
+      : byDefault;
+  const parallelQuestions = wholeNumber("parallel_questions", 1, 1);
+  const repeats = wholeNumber("repeats", 1, 1, (value) => value % 2 === 1, ", odd,");
+  const retries = wholeNumber("retries", 0, 0);
+  const retryWaitMs = wholeNumber("retry_wait_ms", 1, 1000);
   const givenQuestions = file.questions ?? {};
   if (!isTable(givenQuestions)) throw new Error(`The judge file "${path}"'s field "questions" must be a table, as [questions]`);
   const questions = { says: wordingOf("says"), reveals: wordingOf("reveals") };
-  return { model, thinkingLevel, instructions: { path: reference.path, ...read }, timeoutMs, parallelQuestions, questions };
+  return { model, thinkingLevel, instructions: { path: reference.path, ...read }, timeoutMs, parallelQuestions, repeats, retries, retryWaitMs, questions };
 
   /** The wording of a question the file gives, a text or a material, or its default, with the hash of the wording. */
   function wordingOf(asks: Judgeable["asks"]): { text: string; hash: string } {
