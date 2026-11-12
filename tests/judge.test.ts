@@ -542,3 +542,85 @@ describe("judgeRuns, with repeats", () => {
     expect(model.received).toHaveLength(3);
   });
 });
+
+describe("judgeRuns, with retries", () => {
+  const scenarios = new Map([["judging", judging]]);
+  const resolving = (model: AgentModel) => async () => model;
+  const yes: ScriptedAnswer = { toolCalls: [{ name: "verdict", arguments: { verdict: "yes", quoted: "came in open", reason: "It says so." } }], delayMs: 0 };
+  const failing = (error: string): ScriptedAnswer => ({ error, delayMs: 0 });
+
+  /** The box's line of one judge run, whose said the scripted judge answers so, and when each call was asked. */
+  async function boxLine(answers: ScriptedAnswer[], settings: string[]): Promise<{ line: Record<string, unknown>; model: ScriptedModel }> {
+    const directory = judgeDirectory([...JUDGE_FILE.slice(0, 3), "timeout_ms = 100", ...settings]);
+    const runsDirectory = runsDirectoryOf(directory, [{ runId: "run-1", status: "completed", notes: ["The box came in open."] }]);
+    const model = new ScriptedModel(answers);
+    await judgeRuns(runsDirectory, join(directory, "judge.toml"), scenarios, resolving(model));
+    return { line: bySituation(judgementFiles(runsDirectory)[0], "box")[0], model };
+  }
+
+  it("asks a call the provider answers with a 5xx again after the wait, doubling it, and gives each retry", async () => {
+    const started = performance.now();
+    const { line, model } = await boxLine([failing("502 Bad Gateway"), failing("OpenAI API error (503): unavailable"), yes], ["retries = 2", "retry_wait_ms = 50"]);
+
+    expect(performance.now() - started).toBeGreaterThanOrEqual(150);
+    expect(model.received).toHaveLength(3);
+    expect(line).toMatchObject({ outcome: "success", verdict: "yes" });
+    const [answer] = line.answers as Record<string, unknown>[];
+    expect(answer.retries).toEqual([
+      { attempt: 1, waitMs: 50, message: "502 Bad Gateway" },
+      { attempt: 2, waitMs: 100, message: "OpenAI API error (503): unavailable" },
+    ]);
+  });
+
+  it.each([["OpenAI API error (429): rate limit reached"], ["Too many requests"], ["500"], ["HTTP 599: down"]])("retries a provider error %j", async (message) => {
+    const { line } = await boxLine([failing(message), yes], ["retries = 1", "retry_wait_ms = 1"]);
+
+    expect(line).toMatchObject({ outcome: "success", verdict: "yes" });
+    expect((line.answers as Record<string, unknown>[])[0].retries).toEqual([{ attempt: 1, waitMs: 1, message }]);
+  });
+
+  it("gives a model error, with the last call's message, once the retries are spent, and counts every call's tokens", async () => {
+    const { line, model } = await boxLine([failing("502 Bad Gateway"), failing("503 Service Unavailable"), yes], ["retries = 1", "retry_wait_ms = 1"]);
+
+    expect(model.received).toHaveLength(2);
+    expect(line).toMatchObject({ outcome: "model_error", message: "503 Service Unavailable", verdict: null });
+    const [answer] = line.answers as { tokens: { totalTokens: number }; retries: unknown[] }[];
+    expect(answer.retries).toHaveLength(1);
+    const oneCall = (await boxLine([failing("502 Bad Gateway")], [])).line.answers as { tokens: { totalTokens: number } }[];
+    expect(answer.tokens.totalTokens).toBe(2 * oneCall[0].tokens.totalTokens);
+  });
+
+  it.each([
+    ["any other provider error", failing("400 bad request"), "model_error"],
+    ["a status that only looks like a 5xx", failing("error 5023 in the request"), "model_error"],
+    ["a timeout", { ...yes, delayMs: 1000 }, "timeout"],
+    ["an invalid verdict", { text: "No verdict.", delayMs: 0 }, "invalid_verdict"],
+  ] as [string, ScriptedAnswer, string][])("does not retry %s", async (_case, answer, outcome) => {
+    const { line, model } = await boxLine([answer, yes], ["retries = 2", "retry_wait_ms = 1"]);
+
+    expect(model.received).toHaveLength(1);
+    expect(line.outcome).toBe(outcome);
+    expect((line.answers as Record<string, unknown>[])[0].retries).toEqual([]);
+  });
+
+  it("does not retry without retries", async () => {
+    const { line, model } = await boxLine([failing("502 Bad Gateway"), yes], []);
+
+    expect(model.received).toHaveLength(1);
+    expect(line).toMatchObject({ outcome: "model_error", message: "502 Bad Gateway" });
+  });
+
+  it("holds no slot while a retry waits", async () => {
+    const directory = judgeDirectory([...JUDGE_FILE, "retries = 1", "retry_wait_ms = 300"]);
+    const runsDirectory = runsDirectoryOf(directory, [
+      { runId: "run-1", status: "completed", notes: ["The box came in open."] },
+      { runId: "run-2", status: "completed", notes: ["The box came in shut."] },
+    ]);
+    const model = new ScriptedModel([failing("502 Bad Gateway"), yes, yes]);
+
+    await judgeRuns(runsDirectory, join(directory, "judge.toml"), scenarios, resolving(model));
+
+    // The second run's question is asked while the first's retry waits.
+    expect(model.received.map((received) => (questionOf(received).includes("came in shut") ? "run-2" : "run-1"))).toEqual(["run-1", "run-2", "run-1"]);
+  });
+});
