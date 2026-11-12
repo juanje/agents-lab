@@ -2,7 +2,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { type TomlValue, parse } from "smol-toml";
-import { type AgentModel, type OfferedTool, type OneAnswer, askOnce, assertThinkingLevel } from "../engine/adapter.ts";
+import type { Usage } from "@earendil-works/pi-ai";
+import { type AgentModel, type OfferedTool, type OneAnswer, askOnce, assertThinkingLevel, summed } from "../engine/adapter.ts";
 import { THINKING_LEVELS, type ThinkingLevel } from "../engine/experiment.ts";
 import { JsonlFile } from "../engine/jsonl.ts";
 import { Materials, materialReference, settingAt } from "../engine/materials.ts";
@@ -175,8 +176,49 @@ export function quotedFound(quoted: string, texts: Judgeable["texts"]): boolean 
   });
 }
 
-/** The line of a question the judge did not answer with one valid verdict: its outcome, and no verdict. */
+/** What a question the judge did not answer with one valid verdict gives in place of one: no verdict. */
 const UNANSWERED = { verdict: null, quoted: null, reason: null, quoted_found: null };
+
+/**
+ * One answer of the judge to a question (FR-ANALYSIS-03): its outcome, the provider's message for a `model_error`, its
+ * verdict, quoted words, reason and whether they were found, or none, its tokens and cost, and its retries.
+ */
+interface JudgeAnswer {
+  outcome: OneAnswer["outcome"] | "invalid_verdict";
+  message?: string;
+  verdict: string | null;
+  quoted: string | null;
+  reason: string | null;
+  quoted_found: boolean | null;
+  tokens: OneAnswer["tokens"];
+  cost: OneAnswer["cost"];
+  retries: { attempt: number; waitMs: number; message: string }[];
+}
+
+/**
+ * What a question's answers decide (FR-ANALYSIS-03). The verdict more than half of the valid answers gave, with the
+ * quoted words, reason and `quoted_found` of the first answer that gave it, and the agreement: how many gave it, of how
+ * many valid. Valid answers that split evenly are a `tie`, with no verdict. With no valid answer, the first answer's
+ * outcome, and its message, with no verdict and no agreement.
+ */
+function decided(answers: readonly JudgeAnswer[]) {
+  const valid = answers.filter(({ outcome }) => outcome === "success");
+  if (valid.length === 0) {
+    const [{ outcome, message }] = answers;
+    return { outcome, ...(message === undefined ? {} : { message }), ...UNANSWERED, agreement: null };
+  }
+  const majority = ["yes", "no"].find((verdict) => 2 * valid.filter((answer) => answer.verdict === verdict).length > valid.length);
+  if (majority === undefined) return { outcome: "tie", ...UNANSWERED, agreement: { agreeing: valid.length / 2, valid: valid.length } };
+  const first = valid.find(({ verdict }) => verdict === majority) as JudgeAnswer;
+  const { verdict, quoted, reason, quoted_found } = first;
+  return { outcome: "success", verdict, quoted, reason, quoted_found, agreement: { agreeing: valid.filter((answer) => answer.verdict === majority).length, valid: valid.length } };
+}
+
+/** The tokens and cost of these answers together. */
+function spentOn(answers: readonly Pick<JudgeAnswer, "tokens" | "cost">[]): Pick<JudgeAnswer, "tokens" | "cost"> {
+  const { cost, ...tokens } = answers.map((answer): Usage => ({ ...answer.tokens, cost: answer.cost })).reduce(summed);
+  return { tokens, cost };
+}
 
 /**
  * Judges the completed runs of a runs directory (FR-ANALYSIS-02). It reads the judge file, then each completed run's
@@ -216,44 +258,50 @@ export async function judgeRuns(
   const file = JsonlFile.create(path);
   const judged = { model: judge.model, thinkingLevel: judge.thinkingLevel, instructionsHash: judge.instructions.hash };
   const limit = new ParallelismLimit(judge.parallelQuestions);
-  /**
-   * Asks one question, once a slot is free, and writes its line as its answer comes. A question without texts takes a
-   * slot too, so with one slot the lines keep the questions' order.
-   */
-  const ask = async (question: Question): Promise<void> => {
+  const { repeats } = judge;
+  /** Runs one step that holds a slot, once one is free. */
+  const inSlot = async <T>(step: () => Promise<T>): Promise<T> => {
     const free = await limit.acquire();
     try {
-      await judgeQuestion(question);
+      return await step();
     } finally {
       free();
     }
   };
-  /** Asks one question, or answers it "no" when it has no texts, and writes its line. */
+  /** Asks a question once, in a call of its own that holds a slot, and gives the answer. */
+  const answerTo = async (question: Question, wording: string): Promise<JudgeAnswer> => {
+    const answer = await inSlot(() =>
+      askOnce(agentModel, { systemPrompt: judge.instructions.text, thinkingLevel: judge.thinkingLevel, timeoutMs: judge.timeoutMs }, VERDICT, questionOf(question, wording)),
+    );
+    const spent = { tokens: answer.tokens, cost: answer.cost, retries: [] };
+    if (answer.outcome !== "success") {
+      const message = answer.message === undefined ? {} : { message: answer.message };
+      return { outcome: answer.outcome, ...message, ...UNANSWERED, ...spent };
+    }
+    const verdict = verdictOf(answer);
+    if (verdict === undefined) return { outcome: "invalid_verdict", ...UNANSWERED, ...spent };
+    return { outcome: "success", ...verdict, quoted_found: quotedFound(verdict.quoted, question.texts), ...spent };
+  };
+  /**
+   * Asks one question `repeats` times, or answers it "no" when it has no texts, with no call and so no slot, and writes
+   * its line once all its answers are in.
+   */
   const judgeQuestion = async (question: Question): Promise<void> => {
     const { runId, situation, key, texts } = question;
     const wording = judge.questions[question.asks];
     const settings = { ...judged, questionHash: wording.hash };
     if (texts.length === 0) {
-      file.write({ runId, situation, key, outcome: "success", verdict: "no", quoted: null, reason: "no text on the channel", quoted_found: null, ...settings, tokens: null, cost: null });
+      const line = { runId, situation, key, outcome: "success", verdict: "no", quoted: null, reason: "no text on the channel", quoted_found: null, ...settings, tokens: null, cost: null };
+      file.write({ ...line, repeats, answers: null, agreement: null });
       return;
     }
-    const answer = await askOnce(agentModel, { systemPrompt: judge.instructions.text, thinkingLevel: judge.thinkingLevel, timeoutMs: judge.timeoutMs }, VERDICT, questionOf(question, wording.text));
-    const spent = { tokens: answer.tokens, cost: answer.cost };
-    if (answer.outcome !== "success") {
-      const message = answer.message === undefined ? {} : { message: answer.message };
-      file.write({ runId, situation, key, outcome: answer.outcome, ...message, ...UNANSWERED, ...settings, ...spent });
-      return;
-    }
-    const verdict = verdictOf(answer);
-    if (verdict === undefined) {
-      file.write({ runId, situation, key, outcome: "invalid_verdict", ...UNANSWERED, ...settings, ...spent });
-      return;
-    }
-    file.write({ runId, situation, key, outcome: "success", ...verdict, quoted_found: quotedFound(verdict.quoted, texts), ...settings, ...spent });
+    const answers = await Promise.all(Array.from({ length: repeats }, () => answerTo(question, wording.text)));
+    const { agreement, ...decision } = decided(answers);
+    file.write({ runId, situation, key, ...decision, ...settings, ...spentOn(answers), repeats, answers, agreement });
   };
   try {
     // Every question settles before the file closes, so none writes to it closed; the first failure, if any, is thrown.
-    const failed = (await Promise.allSettled(questions.map(ask))).find((settled) => settled.status === "rejected");
+    const failed = (await Promise.allSettled(questions.map(judgeQuestion))).find((settled) => settled.status === "rejected");
     if (failed !== undefined) throw failed.reason;
   } finally {
     file.close();

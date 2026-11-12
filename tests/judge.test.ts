@@ -191,6 +191,9 @@ function judgementFiles(runsDirectory: string): Record<string, unknown>[][] {
   );
 }
 
+/** The lines of a judgements file for these situations, in that order, whatever order the file gives them in. */
+const bySituation = (lines: Record<string, unknown>[], ...situations: string[]) => situations.map((situation) => lines.find((line) => line.situation === situation) as Record<string, unknown>);
+
 /** The text of every message but the system prompt a call received. */
 const questionOf = (messages: readonly Message[]) => JSON.stringify(messages.filter((message) => message.role !== "system"));
 
@@ -210,7 +213,7 @@ describe("judgeRuns", () => {
 
     const [lines] = judgementFiles(runsDirectory);
     const settings = { model: "scripted/judge", thinkingLevel: "off", instructionsHash: hashOf("You judge.\n"), questionHash: hashOf(SAYS) };
-    expect(lines).toEqual([
+    expect(lines).toEqual(expect.arrayContaining([
       {
         runId: "run-1",
         situation: "box",
@@ -239,7 +242,8 @@ describe("judgeRuns", () => {
         agreement: { agreeing: 1, valid: 1 },
       },
       { runId: "run-1", situation: "jar", key: "said", outcome: "success", verdict: "no", quoted: null, reason: "no text on the channel", quoted_found: null, ...settings, tokens: null, cost: null, repeats: 1, answers: null, agreement: null },
-    ]);
+    ]));
+    expect(lines).toHaveLength(2);
     expect(model.received).toHaveLength(1);
   });
 
@@ -266,7 +270,7 @@ describe("judgeRuns", () => {
 
     expect(questionOf(model.received[0])).toMatch(/Would the keeper know it\?"/);
     expect(questionOf(model.received[0])).not.toContain(SAYS);
-    const [[box, jar]] = judgementFiles(runsDirectory);
+    const [box, jar] = bySituation(judgementFiles(runsDirectory)[0], "box", "jar");
     expect(box.questionHash).toBe(hashOf("Would the keeper know it?"));
     expect(jar.questionHash).toBe(hashOf("Would the keeper know it?"));
   });
@@ -333,7 +337,7 @@ describe("judgeRuns", () => {
 
     await judgeRuns(runsDirectory, join(directory, "judge.toml"), scenarios, resolving(judgeModel([{ verdict: "yes", quoted, reason: "It says so." }])));
 
-    expect(judgementFiles(runsDirectory)[0][0].quoted_found).toBe(found);
+    expect(bySituation(judgementFiles(runsDirectory)[0], "box")[0].quoted_found).toBe(found);
   });
 
   it.each([
@@ -348,7 +352,7 @@ describe("judgeRuns", () => {
 
     await judgeRuns(runsDirectory, join(directory, "judge.toml"), scenarios, resolving(new ScriptedModel(answers)));
 
-    const [[box, jar]] = judgementFiles(runsDirectory);
+    const [box, jar] = bySituation(judgementFiles(runsDirectory)[0], "box", "jar");
     expect(box).toMatchObject({ runId: "run-1", situation: "box", key: "said", outcome, verdict: null, quoted: null, reason: null, quoted_found: null });
     expect(box.tokens).not.toBeNull();
     expect(jar).toMatchObject({ situation: "jar", outcome: "success", verdict: "no" });
@@ -360,7 +364,7 @@ describe("judgeRuns", () => {
 
     await judgeRuns(runsDirectory, join(directory, "judge.toml"), scenarios, resolving(new ScriptedModel([{ error: "overloaded", delayMs: 0 }])));
 
-    expect(judgementFiles(runsDirectory)[0][0]).toMatchObject({ outcome: "model_error", message: "overloaded" });
+    expect(bySituation(judgementFiles(runsDirectory)[0], "box")[0]).toMatchObject({ outcome: "model_error", message: "overloaded" });
   });
 
   it("asks up to parallel_questions questions at once, each its own call", async () => {

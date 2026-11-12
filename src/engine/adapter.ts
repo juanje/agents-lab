@@ -369,7 +369,7 @@ class Compactions {
 const NO_USAGE: Usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
 
 /** The tokens and cost of two calls together: each count of either, summed. */
-function summed(one: Usage, other: Usage): Usage {
+export function summed(one: Usage, other: Usage): Usage {
   return { ...countsAdded(one, other), cost: countsAdded(one.cost, other.cost) } as unknown as Usage;
 }
 
