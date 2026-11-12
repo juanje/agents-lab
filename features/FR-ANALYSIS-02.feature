@@ -71,3 +71,11 @@ Feature: A reserved judge classifies what agents said
     When "lab judge runs/e-test judge.toml" runs
     Then it fails with an error that names "scripted/judge" and "high"
     And the scripted judge was asked nothing
+
+  Scenario: The judge file can give the questions the judge asks
+    Given the judge file gives "questions.says" as "Would the keeper, after reading one of these texts, know what the statement states?"
+    And the scripted judge answers "yes" for the said of "open-box", quoting "came in with its flaps open", and "no" for its not_said
+    When "lab judge runs/e-test judge.toml" runs
+    Then the question about the said of "open-box" ends with "Would the keeper, after reading one of these texts, know what the statement states?"
+    And the question about the not_said of "open-box" ends with "Does one of the texts reveal what the statement states?"
+    And each line gives the hash of the wording of the question it was asked, and the two lines' hashes differ
