@@ -805,6 +805,70 @@ describe("the workplace's tools", () => {
     });
   });
 
+  describe("who the worker sees as a go or a wait ends", () => {
+    const sight = (name: string) => {
+      const declared = effector(name).sight;
+      if (declared === undefined) throw new Error(`"${name}" declares no sight`);
+      return declared;
+    };
+    const office = () => inPlace(start(), "office");
+    /** The state with another person in a place, after those already there. */
+    const withPerson = (state: Workplace, id: string, name: string, place: string): Workplace => ({
+      ...state,
+      people: { ...state.people, [id]: { name, description: "Another visitor." } },
+      space: put(state.space, id, place),
+    });
+
+    it("follows go's success, and wait's success and interrupted, with who is in sight; nothing follows go's failures", () => {
+      expect({ outcomes: sight("go").outcomes, of: sight("go").of }).toEqual({ outcomes: ["success"], of: "who is in sight" });
+      expect({ outcomes: sight("wait").outcomes, of: sight("wait").of }).toEqual({ outcomes: ["success", "interrupted"], of: "who is in sight" });
+    });
+
+    it("names the people in the worker's place, by name and id, in the order look gives them, and no things", () => {
+      const two = withPerson(office(), "bob", "Bob", "office");
+      const shown = (JSON.parse(sensor("look").sense(two, "worker", {}, 0)) as { people: { id: string }[] }).people.map(({ id }) => id);
+
+      expect(shown).toEqual(["ana", "bob"]);
+      expect(sight("go").see(two, "worker").text).toBe("Here: Ana (ana); Bob (bob).");
+      expect(sight("wait").see(office(), "worker").text).toBe("Here: Ana (ana).");
+    });
+
+    it("says nobody is here when the place holds no person, then names the people in each passage that leaves it", () => {
+      const leaving = { ...start(), space: leave.effect(start().space, { entity: "ana", towards: "hall" }) };
+
+      expect(sight("go").see(start(), "worker").text).toBe("Nobody is here.");
+      expect(sight("go").see(leaving, "worker").text).toBe("Nobody is here. In the passage to office: Ana (ana).");
+      expect(sight("go").see(withPerson(leaving, "bob", "Bob", "hall"), "worker").text).toBe("Here: Bob (bob). In the passage to office: Ana (ana).");
+    });
+
+    describe("give reads its person in the later of the last look taken where the worker is now and the last go or wait that ended there", () => {
+      const looked = (state: Workplace, atMs: number) => ({ tool: "look", result: sensor("look").sense(state, "worker", {}, 0), atMs });
+      const sighted = (tool: string, state: Workplace, atMs: number) => ({ tool, result: sight(tool).see(state, "worker").seen, atMs });
+      const giving = call({ thing: "key", person: "ana" });
+      const lastBy = (...kept: { tool: string; result: string; atMs: number }[]) => (tool: string) => kept.find((each) => each.tool === tool);
+      const gone = { ...office(), space: leave.effect(office().space, { entity: "ana", towards: "hall" }) };
+
+      it("free when an arrival there showed the person, with no look at all", () => {
+        expect(effector("give").readTarget(undefined, giving, office(), lastBy(sighted("go", office(), 1)))).toBe("free");
+        expect(effector("give").readTarget(undefined, giving, office(), lastBy(sighted("wait", office(), 1)))).toBe("free");
+      });
+
+      it("not_sensed when the later of the look and the arrival did not show the person in the worker's place", () => {
+        const look = looked(office(), 1);
+
+        expect(effector("give").readTarget(look, giving, office(), lastBy(look, sighted("go", gone, 2)))).toBe("not_sensed");
+        expect(effector("give").readTarget(look, giving, office(), lastBy(look, sighted("wait", gone, 2)))).toBe("not_sensed");
+        expect(effector("give").readTarget(look, giving, office(), lastBy(looked(gone, 3), sighted("go", office(), 2)))).toBe("not_sensed");
+        expect(effector("give").readTarget(look, giving, office(), lastBy(looked(gone, 1), sighted("go", office(), 2)))).toBe("free");
+      });
+
+      it("reads nothing of an arrival or a wait that ended in another place", () => {
+        expect(effector("give").readTarget(undefined, giving, office(), lastBy(sighted("go", start(), 1)))).toBe("not_sensed");
+        expect(effector("give").readTarget(looked(office(), 1), giving, office(), lastBy(looked(office(), 1), sighted("wait", start(), 2)))).toBe("free");
+      });
+    });
+  });
+
   describe("read their targets in the worker's last look, taken where it is now", () => {
     const looked = (state: Workplace) => ({ tool: "look", result: sensor("look").sense(state, "worker", {}, 0), atMs: 0 });
 
