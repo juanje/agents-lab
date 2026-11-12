@@ -684,10 +684,23 @@ const look: Sensor<Workplace> = {
   },
 };
 
-/** The text on a thing the worker can reach, or none. */
-function textOn(state: Workplace, agent: string, thing: string): string | undefined {
-  return isReachable(state, agent, thing) ? state.things[thing].text : undefined;
+/** The time the depot's clocks showed when something was written, by `performance.now()`, as a line of the book gives it. */
+type ShownAt = (atMs: number) => string;
+
+/**
+ * The text on a thing the worker can reach, or none. The book's is its text followed by each entry recorded so far, on
+ * its own line with the time the clocks showed when it was written.
+ */
+function textOn(state: Workplace, agent: string, thing: string, shownAt: ShownAt): string | undefined {
+  if (!isReachable(state, agent, thing)) return undefined;
+  const { text } = state.things[thing];
+  if (thing !== state.settings.book) return text;
+  const lines = [...(text === undefined ? [] : [text]), ...state.book.map(({ entry, atMs }) => `${shownAt(atMs)} ${entry}`)];
+  return lines.length === 0 ? undefined : lines.join("\n");
 }
+
+/** A clock time is one word, whatever time it shows, so a read's duration counts it before the clocks show it. */
+const ANY_TIME: ShownAt = () => "00:00";
 
 /** "read thing": the text on a thing in the worker's place, in a container there or in its hands. */
 const read: Sensor<Workplace> = {
@@ -697,11 +710,13 @@ const read: Sensor<Workplace> = {
   parameters: THING_PARAMETERS,
   durationMs: (state, call) => {
     const { look_ms: lookMs, ms_per_word: msPerWord } = state.settings.durations;
-    return Math.max(lookMs, msPerWord * words(textOn(state, call.agent, thingOf(call.arguments)) ?? ""));
+    return Math.max(lookMs, msPerWord * words(textOn(state, call.agent, thingOf(call.arguments), ANY_TIME) ?? ""));
   },
-  sense: (state, agent, args) => {
+  sense: (state, agent, args, sinceStartMs) => {
     if (!isReachable(state, agent, thingOf(args))) return NOT_THERE;
-    return textOn(state, agent, thingOf(args)) ?? "Nothing is written on it.";
+    // The run started this long before now; an entry's moment, by performance.now(), is that much later into the run.
+    const startedAtMs = performance.now() - sinceStartMs;
+    return textOn(state, agent, thingOf(args), (atMs) => clockTime(state.clock, atMs - startedAtMs)) ?? "Nothing is written on it.";
   },
 };
 
