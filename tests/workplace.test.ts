@@ -1001,6 +1001,7 @@ describe("the depot's day", () => {
         sinceStartMs += step.ms;
         continue;
       }
+      if (step.kind === "deliver") continue;
       const startedAtMs = sinceStartMs;
       const landing = (atMs: number): ComponentLanding => ({ component: component.name, atMs });
       if (step.start !== undefined) expect(world.apply(step.start, landing(startedAtMs))).toEqual({ applied: true });
@@ -1218,6 +1219,7 @@ brought_by = "ana"
         sinceStartMs += step.ms;
         continue;
       }
+      if (step.kind === "deliver") continue;
       names.push(`${step.name} at ${Math.round(sinceStartMs)}`);
       state = step.action.effect(state, { component: "ana", atMs: sinceStartMs });
     }

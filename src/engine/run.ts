@@ -241,6 +241,7 @@ async function runAgents<State>(
         clock,
         runEnd: runEnd.signal,
         changes,
+        stimuli,
         record: (action) => recorder.record({ type: "component_action", ...action }),
       }),
     );

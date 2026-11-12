@@ -2,6 +2,7 @@ import { CUT_OFF } from "./adapter.ts";
 import { type ChangesSinceSensing, applyCounted } from "./changes.ts";
 import { type RunClock, waitAtLeast } from "./clock.ts";
 import type { Random } from "./random.ts";
+import type { Stimuli } from "./stimuli.ts";
 import type { Action, World } from "./world.ts";
 
 /** A component's action as it is checked and applied: the component that acts, and the moment it lands, by `performance.now()`. */
@@ -28,11 +29,18 @@ export type Step<State> =
       start?: Action<State, ComponentLanding>;
       action: Action<State, ComponentLanding>;
     }
+  | {
+      /** Delivers a channel's stimulus to an agent as the component takes the step, taking no time (FR-STIMULUS-01). */
+      kind: "deliver";
+      agent: string;
+      channel: string;
+    }
   | { kind: "end" };
 
 /**
  * A component's life cycle in one run: it chooses each next step from the world's state, the outcome of the step before,
- * when that was an action (undefined before its first step and after a wait), and the time since the run started.
+ * when that was an action (undefined before its first step and after a wait or a delivery), and the time since the run
+ * started.
  */
 export interface Cycle<State> {
   next(state: State, outcome: string | undefined, sinceStartMs: number): Step<State>;
@@ -71,17 +79,20 @@ export interface ComponentRun<State> {
   /** Aborts when the run ends: its time limit passes (FR-CLOCK-02) or it stops on an error. */
   runEnd: AbortSignal;
   changes: ChangesSinceSensing;
+  /** The run's stimuli, through whose channels a component delivers its own. */
+  stimuli: Stimuli;
   record(action: ComponentAction): void;
 }
 
 /**
- * Runs a component's cycle until it ends or the run does. An action's start, if it has one, is applied as it starts and
+ * Runs a component's cycle until it ends or the run does. A delivery hands its stimulus to the run's stimuli at once,
+ * which record it, and is no action. An action's start, if it has one, is applied as it starts and
  * counted by the component's name among the changes since sensing. Each action takes its duration, then is checked and applied
  * through the arbiter against the world as it is then, as an effector's is (FR-TOOL-04), counted by the component's name
  * among the changes since sensing, and recorded; its cycle learns its outcome before it chooses again. An action the
  * run's end cuts short applies nothing and is recorded `cut_off` (FR-CLOCK-02).
  */
-export async function runComponent<State>(component: Component<State>, { world, random, clock, runEnd, changes, record }: ComponentRun<State>): Promise<void> {
+export async function runComponent<State>(component: Component<State>, { world, random, clock, runEnd, changes, stimuli, record }: ComponentRun<State>): Promise<void> {
   const cycle = component.cycle(random);
   let outcome: string | undefined;
   while (!runEnd.aborted) {
@@ -90,6 +101,10 @@ export async function runComponent<State>(component: Component<State>, { world, 
     if (step.kind === "end") return;
     if (step.kind === "wait") {
       await waitAtLeast(step.ms, runEnd);
+      continue;
+    }
+    if (step.kind === "deliver") {
+      stimuli.deliver(step.agent, step.channel);
       continue;
     }
     const startedAtMs = performance.now();
