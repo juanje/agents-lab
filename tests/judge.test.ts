@@ -36,6 +36,9 @@ describe("readJudgeFile", () => {
       instructions: { path: "materials/judge.md", hash: hashOf("You judge.\n"), text: "You judge.\n" },
       timeoutMs: 2000,
       parallelQuestions: 1,
+      repeats: 1,
+      retries: 0,
+      retryWaitMs: 1000,
       questions: { says: { text: SAYS, hash: hashOf(SAYS) }, reveals: { text: REVEALS, hash: hashOf(REVEALS) } },
     });
   });
@@ -84,6 +87,30 @@ describe("readJudgeFile", () => {
     const directory = judgeDirectory([...JUDGE_FILE, `parallel_questions = ${value}`]);
 
     expect(() => readJudgeFile(join(directory, "judge.toml"))).toThrow(/"parallel_questions"/);
+  });
+
+  it("gives how many times each question is asked, how many times a call is retried, and the first retry's wait", () => {
+    const directory = judgeDirectory([...JUDGE_FILE, "repeats = 3", "retries = 2", "retry_wait_ms = 50"]);
+
+    expect(readJudgeFile(join(directory, "judge.toml"))).toMatchObject({ repeats: 3, retries: 2, retryWaitMs: 50 });
+  });
+
+  it.each([
+    ["repeats", "0"],
+    ["repeats", "-1"],
+    ["repeats", "2"],
+    ["repeats", "1.5"],
+    ["repeats", '"3"'],
+    ["retries", "-1"],
+    ["retries", "1.5"],
+    ["retries", '"1"'],
+    ["retry_wait_ms", "0"],
+    ["retry_wait_ms", "2.5"],
+    ["retry_wait_ms", '"50"'],
+  ])("refuses a %s of %s, naming it", (field, value) => {
+    const directory = judgeDirectory([...JUDGE_FILE, `${field} = ${value}`]);
+
+    expect(() => readJudgeFile(join(directory, "judge.toml"))).toThrow(`"${field}"`);
   });
 
   it("refuses a timeout that is not a whole number of milliseconds of at least 1, naming it", () => {
