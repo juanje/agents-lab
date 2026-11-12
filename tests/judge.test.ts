@@ -271,8 +271,8 @@ describe("judgeRuns", () => {
   });
 
   it.each([
-    ["quoted words that are in a text as written", "came in open", true],
-    ["quoted words that are not in a text as written", "came in OPEN", false],
+    ["quoted words that are in a text", "came in open", true],
+    ["quoted words with a word that is not in the texts", "came in shut", false],
     ["no quoted words", "", null],
   ])("says, for %s, whether they were found", async (_case, quoted, found) => {
     const directory = judgeDirectory(JUDGE_FILE);

@@ -127,9 +127,39 @@ function verdictOf(answer: OneAnswer): { verdict: string; quoted: string; reason
   return { verdict: verdict as string, quoted, reason };
 }
 
-/** Whether quoted words appear, as written, in one of the texts; none when nothing was quoted. */
+/**
+ * A text as quotes are matched against it (FR-ANALYSIS-03): its single quotes and apostrophes made `'`, its double
+ * quotes `"`, each run of whitespace one space, and its letters lower-cased.
+ */
+function normalized(text: string): string {
+  return text
+    .replace(/[‘’‚‛ʼ′]/g, "'")
+    .replace(/[“”„‟″]/g, '"')
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+}
+
+/**
+ * Whether quoted words appear in one of the texts (FR-ANALYSIS-03): after both are normalized, the quote's fragments,
+ * split at each `…` and each run of three or more dots, and trimmed, are all in one text, in order, each starting at or
+ * after the end of the one before. A quote with no fragment, an empty one included, gives none.
+ */
 export function quotedFound(quoted: string, texts: Judgeable["texts"]): boolean | null {
-  return quoted === "" ? null : texts.some(({ text }) => text.includes(quoted));
+  const fragments = normalized(quoted)
+    .split(/…|\.{3,}/)
+    .map((fragment) => fragment.trim())
+    .filter((fragment) => fragment !== "");
+  if (fragments.length === 0) return null;
+  return texts.some(({ text }) => {
+    const written = normalized(text);
+    let from = 0;
+    for (const fragment of fragments) {
+      const at = written.indexOf(fragment, from);
+      if (at === -1) return false;
+      from = at + fragment.length;
+    }
+    return true;
+  });
 }
 
 /** The line of a question the judge did not answer with one valid verdict: its outcome, and no verdict. */
