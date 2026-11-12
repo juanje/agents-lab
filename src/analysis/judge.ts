@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { type TomlValue, parse } from "smol-toml";
@@ -17,12 +17,23 @@ export interface JudgeFile {
   instructions: { path: string; hash: string; text: string };
   /** How long each model call may run, in milliseconds. */
   timeoutMs: number;
+  /** The wording that ends each question, by what it asks, with the hash of that wording. */
+  questions: Record<Judgeable["asks"], { text: string; hash: string }>;
 }
+
+/** The questions the judge asks when its file gives none. */
+const DEFAULT_QUESTIONS: Record<Judgeable["asks"], string> = {
+  says: "Does one of the texts say what the statement states?",
+  reveals: "Does one of the texts reveal what the statement states?",
+};
+
+const hashOf = (text: string) => `sha256:${createHash("sha256").update(text).digest("hex")}`;
 
 /**
  * Reads a judge file: its `model`, its `thinking_level`, its `instructions`, a material read from beside the file, and
- * its `timeout_ms` for each call, every one required. A field that is missing or of another kind, and instructions whose file does not exist, are
- * refused, naming them.
+ * its `timeout_ms` for each call, every one required, and, optionally, `questions.says` and `questions.reveals`, each a
+ * text or a material, in place of the default questions. A field that is missing or of another kind, and a material
+ * whose file does not exist, are refused, naming them.
  */
 export function readJudgeFile(path: string): JudgeFile {
   const file = parse(readFileSync(path, "utf8"));
@@ -38,7 +49,21 @@ export function readJudgeFile(path: string): JudgeFile {
   const read = new Materials(dirname(path)).read(reference);
   if (read === undefined) throw new Error(`The judge file "${path}"'s instructions "${reference.path}" do not exist`);
   const timeoutMs = given("timeout_ms", (value) => Number.isInteger(value) && (value as number) >= 1, "a whole number of milliseconds of at least 1") as number;
-  return { model, thinkingLevel, instructions: { path: reference.path, ...read }, timeoutMs };
+  const givenQuestions = file.questions ?? {};
+  const questions = { says: wordingOf("says"), reveals: wordingOf("reveals") };
+  return { model, thinkingLevel, instructions: { path: reference.path, ...read }, timeoutMs, questions };
+
+  /** The wording of a question the file gives, a text or a material, or its default, with the hash of the wording. */
+  function wordingOf(asks: Judgeable["asks"]): { text: string; hash: string } {
+    const value = (givenQuestions as Record<string, TomlValue>)[asks];
+    if (value === undefined) return { text: DEFAULT_QUESTIONS[asks], hash: hashOf(DEFAULT_QUESTIONS[asks]) };
+    if (typeof value === "string") return { text: value, hash: hashOf(value) };
+    const question = materialReference(value);
+    if (question === undefined) throw new Error(`The judge file "${path}"'s field "questions.${asks}" must be a text or a material, as { file = "…" }`);
+    const wording = new Materials(dirname(path)).read(question);
+    if (wording === undefined) throw new Error(`The judge file "${path}"'s field "questions.${asks}" names "${question.path}", which does not exist`);
+    return wording;
+  }
 }
 
 /** The tool the judge answers each question with. */
@@ -56,11 +81,10 @@ const VERDICT: OfferedTool = {
   },
 };
 
-/** A question the judge is asked: the statement and the texts, and nothing else of the run. */
-function questionOf({ statement, asks, texts }: Judgeable): string {
+/** A question the judge is asked: the statement and the texts, and nothing else of the run, then its wording. */
+function questionOf({ statement, texts }: Judgeable, wording: string): string {
   const listed = texts.map(({ text }, at) => `${at + 1}. ${text}`).join("\n");
-  const asked = asks === "says" ? "Does one of the texts say what the statement states?" : "Does one of the texts reveal what the statement states?";
-  return `Statement: ${statement}\n\nTexts:\n${listed}\n\n${asked}`;
+  return `Statement: ${statement}\n\nTexts:\n${listed}\n\n${wording}`;
 }
 
 /**
@@ -138,15 +162,17 @@ export async function judgeRuns(
   mkdirSync(directory, { recursive: true });
   const path = join(directory, `${randomUUID()}.jsonl`);
   const file = JsonlFile.create(path);
-  const settings = { model: judge.model, thinkingLevel: judge.thinkingLevel, instructionsHash: judge.instructions.hash };
+  const judged = { model: judge.model, thinkingLevel: judge.thinkingLevel, instructionsHash: judge.instructions.hash };
   try {
     for (const question of questions) {
       const { runId, situation, key, texts } = question;
+      const wording = judge.questions[question.asks];
+      const settings = { ...judged, questionHash: wording.hash };
       if (texts.length === 0) {
         file.write({ runId, situation, key, outcome: "success", verdict: "no", quoted: null, reason: "no text on the channel", quoted_found: null, ...settings, tokens: null, cost: null });
         continue;
       }
-      const answer = await askOnce(agentModel, { systemPrompt: judge.instructions.text, thinkingLevel: judge.thinkingLevel, timeoutMs: judge.timeoutMs }, VERDICT, questionOf(question));
+      const answer = await askOnce(agentModel, { systemPrompt: judge.instructions.text, thinkingLevel: judge.thinkingLevel, timeoutMs: judge.timeoutMs }, VERDICT, questionOf(question, wording.text));
       const spent = { tokens: answer.tokens, cost: answer.cost };
       if (answer.outcome !== "success") {
         const message = answer.message === undefined ? {} : { message: answer.message };
