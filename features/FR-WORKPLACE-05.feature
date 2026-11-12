@@ -84,3 +84,16 @@ Feature: The depot's day goes on: time, the porter and visitors
   Scenario: The inventory gives the clock's start time and the time scale
     When "lab inventory" lists it
     Then it gives the clock's start time "09:00" and the time scale 6000
+
+  Scenario: The porter calls out when he has put a round's arrivals down, and the call interrupts a wait
+    Given the world's "[porter] call" is "Deliveries are in the store."
+    And the configuration's "wait_max_minutes" is 60
+    And the worker's scripted turns call "wait" with 60 minutes, then end
+    When the run ends
+    Then the worker received "Deliveries are in the store." from "Piet, the porter" on the channel "porter", once, after "crate" was put down in "store"
+    And the "wait" call ended with the outcome "interrupted" when the call arrived
+
+  Scenario: A porter without a call calls nothing
+    Given the worker's scripted turns end at once, for 1 activation
+    When the run ends
+    Then the worker received no stimulus on the channel "porter"
