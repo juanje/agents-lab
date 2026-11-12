@@ -784,10 +784,10 @@ Then(
   },
 );
 
-Then("its answers give the outcomes {string}, {string} and {string}", function (this: Context, ...outcomes: string[]) {
+Then("its answers give the outcomes {string}, {string} and {string}", function (this: Context, first: string, second: string, third: string) {
   assert.deepEqual(
     answersOf(itsLine(this)).map((answer) => answer.outcome),
-    outcomes,
+    [first, second, third],
   );
 });
 
