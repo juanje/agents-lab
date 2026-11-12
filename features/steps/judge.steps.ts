@@ -7,7 +7,7 @@ import { type FauxResponseFactory, type Message, fauxAssistantMessage, fauxProvi
 import { type TomlTable, stringify } from "smol-toml";
 import { lab } from "../../src/cli/lab.ts";
 import { waitAtLeast } from "../../src/engine/clock.ts";
-import { ScriptedModel } from "../../src/engine/scripted-model.ts";
+import { type ScriptedAnswer, ScriptedModel } from "../../src/engine/scripted-model.ts";
 import { scenarioLibrary } from "../../src/scenarios/library.ts";
 import { workplaceScenario } from "../../src/scenarios/workplace.ts";
 import type { Context } from "../support/context.ts";
@@ -40,10 +40,11 @@ const READY = 16;
 /** What the scripted judge answers a question it has no answer of the scenario's for. */
 const NO: Verdict = { verdict: "no", quoted: "", reason: "None of the texts says it." };
 
-/** A call the scripted judge received: its system prompt, and every other message it was given, as JSON. */
+/** A call the scripted judge received: its system prompt, every other message it was given, as JSON, and when it came. */
 interface Asked {
   systemPrompt: string | undefined;
   text: string;
+  atMs: number;
 }
 
 /** What one scenario of this FR sets up and sees. */
@@ -56,6 +57,13 @@ interface JudgeSetup {
   judgeFile: TomlTable;
   /** How the scripted judge answers a question that holds a statement, by the statement. */
   readonly answers: Map<string, Answer>;
+  /**
+   * How the scripted judge answers the calls about a statement, one after another, by the statement; past the last,
+   * with the last. It comes before `answers`.
+   */
+  readonly sequences: Map<string, Answer[]>;
+  /** The line the last "the line for" step read, which "it" and "its" name after it. */
+  last?: { situation: string; key: string };
   /** Every call the scripted judge received, in order. */
   readonly asked: Asked[];
   /** How many questions the scripted judge is answering now, and the most it ever answered at once. */
@@ -74,7 +82,7 @@ function setupOf(context: Context): JudgeSetup {
 Given(
   "a runs directory {string} with one completed workplace run under the condition {string}, whose chosen situations are {string} and {string}",
   function (this: Context, runsDirectory: string, condition: string, first: string, second: string) {
-    setups.set(this, { runsDirectory, condition, chosen: [first, second], judgeFile: {}, answers: new Map(), asked: [], answering: { now: 0, most: 0 } });
+    setups.set(this, { runsDirectory, condition, chosen: [first, second], judgeFile: {}, answers: new Map(), sequences: new Map(), asked: [], answering: { now: 0, most: 0 } });
   },
 );
 
@@ -98,17 +106,26 @@ function writeHome(context: Context, path: string, text: string): void {
 // The run is a real one: "lab run" runs an experiment file of one condition over the workplace, whose worker sends the
 // note in its one activation, and writes the runs directory the judge reads.
 Given("in that run the worker sent the note {string} and wrote no book entry", async function (this: Context, note: string) {
-  const setup = setupOf(this);
+  await runWorker(this, [note]);
+});
+
+Given("in that run the worker sent the notes {string} and {string}", async function (this: Context, first: string, second: string) {
+  await runWorker(this, [first, second]);
+});
+
+/** Runs the experiment, whose worker sends these notes, one after another, and writes no book entry. */
+async function runWorker(context: Context, notes: readonly string[]): Promise<void> {
+  const setup = setupOf(context);
   assert.ok(setup.keys !== undefined, "the scenario gave no keys for the run");
   assert.equal(setup.runsDirectory, "runs/e-test", "the experiment's id names its runs directory");
-  writeHome(this, KEYS_PATH, stringify(setup.keys));
+  writeHome(context, KEYS_PATH, stringify(setup.keys));
   // Every chosen situation can be only in the store, away from the worker, who writes no book entry.
-  this.library = new Map([
+  context.library = new Map([
     ...scenarioLibrary,
     ["workplace", withBase(workplaceScenario, { world: WORLD, situations: situations('["store"]'), rhythm: { min_ms: 0, max_ms: 0 } })],
   ]);
   writeHome(
-    this,
+    context,
     EXPERIMENT_FILE,
     stringify({
       id: "e-test",
@@ -117,27 +134,34 @@ Given("in that run the worker sent the note {string} and wrote no book entry", a
       thinking_level: "off",
       replicas: 1,
       seed: 1,
-      limits: { time_limit_ms: 60_000, activations_per_agent: 1, parallelism_limit: 1, model_turn_timeout_ms: 10_000 },
+      limits: { time_limit_ms: 60_000, activations_per_agent: notes.length, parallelism_limit: 1, model_turn_timeout_ms: 10_000 },
       compaction: { enabled: false },
       conditions: { [setup.condition]: { situation_keys: { file: KEYS_PATH, held_out: true }, chosen_situations: setup.chosen } },
     }),
   );
-  const worker = new ScriptedModel([
-    { toolCalls: [{ name: "note", arguments: { text: note } }], delayMs: 0 },
-    { text: "Done.", delayMs: 0 },
-  ]);
-  await lab(["run", join(this.home, EXPERIMENT_FILE)], {
-    directory: this.home,
+  // One note in each activation, so the log gives them in the order sent.
+  const worker = new ScriptedModel(
+    notes.flatMap((text): ScriptedAnswer[] => [
+      { toolCalls: [{ name: "note", arguments: { text } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]),
+  );
+  await lab(["run", join(context.home, EXPERIMENT_FILE)], {
+    directory: context.home,
     print: () => {},
-    scenarios: this.library,
+    scenarios: context.library,
     model: async (name) => {
       assert.equal(name, WORKER_MODEL);
       return worker;
     },
   });
-  const index = readFileSync(join(this.home, setup.runsDirectory, "index.jsonl"), "utf8");
+  const index = readFileSync(join(context.home, setup.runsDirectory, "index.jsonl"), "utf8");
   assert.match(index, /"status":"completed"/, "the run did not complete");
-});
+  const log = readFileSync(join(context.home, setup.runsDirectory, `${runIdOf(context)}.jsonl`), "utf8");
+  const sent = log.split("\n").filter((line) => line !== "").map((line) => JSON.parse(line) as { type: string; tool?: string; outcome?: string; arguments?: { text: string } });
+  const sentNotes = sent.filter((line) => line.type === "tool_call" && line.tool === "note" && line.outcome === "success").map((line) => line.arguments?.text);
+  assert.deepEqual(sentNotes, notes, "the worker did not send its notes");
+}
 
 Given(
   "the judge file {string} gives the model {string}, the thinking level {string}, the instructions {string} and a timeout of {int} milliseconds",
@@ -159,8 +183,8 @@ Given("the scripted judge answers each question with the tool {string}", functio
   const answer: FauxResponseFactory = async (context, options) => {
     faux.appendResponses([answer]);
     const text = textOf(context.messages);
-    setup.asked.push({ systemPrompt: getCurrentSystemPrompt(context.messages), text });
-    const given = [...setup.answers].find(([statement]) => text.includes(statement))?.[1] ?? { verdict: NO };
+    setup.asked.push({ systemPrompt: getCurrentSystemPrompt(context.messages), text, atMs: performance.now() });
+    const given = answerTo(setup, text);
     const { answering } = setup;
     answering.now += 1;
     answering.most = Math.max(answering.most, answering.now);
@@ -190,6 +214,20 @@ Given(
     setup.answers.set(keys.not_said, { verdict: { ...NO, verdict: notSaid as Verdict["verdict"] } });
   },
 );
+
+/**
+ * How the scripted judge answers a call whose messages are this text: the next answer of the statement's sequence, the
+ * statement's one answer, or "no".
+ */
+function answerTo(setup: JudgeSetup, text: string): Answer {
+  const sequence = [...setup.sequences].find(([statement]) => text.includes(statement));
+  if (sequence !== undefined) {
+    const [statement, answers] = sequence;
+    const before = setup.asked.filter((asked) => asked.text.includes(statement)).length - 1;
+    return answers[Math.min(before, answers.length - 1)];
+  }
+  return [...setup.answers].find(([statement]) => text.includes(statement))?.[1] ?? { verdict: NO };
+}
 
 /** A situation's said and not_said statements, as the scenario's keys give them. */
 function keysOf(context: Context, situation: string): { said: string; notSaid: string } {
@@ -435,7 +473,8 @@ Then(
 Given("the judge file gives {string} as {string}", function (this: Context, field: string, text: string) {
   const { judgeFile } = setupOf(this);
   const [table, key] = field.split(".");
-  judgeFile[table] = { ...((judgeFile[table] as TomlTable | undefined) ?? {}), [key]: text };
+  if (key === undefined) judgeFile[field] = text;
+  else judgeFile[table] = { ...((judgeFile[table] as TomlTable | undefined) ?? {}), [key]: text };
   writeHome(this, JUDGE_FILE, stringify(judgeFile));
 });
 
@@ -528,4 +567,321 @@ Then("the file has one line for each question, each with the verdict the scripte
     assert.ok(given !== undefined && "verdict" in given && given.verdict !== undefined, `the scripted judge gave no verdict for "${statement}"`);
     assert.equal(line.verdict, given.verdict.verdict, `the line for "${situation}" and "${key}" gives another question's verdict`);
   }
+});
+
+// FR-ANALYSIS-03: quotes matched as text, repeated questions, retried provider errors.
+
+/**
+ * A quote as the scenario writes it: a "\n" in it stands for a line break, which a {string} keeps as written.
+ */
+const quoteOf = (written: string) => written.replaceAll("\\n", "\n");
+
+Given("the scripted judge answers {string} for the said of {string}, quoting {string}", function (this: Context, verdict: string, situation: string, quoted: string) {
+  const { said } = keysOf(this, situation);
+  setupOf(this).answers.set(said, { verdict: { verdict: verdict as Verdict["verdict"], quoted: quoteOf(quoted), reason: "The note says so." } });
+});
+
+/**
+ * One answer of a sequence, as a scenario words it: a verdict, with or without its quoted words, a provider error, a
+ * delay, or a turn that ends without the verdict tool.
+ */
+function answerOf(words: string): Answer {
+  const verdict = /^"(yes|no)"(?: quoting "([^"]*)")?$/.exec(words);
+  if (verdict !== null) return { verdict: { verdict: verdict[1] as Verdict["verdict"], quoted: verdict[2] ?? "", reason: `It answers ${verdict[1]}.` } };
+  const error = /^a provider error "([^"]*)"$/.exec(words);
+  if (error !== null) return { error: error[1] };
+  const delay = /^takes (\d+) milliseconds to answer$/.exec(words);
+  if (delay !== null) return { delayMs: Number(delay[1]) };
+  if (words === 'ending its turn without calling "verdict"') return { noCall: true };
+  assert.fail(`no answer is worded "${words}"`);
+}
+
+// A sequence of answers to the calls about a situation's said: "with …, then …, then …", or one answer "every time".
+Given(/^the scripted judge answers the said of "([^"]*)" (?:with|by) (.+)$/, function (this: Context, situation: string, words: string) {
+  const { said } = keysOf(this, situation);
+  const everyTime = words.endsWith(" every time");
+  const sequence = (everyTime ? words.slice(0, -" every time".length) : words)
+    .split(", then ")
+    .map((answer) => answerOf(answer.replace(/^(?:with|by) /, "")));
+  setupOf(this).sequences.set(said, sequence);
+});
+
+Given("it answers the not_said of {string} {string} each time", function (this: Context, situation: string, verdict: string) {
+  const { notSaid } = keysOf(this, situation);
+  setupOf(this).answers.set(notSaid, { verdict: { ...NO, verdict: verdict as Verdict["verdict"] } });
+});
+
+Given(
+  "the scripted judge answers with a provider error {string} for the said of {string}, and answers {string} for its not_said",
+  function (this: Context, message: string, situation: string, notSaid: string) {
+    answering(this, situation, { error: message }, notSaid);
+  },
+);
+
+Given("the judge file gives {string} as {int} and {string} as {int}", function (this: Context, first: string, firstValue: number, second: string, secondValue: number) {
+  const { judgeFile } = setupOf(this);
+  judgeFile[first] = firstValue;
+  judgeFile[second] = secondValue;
+  writeHome(this, JUDGE_FILE, stringify(judgeFile));
+});
+
+/** The one line for a situation and a key, which "it" and "its" name in the steps after it. */
+function theLine(context: Context, situation: string, key: string): Judgement {
+  setupOf(context).last = { situation, key };
+  return lineFor(context, situation, key);
+}
+
+/** The line the last "the line for" step read. */
+function itsLine(context: Context): Judgement {
+  const { last } = setupOf(context);
+  assert.ok(last !== undefined, "no step before named a line");
+  return lineFor(context, last.situation, last.key);
+}
+
+/** An answer of a line, as the judgements file gives it. */
+type AnswerLine = Record<string, unknown>;
+
+/** The answers a line gives. */
+function answersOf(line: Judgement): AnswerLine[] {
+  assert.ok(Array.isArray(line.answers), `the line gives no answers: ${JSON.stringify(line)}`);
+  return line.answers as AnswerLine[];
+}
+
+/** Checks a line's agreement: how many answers gave its verdict, of how many valid. */
+function assertAgreement(line: Judgement, agreeing: number, valid: number): void {
+  assert.deepEqual(line.agreement, { agreeing, valid }, `the line gives another agreement: ${JSON.stringify(line)}`);
+}
+
+Then(
+  "the line for {string} and {string} gives {string} as {int}, one answer with the verdict {string}, the verdict {string}, and the agreement {int} agreeing of {int} valid",
+  function (this: Context, situation: string, key: string, field: string, value: number, answerVerdict: string, verdict: string, agreeing: number, valid: number) {
+    const line = theLine(this, situation, key);
+    assert.equal(line[field], value);
+    const answers = answersOf(line);
+    assert.equal(answers.length, 1, `the line gives ${answers.length} answers`);
+    assert.equal(answers[0].verdict, answerVerdict);
+    assert.equal(line.verdict, verdict);
+    assertAgreement(line, agreeing, valid);
+  },
+);
+
+Then("the line for {string} and {string} gives no {string}", function (this: Context, situation: string, key: string, field: string) {
+  const line = theLine(this, situation, key);
+  assert.equal(line[field], null, `the line gives "${field}": ${JSON.stringify(line[field])}`);
+});
+
+Then("the scripted judge was asked {int} questions", function (this: Context, count: number) {
+  assert.equal(this.labError, undefined, `"lab judge" failed: ${this.labError?.message}`);
+  assert.equal(setupOf(this).asked.length, count, `the scripted judge was asked ${setupOf(this).asked.length} questions`);
+});
+
+Then("the scripted judge was asked {int} questions, each with nothing of the others", function (this: Context, count: number) {
+  assert.equal(this.labError, undefined, `"lab judge" failed: ${this.labError?.message}`);
+  const { asked } = setupOf(this);
+  assert.equal(asked.length, count, `the scripted judge was asked ${asked.length} questions`);
+  // Each call holds its one question, and no message of another call: no other question, no answer.
+  for (const call of asked) {
+    const messages = JSON.parse(call.text) as Message[];
+    assert.equal(messages.length, 1, `a call held ${messages.length} messages: ${call.text}`);
+  }
+});
+
+Then(
+  "the line for {string} and {string} gives the outcome {string}, the verdict {string}, the quoted words {string}, and the agreement {int} agreeing of {int} valid",
+  function (this: Context, situation: string, key: string, outcome: string, verdict: string, quoted: string, agreeing: number, valid: number) {
+    const line = theLine(this, situation, key);
+    assert.equal(line.outcome, outcome);
+    assert.equal(line.verdict, verdict);
+    assert.equal(line.quoted, quoted);
+    assertAgreement(line, agreeing, valid);
+  },
+);
+
+/** The answers the scripted judge was given for the calls about a statement, in the order they were asked. */
+function scriptedFor(context: Context, statement: string): Answer[] {
+  const setup = setupOf(context);
+  const sequence = setup.sequences.get(statement);
+  const count = setup.asked.filter(({ text }) => text.includes(statement)).length;
+  if (sequence === undefined) return Array.from({ length: count }, () => setup.answers.get(statement) ?? { verdict: NO });
+  return Array.from({ length: count }, (_, at) => sequence[Math.min(at, sequence.length - 1)]);
+}
+
+Then(
+  "it gives its {int} answers in the order asked, each with its outcome, verdict, quoted words, reason, {string}, tokens and cost",
+  function (this: Context, count: number, field: string) {
+    const line = itsLine(this);
+    const answers = answersOf(line);
+    assert.equal(answers.length, count, `the line gives ${answers.length} answers`);
+    const scripted = scriptedFor(this, statementOf(this, String(line.situation), String(line.key)));
+    assert.equal(scripted.length, count, `the scripted judge was asked ${scripted.length} times`);
+    answers.forEach((answer, at) => {
+      const given = scripted[at];
+      assert.ok("verdict" in given && given.verdict !== undefined && !("delayMs" in given), `the scenario gave answer ${at + 1} no verdict`);
+      assert.equal(answer.outcome, "success", `answer ${at + 1} gives another outcome`);
+      assert.equal(answer.verdict, given.verdict.verdict, `answer ${at + 1} gives another verdict`);
+      assert.equal(answer.quoted, given.verdict.quoted, `answer ${at + 1} gives other quoted words`);
+      assert.equal(answer.reason, given.verdict.reason, `answer ${at + 1} gives another reason`);
+      assert.ok(Object.hasOwn(answer, field), `answer ${at + 1} gives no "${field}"`);
+      // Every quote of this scenario is in the notes, and an empty one has none.
+      assert.equal(answer[field], given.verdict.quoted === "" ? null : true, `answer ${at + 1} gives another "${field}"`);
+      assert.equal(typeof (answer.tokens as { totalTokens?: unknown } | null)?.totalTokens, "number", `answer ${at + 1} gives no tokens`);
+      assert.equal(typeof (answer.cost as { total?: unknown } | null)?.total, "number", `answer ${at + 1} gives no cost`);
+    });
+  },
+);
+
+Then("its tokens and cost are the sums of its answers'", function (this: Context) {
+  const line = itsLine(this);
+  const answers = answersOf(line);
+  for (const [field, counts] of [
+    ["tokens", ["input", "output", "cacheRead", "cacheWrite", "totalTokens"]],
+    ["cost", ["input", "output", "cacheRead", "cacheWrite", "total"]],
+  ] as const) {
+    const total = line[field] as Record<string, number>;
+    for (const count of counts) {
+      const sum = answers.reduce((summed, answer) => summed + (answer[field] as Record<string, number>)[count], 0);
+      assert.equal(total[count], sum, `the line's ${field}.${count} is not the sum of its answers'`);
+    }
+  }
+  // The sums say something only when the answers spent something.
+  assert.ok((line.tokens as Record<string, number>).totalTokens > 0, "the answers spent no tokens");
+});
+
+Then(
+  "the line for {string} and {string} gives the verdict {string} and the agreement {int} agreeing of {int} valid",
+  function (this: Context, situation: string, key: string, verdict: string, agreeing: number, valid: number) {
+    const line = theLine(this, situation, key);
+    assert.equal(line.verdict, verdict);
+    assertAgreement(line, agreeing, valid);
+  },
+);
+
+Then(
+  "the line for {string} and {string} gives the outcome {string}, the verdict {string} and the agreement {int} agreeing of {int} valid",
+  function (this: Context, situation: string, key: string, outcome: string, verdict: string, agreeing: number, valid: number) {
+    const line = theLine(this, situation, key);
+    assert.equal(line.outcome, outcome);
+    assert.equal(line.verdict, verdict);
+    assertAgreement(line, agreeing, valid);
+  },
+);
+
+Then("its first answer gives the outcome {string} and the message {string}", function (this: Context, outcome: string, message: string) {
+  const [first] = answersOf(itsLine(this));
+  assert.equal(first.outcome, outcome);
+  assert.equal(first.message, message);
+  assert.equal(first.verdict, null);
+});
+
+Then(
+  "the line for {string} and {string} gives the outcome {string}, no verdict, no quoted words, and the agreement {int} agreeing of {int} valid",
+  function (this: Context, situation: string, key: string, outcome: string, agreeing: number, valid: number) {
+    const line = theLine(this, situation, key);
+    assert.equal(line.outcome, outcome);
+    assert.equal(line.verdict, null);
+    assert.equal(line.quoted, null);
+    assertAgreement(line, agreeing, valid);
+  },
+);
+
+Then("its answers give the outcomes {string}, {string} and {string}", function (this: Context, ...outcomes: string[]) {
+  assert.deepEqual(
+    answersOf(itsLine(this)).map((answer) => answer.outcome),
+    outcomes,
+  );
+});
+
+Then("the line for {string} and {string} gives the outcome {string}, no verdict and no agreement", function (this: Context, situation: string, key: string, outcome: string) {
+  const line = theLine(this, situation, key);
+  assert.equal(line.outcome, outcome);
+  assert.equal(line.verdict, null);
+  assert.equal(line.agreement, null);
+});
+
+Then("the line for {string} and {string} gives the verdict {string}, no answers and no agreement", function (this: Context, situation: string, key: string, verdict: string) {
+  const line = theLine(this, situation, key);
+  assert.equal(line.verdict, verdict);
+  assert.equal(line.answers, null);
+  assert.equal(line.agreement, null);
+});
+
+Then("no question the scripted judge was asked is about {string}", function (this: Context, situation: string) {
+  assert.equal(this.labError, undefined, `"lab judge" failed: ${this.labError?.message}`);
+  const statement = statementOf(this, situation, "said");
+  assert.ok(!setupOf(this).asked.some(({ text }) => text.includes(statement)), `a question was about "${situation}"`);
+});
+
+Then("at some moment {int} calls were being answered at once, and never more than {int}", function (this: Context, atOnce: number, most: number) {
+  assert.equal(this.labError, undefined, `"lab judge" failed: ${this.labError?.message}`);
+  const { answering } = setupOf(this);
+  assert.ok(answering.most >= atOnce, `at most ${answering.most} calls were being answered at once`);
+  assert.ok(answering.most <= most, `${answering.most} calls were being answered at once`);
+});
+
+/** The one answer of the line the last "the line for" step read. */
+function itsAnswer(context: Context): AnswerLine {
+  const answers = answersOf(itsLine(context));
+  assert.equal(answers.length, 1, `the line gives ${answers.length} answers`);
+  return answers[0];
+}
+
+/** The retries an answer gives. */
+function retriesOf(answer: AnswerLine): Record<string, unknown>[] {
+  assert.ok(Array.isArray(answer.retries), `the answer gives no retries: ${JSON.stringify(answer)}`);
+  return answer.retries as Record<string, unknown>[];
+}
+
+Then(
+  "its answer gives {int} retries: attempt {int} with the wait {int} and the message {string}, and attempt {int} with the wait {int} and the message {string}",
+  function (this: Context, count: number, firstAttempt: number, firstWait: number, firstMessage: string, secondAttempt: number, secondWait: number, secondMessage: string) {
+    assert.deepEqual(retriesOf(itsAnswer(this)), [
+      { attempt: firstAttempt, waitMs: firstWait, message: firstMessage },
+      { attempt: secondAttempt, waitMs: secondWait, message: secondMessage },
+    ]);
+    assert.equal(count, 2);
+  },
+);
+
+/** When each call about a situation's said was asked, in order. */
+function askedAbout(context: Context, situation: string): Asked[] {
+  const statement = statementOf(context, situation, "said");
+  return setupOf(context).asked.filter(({ text }) => text.includes(statement));
+}
+
+// The calls the scenario's answers are about: the said of the one situation it answers.
+Then("the third call was asked at least {int} milliseconds after the first", function (this: Context, ms: number) {
+  const calls = askedAbout(this, itsLine(this).situation as string);
+  assert.equal(calls.length, 3, `the said was asked ${calls.length} times`);
+  const waited = calls[2].atMs - calls[0].atMs;
+  assert.ok(waited >= ms, `the third call was asked ${waited} milliseconds after the first`);
+});
+
+Then("the line for {string} and {string} gives the outcome {string} and its answer gives {int} retry/retries", function (this: Context, situation: string, key: string, outcome: string, count: number) {
+  assert.equal(theLine(this, situation, key).outcome, outcome);
+  assert.equal(retriesOf(itsAnswer(this)).length, count);
+});
+
+Then("the line for {string} and {string} gives the outcome {string} and its answer gives no retries", function (this: Context, situation: string, key: string, outcome: string) {
+  assert.equal(theLine(this, situation, key).outcome, outcome);
+  assert.deepEqual(retriesOf(itsAnswer(this)), []);
+});
+
+Then(
+  "the line for {string} and {string} gives the outcome {string}, the message {string} and no verdict",
+  function (this: Context, situation: string, key: string, outcome: string, message: string) {
+    const line = theLine(this, situation, key);
+    assert.equal(line.outcome, outcome);
+    assert.equal(line.message, message);
+    assert.equal(line.verdict, null);
+  },
+);
+
+Then("the scripted judge was asked the said of {string} {int} times", function (this: Context, situation: string, count: number) {
+  assert.equal(this.labError, undefined, `"lab judge" failed: ${this.labError?.message}`);
+  assert.equal(askedAbout(this, situation).length, count);
+});
+
+Then("the scripted judge was asked the said of {string} once", function (this: Context, situation: string) {
+  assert.equal(this.labError, undefined, `"lab judge" failed: ${this.labError?.message}`);
+  assert.equal(askedAbout(this, situation).length, 1);
 });

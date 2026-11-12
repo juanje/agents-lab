@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { type Message, getCurrentSystemPrompt } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "vitest";
-import { judgeRuns, readJudgeFile } from "../src/analysis/judge.ts";
+import { judgeRuns, quotedFound, readJudgeFile } from "../src/analysis/judge.ts";
 import type { AgentModel } from "../src/engine/adapter.ts";
 import type { Judgeable, Scenario } from "../src/engine/scenario.ts";
 import { type ScriptedAnswer, ScriptedModel } from "../src/engine/scripted-model.ts";
@@ -353,5 +353,46 @@ describe("judgeRuns", () => {
     await expect(judgeRuns(runsDirectory, join(directory, "judge.toml"), scenarios, resolving(model))).rejects.toThrow(/"scripted\/judge".*"high"/);
     expect(model.received).toHaveLength(0);
     expect(judgementFiles(runsDirectory)).toEqual([]);
+  });
+});
+
+describe("quotedFound", () => {
+  const texts = (...written: string[]) => written.map((text, at) => ({ text, atMs: at }));
+  const notes = texts("The cardboard box came in with its flaps open; I didn’t close it.", "Label reads “Mr G. Ha... , 1 Church St...”, the rest is smudged.");
+
+  it.each([
+    ["typographic quotes made plain", "I didn't close it"],
+    ["plain quotes made typographic", "Label reads \"Mr G. Ha... , 1 Church St...\""],
+    ["another case", "THE CARDBOARD box"],
+    ["runs of whitespace, a line break and a no-break space among them", "came in with  its\nflaps\u00a0open"],
+    ["fragments joined by …", "The cardboard box … flaps open"],
+    ["fragments joined by three or more dots", "The cardboard box .... flaps open"],
+    ["dots at either end", "...came in with its flaps open..."],
+    ["fragments in one text, in order", "Mr G. Ha … the rest is smudged"],
+  ])("finds a quote that differs from a text only in %s", (_case, quoted) => {
+    expect(quotedFound(quoted, notes)).toBe(true);
+  });
+
+  it.each([["‘"], ["’"], ["‚"], ["‛"], ["ʼ"], ["′"]])("matches %s as an apostrophe", (apostrophe) => {
+    expect(quotedFound(`I didn${apostrophe}t close it`, notes)).toBe(true);
+  });
+
+  it("matches the double quotes “ ” „ ‟ ″ as one", () => {
+    expect(quotedFound("\"a\" \"b\" \"c\"", texts("„a‟ ″b″ “c”"))).toBe(true);
+  });
+
+  it.each([
+    ["fragments out of order", "flaps open ... The cardboard box"],
+    ["fragments in different texts", "flaps open ... the rest is smudged"],
+    ["a word changed", "The cardboard box came with its flaps open"],
+    ["a word added", "The cardboard box came in with its flaps wide open"],
+    ["a word dropped", "I did not close it"],
+    ["a fragment that overlaps the one before", "cardboard box … box came"],
+  ])("does not find a quote with %s", (_case, quoted) => {
+    expect(quotedFound(quoted, notes)).toBe(false);
+  });
+
+  it.each([[""], ["…"], ["... … ...."]])("gives nothing for a quote %j, which leaves no fragment", (quoted) => {
+    expect(quotedFound(quoted, notes)).toBeNull();
   });
 });
