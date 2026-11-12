@@ -187,10 +187,12 @@ export class Context extends CucumberWorld {
   readonly configurationsGiven: Configuration[] = [];
   /** "lab run" while it runs, which a step that acts on it during its run leaves running. */
   labRunning?: Promise<void>;
-  /** Interrupts "lab run", as Ctrl-C or a termination signal would. */
-  readonly labInterruption = new AbortController();
+  /** Interrupts "lab run", as Ctrl-C or a termination signal would; a step that runs "lab" again gives it a new one. */
+  labInterruption = new AbortController();
   /** The options "lab run" is given after the experiment file, as the scenario sets them. */
   readonly labOptions: string[] = [];
+  /** What an earlier "lab run" left in the runs directory before "lab run --resume" ran: its index and each run's log, by run id. */
+  runsBefore?: { index: { runId: string; condition: string; replica: number; seed: number; status: string }[]; logs: Map<string, string> };
   /** The changes the scenario makes to the workplace as the engine loads it, before the worker runs in it, in order. */
   readonly workplaceSetups: ((state: Workplace) => Workplace)[] = [];
   /** The calls the worker makes, in order, each in a turn of its own, in one activation. */
