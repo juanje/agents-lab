@@ -455,4 +455,20 @@ describe("runExperiment, resuming (FR-RUN-07)", () => {
     for (const { replica, seed, status } of added) expect({ seed, status }).toEqual({ seed: replicaSeed(7, Number(replica)), status: "completed" });
     expect(readdirSync(directory)).toHaveLength(everyRun.length + 1);
   });
+
+  it("tells its observer, before the first run, how many runs are already completed and how many are left, and numbers each run out of all", async () => {
+    const directory = newRunsDirectory();
+    await interruptedAfter(3, directory);
+    const events: unknown[] = [];
+    const observer: ExperimentObserver = {
+      resumed: (counts) => events.push({ resumed: counts }),
+      runStarted: ({ number, total }) => events.push({ started: `${number} of ${total}` }),
+      recorded: () => {},
+      runEnded: () => {},
+    };
+
+    await runExperiment(experiment, slotsScenario, scriptedModels(), directory, observer, undefined, { resume: true });
+
+    expect(events).toEqual([{ resumed: { completed: 3, left: 5 } }, ...[4, 5, 6, 7, 8].map((number) => ({ started: `${number} of 8` }))]);
+  });
 });
