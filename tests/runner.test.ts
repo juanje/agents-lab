@@ -423,3 +423,36 @@ function logLinesOf(directory: string, runId: string): unknown[] {
     .filter((line) => line !== "")
     .map((line) => JSON.parse(line));
 }
+
+/** Runs the experiment into the directory and interrupts it as its run of that number ends, so the runs up to it completed. */
+async function interruptedAfter(runs: number, directory: string): Promise<void> {
+  const interruption = new AbortController();
+  const observer: ExperimentObserver = {
+    runStarted: () => {},
+    recorded: () => {},
+    runEnded: (number) => {
+      if (number === runs) interruption.abort();
+    },
+  };
+  await expect(runExperiment(experiment, slotsScenario, scriptedModels(), directory, observer, interruption.signal)).rejects.toThrow("interrupted");
+}
+
+/** Each run the experiment makes, in its order, as "condition | model | replica". */
+const everyRun = experiment.conditions.flatMap(({ name }) => experiment.models.flatMap((model) => [1, 2].map((replica) => `${name} | ${model} | ${replica}`)));
+
+describe("runExperiment, resuming (FR-RUN-07)", () => {
+  it("runs only the runs its index does not list as completed, each with its replica's seed, and adds their lines after those it found", async () => {
+    const directory = newRunsDirectory();
+    await interruptedAfter(3, directory);
+    const before = indexOf(directory);
+
+    await runExperiment(experiment, slotsScenario, scriptedModels(), directory, undefined, undefined, { resume: true });
+
+    const index = indexOf(directory);
+    expect(index.slice(0, 3)).toEqual(before);
+    const added = index.slice(3);
+    expect(added.map(({ condition, model, replica }) => `${String(condition)} | ${String(model)} | ${String(replica)}`)).toEqual(everyRun.slice(3));
+    for (const { replica, seed, status } of added) expect({ seed, status }).toEqual({ seed: replicaSeed(7, Number(replica)), status: "completed" });
+    expect(readdirSync(directory)).toHaveLength(everyRun.length + 1);
+  });
+});
