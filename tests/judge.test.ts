@@ -211,8 +211,34 @@ describe("judgeRuns", () => {
     const [lines] = judgementFiles(runsDirectory);
     const settings = { model: "scripted/judge", thinkingLevel: "off", instructionsHash: hashOf("You judge.\n"), questionHash: hashOf(SAYS) };
     expect(lines).toEqual([
-      { runId: "run-1", situation: "box", key: "said", outcome: "success", verdict: "yes", quoted: "came in open", reason: "It says so.", quoted_found: true, ...settings, tokens: expect.objectContaining({ totalTokens: expect.any(Number) }), cost: expect.objectContaining({ total: expect.any(Number) }) },
-      { runId: "run-1", situation: "jar", key: "said", outcome: "success", verdict: "no", quoted: null, reason: "no text on the channel", quoted_found: null, ...settings, tokens: null, cost: null },
+      {
+        runId: "run-1",
+        situation: "box",
+        key: "said",
+        outcome: "success",
+        verdict: "yes",
+        quoted: "came in open",
+        reason: "It says so.",
+        quoted_found: true,
+        ...settings,
+        tokens: expect.objectContaining({ totalTokens: expect.any(Number) }),
+        cost: expect.objectContaining({ total: expect.any(Number) }),
+        repeats: 1,
+        answers: [
+          {
+            outcome: "success",
+            verdict: "yes",
+            quoted: "came in open",
+            reason: "It says so.",
+            quoted_found: true,
+            tokens: expect.objectContaining({ totalTokens: expect.any(Number) }),
+            cost: expect.objectContaining({ total: expect.any(Number) }),
+            retries: [],
+          },
+        ],
+        agreement: { agreeing: 1, valid: 1 },
+      },
+      { runId: "run-1", situation: "jar", key: "said", outcome: "success", verdict: "no", quoted: null, reason: "no text on the channel", quoted_found: null, ...settings, tokens: null, cost: null, repeats: 1, answers: null, agreement: null },
     ]);
     expect(model.received).toHaveLength(1);
   });
@@ -421,5 +447,94 @@ describe("quotedFound", () => {
 
   it.each([[""], ["…"], ["... … ...."]])("gives nothing for a quote %j, which leaves no fragment", (quoted) => {
     expect(quotedFound(quoted, notes)).toBeNull();
+  });
+});
+
+describe("judgeRuns, with repeats", () => {
+  const scenarios = new Map([["judging", judging]]);
+  const resolving = (model: AgentModel) => async () => model;
+  const verdict = (given: "yes" | "no", quoted: string, reason: string): ScriptedAnswer => ({ toolCalls: [{ name: "verdict", arguments: { verdict: given, quoted, reason } }], delayMs: 0 });
+
+  /** The box's line of one judge run of a run with one note, whose said the scripted judge answers so. */
+  async function boxLine(answers: ScriptedAnswer[], repeats = 3, settings: string[] = []): Promise<{ line: Record<string, unknown>; model: ScriptedModel }> {
+    const directory = judgeDirectory([...JUDGE_FILE.slice(0, 3), "timeout_ms = 100", `repeats = ${repeats}`, ...settings]);
+    const runsDirectory = runsDirectoryOf(directory, [{ runId: "run-1", status: "completed", notes: ["The box came in open."] }]);
+    const model = new ScriptedModel(answers);
+    await judgeRuns(runsDirectory, join(directory, "judge.toml"), scenarios, resolving(model));
+    const [lines] = judgementFiles(runsDirectory);
+    return { line: lines.find((line) => line.situation === "box") as Record<string, unknown>, model };
+  }
+
+  it("asks each question with texts repeats times, each its own call, and gives the majority's verdict with the first answer that gave it", async () => {
+    const { line, model } = await boxLine([verdict("yes", "came in", "First."), verdict("no", "", "Second."), verdict("yes", "came in open", "Third.")]);
+
+    expect(model.received).toHaveLength(3);
+    for (const received of model.received) expect(received.filter((message) => message.role !== "system")).toHaveLength(1);
+    expect(line).toMatchObject({ outcome: "success", verdict: "yes", quoted: "came in", reason: "First.", quoted_found: true, repeats: 3, agreement: { agreeing: 2, valid: 3 } });
+    expect((line.answers as Record<string, unknown>[]).map(({ outcome, verdict, quoted, reason, quoted_found }) => ({ outcome, verdict, quoted, reason, quoted_found }))).toEqual([
+      { outcome: "success", verdict: "yes", quoted: "came in", reason: "First.", quoted_found: true },
+      { outcome: "success", verdict: "no", quoted: "", reason: "Second.", quoted_found: null },
+      { outcome: "success", verdict: "yes", quoted: "came in open", reason: "Third.", quoted_found: true },
+    ]);
+  });
+
+  it("sums its answers' tokens and cost", async () => {
+    const { line } = await boxLine([verdict("yes", "", "First."), verdict("yes", "", "Second."), verdict("yes", "", "Third.")]);
+
+    const answers = line.answers as { tokens: Record<string, number>; cost: Record<string, number> }[];
+    for (const count of ["input", "output", "cacheRead", "cacheWrite", "totalTokens"]) {
+      expect((line.tokens as Record<string, number>)[count]).toBe(answers.reduce((sum, { tokens }) => sum + tokens[count], 0));
+    }
+    for (const count of ["input", "output", "cacheRead", "cacheWrite", "total"]) {
+      expect((line.cost as Record<string, number>)[count]).toBe(answers.reduce((sum, { cost }) => sum + cost[count], 0));
+    }
+    expect((line.tokens as Record<string, number>).totalTokens).toBeGreaterThan(answers[0].tokens.totalTokens);
+  });
+
+  it("takes the majority over the valid answers only, and gives an answer's provider message", async () => {
+    const { line } = await boxLine([{ error: "400 bad request", delayMs: 0 }, verdict("no", "", "Second."), verdict("no", "", "Third.")]);
+
+    expect(line).toMatchObject({ outcome: "success", verdict: "no", reason: "Second.", agreement: { agreeing: 2, valid: 2 } });
+    expect((line.answers as Record<string, unknown>[])[0]).toMatchObject({ outcome: "model_error", message: "400 bad request", verdict: null, quoted: null, reason: null, quoted_found: null });
+  });
+
+  it("gives a tie, with no verdict, when the valid answers split evenly", async () => {
+    const late = { ...verdict("yes", "", "Late."), delayMs: 1000 };
+    const { line } = await boxLine([verdict("yes", "came in", "First."), late, verdict("no", "", "Third.")]);
+
+    expect(line).toMatchObject({ outcome: "tie", verdict: null, quoted: null, reason: null, quoted_found: null, agreement: { agreeing: 1, valid: 2 } });
+    expect((line.answers as Record<string, unknown>[]).map(({ outcome }) => outcome)).toEqual(["success", "timeout", "success"]);
+  });
+
+  it("gives the first answer's outcome, and its message, with no verdict and no agreement, when no answer is valid", async () => {
+    const { line } = await boxLine([{ error: "overloaded", delayMs: 0 }, { text: "No verdict.", delayMs: 0 }, { error: "down", delayMs: 0 }]);
+
+    expect(line).toMatchObject({ outcome: "model_error", message: "overloaded", verdict: null, quoted: null, reason: null, quoted_found: null, agreement: null });
+  });
+
+  it("answers a question with no texts without a call, with no answers and no agreement", async () => {
+    const directory = judgeDirectory([...JUDGE_FILE, "repeats = 3"]);
+    const runsDirectory = runsDirectoryOf(directory, [{ runId: "run-1", status: "completed", notes: [] }]);
+    const model = new ScriptedModel([]);
+
+    await judgeRuns(runsDirectory, join(directory, "judge.toml"), scenarios, resolving(model));
+
+    expect(model.received).toHaveLength(0);
+    expect(judgementFiles(runsDirectory)[0].find((line) => line.situation === "jar")).toMatchObject({ verdict: "no", repeats: 3, answers: null, agreement: null });
+  });
+
+  it("gives each repeat a parallel_questions slot of its own", async () => {
+    const slow = { ...verdict("no", "", "Slow."), delayMs: 300 };
+    const directory = judgeDirectory([...JUDGE_FILE, "repeats = 3", "parallel_questions = 2"]);
+    const runsDirectory = runsDirectoryOf(directory, [{ runId: "run-1", status: "completed", notes: ["The box came in open."] }]);
+    const model = new ScriptedModel([slow, slow, slow]);
+
+    const judging = judgeRuns(runsDirectory, join(directory, "judge.toml"), scenarios, resolving(model));
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    const atOnce = model.received.length;
+    await judging;
+
+    expect(atOnce).toBe(2);
+    expect(model.received).toHaveLength(3);
   });
 });
