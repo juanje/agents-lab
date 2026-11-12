@@ -92,7 +92,8 @@ Experiments are written outside this repository, in the experiment language (FR-
 14. FR-ANALYSIS-02
 15. FR-WORKPLACE-07 (the worker can wait), before E1's pilot
 16. FR-RUN-06 (runs in parallel), before E1's pilot
-17. FR-WORKPLACE-06 (the depot's hours, light, closed doors, and weather as a perturbation), when an experiment needs it
+17. FR-RUN-07 (an interrupted experiment resumes)
+18. FR-WORKPLACE-06 (the depot's hours, light, closed doors, and weather as a perturbation), when an experiment needs it
 
 **Small known gaps** (to close when convenient): `lab summarize` prints numbers at full precision; a completed run whose log has no metric sample gives no values without saying so; a run in the index whose log is missing fails with Node's own error. The `wait` tool's description does not state `wait_max_minutes`, so the worker learns the limit only from a refusal; `wait_max_minutes` is not checked when the configuration loads.
 
@@ -401,6 +402,12 @@ An experiment file can give `parallel_runs`, a whole number of at least 1 (by de
 
 While several runs are in progress, the progress lines (FR-RUN-04) give each run in progress by its number. A run that stops on an error stops the experiment: the runs still in progress end as stopped, with the reason that the experiment stopped, and no new run starts. An interrupted experiment (FR-RUN-05) ends every run in progress the same way, each saying it was interrupted.
 *Why:* an experiment's runs are independent worlds, and the provider's load does not depend on a handful of calls; running a replica's conditions at once both saves hours and puts them through the same provider conditions, while the one-at-a-time default keeps the earlier experiments as they ran.
+
+#### FR-RUN-07: An interrupted experiment resumes where it stopped
+`lab run <experiment.toml> --resume` runs only the experiment's runs that its runs directory's index does not list as completed: each condition, model and replica with no completed run is run again, with the seed it always has (FR-RUN-01), as a new run with its own id and log. Completed runs are left as they are, and runs listed as stopped stay in the index as stopped. The progress lines (FR-RUN-04) say, before the first run, how many runs are already completed and how many are left. With no runs directory yet, `--resume` runs the whole experiment.
+
+`--resume` is refused before any model call, naming what differs, when a completed run's setup line (FR-RECORD-02) does not match the run the experiment file would make now: its resolved configuration, model, seed, sampling, materials' hashes or code commit.
+*Why:* a long experiment can be stopped by a laptop that must sleep or a lost connection; rerunning what already completed wastes hours and money, and a resumed experiment must be the same experiment, or its runs would mix two setups under one name.
 
 #### FR-ADAPTER-03: Context compaction is declared and recorded
 An experiment file gives its `[compaction]`: `enabled` (true or false), and, when enabled, `trigger_at` (the share of the model's context window, above 0 and below 1, whose filling starts a compaction) and `keep_recent_tokens` (how much of the most recent context the compaction keeps as it is). The table is required, like the thinking level (FR-EXPERIMENT-05). Every session of every run uses it; the engine turns `trigger_at` into Pi's reserve for each model's window, so models with different windows compact at the same share. With compaction off, a context that overflows ends the model turn with `model_error` (FR-ADAPTER-02).
