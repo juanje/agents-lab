@@ -43,7 +43,7 @@ Feature: Runs can run in parallel
     And the scripted model's first session in "baseline" replica 1 fails to open
     When "lab run" runs the experiment file
     Then "baseline" replica 1 stopped on its error
-    And "baseline" replica 2 ended as stopped, saying the experiment stopped
+    And "five-slots" replica 1 ended as stopped, saying the experiment stopped
     And no other run started
 
   Scenario Outline: A parallel_runs that is not a whole number of at least 1 is refused before any model call
