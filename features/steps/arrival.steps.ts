@@ -21,6 +21,12 @@ const WORKER = "worker";
 /** Less than this apart, two moments of the run are the same: the engine takes a moment to apply and record a change. */
 const SAME_MOMENT_MS = 20;
 
+/**
+ * Less than this over its duration, a call took its duration: ending it takes the engine a moment. It is shorter than
+ * a look's 10 ms, so a call that also took a look's time to see who is there would not pass for one that added none.
+ */
+const TOOK_WITHIN_MS = 8;
+
 /** What the worker is told follows a text when it is followed by who is in sight, as the inventory gives it. */
 const IN_SIGHT = "who is in sight";
 
@@ -212,7 +218,7 @@ Then("the {string} call's text does not hold {string}, {string} or {string}", fu
 Then("the {string} call took {int} milliseconds", function (this: Context, tool: string, durationMs: number) {
   const call = onlyCall(this, tool);
   const took = call.endedAtMs - call.startedAtMs;
-  assert.ok(took >= durationMs && took <= durationMs + SAME_MOMENT_MS, `the "${tool}" call took ${Math.round(took)} ms`);
+  assert.ok(took >= durationMs && took <= durationMs + TOOK_WITHIN_MS, `the "${tool}" call took ${Math.round(took)} ms`);
 });
 
 Then(
