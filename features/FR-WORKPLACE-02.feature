@@ -42,7 +42,7 @@ Feature: The worker senses and acts through the workplace's tools
 
   Scenario: Go takes the passage's time, and the worker arrives
     When the worker calls "go" with the place "store"
-    Then the call succeeded with the text "You have arrived."
+    Then the call succeeded with the text "You have arrived. Nobody is here."
     And it took at least 40 milliseconds
     And the worker is in "store"
 

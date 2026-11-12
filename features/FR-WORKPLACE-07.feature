@@ -10,7 +10,7 @@ Feature: The worker can wait
   Scenario: A wait takes its minutes and changes nothing
     Given the worker's scripted turns call "wait" with 20 minutes, then end
     When the run ends
-    Then the "wait" call succeeded with the text "You have waited."
+    Then the "wait" call succeeded with the text "You have waited. Here: Mrs Ferrer (ferrer)."
     And it ended at least 200 milliseconds after it started
     And the world's version did not change during it
 
@@ -18,7 +18,7 @@ Feature: The worker can wait
     Given "ferrer" is a visitor instead of a person: she enters "counter", arrives between "09:05" and "09:05", waits 20 minutes, and comes for ["lamp"]
     And the worker's scripted turns call "wait" with 30 minutes, then end
     When the run ends
-    Then the "wait" call ended with the outcome "interrupted" and the text "Something happened where you are; you stopped waiting."
+    Then the "wait" call ended with the outcome "interrupted" and the text "Something happened where you are; you stopped waiting. Here: Mrs Ferrer (ferrer)."
     And it ended within 20 milliseconds after "ferrer" appeared in "counter"
 
   Scenario: A person entering another place does not interrupt it
