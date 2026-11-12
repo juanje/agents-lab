@@ -131,6 +131,17 @@ describe("inventory", () => {
     expect(listed).toContain([...prompt("b"), "### Tools"].join("\n"));
   });
 
+  it("lists the text of each outcome an effector's sight follows as followed by what it sees, and its other texts as they are", () => {
+    const [look, take] = slotsScenario.tools;
+    const texts = { success: "You took the slot.", slot_taken: "Someone holds that slot." };
+    const sight = { outcomes: ["success"], of: "the slots held", see: () => ({ text: "", seen: "" }) };
+    const scenario = slotsWith({ tools: [look, { ...take, texts, sight } as typeof take] });
+
+    const [condition] = inventory(experimentOf(["[conditions.baseline]"]), scenario).conditions;
+
+    expect(condition.tools[1].texts).toEqual({ success: "You took the slot. (followed by the slots held)", slot_taken: "Someone holds that slot." });
+  });
+
   it("lists each tool with its kind, the description and parameters its agents see, its duration as the scenario describes it in each condition, and the text for each outcome", () => {
     const experiment = experimentOf(["[conditions.baseline]", "[conditions.crowded]", "slots.count = 5"]);
     const [look, take] = slotsScenario.tools;

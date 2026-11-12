@@ -665,6 +665,54 @@ describe("run", () => {
     expect(loaded.world.version).toBe(0);
   });
 
+  /** A take whose success is followed by how many slots the agent sees held as its call ends, keeping the slots it saw. */
+  const seeingTake: Effector<Slots> = {
+    ...(slotTools[1] as Effector<Slots>),
+    texts: { success: "Taken.", slot_taken: "Someone holds it." },
+    sight: {
+      outcomes: ["success"],
+      of: "the slots held",
+      see: (slots, agent) => ({ text: `${agent} sees ${slots.filter((holder) => holder !== null).length} held.`, seen: JSON.stringify(slots) }),
+    },
+  };
+
+  it("follows the text of an outcome an effector's sight names, after one space, with what the agent sees as the call ends; the texts of other outcomes stay as they are", async () => {
+    const loaded = slots({ tools: [seeingTake] });
+    const model = new ScriptedModel([
+      { toolCalls: [{ name: "take", arguments: { slot: 1 } }], delayMs: 0 },
+      { toolCalls: [{ name: "take", arguments: { slot: 1 } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+
+    const { toolCalls } = await run(loaded, [{ name: "a", model, activations: 1 }], seed, settings);
+
+    expect(toolCalls.map(({ outcome, text }) => ({ outcome, text }))).toEqual([
+      { outcome: "success", text: "Taken. a sees 1 held." },
+      { outcome: "slot_taken", text: "Someone holds it." },
+    ]);
+    expect(model.received[1]?.at(-1)).toMatchObject({ role: "toolResult", content: [{ type: "text", text: "Taken. a sees 1 held." }] });
+  });
+
+  it("keeps what an effector's sight saw for the agent's later effector calls, by the effector's name, as no sensing: they read their target from it", async () => {
+    const mark: Effector<Slots> = {
+      ...(slotTools[1] as Effector<Slots>),
+      name: "mark",
+      action: undefined,
+      readTarget: (sensing, _call, _state, lastBy) => (sensing === undefined && lastBy("take")?.result === JSON.stringify(["a", null, null]) ? "free" : "not_sensed"),
+    };
+    const model = new ScriptedModel([
+      { toolCalls: [{ name: "take", arguments: { slot: 1 } }], delayMs: 0 },
+      { toolCalls: [{ name: "mark", arguments: { slot: 2 } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+
+    const { toolCalls, sensings } = await run(slots({ tools: [seeingTake, mark] }), [{ name: "a", model, activations: 1 }], seed, settings);
+
+    expect(toolCalls.find((call) => call.tool === "mark")).toMatchObject({ targetAsSensed: "free", changesSinceSensing: null });
+    expect(sensings.last("a")).toBeUndefined();
+    expect(sensings.lastBy("a", "take")).toMatchObject({ tool: "take", result: JSON.stringify(["a", null, null]) });
+  });
+
   it("runs all of an agent's model turns in one Pi session, across its activations", async () => {
     const model = new ScriptedModel([
       { toolCalls: [{ name: "look", arguments: {} }], delayMs: 0 },
