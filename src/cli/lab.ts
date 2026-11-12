@@ -30,11 +30,11 @@ export interface LabEnvironment {
 const PROGRESS_INTERVAL_MS = 30_000;
 
 /** How the command is used, as an error for other arguments says. */
-const USAGE = "Usage: lab run <experiment.toml> [--progress-interval-ms <ms>], lab inventory <experiment.toml>, lab summarize <runs-dir> [--json] or lab judge <runs-dir> <judge.toml>";
+const USAGE = "Usage: lab run <experiment.toml> [--resume] [--progress-interval-ms <ms>], lab inventory <experiment.toml>, lab summarize <runs-dir> [--json] or lab judge <runs-dir> <judge.toml>";
 
 /**
  * The `lab` command, with its arguments: `lab run <experiment.toml>` runs the experiment, printing each run's progress
- * every `--progress-interval-ms`, 30 seconds unless given; `lab inventory <experiment.toml>` prints its environment
+ * every `--progress-interval-ms`, 30 seconds unless given, and with `--resume` only its runs not completed (FR-RUN-07); `lab inventory <experiment.toml>` prints its environment
  * inventory, without running it or resolving any model; `lab summarize <runs-dir>` prints the summary of an
  * experiment's runs as Markdown, or as JSON with `--json`, from the directory's index and logs alone (FR-RUN-02);
  * `lab judge <runs-dir> <judge.toml>` judges what the agents of its completed runs wrote, with the judge file's model,
@@ -59,13 +59,13 @@ export async function lab(args: readonly string[], environment: LabEnvironment):
     environment.print(inventoryMarkdown(inventory(experiment, scenario)));
     return;
   }
-  await run(experiment, scenario, environment, command.progressIntervalMs);
+  await run(experiment, scenario, environment, command);
 }
 
 /** A command `lab` was given, with what it takes. */
 type Command =
   | { name: "inventory"; path: string }
-  | { name: "run"; path: string; progressIntervalMs: number }
+  | { name: "run"; path: string; progressIntervalMs: number; resume: boolean }
   | { name: "summarize"; path: string; json: boolean }
   | { name: "judge"; path: string; judgeFile: string };
 
@@ -78,24 +78,34 @@ function parse(args: readonly string[]): Command {
     return { name, path, json: options.length === 1 };
   }
   if (path !== undefined && name === "run") {
-    if (options.length === 0) return { name, path, progressIntervalMs: PROGRESS_INTERVAL_MS };
-    const [option, value] = options;
-    const ms = Number(value);
-    if (options.length === 2 && option === "--progress-interval-ms" && Number.isInteger(ms) && ms > 0) return { name, path, progressIntervalMs: ms };
+    const rest = options.filter((option) => option !== "--resume");
+    const resume = rest.length < options.length;
+    // --resume at most once, before or after the progress interval.
+    if (options.length - rest.length <= 1) {
+      if (rest.length === 0) return { name, path, progressIntervalMs: PROGRESS_INTERVAL_MS, resume };
+      const [option, value] = rest;
+      const ms = Number(value);
+      if (rest.length === 2 && option === "--progress-interval-ms" && Number.isInteger(ms) && ms > 0) return { name, path, progressIntervalMs: ms, resume };
+    }
   }
   throw new Error(`lab was given ${JSON.stringify(args)}. ${USAGE}`);
 }
 
 /**
  * Runs an experiment with its scenario, each of its models resolved by name first, into runs/<id>/ under the directory,
- * printing each run's progress at the interval.
+ * printing each run's progress at the interval; resumed, only its runs not completed.
  */
-async function run(experiment: Experiment, scenario: LibraryScenario, environment: LabEnvironment, progressIntervalMs: number): Promise<void> {
+async function run(
+  experiment: Experiment,
+  scenario: LibraryScenario,
+  environment: LabEnvironment,
+  { progressIntervalMs, resume }: { progressIntervalMs: number; resume: boolean },
+): Promise<void> {
   const models = new Map<string, AgentModel>();
   for (const name of experiment.models) models.set(name, await environment.model(name));
   const progress = new Progress(environment.print, { intervalMs: progressIntervalMs });
   try {
-    await runExperiment(experiment, scenario, models, join(environment.directory, "runs", experiment.id), progress, environment.interruption);
+    await runExperiment(experiment, scenario, models, join(environment.directory, "runs", experiment.id), progress, environment.interruption, { resume });
   } finally {
     // Also when a run stopped the experiment: its total says how far it got (FR-RUN-04).
     progress.experimentEnded();
