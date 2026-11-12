@@ -139,4 +139,14 @@ describe("Progress", () => {
       vi.useRealTimers();
     }
   });
+
+  it("prints, when the experiment resumes, how many runs are already completed and how many are left (FR-RUN-07)", () => {
+    const printed: string[] = [];
+    const progress = new Progress((text) => printed.push(text), { intervalMs: 30_000 });
+
+    progress.resumed({ completed: 2, left: 2 });
+    progress.resumed({ completed: 1, left: 0 });
+
+    expect(printed).toEqual(["2 runs already completed, 2 left\n", "1 run already completed, 0 left\n"]);
+  });
 });
