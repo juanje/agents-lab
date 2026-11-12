@@ -159,7 +159,7 @@ function assertNamesDiffer(names: readonly string[]): void {
 }
 
 /** Every sampling parameter but the thinking level, which the engine never sends, so the provider's defaults apply. */
-const PROVIDER_DEFAULTS = "the provider's defaults";
+export const PROVIDER_DEFAULTS = "the provider's defaults";
 
 /**
  * Runs the agents of a run whose log is open. Once every session is open, or one failed to, it says so with the
