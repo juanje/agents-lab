@@ -496,4 +496,23 @@ describe("runExperiment, resuming (FR-RUN-07)", () => {
     expect(readFileSync(join(directory, "index.jsonl"), "utf8")).toBe(before);
     for (const model of models.values()) expect(model.received).toHaveLength(0);
   });
+
+  it.each<[string, Partial<Experiment>, string[]]>([
+    ["a condition's configuration", { conditions: [{ name: "baseline", change: "[slots]\ncount = 4\n" }, experiment.conditions[1]] }, ['"slots.count"', "3", "4"]],
+    ["the base seed", { seed: 8 }, ["seed", String(replicaSeed(7, 1)), String(replicaSeed(8, 1))]],
+    ["the thinking level", { thinkingLevel: "minimal" }, ["sampling", "minimal"]],
+  ])("refuses, before any model call, when %s makes a completed run's setup differ, naming the run and what differs", async (_case, change, named) => {
+    const directory = newRunsDirectory();
+    await interruptedAfter(3, directory);
+    const before = readFileSync(join(directory, "index.jsonl"), "utf8");
+    const models = new Map([...scriptedModels()].map(([name]) => [name, new ScriptedModel([], undefined, { reasoning: true })]));
+
+    const resuming = runExperiment({ ...experiment, ...change }, slotsScenario, models, directory, undefined, undefined, { resume: true });
+
+    await expect(resuming).rejects.toThrow(/--resume/);
+    const message = await resuming.catch((error: Error) => error.message);
+    for (const name of [...named, '"baseline"', "replica 1"]) expect(message).toContain(name);
+    expect(readFileSync(join(directory, "index.jsonl"), "utf8")).toBe(before);
+    for (const model of models.values()) expect(model.received).toHaveLength(0);
+  });
 });
