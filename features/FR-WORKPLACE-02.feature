@@ -124,3 +124,10 @@ Feature: The worker senses and acts through the workplace's tools
     Given the configuration sets "book" to "ledger"
     When the engine loads it with the seed 42
     Then loading fails with an error that names "ledger"
+
+  Scenario: Reading the book gives the entries recorded so far, with their times
+    Given the world's "[day] start" is "09:00" and the configuration's "time_scale" is 6000
+    And the worker's scripted turns call "record" with the entry "Parcel for Mrs Ferrer collected.", then "read" with the thing "book", then end
+    When the run ends
+    Then the "read" call's result is "Deliveries: none yet." followed by a line giving the clock time the entry was written and "Parcel for Mrs Ferrer collected."
+    And the "read" call took at least 5 milliseconds for each word of that result
