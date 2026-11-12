@@ -25,7 +25,7 @@ import {
 import { type ChangesSinceSensing, applyCounted } from "./changes.ts";
 import { type RunClock, waitAtLeast } from "./clock.ts";
 import { isSummaryRequest, piCompactionSettings } from "./compaction.ts";
-import type { Compaction, ThinkingLevel } from "./experiment.ts";
+import type { Compaction, RateLimitRetry, ThinkingLevel } from "./experiment.ts";
 import { failure } from "./failure.ts";
 import type { Position } from "./grid.ts";
 import type { ParallelismLimit } from "./parallelism.ts";
@@ -84,6 +84,17 @@ export async function openRuntime(providers: readonly (Provider | undefined)[]):
   });
   for (const provider of providers) if (provider !== undefined) runtime.registerNativeProvider(provider);
   return runtime;
+}
+
+/**
+ * A retry of a model turn whose provider answered with a rate limit (FR-ADAPTER-02): the agent, which retry it is, from
+ * 1, how long the turn waits before it, and when that wait started.
+ */
+export interface ModelRetry {
+  agent: string;
+  attempt: number;
+  waitMs: number;
+  atMs: number;
 }
 
 /** One call to an agent's model within an activation, and how it ended. */
@@ -183,6 +194,7 @@ export interface ContextCompaction {
  */
 export interface Records {
   turn(turn: ModelTurn): void;
+  retry(retry: ModelRetry): void;
   toolCall(call: ToolCall): void;
   start(start: EffectorStart): void;
   compaction(compaction: ContextCompaction): void;
@@ -198,6 +210,8 @@ export interface SessionSettings {
   compaction: Compaction;
   /** How long a model turn may run before it is aborted. */
   modelTurnTimeoutMs: number;
+  /** How a model turn whose provider answers with a rate limit is retried (FR-ADAPTER-02). */
+  rateLimit: RateLimitRetry;
   /**
    * Aborts when the run ends before its agents are done: when its time limit passes, which cuts off the tool calls and
    * model turns still running (FR-CLOCK-02), or when it stops on an error (FR-RECORD-01).
@@ -466,13 +480,14 @@ function message(stimulus: Stimulus) {
 /**
  * Wraps the session's call to the model, so each model turn waits for a free slot under the parallelism limit, is
  * aborted when it runs longer than the timeout or past the run's time limit, and is recorded when its answer ends. An
- * aborted answer carries no tool
- * calls Pi would run, and ends the activation.
+ * aborted answer carries no tool calls Pi would run, and ends the activation. A rate-limit answer is asked again, with
+ * the same context, after a wait that doubles with each retry, each retry logged, while the turn has retries left; the
+ * waits are part of the turn's time, as its latency is (FR-ADAPTER-02).
  */
 function runTurns(
   session: AgentSession,
   agent: string,
-  { modelTurnTimeoutMs, runEnd }: SessionSettings,
+  { modelTurnTimeoutMs, rateLimit, runEnd }: SessionSettings,
   parallelism: ParallelismLimit,
   records: Records,
   compactions: Compactions,
@@ -483,7 +498,18 @@ function runTurns(
     // which takes a slot and stops at the run's end, but no turn of the agent's (FR-ADAPTER-03).
     if (isSummaryRequest(context.messages)) return compactions.summarize(call, model, context, options);
     const requestedAtMs = performance.now();
-    const { answer, ended, startedAtMs, timeout } = await limitedCall(call, [model, context, options], parallelism, modelTurnTimeoutMs, runEnd);
+    const ask = () => limitedCall(call, [model, context, options], parallelism, modelTurnTimeoutMs, runEnd);
+    let { answer, ended, startedAtMs, timeout } = await ask();
+    for (let attempt = 1; attempt <= rateLimit.retries; attempt += 1) {
+      const message = await ended;
+      if (runEnd.aborted || timeout.aborted || !isRateLimit(message)) break;
+      const waitMs = rateLimit.waitMs * 2 ** (attempt - 1);
+      records.retry({ agent, attempt, waitMs, atMs: performance.now() });
+      await waitAtLeast(waitMs, runEnd);
+      // The run ended during the wait: the last answer stands, and the turn is cut off.
+      if (runEnd.aborted) break;
+      ({ answer, ended, timeout } = await ask());
+    }
     void ended.then((message) => {
       const endedAtMs = performance.now();
       const outcome = runEnd.aborted
@@ -544,6 +570,14 @@ async function limitedCall(
 /** A signal that aborts as soon as any of the call's own signal, if it has one, and the others aborts. */
 function abortedBy(own: AbortSignal | undefined, ...others: AbortSignal[]): AbortSignal {
   return AbortSignal.any([...(own === undefined ? [] : [own]), ...others]);
+}
+
+/**
+ * Whether a provider's error is a rate limit (HTTP 429). Pi gives only the provider's message, which carries the status
+ * as its providers format it, such as "OpenAI API error (429): …" (pi-ai 1.5.0, utils/error-body.js).
+ */
+export function isRateLimit(message: AssistantMessage): boolean {
+  return message.stopReason === "error" && /(?<![a-z0-9])429(?![a-z0-9])|rate.?limit|too many requests/i.test(message.errorMessage ?? "");
 }
 
 function outcomeOf(message: AssistantMessage): Pick<ModelTurn, "outcome" | "message"> {

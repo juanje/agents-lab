@@ -3,7 +3,7 @@ import { type AgentModel, type ModelTurn, type Records, type ToolCall, openRunti
 import { ChangesSinceSensing } from "./changes.ts";
 import { runComponent } from "./components.ts";
 import { RunClock, waitAtLeast } from "./clock.ts";
-import type { Compaction, ThinkingLevel } from "./experiment.ts";
+import type { Compaction, RateLimitRetry, ThinkingLevel } from "./experiment.ts";
 import { failure } from "./failure.ts";
 import { ParallelismLimit } from "./parallelism.ts";
 import { Random } from "./random.ts";
@@ -33,6 +33,8 @@ export interface RunSettings {
   setup?: RunSetup;
   /** How long a model turn may run before it is aborted. */
   modelTurnTimeoutMs: number;
+  /** How a model turn whose provider answers with a rate limit is retried; without it, it is not (FR-ADAPTER-02). */
+  rateLimit?: RateLimitRetry;
   /** The thinking level every session of the run uses (FR-EXPERIMENT-05). */
   thinkingLevel: ThinkingLevel;
   /** The context compaction every session of the run uses (FR-ADAPTER-03). */
@@ -178,6 +180,7 @@ async function runAgents<State>(
   const sessionSettings = {
     clock,
     modelTurnTimeoutMs: settings.modelTurnTimeoutMs,
+    rateLimit: settings.rateLimit ?? { retries: 0, waitMs: 0 },
     thinkingLevel: settings.thinkingLevel,
     compaction: settings.compaction,
     runEnd: runEnd.signal,
@@ -196,6 +199,7 @@ async function runAgents<State>(
       recorder.record({ type: "tool_call", ...call });
       toolCalls.push(call);
     },
+    retry: (retry) => recorder.record({ type: "rate_limit_retry", ...retry }),
     start: (start) => recorder.record({ type: "effector_start", ...start }),
     compaction: (compaction) => recorder.record({ type: "compaction", ...compaction }),
   };

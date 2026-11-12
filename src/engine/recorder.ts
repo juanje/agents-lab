@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
-import type { ContextCompaction, EffectorStart, ModelTurn, ToolCall } from "./adapter.ts";
+import type { ContextCompaction, EffectorStart, ModelRetry, ModelTurn, ToolCall } from "./adapter.ts";
 import type { CodeVersion } from "./code-version.ts";
 import type { ComponentAction } from "./components.ts";
 import type { Compaction } from "./experiment.ts";
@@ -54,6 +54,7 @@ export type LogLine =
   | { type: "activation"; agent: string; wokeAtMs: number; endedAtMs: number }
   | ({ type: "stimulus"; agent: string; deliveredAtMs: number } & Stimulus)
   | ({ type: "model_turn" } & ModelTurn)
+  | ({ type: "rate_limit_retry" } & ModelRetry)
   | ({ type: "tool_call" } & ToolCall)
   | ({ type: "effector_start" } & EffectorStart)
   | ({ type: "component_action" } & ComponentAction)
