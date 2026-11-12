@@ -67,6 +67,14 @@ describe("readExperiment", () => {
     expect(readExperiment(valid).parallelRuns).toBe(1);
   });
 
+  it("gives how a rate-limit answer is retried: the limits' rate_limit_retries and rate_limit_wait_ms, or else no retry and a wait of 1000 ms", () => {
+    const file = parse(valid);
+    Object.assign(file.limits as TomlTable, { rate_limit_retries: 3, rate_limit_wait_ms: 50 });
+    const given = readExperiment(stringify(file));
+    expect(given.rateLimit).toEqual({ retries: 3, waitMs: 50 });
+    expect(readExperiment(valid).rateLimit).toEqual({ retries: 0, waitMs: 1000 });
+  });
+
   it("gives each condition its name and its change, in TOML, in the order the file gives them", () => {
     const { conditions } = readExperiment(valid);
     expect(conditions.map(({ name }) => name)).toEqual(["baseline", "five-slots"]);
@@ -115,6 +123,9 @@ describe("readExperiment", () => {
     ["limits.activations_per_agent", "3", atLeastOne],
     ["limits.parallelism_limit", 2.5, atLeastOne],
     ["limits.model_turn_timeout_ms", -500, atLeastOne],
+    ["limits.rate_limit_retries", -1, "a whole number of at least 0"],
+    ["limits.rate_limit_retries", 1.5, "a whole number of at least 0"],
+    ["limits.rate_limit_wait_ms", 0, atLeastOne],
     ["conditions", ["baseline"], "a table of named conditions"],
     ["conditions.baseline", 5, "a table"],
     ["metric_interval_ms", 0, atLeastOne],
