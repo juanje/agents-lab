@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { type AgentModel, assertThinkingLevel } from "./adapter.ts";
 import { codeVersion } from "./code-version.ts";
@@ -67,7 +67,8 @@ interface PlannedRun {
  * its log into the runs directory, and the directory's index gets a line for each run as it ends. A run that stops on
  * an error stops the experiment: the runs in progress stop, saying the experiment stopped, and no run starts after it.
  * An observer, when given, is told when each run starts, each line its log records, and how it ends. An interruption,
- * when given, stops every run in progress as an error would, and no run starts after it (FR-RUN-05).
+ * when given, stops every run in progress as an error would, and no run starts after it (FR-RUN-05). Resumed, it runs
+ * only the runs its index does not list as completed, and adds their lines after those the index has (FR-RUN-07).
  */
 export async function runExperiment<State>(
   experiment: Experiment,
@@ -76,6 +77,7 @@ export async function runExperiment<State>(
   runsDirectory: string,
   observer?: ExperimentObserver,
   interruption?: AbortSignal,
+  { resume = false }: { resume?: boolean } = {},
 ): Promise<void> {
   // Each condition is loaded once before the first run, so one the scenario refuses fails before any model call.
   for (const condition of experiment.conditions) loadScenario(scenario, experiment.seed, condition);
@@ -86,8 +88,11 @@ export async function runExperiment<State>(
   const inventories = inventory(experiment, scenario).conditions;
   const code = codeVersion();
   mkdirSync(runsDirectory, { recursive: true });
-  const index = JsonlFile.create(join(runsDirectory, "index.jsonl"));
+  const indexPath = join(runsDirectory, "index.jsonl");
   const planned = plannedRuns(experiment, models);
+  const completed = new Set((resume ? indexLines(indexPath) : []).filter((line) => line.status === "completed").map(runKey));
+  const left = planned.filter((next) => !completed.has(runKey({ condition: next.condition.name, model: next.modelName, replica: next.replica })));
+  const index = resume ? JsonlFile.append(indexPath) : JsonlFile.create(indexPath);
   // Aborts, with the reason each run in progress stops on, when the experiment stops: it is interrupted, or a run stops
   // on an error. Only the first reason is given.
   const runsEnd = new AbortController();
@@ -151,7 +156,7 @@ export async function runExperiment<State>(
   };
 
   try {
-    for (const next of planned) {
+    for (const next of left) {
       while (inProgress.size >= experiment.parallelRuns) await Promise.race(inProgress);
       if (stoppedOn === undefined && interruption?.aborted) {
         stoppedOn = new Error(`the experiment was interrupted before run ${next.number} of ${planned.length} started`);
@@ -167,6 +172,18 @@ export async function runExperiment<State>(
   }
   if (stoppedOn !== undefined) throw stoppedOn;
 }
+
+/** The lines of an experiment's index at the path, or none when there is no index yet. */
+function indexLines(path: string): IndexLine[] {
+  if (!existsSync(path)) return [];
+  return readFileSync(path, "utf8")
+    .split("\n")
+    .filter((line) => line !== "")
+    .map((line) => JSON.parse(line) as IndexLine);
+}
+
+/** What tells a run of an experiment from the others: its condition, model and replica. */
+const runKey = ({ condition, model, replica }: Pick<IndexLine, "condition" | "model" | "replica">) => JSON.stringify([condition, model, replica]);
 
 /**
  * The experiment's runs, in the order they start, each numbered from 1: one at a time, by condition, then model, then
