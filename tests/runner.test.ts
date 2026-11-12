@@ -471,4 +471,29 @@ describe("runExperiment, resuming (FR-RUN-07)", () => {
 
     expect(events).toEqual([{ resumed: { completed: 3, left: 5 } }, ...[4, 5, 6, 7, 8].map((number) => ({ started: `${number} of 8` }))]);
   });
+
+  it("runs the whole experiment when there is no runs directory yet", async () => {
+    const directory = newRunsDirectory();
+
+    await runExperiment(experiment, slotsScenario, scriptedModels(), directory, undefined, undefined, { resume: true });
+
+    expect(indexOf(directory).map(({ condition, model, replica, status }) => `${String(condition)} | ${String(model)} | ${String(replica)} ${String(status)}`)).toEqual(
+      everyRun.map((run) => `${run} completed`),
+    );
+  });
+
+  it("runs nothing when every run is completed, and tells its observer so", async () => {
+    const directory = newRunsDirectory();
+    await runExperiment(experiment, slotsScenario, scriptedModels(), directory);
+    const before = readFileSync(join(directory, "index.jsonl"), "utf8");
+    const models = scriptedModels();
+    const resumed: unknown[] = [];
+    const observer: ExperimentObserver = { resumed: (counts) => resumed.push(counts), runStarted: () => {}, recorded: () => {}, runEnded: () => {} };
+
+    await runExperiment(experiment, slotsScenario, models, directory, observer, undefined, { resume: true });
+
+    expect(resumed).toEqual([{ completed: 8, left: 0 }]);
+    expect(readFileSync(join(directory, "index.jsonl"), "utf8")).toBe(before);
+    for (const model of models.values()) expect(model.received).toHaveLength(0);
+  });
 });
