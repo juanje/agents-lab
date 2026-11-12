@@ -311,7 +311,7 @@ function watching() {
 }
 
 describe("runExperiment, with runs in parallel", () => {
-  it("keeps up to parallel_runs runs in progress at once, starting them in the experiment's order, each next one as one ends", async () => {
+  it("keeps up to parallel_runs runs in progress at once, starting them in order, each next one as one ends", async () => {
     const directory = newRunsDirectory();
     const { observer, events, most } = watching();
 
@@ -328,6 +328,29 @@ describe("runExperiment, with runs in parallel", () => {
     expect(index.every(({ status }) => status === "completed")).toBe(true);
   });
 
+  it("starts the runs replica by replica: every condition and model of replica 1, then of replica 2", async () => {
+    const directory = newRunsDirectory();
+    const started: string[] = [];
+    const observer: ExperimentObserver = {
+      runStarted: ({ number, condition, model, replica }) => started.push(`${number}: ${condition} ${model} ${replica}`),
+      recorded: () => {},
+      runEnded: () => {},
+    };
+
+    await runExperiment({ ...experiment, parallelRuns: 2 }, slotsScenario, scriptedModels(), directory, observer);
+
+    expect(started).toEqual([
+      "1: baseline scripted/one 1",
+      "2: baseline scripted/two 1",
+      "3: five-slots scripted/one 1",
+      "4: five-slots scripted/two 1",
+      "5: baseline scripted/one 2",
+      "6: baseline scripted/two 2",
+      "7: five-slots scripted/one 2",
+      "8: five-slots scripted/two 2",
+    ]);
+  });
+
   it("gives each run its replica's seed, as one after another", async () => {
     const [one, other] = [newRunsDirectory(), newRunsDirectory()];
 
@@ -342,18 +365,17 @@ describe("runExperiment, with runs in parallel", () => {
   it("stops the runs in progress when one stops on an error, each saying the experiment stopped, starts no other, and fails with that run's error", async () => {
     const directory = newRunsDirectory();
     const { observer, events } = watching();
-    // The third run, "baseline" with "scripted/two", cannot open its sessions while the first two are running.
+    // The second run, "baseline" with "scripted/two", cannot open its sessions while the first one is running.
     const models = new Map<string, unknown>([...slowModels(500)].map(([name, model]) => [name, name === "scripted/two" ? unopenable : model]));
 
-    const running = runExperiment({ ...experiment, parallelRuns: 3 }, slotsScenario, models as Map<string, ScriptedModel>, directory, observer);
+    const running = runExperiment({ ...experiment, parallelRuns: 2 }, slotsScenario, models as Map<string, ScriptedModel>, directory, observer);
 
     await expect(running).rejects.toThrow('the run of condition "baseline", model "scripted/two", replica 1 stopped');
-    expect(events.filter((event) => event.startsWith("started"))).toEqual(["started 1", "started 2", "started 3"]);
-    expect(events.filter((event) => !event.startsWith("started")).sort()).toEqual(["stopped 1", "stopped 2", "stopped 3"]);
+    expect(events.filter((event) => event.startsWith("started"))).toEqual(["started 1", "started 2"]);
+    expect(events.filter((event) => !event.startsWith("started")).sort()).toEqual(["stopped 1", "stopped 2"]);
     const index = indexOf(directory);
     expect(index.map(({ model, replica, status }) => `${model} ${replica} ${status}`).sort()).toEqual([
       "scripted/one 1 stopped",
-      "scripted/one 2 stopped",
       "scripted/two 1 stopped",
     ]);
     for (const { runId, model } of index) {
