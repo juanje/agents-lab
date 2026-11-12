@@ -66,6 +66,12 @@ Then run an experiment from the directory its results go under. It writes each r
 lab run <experiment.toml>
 ```
 
+When an experiment was interrupted, run it again with `--resume`: it runs only the runs its index does not list as completed, and refuses, before any model call, when a completed run's setup differs from what the file makes now:
+
+```bash
+lab run <experiment.toml> --resume
+```
+
 To review what each condition's agents meet before running it (their system prompts, rhythms, tools, channels, the models and the limits), print its environment inventory as Markdown. It runs nothing and calls no model:
 
 ```bash
