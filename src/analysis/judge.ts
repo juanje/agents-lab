@@ -231,15 +231,16 @@ function spentOn(answers: readonly Pick<JudgeAnswer, "tokens" | "cost">[]): Pick
 }
 
 /**
- * Judges the completed runs of a runs directory (FR-ANALYSIS-02). It reads the judge file, then each completed run's
- * setup line and tool calls; the run's scenario, by its name in the library, declares what can be judged, from the run's
- * configuration with its held-out materials read from beside the judge file. Every run is read before any model call.
- * A thinking level the judge's model cannot use is refused before any call. Each statement with texts is one question
- * to the judge's model, through Pi, limited by the judge file's timeout; one without is "no", with no call. Each
- * question is a line of a new file, `judgements/<judge run id>.jsonl`, whose path it gives: with its verdict and
- * whether its quoted words are in the texts, or, for a call that erred, timed out or gave no one valid verdict, with
- * that outcome and no verdict, and the judge goes on. Up to the judge file's `parallel_questions` questions are asked at
- * once, each its own call, and each line is written as its answer comes.
+ * Judges the completed runs of a runs directory (FR-ANALYSIS-02, FR-ANALYSIS-03). It reads the judge file, then each
+ * completed run's setup line and tool calls; the run's scenario, by its name in the library, declares what can be judged,
+ * from the run's configuration with its held-out materials read from beside the judge file. Every run is read before
+ * any model call. A thinking level the judge's model cannot use is refused before any call. Each statement with texts
+ * is a question asked `repeats` times, each time its own call to the judge's model, through Pi, limited by the judge
+ * file's timeout and retried on a rate limit or a 5xx; one without texts is "no", with no call. Each question is a line
+ * of a new file, `judgements/<judge run id>.jsonl`, whose path it gives, written once its answers are in: each answer,
+ * with its verdict and whether its quoted words are in the texts, or, for a call that erred, timed out or gave no one
+ * valid verdict, with that outcome and no verdict, and what the answers decide; the judge goes on whatever they are.
+ * Up to the judge file's `parallel_questions` calls are made at once.
  */
 export async function judgeRuns(
   runsDirectory: string,
