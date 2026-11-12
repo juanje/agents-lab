@@ -983,25 +983,37 @@ describe("the depot's day", () => {
     landed: Workplace;
   }
 
+  /** A stimulus a component's cycle delivered, as `drive` ran it: to whom, on which channel, when, and after which action. */
+  interface Delivery {
+    agent: string;
+    channel: string;
+    atMs: number;
+    after: string | undefined;
+  }
+
   /**
    * Runs a component's cycle against a world in the run's time as the cycle counts it, without waiting: each wait and
    * each action moves the time on by its length. An action's start is applied as it starts, its action as it lands.
    */
-  function drive(component: Component<Workplace>, state: Workplace, random = new Random(1)): { actions: Driven[]; state: Workplace } {
+  function drive(component: Component<Workplace>, state: Workplace, random = new Random(1)): { actions: Driven[]; deliveries: Delivery[]; state: Workplace } {
     const world = new World(state);
     const cycle = component.cycle(random);
     const actions: Driven[] = [];
+    const deliveries: Delivery[] = [];
     let sinceStartMs = 0;
     let outcome: string | undefined;
     for (let steps = 0; steps < 10_000; steps += 1) {
       const step = cycle.next(world.state, outcome, sinceStartMs);
       outcome = undefined;
-      if (step.kind === "end") return { actions, state: world.state };
+      if (step.kind === "end") return { actions, deliveries, state: world.state };
       if (step.kind === "wait") {
         sinceStartMs += step.ms;
         continue;
       }
-      if (step.kind === "deliver") continue;
+      if (step.kind === "deliver") {
+        deliveries.push({ agent: step.agent, channel: step.channel, atMs: sinceStartMs, after: actions.at(-1)?.name });
+        continue;
+      }
       const startedAtMs = sinceStartMs;
       const landing = (atMs: number): ComponentLanding => ({ component: component.name, atMs });
       if (step.start !== undefined) expect(world.apply(step.start, landing(startedAtMs))).toEqual({ applied: true });
@@ -1111,6 +1123,23 @@ in = "box"
     expect(where(state.space, "box")).toEqual({ place: "office" });
     expect(state.inside.slip).toBe("box");
     expect(state.held).toEqual({});
+  });
+
+  it("calls out once he has put each round's arrivals down: the worker receives his call on the channel \"porter\", whose source is his name", () => {
+    const configured = porterDay({ world: `${withDay("09:00")}${PORTER}call = "Deliveries are in."\n${ARRIVING}` });
+
+    expect(scenario.channels(configured)).toContainEqual({ name: "porter", source: "Piet", stimulus: "Deliveries are in." });
+    expect(drive(componentOf(configured, "piet"), scenario.initialState(configured, new Random(1))).deliveries).toEqual([
+      { agent: "worker", channel: "porter", atMs: 170, after: 'put down "crate" in "office"' },
+      { agent: "worker", channel: "porter", atMs: 370, after: 'put down "parcel", "box" in "office"' },
+    ]);
+  });
+
+  it("calls nothing when he has no call: there is no channel \"porter\" and he delivers nothing", () => {
+    const configured = porterDay();
+
+    expect(scenario.channels(configured).map(({ name }) => name)).not.toContain("porter");
+    expect(drive(componentOf(configured, "piet"), scenario.initialState(configured, new Random(1))).deliveries).toEqual([]);
   });
 
   it("walks by the shortest way through the passages", () => {
