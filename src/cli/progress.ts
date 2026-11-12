@@ -11,9 +11,9 @@ interface Tally {
 }
 
 /**
- * What `lab run` prints while it runs (FR-RUN-04): each run's start, its progress at an interval, its end, and the
- * experiment's totals. While several runs are in progress, each progress line gives each of them by its number
- * (FR-RUN-06). What it counts it reads from the lines each run's log records; it writes nothing to the log.
+ * What `lab run` prints while it runs (FR-RUN-04): when it resumes, the runs already completed and left (FR-RUN-07);
+ * each run's start, its progress at an interval, its end, and the experiment's totals. While several runs are in
+ * progress, each progress line gives each of them by its number (FR-RUN-06). What it counts it reads from the lines each run's log records; it writes nothing to the log.
  */
 export class Progress implements ExperimentObserver {
   readonly #print: (text: string) => void;
@@ -34,6 +34,10 @@ export class Progress implements ExperimentObserver {
     this.#now = now;
     this.#intervalMs = intervalMs;
     this.#startedAtMs = now();
+  }
+
+  resumed({ completed, left }: { completed: number; left: number }): void {
+    this.#print(`${counted(completed, "run")} already completed, ${left} left\n`);
   }
 
   runStarted(run: StartingRun): void {
