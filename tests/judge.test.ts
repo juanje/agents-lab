@@ -20,6 +20,10 @@ function judgeDirectory(lines: readonly string[]): string {
   return directory;
 }
 
+/** The questions the judge asks when its file gives none. */
+const SAYS = "Does one of the texts say what the statement states?";
+const REVEALS = "Does one of the texts reveal what the statement states?";
+
 const JUDGE_FILE = ['model = "scripted/judge"', 'thinking_level = "off"', 'instructions = { file = "materials/judge.md" }', "timeout_ms = 2000"];
 
 describe("readJudgeFile", () => {
@@ -31,7 +35,26 @@ describe("readJudgeFile", () => {
       thinkingLevel: "off",
       instructions: { path: "materials/judge.md", hash: hashOf("You judge.\n"), text: "You judge.\n" },
       timeoutMs: 2000,
+      questions: { says: { text: SAYS, hash: hashOf(SAYS) }, reveals: { text: REVEALS, hash: hashOf(REVEALS) } },
     });
+  });
+
+  it("gives the questions the file gives, each a text or a material read from beside the file, with the hash of its wording", () => {
+    const directory = judgeDirectory([...JUDGE_FILE, "[questions]", 'says = "Would the keeper know it?"', 'reveals = { file = "materials/reveals.md" }']);
+    writeFileSync(join(directory, "materials", "reveals.md"), "Would a reader learn it?\n");
+
+    expect(readJudgeFile(join(directory, "judge.toml")).questions).toEqual({
+      says: { text: "Would the keeper know it?", hash: hashOf("Would the keeper know it?") },
+      reveals: { text: "Would a reader learn it?\n", hash: hashOf("Would a reader learn it?\n") },
+    });
+  });
+
+  it("refuses a question that is neither a text nor a material, or whose file does not exist, naming it", () => {
+    const number = judgeDirectory([...JUDGE_FILE, "[questions]", "says = 3"]);
+    const missing = judgeDirectory([...JUDGE_FILE, "[questions]", 'reveals = { file = "materials/none.md" }']);
+
+    expect(() => readJudgeFile(join(number, "judge.toml"))).toThrow(/"questions.says"/);
+    expect(() => readJudgeFile(join(missing, "judge.toml"))).toThrow(/"questions.reveals".*"materials\/none.md"/);
   });
 
   it.each([["model"], ["thinking_level"], ["instructions"], ["timeout_ms"]])("refuses a judge file without its %s, naming it", (field) => {
@@ -144,7 +167,7 @@ describe("judgeRuns", () => {
     await judgeRuns(runsDirectory, join(directory, "judge.toml"), scenarios, resolving(model));
 
     const [lines] = judgementFiles(runsDirectory);
-    const settings = { model: "scripted/judge", thinkingLevel: "off", instructionsHash: hashOf("You judge.\n") };
+    const settings = { model: "scripted/judge", thinkingLevel: "off", instructionsHash: hashOf("You judge.\n"), questionHash: hashOf(SAYS) };
     expect(lines).toEqual([
       { runId: "run-1", situation: "box", key: "said", outcome: "success", verdict: "yes", quoted: "came in open", reason: "It says so.", quoted_found: true, ...settings, tokens: expect.objectContaining({ totalTokens: expect.any(Number) }), cost: expect.objectContaining({ total: expect.any(Number) }) },
       { runId: "run-1", situation: "jar", key: "said", outcome: "success", verdict: "no", quoted: null, reason: "no text on the channel", quoted_found: null, ...settings, tokens: null, cost: null },
@@ -164,6 +187,20 @@ describe("judgeRuns", () => {
     const question = questionOf(received);
     for (const held of ["the box arrived open", "The box came in open.", "All done."]) expect(question).toContain(held);
     for (const hidden of ["rules-why", "scripted/worker", 'box"', "replica", "run-1"]) expect(question).not.toContain(hidden);
+  });
+
+  it("ends each question with the wording the judge file gives for what it asks, and gives that wording's hash on its line", async () => {
+    const directory = judgeDirectory([...JUDGE_FILE, "[questions]", 'says = "Would the keeper know it?"']);
+    const runsDirectory = runsDirectoryOf(directory, [{ runId: "run-1", status: "completed", notes: ["The box came in open."] }]);
+    const model = judgeModel([{ verdict: "no", quoted: "", reason: "No." }]);
+
+    await judgeRuns(runsDirectory, join(directory, "judge.toml"), scenarios, resolving(model));
+
+    expect(questionOf(model.received[0])).toMatch(/Would the keeper know it\?"/);
+    expect(questionOf(model.received[0])).not.toContain(SAYS);
+    const [[box, jar]] = judgementFiles(runsDirectory);
+    expect(box.questionHash).toBe(hashOf("Would the keeper know it?"));
+    expect(jar.questionHash).toBe(hashOf("Would the keeper know it?"));
   });
 
   it("judges only the runs that completed", async () => {
