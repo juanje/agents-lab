@@ -32,7 +32,10 @@ interface Verdict {
 }
 
 /** How the scripted judge answers a question: with a verdict, a provider error, a verdict after a delay, or no call. */
-type Answer = { verdict: Verdict } | { error: string } | { delayMs: number } | { noCall: true };
+type Answer = { verdict: Verdict } | { error: string } | { delayMs: number; verdict?: Verdict } | { noCall: true };
+
+/** How many answers the scripted judge holds ready: more than the questions it is ever asked at once. */
+const READY = 16;
 
 /** What the scripted judge answers a question it has no answer of the scenario's for. */
 const NO: Verdict = { verdict: "no", quoted: "", reason: "None of the texts says it." };
@@ -55,6 +58,8 @@ interface JudgeSetup {
   readonly answers: Map<string, Answer>;
   /** Every call the scripted judge received, in order. */
   readonly asked: Asked[];
+  /** How many questions the scripted judge is answering now, and the most it ever answered at once. */
+  readonly answering: { now: number; most: number };
 }
 
 /** What each scenario sets up, by scenario: Cucumber gives the steps no field of their own for it. */
@@ -69,7 +74,7 @@ function setupOf(context: Context): JudgeSetup {
 Given(
   "a runs directory {string} with one completed workplace run under the condition {string}, whose chosen situations are {string} and {string}",
   function (this: Context, runsDirectory: string, condition: string, first: string, second: string) {
-    setups.set(this, { runsDirectory, condition, chosen: [first, second], judgeFile: {}, answers: new Map(), asked: [] });
+    setups.set(this, { runsDirectory, condition, chosen: [first, second], judgeFile: {}, answers: new Map(), asked: [], answering: { now: 0, most: 0 } });
   },
 );
 
@@ -156,14 +161,23 @@ Given("the scripted judge answers each question with the tool {string}", functio
     const text = textOf(context.messages);
     setup.asked.push({ systemPrompt: getCurrentSystemPrompt(context.messages), text });
     const given = [...setup.answers].find(([statement]) => text.includes(statement))?.[1] ?? { verdict: NO };
-    if ("error" in given) return fauxAssistantMessage([], { stopReason: "error", errorMessage: given.error });
-    if ("noCall" in given) return fauxAssistantMessage([fauxText("I would rather not say.")]);
-    // A slow answer stops waiting when its call is aborted, as a real model's would; Pi then answers it as aborted.
-    if ("delayMs" in given) await waitAtLeast(given.delayMs, options?.signal);
-    const verdict = "verdict" in given ? given.verdict : NO;
-    return fauxAssistantMessage([fauxText("Here is my verdict."), fauxToolCall(tool, { ...verdict })]);
+    const { answering } = setup;
+    answering.now += 1;
+    answering.most = Math.max(answering.most, answering.now);
+    try {
+      if ("error" in given) return fauxAssistantMessage([], { stopReason: "error", errorMessage: given.error });
+      if ("noCall" in given) return fauxAssistantMessage([fauxText("I would rather not say.")]);
+      // A slow answer stops waiting when its call is aborted, as a real model's would; Pi then answers it as aborted.
+      if ("delayMs" in given) await waitAtLeast(given.delayMs, options?.signal);
+      const verdict = given.verdict ?? NO;
+      return fauxAssistantMessage([fauxText("Here is my verdict."), fauxToolCall(tool, { ...verdict })]);
+    } finally {
+      answering.now -= 1;
+    }
   };
-  faux.setResponses([answer]);
+  // The faux provider takes an answer as each call starts, before the answer runs and adds the next: it holds several
+  // ready, so questions asked at once each find one.
+  faux.setResponses(Array.from({ length: READY }, () => answer));
   this.labModels.set(JUDGE_MODEL, { model: faux.getModel(), provider: faux.provider });
 });
 
@@ -468,4 +482,50 @@ Then("each line gives the hash of the wording of the question it was asked, and 
   const said = lineFor(this, "open-box", "said");
   const notSaid = lineFor(this, "open-box", "not_said");
   assert.notEqual(said.questionHash, notSaid.questionHash, "the said and the not_said give the same hash");
+});
+
+Given("the judge file gives {string} as {float}", function (this: Context, field: string, value: number) {
+  const { judgeFile } = setupOf(this);
+  judgeFile[field] = value;
+  writeHome(this, JUDGE_FILE, stringify(judgeFile));
+});
+
+Given("the scripted judge takes {int} milliseconds to answer each question", function (this: Context, delayMs: number) {
+  const { keys, answers } = setupOf(this);
+  // Each said is answered "yes" and each not_said "no", so a line given another question's verdict shows.
+  for (const situation of Object.keys(keys ?? {})) {
+    const { said, notSaid } = keysOf(this, situation);
+    answers.set(said, { delayMs, verdict: { verdict: "yes", quoted: "", reason: "It says so." } });
+    if (notSaid !== undefined) answers.set(notSaid, { delayMs, verdict: NO });
+  }
+});
+
+Then("at some moment {int} questions were being answered at once, and never more than {int}", function (this: Context, atOnce: number, most: number) {
+  assert.equal(this.labError, undefined, `"lab judge" failed: ${this.labError?.message}`);
+  const { answering } = setupOf(this);
+  assert.ok(answering.most >= atOnce, `at most ${answering.most} questions were being answered at once`);
+  assert.ok(answering.most <= most, `${answering.most} questions were being answered at once`);
+});
+
+Then("the file has one line for each question, each with the verdict the scripted judge gave to that question", function (this: Context) {
+  const setup = setupOf(this);
+  const lines = judgements(this);
+  const questions = setup.chosen.flatMap((situation) =>
+    ["said", "not_said"].filter((key) => Object.hasOwn(setup.keys?.[situation] as TomlTable, key)).map((key) => ({ situation, key })),
+  );
+  assert.equal(lines.length, questions.length, `the file has ${lines.length} lines for ${questions.length} questions`);
+  for (const { situation, key } of questions) {
+    const line = lineFor(this, situation, key);
+    const statement = statementOf(this, situation, key);
+    const asked = setup.asked.filter(({ text }) => text.includes(statement));
+    // A question with no text on its channel is answered "no" without a call.
+    if (asked.length === 0) {
+      assert.equal(line.verdict, "no", `the line for "${situation}" and "${key}" was not asked and is not "no"`);
+      continue;
+    }
+    assert.equal(asked.length, 1, `${asked.length} questions hold "${statement}"`);
+    const given = setup.answers.get(statement);
+    assert.ok(given !== undefined && "verdict" in given && given.verdict !== undefined, `the scripted judge gave no verdict for "${statement}"`);
+    assert.equal(line.verdict, given.verdict.verdict, `the line for "${situation}" and "${key}" gives another question's verdict`);
+  }
 });

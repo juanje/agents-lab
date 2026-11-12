@@ -35,6 +35,7 @@ describe("readJudgeFile", () => {
       thinkingLevel: "off",
       instructions: { path: "materials/judge.md", hash: hashOf("You judge.\n"), text: "You judge.\n" },
       timeoutMs: 2000,
+      parallelQuestions: 1,
       questions: { says: { text: SAYS, hash: hashOf(SAYS) }, reveals: { text: REVEALS, hash: hashOf(REVEALS) } },
     });
   });
@@ -71,6 +72,18 @@ describe("readJudgeFile", () => {
 
     expect(() => readJudgeFile(join(level, "judge.toml"))).toThrow(/"thinking_level"/);
     expect(() => readJudgeFile(join(missing, "judge.toml"))).toThrow(/"materials\/none.md"/);
+  });
+
+  it("gives how many questions the judge asks at once, 1 when the file gives none", () => {
+    const directory = judgeDirectory([...JUDGE_FILE, "parallel_questions = 3"]);
+
+    expect(readJudgeFile(join(directory, "judge.toml")).parallelQuestions).toBe(3);
+  });
+
+  it.each([["0"], ["1.5"], ['"3"']])("refuses a parallel_questions of %s, naming it", (value) => {
+    const directory = judgeDirectory([...JUDGE_FILE, `parallel_questions = ${value}`]);
+
+    expect(() => readJudgeFile(join(directory, "judge.toml"))).toThrow(/"parallel_questions"/);
   });
 
   it("refuses a timeout that is not a whole number of milliseconds of at least 1, naming it", () => {
@@ -295,6 +308,41 @@ describe("judgeRuns", () => {
     await judgeRuns(runsDirectory, join(directory, "judge.toml"), scenarios, resolving(new ScriptedModel([{ error: "overloaded", delayMs: 0 }])));
 
     expect(judgementFiles(runsDirectory)[0][0]).toMatchObject({ outcome: "model_error", message: "overloaded" });
+  });
+
+  it("asks up to parallel_questions questions at once, each its own call", async () => {
+    const directory = judgeDirectory([...JUDGE_FILE, "parallel_questions = 2"]);
+    const runs = ["run-1", "run-2", "run-3"].map((runId) => ({ runId, status: "completed" as const, notes: [`The box of ${runId} came in open.`] }));
+    const runsDirectory = runsDirectoryOf(directory, runs);
+    const slow = { toolCalls: [{ name: "verdict", arguments: { verdict: "no", quoted: "", reason: "No." } }], delayMs: 600 };
+    const model = new ScriptedModel([slow, slow, slow]);
+
+    const judging = judgeRuns(runsDirectory, join(directory, "judge.toml"), scenarios, resolving(model));
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const atOnce = model.received.length;
+    await judging;
+
+    expect(atOnce).toBe(2);
+    expect(model.received).toHaveLength(3);
+    // Each call holds its own question and nothing of the others.
+    model.received.forEach((received) => expect(runs.filter(({ notes }) => questionOf(received).includes(notes[0]))).toHaveLength(1));
+  });
+
+  it("writes each question's line as its answer comes", async () => {
+    const directory = judgeDirectory([...JUDGE_FILE, "parallel_questions = 2"]);
+    const runsDirectory = runsDirectoryOf(directory, [
+      { runId: "run-1", status: "completed", notes: ["The box came in open."] },
+      { runId: "run-2", status: "completed", notes: ["The box came in open too."] },
+    ]);
+    const model = new ScriptedModel([
+      { toolCalls: [{ name: "verdict", arguments: { verdict: "yes", quoted: "", reason: "Slow." } }], delayMs: 500 },
+      { toolCalls: [{ name: "verdict", arguments: { verdict: "no", quoted: "", reason: "Fast." } }], delayMs: 0 },
+    ]);
+
+    await judgeRuns(runsDirectory, join(directory, "judge.toml"), scenarios, resolving(model));
+
+    const answered = judgementFiles(runsDirectory)[0].filter((line) => line.situation === "box");
+    expect(answered.map((line) => line.reason)).toEqual(["Fast.", "Slow."]);
   });
 
   it("refuses a thinking level the judge's model cannot use, naming both, before any call", async () => {
