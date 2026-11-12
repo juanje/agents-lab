@@ -57,3 +57,24 @@ Feature: Each agent is one Pi session for the whole run
     When the run ends
     Then agent "a"'s and agent "b"'s model turns did not overlap in time
     And one of them waited at least 100 milliseconds for a model slot
+
+  Scenario: A rate-limit answer is retried after a doubling wait, and the turn goes on
+    Given the limits give "rate_limit_retries" as 3 and "rate_limit_wait_ms" as 50
+    And agent "a" runs on a scripted model whose first turn answers with a rate limit (429) twice, then ends without a tool call
+    When the run ends
+    Then agent "a"'s first model turn has the outcome "success"
+    And the log has 2 retry lines for agent "a", with the waits 50 and 100 milliseconds
+    And the first model turn ended at least 150 milliseconds after it started
+
+  Scenario: When the retries are spent, the turn is a model error
+    Given the limits give "rate_limit_retries" as 1 and "rate_limit_wait_ms" as 50
+    And agent "a" runs on a scripted model whose first turn answers with a rate limit (429) twice
+    When the run ends
+    Then agent "a"'s first model turn has the outcome "model_error"
+    And the log has 1 retry line for agent "a"
+
+  Scenario: Without rate_limit_retries, a rate-limit answer is a model error at once
+    Given agent "a" runs on a scripted model whose first turn answers with a rate limit (429)
+    When the run ends
+    Then agent "a"'s first model turn has the outcome "model_error"
+    And the log has no retry line

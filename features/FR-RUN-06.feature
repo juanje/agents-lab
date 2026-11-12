@@ -10,12 +10,12 @@ Feature: Runs can run in parallel
     When "lab run" runs the experiment file
     Then 4 runs ran and no two of them overlapped in time
 
-  Scenario: With parallel_runs, up to that many runs are in progress at once, in the usual order
+  Scenario: With parallel_runs, up to that many runs are in progress at once, replica by replica
     Given the file sets "parallel_runs" to 2
     When "lab run" runs the experiment file
     Then 4 runs ran, and at some moment 2 of them were in progress
     And never more than 2 were in progress
-    And they started in the order "baseline" replica 1, "baseline" replica 2, "five-slots" replica 1, "five-slots" replica 2
+    And they started in the order "baseline" replica 1, "five-slots" replica 1, "baseline" replica 2, "five-slots" replica 2
     And each run has its own log, and "runs/e-test/index.jsonl" has one line per run
     And each run's setup line gives "parallel_runs" as 2
 

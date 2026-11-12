@@ -313,7 +313,7 @@ Each agent runs in one Pi session that lasts the whole run, using the model from
 
 The prompt never names the model unless the condition says so. The scripted model of FR-ADAPTER-01 runs through this same session, registered with Pi's model runtime like any other model.
 - **Outcomes:** a model turn ends with `success`, `model_error`, `timeout`, `cut_off` (FR-CLOCK-02) or, in tests, `script_exhausted`.
-- **Model errors:** when the provider answers with an error, the model turn is recorded with the outcome `model_error` and the provider's message, and the activation ends.
+- **Model errors:** when the provider answers with an error, the model turn is recorded with the outcome `model_error` and the provider's message, and the activation ends. A rate-limit answer (HTTP 429) is first retried, when the experiment file's `[limits]` give `rate_limit_retries` (by default 0): after a wait of `rate_limit_wait_ms` (by default 1000), doubling with each retry, up to that many times. Each retry is a line in the log with the agent, the attempt and the wait; the wait is time in the world, as any latency is. Only when the retries are spent is the turn `model_error`.
 - **Parallelism limit:** a model turn waits for a free slot when the configured number of calls is already running.
 - **Timeout:** a model turn that runs longer than the timeout is aborted and recorded with the outcome `timeout`, and the activation ends.
 
@@ -397,7 +397,7 @@ When `lab run` is interrupted (Ctrl-C, or a termination signal), it ends the run
 *Why:* a run stopped by hand is still a run of the experiment; without a trace, its partial log reads as a run that crashed or never existed.
 
 #### FR-RUN-06: Runs can run in parallel
-An experiment file can give `parallel_runs`, a whole number of at least 1 (by default 1): how many runs are in progress at once. Runs start in the experiment's usual order (condition, then model, then replica), and each next one starts as soon as one ends, so no more than `parallel_runs` are ever in progress. Each run keeps its own `parallelism_limit`, seed, sessions and log; each run's setup line gives `parallel_runs`, and its line in the index is added when it ends.
+An experiment file can give `parallel_runs`, a whole number of at least 1 (by default 1): how many runs are in progress at once. With `parallel_runs` above 1, runs start replica by replica (every condition and model of replica 1, then of replica 2, and so on), so that the runs in progress together are one replica of each condition and share the provider's conditions; each next one starts as soon as one ends, so no more than `parallel_runs` are ever in progress. Each run keeps its own `parallelism_limit`, seed, sessions and log; each run's setup line gives `parallel_runs`, and its line in the index is added when it ends.
 
 While several runs are in progress, the progress lines (FR-RUN-04) give each run in progress by its number. A run that stops on an error stops the experiment: the runs still in progress end as stopped, with the reason that the experiment stopped, and no new run starts. An interrupted experiment (FR-RUN-05) ends every run in progress the same way, each saying it was interrupted.
 *Why:* an experiment's runs are independent worlds, and the provider's load does not depend on a handful of calls; running a replica's conditions at once both saves hours and puts them through the same provider conditions, while the one-at-a-time default keeps the earlier experiments as they ran.
