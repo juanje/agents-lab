@@ -52,7 +52,9 @@ describe("readJudgeFile", () => {
   it("refuses a question that is neither a text nor a material, or whose file does not exist, naming it", () => {
     const number = judgeDirectory([...JUDGE_FILE, "[questions]", "says = 3"]);
     const missing = judgeDirectory([...JUDGE_FILE, "[questions]", 'reveals = { file = "materials/none.md" }']);
+    const untabled = judgeDirectory([...JUDGE_FILE, 'questions = "Would the keeper know it?"']);
 
+    expect(() => readJudgeFile(join(untabled, "judge.toml"))).toThrow(/"questions"/);
     expect(() => readJudgeFile(join(number, "judge.toml"))).toThrow(/"questions.says"/);
     expect(() => readJudgeFile(join(missing, "judge.toml"))).toThrow(/"questions.reveals".*"materials\/none.md"/);
   });
