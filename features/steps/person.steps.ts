@@ -11,6 +11,7 @@ import type { Context } from "../support/context.ts";
 import { fencedAfter, under } from "./inventory.steps.ts";
 import { completedIndex, experimentFileOf, failedNaming, firstLine, idleModels, logOf, runLab } from "./lab.steps.ts";
 import { inTables, withBase } from "./neighbourhood.steps.ts";
+import { logLines } from "./record.steps.ts";
 import { asRead, userTexts } from "./stimulus.steps.ts";
 
 /** The worker, the workplace's one agent. */
@@ -194,9 +195,11 @@ Then("the person's first message is {string}, then {string}, then {string}, each
 });
 
 Then("the worker received no stimulus on the channel {string}", function (this: Context, channel: string) {
-  const activations = stimuliByActivation(this);
-  assert.ok(activations.length > 0, "the worker made no activation");
-  const received = activations.flat().filter((stimulus) => stimulus.channel === channel);
+  // Every stimulus of the run, a stimulus delivered after the worker's last activation ended included; the run ran by
+  // "lab run", or by the engine, which gives its run id.
+  const lines = this.runId === undefined ? runLog(this) : logLines(this);
+  assert.ok(lines.some((line) => line.type === "activation" && line.agent === WORKER), "the worker made no activation");
+  const received = lines.filter((line) => line.type === "stimulus" && line.agent === WORKER && line.channel === channel);
   assert.deepEqual(received, [], `the worker received stimuli on "${channel}"`);
 });
 

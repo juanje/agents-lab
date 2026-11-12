@@ -105,6 +105,14 @@ Given(
   },
 );
 
+Given("the world's {string} is {string}", function (this: Context, key: string, value: string) {
+  const [table, field] = /^\[(\w+)\] (\w+)$/.exec(key)?.slice(1) ?? [];
+  assert.ok(table !== undefined && field !== undefined, `the steps do not read the world's key ${key}`);
+  editWorld(this, (world) => {
+    tableOf(world, table)[field] = value;
+  });
+});
+
 Given("the world's {string} is {string} and the configuration's {string} is {int}", function (this: Context, key: string, start: string, scaleKey: string, scale: number) {
   setClock(this, key, start, scaleKey, scale);
 });
@@ -521,4 +529,47 @@ Then("it gives the clock's start time {string} and the time scale {int}", functi
   const clock = under(under(this.labOutput ?? "", '## Condition "base"'), "### Clock");
   assert.equal(itemOf(clock, "Start"), start);
   assert.equal(itemOf(clock, "Time scale"), `${scale} world seconds for each second of the run`);
+});
+
+/**
+ * How long after a stimulus reaches the worker a call it interrupts may end: the engine takes a moment to notice it and to
+ * record the call, and Node's timers a moment more.
+ */
+const NOTICED_WITHIN_MS = 20;
+
+/** When the stimulus the scenario checked last was delivered, which "the call arrived" names in the steps that follow. */
+const lastStimuli = new WeakMap<Context, number>();
+
+Then(
+  "the worker received {string} from {string} on the channel {string}, once, after {string} was put down in {string}",
+  function (this: Context, content: string, source: string, channel: string, thing: string, place: string) {
+    const lines = logLines(this);
+    const received = lines.filter((line) => line.type === "stimulus" && line.agent === WORKER && line.channel === channel);
+    assert.deepEqual(
+      received.map((line) => ({ source: line.source, content: line.content })),
+      [{ source, content }],
+      `the worker received other stimuli on "${channel}"`,
+    );
+    const deliveredAtMs = received[0].deliveredAtMs as number;
+    const action = (line: (typeof lines)[number]) => String(line.action);
+    const puttingDown = lines.find(
+      (line) => line.type === "component_action" && action(line).startsWith("put down") && action(line).includes(`"${thing}"`) && action(line).endsWith(`in "${place}"`),
+    );
+    assert.ok(puttingDown !== undefined, `no component put "${thing}" down in "${place}"`);
+    const putDownAtMs = puttingDown.endedAtMs as number;
+    assert.ok(deliveredAtMs >= putDownAtMs, `the stimulus came ${Math.round(putDownAtMs - deliveredAtMs)} ms before "${thing}" was put down`);
+    // The arbiter had applied it by then.
+    assertIn(stateAt<Workplace>(this, deliveredAtMs), thing, place, "as the stimulus came");
+    lastStimuli.set(this, deliveredAtMs);
+  },
+);
+
+Then("the {string} call ended with the outcome {string} when the call arrived", function (this: Context, tool: string, outcome: string) {
+  const deliveredAtMs = lastStimuli.get(this);
+  assert.ok(deliveredAtMs !== undefined, "no stimulus was checked before");
+  const calls = workerCalls(this, tool);
+  assert.equal(calls.length, 1, `the worker made ${calls.length} "${tool}" calls`);
+  assert.equal(calls[0].outcome, outcome);
+  const after = calls[0].endedAtMs - deliveredAtMs;
+  assert.ok(after >= 0 && after <= NOTICED_WITHIN_MS, `the call ended ${Math.round(after)} ms after the stimulus came`);
 });

@@ -3,17 +3,18 @@ import { ChangesSinceSensing } from "../src/engine/changes.ts";
 import { RunClock } from "../src/engine/clock.ts";
 import { type Component, type ComponentAction, type Step, runComponent } from "../src/engine/components.ts";
 import { Random } from "../src/engine/random.ts";
+import { Stimuli, type Stimulus } from "../src/engine/stimuli.ts";
 import { World } from "../src/engine/world.ts";
 import { type Slots, emptySlots, filler, holder } from "./fixtures/slots.ts";
 
 /** Runs a component in a world until its cycle ends or the signal aborts, giving the actions it recorded and the changes it applied. */
-async function runIn(component: Component<Slots>, world: World<Slots>, runEnd = new AbortController().signal) {
+async function runIn(component: Component<Slots>, world: World<Slots>, runEnd = new AbortController().signal, stimuli = new Stimuli([])) {
   const actions: ComponentAction[] = [];
   const changes = new ChangesSinceSensing();
   changes.sensed("a");
   const clock = new RunClock();
   clock.start();
-  await runComponent(component, { world, random: new Random(1), runEnd, changes, clock, record: (action) => actions.push(action) });
+  await runComponent(component, { world, random: new Random(1), runEnd, changes, clock, stimuli, record: (action) => actions.push(action) });
   return { actions, changes };
 }
 
@@ -144,5 +145,26 @@ describe("runComponent", () => {
     const carrier: Component<Slots> = { name: "carrier", kind: "world", description: "Carries.", cycle: () => ({ next: () => (index++ === 0 ? refused : { kind: "end" }) }) };
 
     await expect(runIn(carrier, new World(emptySlots(3)))).rejects.toThrow('component "carrier"\'s action "carry" was refused with "blocked"');
+  });
+
+  it("delivers a channel's stimulus to an agent as it takes the step, after the actions before it landed, taking no time and recording no action", async () => {
+    const world = new World(emptySlots(3));
+    const given: (string | undefined)[] = [];
+    const delivered: { atSlot: string | null; stimulus: Stimulus }[] = [];
+    const stimuli = new Stimuli([{ name: "call", source: "the porter", stimulus: "Deliveries are in." }], (agent, stimulus) => {
+      expect(agent).toBe("a");
+      delivered.push({ atSlot: holder(world.state, 1), stimulus });
+    });
+    const steps: Step<Slots>[] = [
+      { kind: "action", name: "fill", durationMs: 10, action: { precondition: () => ({ holds: true }), effect: (slots) => ["crate", ...slots.slice(1)] } },
+      { kind: "deliver", agent: "a", channel: "call" },
+    ];
+
+    const { actions } = await runIn(stepping(steps, given), world, undefined, stimuli);
+
+    expect(delivered).toEqual([{ atSlot: "crate", stimulus: { channel: "call", source: "the porter", content: "Deliveries are in." } }]);
+    expect(stimuli.take("a")).toEqual([delivered[0].stimulus]);
+    expect(actions.map((action) => action.action)).toEqual(["fill"]);
+    expect(given).toEqual([undefined, "success", undefined]);
   });
 });
