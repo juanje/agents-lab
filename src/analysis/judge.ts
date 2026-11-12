@@ -128,7 +128,7 @@ function verdictOf(answer: OneAnswer): { verdict: string; quoted: string; reason
 }
 
 /** Whether quoted words appear, as written, in one of the texts; none when nothing was quoted. */
-function quotedFound(quoted: string, texts: Judgeable["texts"]): boolean | null {
+export function quotedFound(quoted: string, texts: Judgeable["texts"]): boolean | null {
   return quoted === "" ? null : texts.some(({ text }) => text.includes(quoted));
 }
 
