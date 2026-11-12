@@ -62,8 +62,8 @@ interface PlannedRun {
 
 /**
  * Runs an experiment: each condition with each of its models, given by name in the experiment's order, for each
- * replica. Runs start in that order, and each next one as soon as one ends, so no more than the experiment's
- * `parallelRuns` are in progress at once (FR-RUN-06). Every agent of a run works with that run's model. Each run writes
+ * replica, or replica by replica when several run at once. Each next one starts as soon as one ends, so no more than
+ * the experiment's `parallelRuns` are in progress at once (FR-RUN-06). Every agent of a run works with that run's model. Each run writes
  * its log into the runs directory, and the directory's index gets a line for each run as it ends. A run that stops on
  * an error stops the experiment: the runs in progress stop, saying the experiment stopped, and no run starts after it.
  * An observer, when given, is told when each run starts, each line its log records, and how it ends. An interruption,
@@ -168,11 +168,19 @@ export async function runExperiment<State>(
   if (stoppedOn !== undefined) throw stoppedOn;
 }
 
-/** The experiment's runs, in the order they start: by condition, then model, then replica, each numbered from 1. */
+/**
+ * The experiment's runs, in the order they start, each numbered from 1: one at a time, by condition, then model, then
+ * replica; with `parallelRuns` above 1, replica by replica, so the runs in progress together are one replica of each
+ * condition and model (FR-RUN-06).
+ */
 function plannedRuns(experiment: Experiment, models: ReadonlyMap<string, AgentModel>): PlannedRun[] {
-  return experiment.conditions.flatMap((condition, at) =>
+  const replicas = Array.from({ length: experiment.replicas }, (_, index) => index + 1);
+  const runs = experiment.conditions.flatMap((condition, at) =>
     [...models].flatMap(([modelName, model]) =>
-      Array.from({ length: experiment.replicas }, (_, index) => ({ condition, at, modelName, model, replica: index + 1, seed: replicaSeed(experiment.seed, index + 1) })),
+      replicas.map((replica) => ({ condition, at, modelName, model, replica, seed: replicaSeed(experiment.seed, replica) })),
     ),
-  ).map((run, at) => ({ ...run, number: at + 1 }));
+  );
+  // A stable sort, so within a replica the runs keep the order of condition, then model.
+  if (experiment.parallelRuns > 1) runs.sort((one, other) => one.replica - other.replica);
+  return runs.map((run, at) => ({ ...run, number: at + 1 }));
 }
