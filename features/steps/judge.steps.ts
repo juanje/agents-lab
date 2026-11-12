@@ -417,3 +417,55 @@ Then(
     assert.equal(line.verdict, verdict);
   },
 );
+
+Given("the judge file gives {string} as {string}", function (this: Context, field: string, text: string) {
+  const { judgeFile } = setupOf(this);
+  const [table, key] = field.split(".");
+  judgeFile[table] = { ...((judgeFile[table] as TomlTable | undefined) ?? {}), [key]: text };
+  writeHome(this, JUDGE_FILE, stringify(judgeFile));
+});
+
+Given(
+  "the scripted judge answers {string} for the said of {string}, quoting {string}, and {string} for its not_said",
+  function (this: Context, said: string, situation: string, quoted: string, notSaid: string) {
+    answering(this, situation, { verdict: { verdict: said as Verdict["verdict"], quoted, reason: "The note says so." } }, notSaid);
+  },
+);
+
+/** The text of the last user message a call received, as the judge read it. */
+function questionText(asked: Asked): string {
+  const messages = JSON.parse(asked.text) as Message[];
+  const question = messages.filter((message) => message.role === "user").at(-1);
+  assert.ok(question !== undefined, `the call held no question: ${asked.text}`);
+  const { content } = question;
+  return typeof content === "string" ? content : content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("");
+}
+
+Then("the question about the {word} of {string} ends with {string}", function (this: Context, key: string, situation: string, ending: string) {
+  assert.equal(this.labError, undefined, `"lab judge" failed: ${this.labError?.message}`);
+  const statement = statementOf(this, situation, key);
+  const about = setupOf(this).asked.filter((asked) => asked.text.includes(statement));
+  assert.equal(about.length, 1, `${about.length} questions hold "${statement}"`);
+  const question = questionText(about[0]);
+  assert.ok(question.endsWith(ending), `the question does not end with "${ending}": ${question}`);
+});
+
+/** The questions the judge asks when its file gives none, as the SPEC words them. */
+const DEFAULT_QUESTIONS = {
+  says: "Does one of the texts say what the statement states?",
+  reveals: "Does one of the texts reveal what the statement states?",
+};
+
+Then("each line gives the hash of the wording of the question it was asked, and the two lines' hashes differ", function (this: Context) {
+  const given = (setupOf(this).judgeFile.questions as Partial<Record<keyof typeof DEFAULT_QUESTIONS, string>> | undefined) ?? {};
+  const hashOf = (text: string) => `sha256:${createHash("sha256").update(text).digest("hex")}`;
+  // A said asks whether a text says the statement, a not_said whether one reveals it.
+  const wordingOf = (key: unknown) => (key === "said" ? (given.says ?? DEFAULT_QUESTIONS.says) : (given.reveals ?? DEFAULT_QUESTIONS.reveals));
+  for (const line of judgements(this)) {
+    const which = `the line for "${String(line.situation)}" and "${String(line.key)}"`;
+    assert.equal(line.questionHash, hashOf(wordingOf(line.key)), `${which} gives another hash of its question's wording`);
+  }
+  const said = lineFor(this, "open-box", "said");
+  const notSaid = lineFor(this, "open-box", "not_said");
+  assert.notEqual(said.questionHash, notSaid.questionHash, "the said and the not_said give the same hash");
+});
