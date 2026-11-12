@@ -79,3 +79,21 @@ Feature: A reserved judge classifies what agents said
     Then the question about the said of "open-box" ends with "Would the keeper, after reading one of these texts, know what the statement states?"
     And the question about the not_said of "open-box" ends with "Does one of the texts reveal what the statement states?"
     And each line gives the hash of the wording of the question it was asked, and the two lines' hashes differ
+
+  Scenario: The judge can ask several questions at once
+    Given the judge file gives "parallel_questions" as 3
+    And the scripted judge takes 300 milliseconds to answer each question
+    When "lab judge runs/e-test judge.toml" runs
+    Then at some moment 2 questions were being answered at once, and never more than 3
+    And the file has one line for each question, each with the verdict the scripted judge gave to that question
+
+  Scenario Outline: A parallel_questions that is not a whole number of at least 1 is refused before any call
+    Given the judge file gives "parallel_questions" as <value>
+    When "lab judge runs/e-test judge.toml" runs
+    Then it fails with an error that names "parallel_questions"
+    And the scripted judge was asked nothing
+
+    Examples:
+      | value |
+      | 0     |
+      | 1.5   |
