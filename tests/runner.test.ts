@@ -22,6 +22,7 @@ const experiment: Experiment = {
   seed: 7,
   parallelRuns: 1,
   limits: { timeLimitMs: 60_000, activationsPerAgent: 1, parallelismLimit: 10, modelTurnTimeoutMs: 10_000 },
+  rateLimit: { retries: 0, waitMs: 1000 },
   conditions: [
     { name: "baseline", change: "" },
     { name: "five-slots", change: "[slots]\ncount = 5\n" },

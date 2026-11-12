@@ -26,6 +26,8 @@ export interface Experiment {
   /** The base seed, from which each replica's seed comes. */
   seed: number;
   limits: Limits;
+  /** How a rate-limit answer of a model turn is retried, from the file's limits (FR-ADAPTER-02). */
+  rateLimit: RateLimitRetry;
   /** How long each run waits between metric samples; without it, each run samples only at its start and its end. */
   metricIntervalMs?: number;
   /** How many runs are in progress at once, 1 unless the file gives another (FR-RUN-06). */
@@ -41,12 +43,21 @@ export interface Experiment {
 export type Compaction = { enabled: false } | { enabled: true; triggerAt: number; keepRecentTokens: number };
 
 /**
+ * How a model turn whose provider answers with a rate limit (HTTP 429) is retried (FR-ADAPTER-02): up to `retries`
+ * times, the first after `waitMs`, each next one after twice the wait before it.
+ */
+export interface RateLimitRetry {
+  retries: number;
+  waitMs: number;
+}
+
+/**
  * Reads an experiment file, in TOML, and validates it against the experiment schema before anything runs. Its
  * conditions read their materials from the directory the file is in, when given.
  */
 export function readExperiment(toml: string, directory?: string): Experiment {
   const file = readTable(parse(toml), [], fileSchema, optionalFileSchema);
-  const limits = readTable(file.limits, ["limits"], limitsSchema);
+  const limits = readTable(file.limits, ["limits"], limitsSchema, optionalLimitsSchema);
   const materials = directory === undefined ? {} : { materials: new Materials(directory) };
   return {
     id: file.id,
@@ -62,6 +73,7 @@ export function readExperiment(toml: string, directory?: string): Experiment {
       parallelismLimit: limits.parallelism_limit,
       modelTurnTimeoutMs: limits.model_turn_timeout_ms,
     },
+    rateLimit: { retries: limits.rate_limit_retries ?? 0, waitMs: limits.rate_limit_wait_ms ?? 1000 },
     ...(file.metric_interval_ms === undefined ? {} : { metricIntervalMs: file.metric_interval_ms }),
     parallelRuns: file.parallel_runs ?? 1,
     conditions: conditionsOf(file).map((condition) => ({ ...condition, ...materials })),
@@ -277,6 +289,12 @@ const limitsSchema = {
   activations_per_agent: atLeastOne,
   parallelism_limit: atLeastOne,
   model_turn_timeout_ms: atLeastOne,
+} satisfies Schema;
+
+/** The limits the file may leave out. */
+const optionalLimitsSchema = {
+  rate_limit_retries: wholeNumber("a whole number of at least 0", 0),
+  rate_limit_wait_ms: atLeastOne,
 } satisfies Schema;
 
 /**
