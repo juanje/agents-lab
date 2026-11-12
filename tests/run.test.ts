@@ -744,6 +744,66 @@ describe("run", () => {
     expect(model.received).toHaveLength(1);
   });
 
+  describe("a rate-limit answer (FR-ADAPTER-02)", () => {
+    /** How Pi gives an OpenAI rate-limit answer (pi-ai 1.5.0, utils/error-body.js formatProviderError). */
+    const rateLimited = { error: "OpenAI API error (429): Rate limit reached for requests", delayMs: 0 };
+    const retryLines = (logDirectory: string, runId: string) => logOf(logDirectory, runId).filter((line) => (line as { type: string }).type === "rate_limit_retry");
+
+    it("is retried after a wait that doubles with each retry, logging each retry, and the turn goes on as one turn", async () => {
+      const model = new ScriptedModel([rateLimited, rateLimited, { text: "Nothing to do.", delayMs: 0 }]);
+      const logDirectory = newLogDirectory();
+
+      const { runId, turns } = await run(slots(), [{ name: "a", model, activations: 1 }], seed, { ...settings, logDirectory, rateLimit: { retries: 3, waitMs: 30 } });
+
+      expect(turns).toEqual([expect.objectContaining({ agent: "a", outcome: "success", text: "Nothing to do." })]);
+      const [turn] = turns;
+      expect(turn.endedAtMs - turn.startedAtMs).toBeGreaterThanOrEqual(90);
+      expect(retryLines(logDirectory, runId)).toEqual([
+        { type: "rate_limit_retry", agent: "a", attempt: 1, waitMs: 30, atMs: expect.any(Number) },
+        { type: "rate_limit_retry", agent: "a", attempt: 2, waitMs: 60, atMs: expect.any(Number) },
+      ]);
+      // Each retry asks again with the same context: the rate-limit answers are not part of the agent's history.
+      expect(model.received).toHaveLength(3);
+      expect(model.received[2]).toEqual(model.received[0]);
+    });
+
+    it("is a model_error, with the provider's message, once the retries are spent", async () => {
+      const model = new ScriptedModel([rateLimited, rateLimited, { text: "Nothing to do.", delayMs: 0 }]);
+      const logDirectory = newLogDirectory();
+
+      const { runId, turns } = await run(slots(), [{ name: "a", model, activations: 1 }], seed, { ...settings, logDirectory, rateLimit: { retries: 1, waitMs: 10 } });
+
+      expect(turns).toEqual([expect.objectContaining({ agent: "a", outcome: "model_error", message: rateLimited.error })]);
+      expect(retryLines(logDirectory, runId)).toHaveLength(1);
+      expect(model.received).toHaveLength(2);
+    });
+
+    it("is a model_error at once without rate-limit retries, as is any other provider error with them", async () => {
+      const logDirectory = newLogDirectory();
+      const limited = new ScriptedModel([rateLimited, { text: "Nothing to do.", delayMs: 0 }]);
+      const overloaded = new ScriptedModel([{ error: "overloaded", delayMs: 0 }, { text: "Nothing to do.", delayMs: 0 }]);
+
+      const without = await run(slots(), [{ name: "a", model: limited, activations: 1 }], seed, { ...settings, logDirectory });
+      const other = await run(slots(), [{ name: "a", model: overloaded, activations: 1 }], seed, { ...settings, logDirectory: newLogDirectory(), rateLimit: { retries: 3, waitMs: 10 } });
+
+      expect(without.turns.map(({ outcome }) => outcome)).toEqual(["model_error"]);
+      expect(retryLines(logDirectory, without.runId)).toEqual([]);
+      expect(other.turns.map(({ outcome }) => outcome)).toEqual(["model_error"]);
+      expect(overloaded.received).toHaveLength(1);
+    });
+
+    it("stops waiting to retry when the run's time limit passes, and the turn is cut off", async () => {
+      const model = new ScriptedModel([rateLimited, { text: "Nothing to do.", delayMs: 0 }]);
+      const before = performance.now();
+
+      const { turns } = await run(slots(), [{ name: "a", model, activations: 1 }], seed, { ...settings, timeLimitMs: 100, rateLimit: { retries: 1, waitMs: 5000 } });
+
+      expect(turns.map(({ outcome }) => outcome)).toEqual(["cut_off"]);
+      expect(performance.now() - before).toBeLessThan(2000);
+      expect(model.received).toHaveLength(1);
+    });
+  });
+
   it("records the turn past the end of the script as script_exhausted, and ends the activation there", async () => {
     const model = new ScriptedModel([{ toolCalls: [{ name: "look", arguments: {} }], delayMs: 0 }]);
 

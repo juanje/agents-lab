@@ -101,6 +101,8 @@ export class Context extends CucumberWorld {
   runEndedAtMs?: number;
   /** How many model calls may run at once, unless the scenario says: more than the agents of any scenario here. */
   parallelismLimit = 10;
+  /** How a rate-limit answer is retried, when the scenario's limits give it; otherwise it is not (FR-ADAPTER-02). */
+  rateLimit?: { retries: number; waitMs: number };
   /** How long each agent waits before an activation. */
   waitBeforeActivationMs = 0;
   /** An agent's rhythm, when the scenario gives it one of its own; it is called each time the agent starts to rest. */

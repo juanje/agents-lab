@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { Given, Then } from "@cucumber/cucumber";
 import { getCurrentSystemPrompt, getCurrentTools } from "@earendil-works/pi-ai";
@@ -14,6 +14,7 @@ import {
   createWriteToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { emptySlots } from "../../tests/fixtures/slots.ts";
+import type { LogLine } from "../../src/engine/recorder.ts";
 import type { Context } from "../support/context.ts";
 import { modelOf, script } from "./tool.steps.ts";
 
@@ -342,3 +343,75 @@ Then(
     assert.ok(apart <= withinMs, `agent "${agent}"'s model turn started ${apart} ms after agent "${other}"'s`);
   },
 );
+
+/** How Pi gives an OpenAI rate-limit answer (pi-ai 1.5.0, utils/error-body.js formatProviderError). */
+const RATE_LIMIT = "OpenAI API error (429): Rate limit reached for requests";
+
+Given(
+  "the limits give {string} as {int} and {string} as {int}",
+  function (this: Context, retriesField: string, retries: number, waitField: string, waitMs: number) {
+    assert.deepEqual([retriesField, waitField], ["rate_limit_retries", "rate_limit_wait_ms"]);
+    this.rateLimit = { retries, waitMs };
+  },
+);
+
+Given(
+  "agent {string} runs on a scripted model whose first turn answers with a rate limit \\(429) twice, then ends without a tool call",
+  function (this: Context, agent: string) {
+    script(this, agent, [
+      { error: RATE_LIMIT, delayMs: 0 },
+      { error: RATE_LIMIT, delayMs: 0 },
+      { text: "Nothing to do.", delayMs: 0 },
+    ]);
+  },
+);
+
+Given("agent {string} runs on a scripted model whose first turn answers with a rate limit \\(429) twice", function (this: Context, agent: string) {
+  script(this, agent, [
+    { error: RATE_LIMIT, delayMs: 0 },
+    { error: RATE_LIMIT, delayMs: 0 },
+  ]);
+});
+
+Given("agent {string} runs on a scripted model whose first turn answers with a rate limit \\(429)", function (this: Context, agent: string) {
+  script(this, agent, [{ error: RATE_LIMIT, delayMs: 0 }]);
+});
+
+/** The lines of the run's log, as it wrote them. */
+function logLines(context: Context): LogLine[] {
+  assert.ok(context.runId !== undefined, "the run gave no id");
+  const text = readFileSync(join(context.logDirectory, `${context.runId}.jsonl`), "utf8");
+  return text.slice(0, -1).split("\n").map((line) => JSON.parse(line) as LogLine);
+}
+
+/** The run's rate-limit retry lines, in the order the log gives them. */
+function retryLines(context: Context) {
+  return logLines(context).flatMap((line) => (line.type === "rate_limit_retry" ? [line] : []));
+}
+
+Then(
+  "the log has {int} retry lines for agent {string}, with the waits {int} and {int} milliseconds",
+  function (this: Context, count: number, agent: string, first: number, second: number) {
+    const lines = retryLines(this);
+    assert.deepEqual(
+      lines.map(({ agent, attempt, waitMs }) => ({ agent, attempt, waitMs })),
+      [first, second].slice(0, count).map((waitMs, at) => ({ agent, attempt: at + 1, waitMs })),
+    );
+  },
+);
+
+Then("the log has {int} retry line for agent {string}", function (this: Context, count: number, agent: string) {
+  const lines = retryLines(this);
+  assert.equal(lines.length, count);
+  for (const line of lines) assert.equal(line.agent, agent);
+});
+
+Then("the log has no retry line", function (this: Context) {
+  assert.deepEqual(retryLines(this), []);
+});
+
+Then("the first model turn ended at least {int} milliseconds after it started", function (this: Context, durationMs: number) {
+  const [first] = this.turns ?? [];
+  assert.ok(first !== undefined, "the run gave no model turn");
+  assert.ok(first.endedAtMs - first.startedAtMs >= durationMs, `the first model turn lasted ${first.endedAtMs - first.startedAtMs} milliseconds`);
+});

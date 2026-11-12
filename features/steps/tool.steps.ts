@@ -144,6 +144,7 @@ export async function runScenario<State>(context: Context, loaded: LoadedScenari
     // The scripted models cannot reason.
     thinkingLevel: "off",
     parallelismLimit: context.parallelismLimit,
+    ...(context.rateLimit === undefined ? {} : { rateLimit: context.rateLimit }),
     timeLimitMs: context.timeLimitMs,
     metricIntervalMs: context.metricIntervalMs,
     onStart: (stimuli) => {
