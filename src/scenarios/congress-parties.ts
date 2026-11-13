@@ -997,3 +997,86 @@ export const agencyRules: RuleSet = {
     return rulesOf(script(), () => ({ ...record }));
   },
 };
+
+/** The conditions a sponsor may set. */
+export const SPONSOR_CONDITIONS = ["logo", "morning_slot", "table", "attendee_list", "passes"] as const;
+
+/** The perturbation that makes a sponsor withdraw, reaching it on a channel of its own name. */
+export const SPONSOR_PERTURBATION = "sponsor_withdraws";
+
+/** A sponsor's parameters: its template and what the congress adds to it. */
+interface SponsorParams {
+  id: string;
+  amount: number;
+  conditions: string[];
+  insists?: string[];
+  counter_acceptance?: number;
+  pay_days: [number, number];
+  pick_up?: number;
+  organiser: string;
+}
+
+/** A list as a field gives it: "logo, morning_slot". */
+const listIn = (text: unknown) =>
+  String(text ?? "")
+    .split(/,\s*/)
+    .filter((each) => each !== "");
+
+/**
+ * The sponsor's rules (FR-CONGRESS-05): from its template and its own sequence, it states its conditions, agrees to its
+ * own, refuses a counter that drops what it insists on and takes one that keeps it with its counter_acceptance, or
+ * withdraws; it acknowledges a list and evidence, and withdraws when its perturbation reaches it.
+ */
+export const sponsorRules: RuleSet = {
+  start: (given, random) => {
+    const sponsor = given as unknown as SponsorParams;
+    const party = new Party();
+    const record = { conditions: sponsor.conditions.join(", "), agreement: "none", paid: 0, withdrew: false };
+    const agreed = (conditions: string[]): Answer => {
+      record.agreement = conditions.join(", ");
+      return { act: "agreement", fields: { amount: sponsor.amount, conditions: record.agreement } };
+    };
+    const withdrawing = (): Answer => {
+      record.withdrew = true;
+      record.agreement = "none";
+      return { act: "withdraw", fields: {} };
+    };
+    const counter = (conditions: string[]): Answer => {
+      const missing = (sponsor.insists ?? []).filter((condition) => !conditions.includes(condition));
+      if (missing.length > 0) return { act: "refused", fields: { missing: missing.join(", ") } };
+      return random.next() < (sponsor.counter_acceptance ?? 0) ? agreed(conditions) : withdrawing();
+    };
+    const answer = ({ act, fields }: Received): Answer => {
+      if (record.withdrew) return { act: "not_available", fields: { what: act } };
+      switch (act) {
+        case "ask_conditions":
+          return { act: "conditions", fields: { amount: sponsor.amount, conditions: record.conditions, pay_days: `${sponsor.pay_days[0]} to ${sponsor.pay_days[1]}` } };
+        case "accept_sponsorship": {
+          const conditions = listIn(fields.conditions);
+          const own = conditions.length === sponsor.conditions.length && sponsor.conditions.every((condition) => conditions.includes(condition));
+          return own ? agreed(conditions) : counter(conditions);
+        }
+        case "counter":
+          return counter(listIn(fields.conditions));
+        case "send_attendee_list":
+          return { act: "received", fields: {} };
+        case "send_evidence":
+          return { act: "acknowledged", fields: {} };
+        default:
+          return { act: "not_available", fields: { what: act } };
+      }
+    };
+    function* script(): Script {
+      for (;;) {
+        if (party.stimuli.some(({ channel }) => channel === SPONSOR_PERTURBATION) && !record.withdrew) {
+          const withdrawn = withdrawing();
+          yield* party.call("send_mail", { to: sponsor.organiser, act: withdrawn.act, fields: withdrawn.fields });
+        }
+        party.stimuli.splice(0, party.stimuli.length, ...party.stimuli.filter(({ channel }) => channel !== SPONSOR_PERTURBATION));
+        yield* party.handle(answer, sponsor.pick_up ?? 1, random);
+        if (party.stimuli.length === 0) yield* party.rest(undefined);
+      }
+    }
+    return rulesOf(script(), () => ({ ...record }));
+  },
+};
