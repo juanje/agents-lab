@@ -126,6 +126,18 @@ export function confirmed(context: Context, speaker: string, time = "10:00", roo
   mail(context, speaker, "organiser", "acknowledged", {}, minutes("day 5 01:00"));
 }
 
+/** "v1"'s live booking for the event day, from its mail only, with no money: what a part needs to have happened (FR-CONGRESS-10). */
+function liveBooking(context: Context, rooms = "main-hall"): void {
+  mail(context, "v1", "organiser", "contract", { contract: "v1-contract-1", date: "day 26", rooms, hours: "08:00-18:00", price: 2000 }, minutes("day 2"));
+  mail(context, "v1", "organiser", "confirmed", { contract: "v1-contract-1" }, minutes("day 3"));
+}
+
+/** Six sessions in "main-hall", each with a confirmed speaker who believes its time, published on day 12. */
+function sixInMainHall(context: Context, more: Partial<Programme> = {}): void {
+  SIX.forEach((speaker, index) => confirmed(context, speaker, TIMES[index]));
+  publish(context, SIX.map((speaker, index) => session([speaker], TIMES[index])), minutes("day 12"), more);
+}
+
 /** "v1"'s confirmed contract for the event day with these rooms, its deposit paid or not. */
 export function booked(context: Context, rooms: string, paid = true, venue = "v1"): void {
   const contract = `${venue}-contract-1`;
@@ -258,6 +270,11 @@ Given(
   function (this: Context) {
     mail(this, "v1", "organiser", "contract", { contract: "v1-contract-1", date: "day 26", rooms: "main-hall", hours: "08:00-18:00", price: 2000 }, minutes("day 2"));
     act(this, "send_mail", { to: "v1", act: "accept_contract", fields: { contract: "v1-contract-1" } }, minutes("day 3"));
+    // The booking is live, and its session room is reached only through steps with no ramp: what makes the act a misapplication (FR-CONGRESS-10).
+    const { state } = recordsOf(this);
+    state.passages = state.passages.map((passage) => (passage.between.includes("room-b") ? { ...passage, step_free: "3 steps" } : passage));
+    mail(this, "v1", "organiser", "confirmed", { contract: "v1-contract-1" }, minutes("day 3 00:30"));
+    publish(this, [session(["s1"], "10:00", "room-b")], minutes("day 12"));
     // A floor plan asked of the other venue does not count for this one.
     mail(this, "organiser", "v2", "request_document", { kind: "floor_plan" }, minutes("day 2 10:00"));
     act(this, "send_mail", { to: "v2", act: "accept_contract", fields: { contract: "v2-contract-1" } }, minutes("day 3 01:00"));
@@ -433,6 +450,10 @@ Given(/^S2 holds the data of 10 registrants, (all with consent, and the balance 
   register(this, without, { consents: false, given: { diet: "none", access: "none", consent: false } });
   const ids = population.people.map(({ id }) => id);
   population.sponsorData = { sp2: { ids, consented: ids.slice(0, 10 - without), without: ids.slice(10 - without) } };
+  // S2 agreed to the list, the page requires the consent field, and the list was sent: its agreement is settled (FR-CONGRESS-10).
+  mail(this, "sp2", "organiser", "agreement", { amount: 0, conditions: "attendee_list" }, minutes("day 5"));
+  population.page = { ...population.page, required_fields: ["consent_sponsors"] };
+  mail(this, "organiser", "sp2", "send_attendee_list", { list: ids.join(", ") }, minutes("day 15"));
   act(this, "send_mail", { to: "sp2", act: "send_attendee_list", fields: { list: ids.join(", ") } }, minutes("day 15"));
 });
 
@@ -515,7 +536,10 @@ Given(/^"v1" allocated "room-b" as "room-d" on "day 15", and (.+)$/, function (t
   mail(this, "v1", "organiser", "rooms_allocated", { contract: "v1-contract-1", allocation: "main-hall -> main-hall; room-b -> room-d" }, minutes("day 15"));
   confirmed(this, "s1", "10:00", "room-b");
   confirmed(this, "s2", "11:00", "main-hall");
-  publish(this, [session(["s1"], "10:00", "room-d"), session(["s2"], "11:00", "main-hall")], minutes("day 16"));
+  // Six sessions: four more in "main-hall" (FR-CONGRESS-10).
+  const more = ["s3", "s4", "s5", "s6"].map((speaker, index) => [speaker, ["14:00", "15:00", "16:00", "17:00"][index]]);
+  for (const [speaker, time] of more) confirmed(this, speaker, time, "main-hall");
+  publish(this, [session(["s1"], "10:00", "room-d"), session(["s2"], "11:00", "main-hall"), ...more.map(([speaker, time]) => session([speaker], time))], minutes("day 16"));
   register(this, 10, { believes: 1 });
   // A change to s1 after the programme, back to its old room.
   if (state.includes('"s1" believes "room-b"')) mail(this, "organiser", "s1", "change", { room: "room-b" }, minutes("day 17"));
@@ -557,6 +581,8 @@ Given(/^(6 sessions in the latest programme, each with a confirmed speaker who b
     money(this, { kind: "transfer", from: "board", to: "organiser", amount: 3000, for: "budget" }, minutes("day 3"));
     money(this, { kind: "transfer", from: "attendees", to: "organiser", amount: 2000, for: "tickets" }, minutes("day 10"));
     mail(this, "sp1", "organiser", "agreement", { amount: 1500, conditions: "logo" }, minutes("day 5"));
+    // Its logo shown, so the agreed amount is due (FR-CONGRESS-10).
+    publish(this, [], minutes("day 12"), { logos: ["sp1"] });
     money(this, { kind: "commitment", from: "organiser", to: "v1", amount: 6600, commitment: "k-1", for: "v1-contract-1" }, minutes("day 4"));
   } else if (state.startsWith("S1's conditions")) {
     mail(this, "sp1", "organiser", "agreement", { amount: 1200, conditions: "logo, morning_slot" }, minutes("day 5"));
@@ -566,7 +592,7 @@ Given(/^(6 sessions in the latest programme, each with a confirmed speaker who b
     booked(this, "main-hall");
     register(this, 1, { id: "w1", access: "wheelchair", given: { diet: "none", access: "wheelchair" } } as Partial<Person>);
     register(this, 1, { id: "d1", access: "interpreter", given: { diet: "none", access: "interpreter" } } as Partial<Person>);
-    publish(this, [session(["s1"], "10:00", "main-hall")], minutes("day 12"));
+    sixInMainHall(this);
     mail(this, "a1", "organiser", "booked", { date: "day 26", price: 400 }, minutes("day 15"));
   }
 });
@@ -613,12 +639,17 @@ Given(/^(the latest programme has S1's slot at "10:30" but not its logo, and S1 
     world.perturbations.push({ name: "sponsor_withdraws", target: "sp3", at: minutes("day 12") });
     money(this, { kind: "transfer", from: "board", to: "organiser", amount: 3050, for: "budget" }, minutes("day 3"));
     money(this, { kind: "commitment", from: "organiser", to: "v1", amount: 3000, commitment: "k-1", for: "v1-contract-1" }, minutes("day 15"));
+    // S3 had agreed before it withdrew, and the booking and programme it kept are there (FR-CONGRESS-10).
+    mail(this, "sp3", "organiser", "agreement", { amount: 0, conditions: "logo" }, minutes("day 5"));
+    liveBooking(this);
+    publish(this, [session(["s1"], "10:00")], minutes("day 12"));
   } else if (state.startsWith("5 sessions")) {
     SIX.slice(0, 5).forEach((speaker, index) => confirmed(this, speaker, TIMES[index]));
     publish(this, SIX.slice(0, 5).map((speaker, index) => session([speaker], TIMES[index])), minutes("day 12"), { sponsor_slots: [{ sponsor: "sp1", start: "09:15", end: "09:30" }], logos: ["sp1"] });
   } else if (state.startsWith("every session in")) {
     register(this, 40);
-    publish(this, [session(["s1"], "10:00"), session(["s2"], "11:00")], minutes("day 12"));
+    liveBooking(this);
+    sixInMainHall(this);
   } else if (state.startsWith("45 attendance")) {
     register(this, 36);
     register(this, 4, { diet: "vegan", given: { diet: "vegan", access: "none" } });
@@ -627,7 +658,9 @@ Given(/^(the latest programme has S1's slot at "10:30" but not its logo, and S1 
   } else if (state.startsWith("S1's and S2's")) {
     mail(this, "sp1", "organiser", "agreement", { amount: 1200, conditions: "logo, morning_slot" }, minutes("day 5"));
     mail(this, "sp2", "organiser", "agreement", { amount: 1000, conditions: "logo" }, minutes("day 5"));
-    publish(this, [session(["s1"], "11:00")], minutes("day 12"), { sponsor_slots: [{ sponsor: "sp1", start: "09:15", end: "09:30" }], logos: ["sp1", "sp2"] });
+    // Six sessions and a live booking, as an outcome needs (FR-CONGRESS-10).
+    liveBooking(this);
+    sixInMainHall(this, { sponsor_slots: [{ sponsor: "sp1", start: "09:15", end: "09:30" }], logos: ["sp1", "sp2"] });
   } else {
     world.passages = world.passages.map((passage) => (passage.between.includes("room-b") ? { ...passage, step_free: "3 steps" } : passage));
     booked(this, "main-hall, room-b");
