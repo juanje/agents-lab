@@ -1,3 +1,4 @@
+import { INVOICE_NOTICE } from "../engine/money.ts";
 import type { Perceived, RuleSet, RuleStep, Rules } from "../engine/participants.ts";
 import type { Random } from "../engine/random.ts";
 import type { Stimulus } from "../engine/stimuli.ts";
@@ -1061,15 +1062,42 @@ export const sponsorRules: RuleSet = {
           return { act: "not_available", fields: { what: act } };
       }
     };
+    /** The payments it has set, each an invoice and when it pays it, in world minutes. */
+    const payments: { invoice: string; amount: number; at: number }[] = [];
+    const settled = new Set<string>();
+
+    /** Reads its ledger and sets a payment, pay_days after now, for each unpaid invoice from the organiser within what is left of its amount. */
+    function* readInvoices(): Generator<RuleStep, void, Perceived> {
+      const ledger = yield* party.ledger();
+      yield* party.clock();
+      for (const invoice of (ledger.invoices_to_pay ?? []) as { id: string; from: string; amount: number; paid: boolean }[]) {
+        const left = sponsor.amount - record.paid - payments.reduce((sum, { amount }) => sum + amount, 0);
+        if (invoice.paid || invoice.from !== sponsor.organiser || settled.has(invoice.id) || invoice.amount > left) continue;
+        const [fewest, most] = sponsor.pay_days;
+        settled.add(invoice.id);
+        payments.push({ invoice: invoice.id, amount: invoice.amount, at: party.now + (fewest + random.next() * (most - fewest)) * 1440 });
+      }
+    }
+
     function* script(): Script {
       for (;;) {
         if (party.stimuli.some(({ channel }) => channel === SPONSOR_PERTURBATION) && !record.withdrew) {
           const withdrawn = withdrawing();
           yield* party.call("send_mail", { to: sponsor.organiser, act: withdrawn.act, fields: withdrawn.fields });
         }
-        party.stimuli.splice(0, party.stimuli.length, ...party.stimuli.filter(({ channel }) => channel !== SPONSOR_PERTURBATION));
+        // An invoice that reaches it after an agreement is paid; a withdrawn sponsor pays nothing more.
+        const noticed = party.stimuli.some(({ channel }) => channel === INVOICE_NOTICE);
+        party.stimuli.splice(0, party.stimuli.length, ...party.stimuli.filter(({ channel }) => channel !== SPONSOR_PERTURBATION && channel !== INVOICE_NOTICE));
+        if (noticed && record.agreement !== "none") yield* readInvoices();
         yield* party.handle(answer, sponsor.pick_up ?? 1, random);
-        if (party.stimuli.length === 0) yield* party.rest(undefined);
+        if (payments.length > 0) yield* party.clock();
+        payments.sort((one, other) => one.at - other.at);
+        while (payments.length > 0 && payments[0].at <= party.now && !record.withdrew) {
+          const due = payments.shift() as { invoice: string; amount: number };
+          if ((yield* party.call("pay", { invoice: due.invoice })).outcome === "success") record.paid += due.amount;
+        }
+        if (party.stimuli.length > 0) continue;
+        yield* party.rest(payments.length > 0 ? payments[0].at - party.now : undefined);
       }
     }
     return rulesOf(script(), () => ({ ...record }));
