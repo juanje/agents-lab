@@ -444,11 +444,22 @@ function workerCalls(context: Context, tool: string | undefined) {
   return context.toolCalls.filter((call) => call.agent === WORKER && (tool === undefined || call.tool === tool));
 }
 
+/**
+ * The calls of a tool made by the run's one agent, as the run gave them: the workplace's worker, or the test scenario's
+ * agent (FR-CLOCK-03).
+ */
+function theAgentsCalls(context: Context, tool: string | undefined) {
+  assert.ok(context.toolCalls !== undefined, "the agent did not run");
+  const agents = new Set(context.toolCalls.map((call) => call.agent));
+  assert.ok(agents.size <= 1, `the run's calls were made by ${[...agents].join(", ")}, not by one agent`);
+  return context.toolCalls.filter((call) => tool === undefined || call.tool === tool);
+}
+
 Then("the {string} call's result is {string}", function (this: Context, tool: string, result: string) {
-  const calls = workerCalls(this, tool);
-  assert.equal(calls.length, 1, `the worker made ${calls.length} "${tool}" calls`);
-  const timeline = workerCalls(this, undefined).map((call) => `${call.tool} ${Math.round(call.startedAtMs - (this.runStartedAtMs ?? 0))}–${Math.round(call.endedAtMs - (this.runStartedAtMs ?? 0))} ms`);
-  assert.deepEqual({ outcome: calls[0].outcome, result: calls[0].result }, { outcome: "success", result }, `the worker's calls, into the run: ${timeline.join(", ")}`);
+  const calls = theAgentsCalls(this, tool);
+  assert.equal(calls.length, 1, `the agent made ${calls.length} "${tool}" calls`);
+  const timeline = theAgentsCalls(this, undefined).map((call) => `${call.tool} ${Math.round(call.startedAtMs - (this.runStartedAtMs ?? 0))}–${Math.round(call.endedAtMs - (this.runStartedAtMs ?? 0))} ms`);
+  assert.deepEqual({ outcome: calls[0].outcome, result: calls[0].result }, { outcome: "success", result }, `the agent's calls, into the run: ${timeline.join(", ")}`);
 });
 
 Then("the {string} call succeeded", function (this: Context, tool: string) {

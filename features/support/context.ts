@@ -212,6 +212,8 @@ export class Context extends CucumberWorld {
   limitAfterSummaryMs?: number;
   /** The tool and the milliseconds the scenario last found its duration described with, for a step that says "does not". */
   lastDurationRead?: { tool: string; ms: number };
+  /** The configuration's [calendar], as the scenario declares it, for the test world (FR-CLOCK-03). */
+  calendar?: TomlTable;
 }
 
 setWorldConstructor(Context);
