@@ -206,6 +206,8 @@ describe("the congress's base configuration and its parties (FR-CONGRESS-02)", (
     expect(loaded.money?.settings.accounts).toEqual([
       // The world's travel account (FR-CONGRESS-05).
       { name: "travel", unlimited: true },
+      // The attendees' (FR-POPULATION-01).
+      { name: "attendees", unlimited: true },
       { name: "organiser", opening: 0, tools: ["ledger", "pay", "issue_invoice"] },
       { name: "v1", unlimited: true },
       { name: "board", opening: 6000 },

@@ -111,7 +111,8 @@ describe("a sponsor's dispute and the consented list (FR-CONGRESS-05's addition)
     conversation(rules, [[DAY, "From: organiser. Act: accept_sponsorship. conditions: logo, morning_slot."]], ledger);
     const steps = drive(rules, tools(() => "", undefined, ledger), [[{ channel: "invoice_notice", source: "organiser", content: "New invoice" }]], true);
     expect(calls(steps, "send_mail")).toEqual([{ to: "organiser", act: "invoice_disputed", fields: { invoice: "i-1", amount: 1200 } }]);
-    expect(steps.some((step) => step.kind === "wait")).toBe(false);
+    // No payment set: its only wait is for the programme's check on day 19 (FR-POPULATION-01).
+    expect(steps.filter((step) => step.kind === "wait" && step.minutes < 10 * 1440)).toEqual([]);
   });
 
   it("takes a counter with the condition consented_list", () => {

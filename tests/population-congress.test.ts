@@ -34,7 +34,10 @@ describe("the congress's population (FR-POPULATION-01)", () => {
   });
 
   it("keeps no population, and runs no component, without an attendees material", () => {
-    const loaded = loadScenario(congress((configuration) => delete configuration.attendees), 1);
+    const scenario = congress();
+    const configuration = parse(scenario.baseConfiguration);
+    delete configuration.attendees;
+    const loaded = loadScenario({ ...scenario, baseConfiguration: stringify(configuration) }, 1);
     expect((loaded.world.state as Congress).population).toBeUndefined();
     expect(loaded.components).toEqual([]);
   });

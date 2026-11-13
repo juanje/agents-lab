@@ -374,7 +374,8 @@ describe("the sponsor's payments (FR-CONGRESS-05)", () => {
   it("pays nothing beyond its amount, nothing already paid, and nothing without an agreement or after it withdrew", () => {
     const over = agreed(invoices({ id: "i-1", amount: 1500 }, { id: "i-2", amount: 800, paid: true }));
     expect(calls(drive(over.rules, over.answer(""), [[invoiceNotice]], true), "pay")).toEqual([]);
-    expect(drive(over.rules, over.answer(""), [[invoiceNotice]], true).some((step) => step.kind === "wait")).toBe(false);
+    // No payment set: its only wait is for the programme's check on day 19 (FR-POPULATION-01).
+    expect(drive(over.rules, over.answer(""), [[invoiceNotice]], true).filter((step) => step.kind === "wait" && step.minutes < 10 * 1440)).toEqual([]);
 
     const twice = agreed(invoices({ id: "i-1", amount: 600 }));
     drive(twice.rules, twice.answer(""), [[invoiceNotice]], true);
