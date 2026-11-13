@@ -217,7 +217,7 @@ export class Participants<State> {
           const { tool: named, arguments: args } = step;
           if (!declared.includes(named)) throw new Error(`participant "${name}"'s rule set called the tool "${named}", which "${name}" does not declare`);
           const tool = tools.find((each) => each.name === named) as Tool<State>;
-          const { executed, text } = await callTool(world, tool, name, args, call);
+          const { executed, text } = await callTool(world, tool, name, args, { ...call, caller: "participant" });
           records.toolCall({ agent: name, tool: tool.name, arguments: args, ...executed });
           if (runEnd.aborted) return;
           step = rules.next({ stimuli: stimuli.take(name), result: { tool: tool.name, outcome: executed.outcome, text } });

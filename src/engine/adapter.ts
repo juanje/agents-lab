@@ -665,6 +665,8 @@ function definition<State>(
 /** What a tool call runs in besides the world: its caller's sensings and changes since sensing, the stimuli, the log and the run. */
 export interface CallContext extends Around, Pick<SessionSettings, "runEnd" | "stop" | "clock"> {
   records: Pick<Records, "start">;
+  /** What the caller is, as an error names it: an agent, unless it is a participant decided by rules (FR-PARTICIPANT-01). */
+  caller?: "agent" | "participant";
 }
 
 /**
@@ -677,7 +679,7 @@ export async function callTool<State>(
   tool: Tool<State>,
   agent: string,
   args: Record<string, unknown>,
-  { sensings, changes, stimuli, records, runEnd, stop, clock }: CallContext,
+  { sensings, changes, stimuli, records, runEnd, stop, clock, caller = "agent" }: CallContext,
 ): Promise<{ executed: Executed; text: string }> {
   const startedAtMs = performance.now();
   let called: CallResult;
@@ -693,7 +695,7 @@ export async function callTool<State>(
   } catch (error) {
     // A tool that throws is a defect of the scenario, not the agent's behaviour: no outcome fits it, and the run
     // stops on it rather than going on with a world it cannot trust.
-    stop(failure(`agent "${agent}"'s "${tool.name}" call failed`, error));
+    stop(failure(`${caller} "${agent}"'s "${tool.name}" call failed`, error));
     throw error;
   }
   const { outcome, text, takenFrom, seen, ...perceived } = called;
