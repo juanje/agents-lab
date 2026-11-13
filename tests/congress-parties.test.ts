@@ -178,6 +178,42 @@ describe("the board's rules (FR-CONGRESS-02)", () => {
     expect(mails(steps)).toEqual([{ to: "organiser", act: "budget_approved", fields: { ceiling: 5500, funds: 2500 } }]);
   });
 
+  it("replaces an approved budget with a new one within its funds: it transfers the difference and sets the ceiling to the new costs and contingency (FR-CONGRESS-09)", () => {
+    const rules = boardRules.start(board, new Random(1));
+    drive(rules, tools("From: organiser. Act: submit_budget. costs: 5000. income: 3000. contingency: 500. funds_requested: 2500."), [[notice]]);
+    const replaced = drive(rules, tools("From: organiser. Act: submit_budget. costs: 7000. income: 2000. contingency: 700. funds_requested: 4000."), [[notice]], true);
+
+    const calls = replaced.flatMap((step) => (step.kind === "call" && ["approve", "transfer", "issue_invoice", "send_mail"].includes(step.tool) ? [[step.tool, step.arguments]] : []));
+    expect(calls).toEqual([
+      ["send_mail", { to: "organiser", act: "budget_approved", fields: { ceiling: 7700, funds: 4000 } }],
+      ["approve", { account: "organiser", ceiling: 7700 }],
+      ["transfer", { to: "organiser", amount: 1500, for: "budget" }],
+    ]);
+  });
+
+  it("takes back, by an invoice, what a smaller budget no longer needs (FR-CONGRESS-09)", () => {
+    const rules = boardRules.start(board, new Random(1));
+    drive(rules, tools("From: organiser. Act: submit_budget. costs: 5000. income: 3000. contingency: 500. funds_requested: 2500."), [[notice]]);
+    const timed = (tool: string) => (tool === "check_time" ? "day 1 Monday 10:00" : tools("From: organiser. Act: submit_budget. costs: 4000. income: 3000. contingency: 400. funds_requested: 1500.")(tool));
+    const smaller = drive(rules, timed, [[notice]], true);
+
+    const calls = smaller.flatMap((step) => (step.kind === "call" && ["approve", "transfer", "issue_invoice"].includes(step.tool) ? [[step.tool, step.arguments]] : []));
+    expect(calls).toEqual([
+      ["approve", { account: "organiser", ceiling: 4400 }],
+      ["issue_invoice", { to: "organiser", amount: 1000, due: "day 1", for: "budget returned" }],
+    ]);
+  });
+
+  it("says, countering a budget, the funds it was given, and, refusing an amount, the reserve left (FR-CONGRESS-09)", () => {
+    const rules = boardRules.start(board, new Random(1));
+    drive(rules, tools("From: organiser. Act: submit_budget. costs: 5000. income: 3000. contingency: 500. funds_requested: 5500."), [[notice]]);
+    const countered = drive(rules, tools("From: organiser. Act: submit_budget. costs: 9000. income: 1000. contingency: 500. funds_requested: 8000."), [[notice]], true);
+    const refused = drive(rules, tools("From: organiser. Act: request_approval. amount: 1500. reason: venue."), [[notice]], true);
+
+    expect(mails(countered)).toEqual([{ to: "organiser", act: "budget_countered", fields: { funds: 6000 } }]);
+    expect(mails(refused)).toEqual([{ to: "organiser", act: "refused", fields: { amount: 1500, reserve: 1000 } }]);
+  });
+
   it("counters a budget above its funds with the funds it can give, and approves an extra amount only within its reserve", () => {
     const countered = drive(boardRules.start(board, new Random(1)), tools("From: organiser. Act: submit_budget. costs: 9000. income: 1000. contingency: 500. funds_requested: 8000."), [[notice]]);
     expect(mails(countered)).toEqual([{ to: "organiser", act: "budget_countered", fields: { funds: 6000 } }]);
@@ -186,7 +222,7 @@ describe("the board's rules (FR-CONGRESS-02)", () => {
     const rules = boardRules.start(board, new Random(1));
     drive(rules, tools("From: organiser. Act: submit_budget. costs: 5000. income: 3000. contingency: 500. funds_requested: 2500."), [[notice]]);
     const refused = drive(rules, tools("From: organiser. Act: request_approval. amount: 1200. reason: ramp."), [[notice]], true);
-    expect(mails(refused)).toEqual([{ to: "organiser", act: "refused", fields: { amount: 1200 } }]);
+    expect(mails(refused)).toEqual([{ to: "organiser", act: "refused", fields: { amount: 1200, reserve: 1000 } }]);
   });
 });
 

@@ -133,7 +133,7 @@ describe("a caterer at a venue with a catering rule (FR-CONGRESS-07)", () => {
 describe("the board before a budget (FR-CONGRESS-07)", () => {
   it("refuses a request for approval while no budget is approved, with the reason no_budget", () => {
     const { steps } = conversation(boardRules.start({ id: "board", funds: 6000, reserve: 1000, organiser: "organiser" }, new Random(1)), [[DAY, "From: organiser. Act: request_approval. amount: 400. reason: interpreter."]]);
-    expect(mailed(steps)).toEqual([{ act: "refused", fields: { amount: 400, reason: "no_budget" } }]);
+    expect(mailed(steps)).toEqual([{ act: "refused", fields: { amount: 400, reason: "no_budget", reserve: 1000 } }]);
   });
 });
 

@@ -3,7 +3,7 @@ import { Given, Then } from "@cucumber/cucumber";
 import { type TomlTable, stringify } from "smol-toml";
 import type { Context } from "../support/context.ts";
 import { change, hourMsOf, organiserTurns, setUpCongress } from "./congress.steps.ts";
-import { changePools, fieldsOf, ranLines, sentBy, sentWith } from "./congress-parties.steps.ts";
+import { before, changePools, fieldsOf, moneyLines, ranLines, sentBy, sentWith } from "./congress-parties.steps.ts";
 import { organiserSummary } from "./services.steps.ts";
 import { modelOf, script } from "./tool.steps.ts";
 
@@ -120,7 +120,35 @@ Then(/^the "send_mail" call failed with the outcome "(\w+)" and took no time, (l
   else for (const act of ["ask_conditions", "accept_sponsorship", "counter", "send_attendee_list", "send_evidence"]) assert.ok(reason.includes(act), `the reason does not list "${act}": ${reason}`);
   // Nothing reached the party.
   assert.equal(sentBy(this, ORGANISER).length, 0);
-  void fieldsOf;
-  void hourMsOf;
-  void organiserTurns;
+});
+
+/** The organiser's turns that submit a budget to "chair", then wait for its answer. */
+function budgetTurns(context: Context, { costs = 5000, contingency = 500, funds = 2500 } = {}) {
+  return organiserTurns(`call "send_mail" to "chair" with the act "submit_budget", costs ${costs}, income 3000, contingency ${contingency} and funds_requested ${funds}, then wait 1 world hour, then "check_time"`, hourMsOf(context));
+}
+
+Given('"chair" approved a budget with costs {int}, contingency {int} and funds_requested {int}', function (this: Context, costs: number, contingency: number, funds: number) {
+  before(this, budgetTurns(this, { costs, contingency, funds }));
+});
+
+Given('"chair" approved a budget with funds_requested {int}', function (this: Context, funds: number) {
+  before(this, budgetTurns(this, { costs: 5000, contingency: 500, funds }));
+});
+
+/** The messages a party sent with an act, in order. */
+const sentAll = (context: Context, party: string, act: string) => sentBy(context, party).filter((line) => line.act === act);
+
+Then('"chair" answered "budget_approved", transferred {int} more, and the organiser\'s ceiling is {int}', function (this: Context, more: number, ceiling: number) {
+  assert.equal(sentAll(this, "chair", "budget_approved").length, 2, `"chair" sent ${sentBy(this, "chair").map((line) => line.act).join(", ")}`);
+  const transfers = moneyLines(this, "transfer").filter((line) => line.from === "chair" && line.to === ORGANISER);
+  assert.deepEqual(
+    transfers.map((line) => line.amount),
+    [2500, more],
+  );
+  assert.equal(organiserSummary(this).ceiling, ceiling);
+});
+
+Then('"chair" answered "budget_countered" with the funds {int}, and "refused" with the reserve {int}', function (this: Context, funds: number, reserve: number) {
+  assert.equal(fieldsOf(sentWith(this, "chair", "budget_countered")).funds, funds);
+  assert.equal(fieldsOf(sentWith(this, "chair", "refused")).reserve, reserve);
 });
