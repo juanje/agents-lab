@@ -114,6 +114,7 @@ Experiments are written outside this repository, in the experiment language (FR-
 9b. FR-CONGRESS-06 (the congress's parts)
 10. FR-CONGRESS-03 (the day), after the pilot, not written
 11. FR-ANALYSIS-04 (parts by kind and condition, light)
+12. FR-CONGRESS-08 (the congress ready for an experiment), before the technical run
 
 **Small known gaps** (to close when convenient): `lab summarize` prints numbers at full precision; a completed run whose log has no metric sample gives no values without saying so; a run in the index whose log is missing fails with Node's own error. The `wait` tool's description does not state `wait_max_minutes`, so the worker learns the limit only from a refusal; `wait_max_minutes` is not checked when the configuration loads. FR-WORKPLACE-07's scenario whose wait ends `interrupted` "about 50 milliseconds into the run" failed once in a full gate (2026-11-13) and passed on three reruns: it needs more slack. The run test that ends an effector's call early at a stimulus failed once under load (2026-11-13) and passed on reruns, as did one scenario in a full gate the same day.
 
@@ -518,6 +519,18 @@ After an agreement, a sponsor pays any invoice from the organiser for at most it
 
 **FR-CONGRESS-02, stated:** when a challenged hold lapses, the other customer books the date with probability 0.5, drawn from the venue's sequence.
 *Why:* a review against the world's design (2026-11-13) found rules the parts need that FR-CONGRESS-01, -02, -04 and FR-PHONE-01 left out or left ambiguous: catering rules, room changes, approvals before a budget, which speakers can cancel, and calls that are returned.
+
+#### FR-CONGRESS-08: The congress ready for an experiment
+**Keys an experiment can set.** The congress's base configuration declares every key E1's materials need, with defaults that change nothing: `attendees` and `parts` (empty texts: no population, no parts), the mail's `send_minutes_per_field`, `send_words_per_minute` and `read_words_per_minute`, and `[durations]` for `ledger`, `pay` and `issue_invoice`. Two tables are open: an experiment's common part or a condition may add entries to `calendar.hours` and to `perturbations` that the base does not have; every other table keeps refusing keys its base lacks (FR-SCENARIO-01).
+
+**What was drawn, in the texts.** The prompt's texts (`task`, `limits`, `restrictions`, `knowledge`, `guidance`) may name, in braces, what the replica's variant drew, and the congress fills them in before the run: `{topic}`, `{target}` (the target attendance), `{event_day}` (`day <n> <weekday>`), `{funds}` (the board's funds) and `{directory}`: one line per drawn party, giving its id, its kind, whether it has a mailbox and a line, and the acts it takes with their required fields. `{{` and `}}` stand for braces. A name in braces that is none of these is refused before any model call, naming it and the text.
+
+**Parts name actors by role.** A part's `actors` may give `role:<role>` (the template that filled the role) and `kind:<kind>` (every drawn party of that kind) besides ids, resolved for each replica's variant; a role or kind no draw fills is refused before any model call, naming the part.
+
+**A ring wakes a resting organiser.** A channel may declare `wakes = true`: a stimulus on it reaches a resting agent at once and starts an activation, as its rhythm does; on other channels, a stimulus waits for the agent's next activation. The congress's `phone` channel wakes; its `mail_notice` does not. A ring that arrives while the agent is in a tool call still waits for its next model turn.
+
+**The inventory** lists, for the organiser, only the tools its session is offered.
+*Why:* E1's first technical run could not start: an experiment could not set the population, the parts, the venues' hours or the perturbations, its texts would have to be rewritten for every replica's draw, effort could not be measured per part, and a call to an organiser between activations was lost.
 
 #### FR-POPULATION-01: Attendees, the ticket page, the programme and announcements
 The congress's attendees are a population: a component (FR-PROCESS-01) with its own sequence (`cycle of attendees`), from an `attendees` material and the variant.
