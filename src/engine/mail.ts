@@ -178,7 +178,7 @@ export interface Outgoing {
 }
 
 /** The words of a text. */
-function wordsOf(text: string | undefined): number {
+export function wordsOf(text: string | undefined): number {
   return text === undefined ? 0 : text.split(/\s+/).filter((word) => word !== "").length;
 }
 
@@ -207,9 +207,18 @@ function messageOf(id: string, from: string, { to, act, fields = {}, subject, te
  * Why a message cannot be sent, as it starts: its recipient has no mailbox, does not take its act, or its act requires a
  * field it lacks; undefined when it can. A recipient that declares no acts takes every act.
  */
-function refusalOf(settings: Pick<MailSettings, "mailboxes" | "acts">, { to, act, fields = {} }: Outgoing): Refusal | undefined {
-  if (!settings.mailboxes.includes(to)) return { outcome: "unknown_recipient", reason: `"${to}" has no mailbox` };
-  const acts = settings.acts[to];
+function refusalOf(settings: Pick<MailSettings, "mailboxes" | "acts">, outgoing: Outgoing): Refusal | undefined {
+  if (!settings.mailboxes.includes(outgoing.to)) return { outcome: "unknown_recipient", reason: `"${outgoing.to}" has no mailbox` };
+  return actRefusal(settings.acts, outgoing);
+}
+
+/**
+ * Why a recipient does not take what is sent to it, by the acts it declares for mail: it does not take its act, or its
+ * act requires a field it lacks; undefined when it does. A recipient that declares no acts takes every act. A call
+ * carries the same acts (FR-PHONE-01).
+ */
+export function actRefusal(byRecipient: MailSettings["acts"], { to, act, fields = {} }: Outgoing): Refusal | undefined {
+  const acts = byRecipient[to];
   if (acts === undefined) return undefined;
   if (!Object.hasOwn(acts, act)) return { outcome: "act_not_taken", reason: `"${to}" takes the acts ${Object.keys(acts).join(", ")}` };
   const missing = acts[act].find((field) => !Object.hasOwn(fields, field));

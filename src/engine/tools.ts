@@ -81,6 +81,8 @@ export type LastBy = (tool: string) => Sensing | undefined;
  */
 export interface EarlyEnd<State> {
   outcome: string;
+  /** The outcome, for an effector whose early end's outcome the world gives, from the state that ended the call (FR-PHONE-01). */
+  outcomeOf?(state: State, call: AgentCall): string;
   /** Whether a change of the world, from the state before it to the state after it, ends the call. */
   byChange(before: State, after: State, call: AgentCall): boolean;
   /** Whether a stimulus that reaches the calling agent ends the call. */

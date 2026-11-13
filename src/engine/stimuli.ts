@@ -15,6 +15,15 @@ export interface Stimulus {
   content: string;
 }
 
+/**
+ * How a stimulus is delivered besides its channel: from a source of its own, such as a ring's caller, in place of the
+ * channel's; and not held, as a ring is not held for a reply delay (FR-PHONE-01).
+ */
+export interface Delivery {
+  source?: string;
+  held?: boolean;
+}
+
 /** The stimuli waiting for each agent, until its session takes them (FR-STIMULUS-01). */
 export class Stimuli {
   readonly #channels: readonly Channel[];
@@ -47,12 +56,12 @@ export class Stimuli {
    * Delivers a channel's stimulus to an agent, each `{name}` in its text filled with the value given for it, such as a
    * mail notice's sender (FR-MESSAGE-01): it waits until the agent's session takes it.
    */
-  deliver(agent: string, channel: string, values: Readonly<Record<string, string>> = {}): void {
+  deliver(agent: string, channel: string, values: Readonly<Record<string, string>> = {}, how: Delivery = {}): void {
     const declared = this.#stimulusOf(channel);
     const content = declared.content.replace(/\{(\w+)\}/g, (written, name: string) => (Object.hasOwn(values, name) ? values[name] : written));
-    const stimulus = { ...declared, content };
+    const stimulus = { ...declared, content, ...(how.source === undefined ? {} : { source: how.source }) };
     if (!(this.#declared.get(agent)?.includes(channel) ?? true)) return;
-    const hold = this.#holds.get(agent);
+    const hold = how.held === false ? undefined : this.#holds.get(agent);
     if (hold === undefined) {
       this.#reach(agent, stimulus);
       return;

@@ -848,15 +848,20 @@ async function perform<State>(
  */
 function endingEarly<State>(world: World<State>, stimuli: Stimuli, ends: EarlyEnd<State>, call: AgentCall) {
   const ended = new AbortController();
+  let outcome = ends.outcome;
   const unwatchWorld = world.watch((before, after) => {
-    if (ends.byChange(before, after, call)) ended.abort();
+    if (ended.signal.aborted || !ends.byChange(before, after, call)) return;
+    outcome = ends.outcomeOf?.(after, call) ?? ends.outcome;
+    ended.abort();
   });
   const unwatchStimuli = stimuli.watch(call.agent, (stimulus) => {
     if (ends.byStimulus(stimulus, call)) ended.abort();
   });
   return {
     ended: ended.signal,
-    outcome: ends.outcome,
+    get outcome() {
+      return outcome;
+    },
     stop: () => {
       unwatchWorld();
       unwatchStimuli();

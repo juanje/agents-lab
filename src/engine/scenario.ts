@@ -4,6 +4,7 @@ import { type Calendar, readCalendar } from "./calendar.ts";
 import type { Component } from "./components.ts";
 import { MAIL_NOTICE, type MailKeeper, type MailSettings, mailTools, readMail, startingMail } from "./mail.ts";
 import { type ParticipantSettings, type RuleSet, readParticipants } from "./participants.ts";
+import { PHONE_CHANNEL, type PhoneKeeper, type PhoneSettings, assertAnswering, phoneTools, readPhone, startingPhone } from "./phone.ts";
 import { type Material, type MaterialReference, type Materials, materialReference } from "./materials.ts";
 import { Random } from "./random.ts";
 import { type Channel, RHYTHM_CHANNEL } from "./stimuli.ts";
@@ -71,6 +72,8 @@ export interface Scenario<State> {
   mail?: MailKeeper<State>;
   /** The rule sets the scenario provides, by name, which its configuration's participants may be decided by (FR-PARTICIPANT-01). */
   ruleSets?: Readonly<Record<string, RuleSet>>;
+  /** Where the state keeps the phone, for a scenario whose configuration may declare a [phone] (FR-PHONE-01). */
+  phone?: PhoneKeeper<State>;
 }
 
 /**
@@ -124,6 +127,14 @@ export interface LoadedScenario<State> {
   mail?: LoadedMail<State>;
   /** The participants its configuration declares in its [participants] (FR-PARTICIPANT-01). */
   participants?: readonly ParticipantSettings[];
+  /** The phone, for a configuration that declares a [phone]: its settings, and where the state keeps it (FR-PHONE-01). */
+  phone?: LoadedPhone<State>;
+}
+
+/** A scenario's phone as loaded: its configuration's settings, and where the scenario's state keeps it (FR-PHONE-01). */
+export interface LoadedPhone<State> {
+  settings: PhoneSettings;
+  keeper: PhoneKeeper<State>;
 }
 
 /** A scenario's mail as loaded: its configuration's settings, and where the scenario's state keeps it (FR-MESSAGE-01). */
@@ -188,15 +199,22 @@ export function loadScenario<State>(
   const initial = scenario.initialState(configuration, Random.derive(seed, "initial state"));
   const components = scenario.components?.(configuration) ?? [];
   const { calendar } = calendarOf(configuration);
+  const declaredParticipants = isTable(configuration.participants ?? {}) ? Object.keys(configuration.participants ?? {}) : [];
+  const phone = phoneOf(scenario, configuration, calendar, [...systemPrompts.keys(), ...declaredParticipants]);
   const mail = mailOf(scenario, configuration, calendar);
-  const allChannels = [...channels, ...noticeChannels(mail)];
+  const allChannels = [...channels, ...noticeChannels(mail), ...ringChannels(phone)];
   const participants = readParticipants(configuration.participants, {
-    tools: [...scenario.tools, ...(mail === undefined ? [] : mailTools(mail.settings, mail.keeper))].map(({ name }) => name),
+    tools: [
+      ...scenario.tools,
+      ...(mail === undefined ? [] : mailTools(mail.settings, mail.keeper)),
+      ...(phone === undefined ? [] : phoneTools({ ...phone, acts: {}, inHours: () => true })),
+    ].map(({ name }) => name),
     channels: allChannels.map(({ name }) => name),
     ...(calendar === undefined ? {} : { calendar }),
     ruleSets: Object.keys(scenario.ruleSets ?? {}),
     taken: [...systemPrompts.keys(), ...components.map(({ name }) => name)],
   });
+  if (phone !== undefined) assertAnswering(participants);
   // A participant decided by a model runs as an agent of the run, with its own system prompt and the scenario's rhythm.
   for (const participant of participants) {
     if (participant.decides !== "model") continue;
@@ -207,7 +225,7 @@ export function loadScenario<State>(
   return {
     scenario,
     configuration,
-    world: new World(mail === undefined ? initial : mail.keeper.with(initial, startingMail(mail.settings))),
+    world: new World(withStarting(initial, mail, phone)),
     systemPrompts,
     channels: allChannels,
     firstStimuli,
@@ -217,7 +235,29 @@ export function loadScenario<State>(
     participants,
     ...(calendar === undefined ? {} : { calendar }),
     ...(mail === undefined ? {} : { mail }),
+    ...(phone === undefined ? {} : { phone }),
   };
+}
+
+/** The scenario's initial state with the mail and the phone at their start in it, for a configuration that declares them. */
+function withStarting<State>(initial: State, mail: LoadedMail<State> | undefined, phone: LoadedPhone<State> | undefined): State {
+  const withMail = mail === undefined ? initial : mail.keeper.with(initial, startingMail(mail.settings));
+  return phone === undefined ? withMail : phone.keeper.with(withMail, startingPhone());
+}
+
+/**
+ * The phone a configuration declares in its [phone], if it declares one, kept where the scenario's state keeps it; its
+ * lines are checked against the names of the agents and participants given (FR-PHONE-01).
+ */
+function phoneOf<State>(scenario: Scenario<State>, configuration: Configuration, calendar: Calendar | undefined, names: readonly string[]): LoadedPhone<State> | undefined {
+  if (configuration.phone === undefined) return undefined;
+  if (scenario.phone === undefined) throw new Error(`Scenario "${scenario.name}" keeps no phone in its state, but its configuration declares a [phone]`);
+  return { settings: readPhone(configuration.phone, calendar, names), keeper: scenario.phone };
+}
+
+/** The ring's channel, for a configuration that declares a [phone]; its source is each ring's caller (FR-PHONE-01). */
+function ringChannels<State>(phone: LoadedPhone<State> | undefined): Channel[] {
+  return phone === undefined ? [] : [{ name: PHONE_CHANNEL, source: "the caller", stimulus: phone.settings.ring }];
 }
 
 /** The mail a configuration declares in its [mail], if it declares one, kept where the scenario's state keeps it (FR-MESSAGE-01). */

@@ -8,6 +8,8 @@ import { failure } from "./failure.ts";
 import { MailMedium, mailTools } from "./mail.ts";
 import { ParallelismLimit } from "./parallelism.ts";
 import { type ParticipantSettings, Participants } from "./participants.ts";
+import { PhoneExchange, phoneTools } from "./phone.ts";
+import { type WorldTime, hoursAt } from "./calendar.ts";
 import type { Tool } from "./tools.ts";
 import { Random } from "./random.ts";
 import { type LogLine, Recorder, type RunSetup, type Sampling } from "./recorder.ts";
@@ -169,7 +171,7 @@ export const PROVIDER_DEFAULTS = "the provider's defaults";
  * sampling settings the sessions use, or null.
  */
 async function runAgents<State>(
-  { world, scenario, systemPrompts, rhythms, components, calendar, mail, participants = [] }: LoadedScenario<State>,
+  { world, scenario, systemPrompts, rhythms, components, calendar, mail, phone, participants = [] }: LoadedScenario<State>,
   agents: readonly Agent[],
   seed: number,
   settings: RunSettings,
@@ -212,7 +214,17 @@ async function runAgents<State>(
   // Every session is open before any agent starts, so opening them uses none of the time limit (FR-CLOCK-02). One that
   // fails to open stops the run, once the others have opened, and those are closed.
   // The mail's tools are every agent's, beside the scenario's own (FR-MESSAGE-01).
-  const tools = mail === undefined ? scenario.tools : [...scenario.tools, ...mailTools(mail.settings, mail.keeper)];
+  // So are the phone's, when the configuration declares one; a callee is within its hours, when it keeps hours, by the
+  // world's time as the call is placed (FR-PHONE-01).
+  const inHours = (callee: string) => {
+    const hours = participants.find(({ name }) => name === callee)?.hours;
+    return hours === undefined || calendar === undefined || hoursAt(calendar, hours, clock.worldTime() as WorldTime).within;
+  };
+  const tools = [
+    ...scenario.tools,
+    ...(mail === undefined ? [] : mailTools(mail.settings, mail.keeper)),
+    ...(phone === undefined ? [] : phoneTools({ ...phone, acts: mail?.settings.acts ?? {}, inHours })),
+  ];
   const opening = await Promise.allSettled(
     agents.map((agent) =>
       openSession(world, toolsOf(tools, participants, agent.name), agent, runtime, { ...sessionSettings, systemPrompt: systemPromptOf(systemPrompts, agent.name) }, parallelism, records, stimuli, sensings, changes).catch((error: unknown) => {
@@ -233,6 +245,10 @@ async function runAgents<State>(
   });
   settings.onStart?.(stimuli);
   const startedAtMs = clock.start();
+  // The phone watches the world for calls placed before any agent or participant can place one (FR-PHONE-01).
+  const exchange =
+    phone === undefined ? undefined : new PhoneExchange({ world, ...phone, clock, runEnd: runEnd.signal, changes, stimuli, record: (line) => recorder.record(line) });
+  exchange?.start();
   // A participant's stimuli are held by its hours and reply delay, and its rule set woken by them (FR-PARTICIPANT-01).
   const parties = new Participants({
     world,
@@ -294,14 +310,17 @@ async function runAgents<State>(
     // remains or the run's time limit passes (FR-MESSAGE-01, FR-PARTICIPANT-01).
     do {
       await medium?.delivered();
+      await exchange?.settled();
       await parties.settled();
-    } while (medium?.busy === true || parties.busy);
+    } while (medium?.busy === true || exchange?.busy === true || parties.busy);
   } finally {
     // A run that ends at its budget must not leave its time limit pending, nor a sample to write once its log is closed.
     clearTimeout(timer);
     samplingEnd.abort();
     await sampling;
   }
+  // A call the run's end cut off has its line, as one that ended does (FR-PHONE-01).
+  exchange?.cutOff();
   // Each participant decided by rules gives its outcome record as the run ends (FR-PARTICIPANT-01).
   for (const { participant, outcome } of parties.outcomes()) recorder.record({ type: "participant_outcome", participant, outcome });
   sample();

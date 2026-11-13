@@ -7,6 +7,12 @@ import { type Calendar, type WorldDuration, type WorldTime, runMsFor, worldTimeA
  * again for whatever is left.
  */
 export async function waitAtLeast(ms: number, signal?: AbortSignal): Promise<void> {
+  // A wait with no end, such as a call's until it ends (FR-PHONE-01), lasts until the signal aborts.
+  if (ms === Number.POSITIVE_INFINITY) {
+    if (signal === undefined) throw new Error("a wait with no end was given no signal to end it");
+    if (!signal.aborted) await new Promise((resolve) => signal.addEventListener("abort", resolve, { once: true }));
+    return;
+  }
   const end = performance.now() + ms;
   for (let left = ms; left > 0 && signal?.aborted !== true; left = end - performance.now()) {
     try {
