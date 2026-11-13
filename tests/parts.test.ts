@@ -181,3 +181,23 @@ describe("traps and patterns that read the world (FR-CONGRESS-06)", () => {
     expect(() => readParts([{ ...P1, traps: [{ trap: "ghost" }] }], withTraps, { participants: ["shop"], kindFactor: { name: "guidance", levels: ["none", "rules"] } })).toThrow(/p1\.traps/);
   });
 });
+
+describe("what the congress's parts need besides (FR-CONGRESS-06)", () => {
+  it("writes the values a predicate gives, gives a pattern the state at evaluation too, and a trap the evaluation's world minutes", () => {
+    const seen: number[] = [];
+    const wider: PartsProvided<Flags> = {
+      predicates: { counted: (state) => ({ holds: state.flags.door === true, values: { raised: state.raised.length } }) },
+      events: {},
+      misapplications: { cleared_for_good: (act, _params, _state, latest) => act.tool === "clear_flag" && latest.flags.door !== true },
+      traps: { late: (_state, _params, at) => (seen.push(at), at > 600) },
+    };
+    const parts = readParts([{ id: "w1", predicate: "counted", activation: "always", evaluate_at: "day 1 18:00", misapplications: [{ pattern: "cleared_for_good" }], traps: [{ trap: "late" }] }], wider, { participants: [] });
+    const lines: Record<string, unknown>[] = [];
+    const book = new PartsBook<Flags>({ parts, provided: wider, agents: ["ana"], record: (line) => lines.push(line) });
+    book.start(state({ door: true }), at(1, "09:00"));
+    book.acted({ agent: "ana", tool: "clear_flag", arguments: { flag: "door" }, world: at(1, "10:00") });
+    book.due(state({}, [{ flag: "door", at: at(1, "09:00") }]), at(1, "18:00"));
+    expect(lines[0]).toMatchObject({ held: false, values: { raised: 1 }, misapplications: [{ tool: "clear_flag" }], traps: ["late"] });
+    expect(seen).toEqual([18 * 60]);
+  });
+});
