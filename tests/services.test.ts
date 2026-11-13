@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Perceived, RuleStep, Rules } from "../src/engine/participants.ts";
 import { Random } from "../src/engine/random.ts";
 import type { Stimulus } from "../src/engine/stimuli.ts";
-import { catererRules } from "../src/scenarios/congress-parties.ts";
+import { agencyRules, catererRules } from "../src/scenarios/congress-parties.ts";
 
 /** The mail notice of a message from the organiser. */
 const notice: Stimulus = { channel: "mail_notice", source: "mail client", content: "New mail from organiser: x" };
@@ -137,5 +137,37 @@ describe("the caterer's rules (FR-CONGRESS-05)", () => {
       ["day 21 Saturday 09:01", finals("standard: 63")],
     ]);
     expect(rules.outcome()).toEqual({ quotes: 1, order: "standard: 60", ordered: 60, final_numbers: "standard: 63", surcharges: 9, invoices_issued: 2, cancelled: false });
+  });
+});
+
+describe("the interpreter agency's rules (FR-CONGRESS-05)", () => {
+  const agency = () => agencyRules.start({ id: "a1", price: 400, notice_days: 7, pick_up: 1, organiser: "organiser", event_day: 26 }, new Random(1));
+  const answering = (time: string, messages: string[]) => {
+    const rules = agency();
+    const steps: RuleStep[] = [...drive(rules, tools(() => "", () => time))];
+    for (const message of messages) steps.push(...drive(rules, tools(() => message, () => time), [[notice]], true));
+    return { rules, steps };
+  };
+
+  it("quotes its price and notice, books a date at least its notice away with a commitment, and cancels a booking, releasing it", () => {
+    expect(calls(answering("day 1 Monday 09:01", ["From: organiser. Act: ask_quote. date: day 26."]).steps, "send_mail")).toEqual([{ to: "organiser", act: "quote", fields: { price: 400, notice_days: 7 } }]);
+
+    const booked = answering("day 19 Friday 09:01", ["From: organiser. Act: book. date: day 26."]);
+    expect(calls(booked.steps, "send_mail")).toEqual([{ to: "organiser", act: "booked", fields: { date: "day 26", price: 400 } }]);
+    expect(calls(booked.steps, "commit")).toEqual([{ with: "organiser", amount: 400, for: "interpreting a1" }]);
+    expect(booked.rules.outcome()).toEqual({ booked: "day 26", cancelled: false });
+
+    expect(calls(answering("day 20 Saturday 09:01", ["From: organiser. Act: book. date: day 26."]).steps, "send_mail")).toEqual([{ to: "organiser", act: "unavailable", fields: { date: "day 26" } }]);
+  });
+
+  it("cancels a booking, releasing its commitment", () => {
+    const rules = agency();
+    const ledger = () => ({ commitments_recorded: [{ id: "k-1", for: "interpreting a1", amount: 400, released: false }] });
+    drive(rules, tools(() => "", undefined, ledger));
+    drive(rules, tools(() => "From: organiser. Act: book. date: day 26.", undefined, ledger), [[notice]], true);
+    const cancelled = drive(rules, tools(() => "From: organiser. Act: cancel.", undefined, ledger), [[notice]], true);
+    expect(calls(cancelled, "send_mail")).toEqual([{ to: "organiser", act: "cancelled", fields: { date: "day 26" } }]);
+    expect(calls(cancelled, "release")).toEqual([{ commitment: "k-1" }]);
+    expect(rules.outcome()).toEqual({ booked: "none", cancelled: true });
   });
 });
