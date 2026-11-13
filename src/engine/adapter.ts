@@ -863,7 +863,8 @@ function sense<State>(world: World<State>, sensor: Sensor<State>, call: AgentCal
 
 /**
  * Applies an effector's call through the arbiter, against the world as it is now; its outcome is "success" or the
- * failure's reason, and the agent receives the text the effector declares for it, or the outcome itself. An effector
+ * failure's reason, and the agent receives the text the effector declares for it, or the outcome itself; a success of
+ * an effector that declares a reply gives its reply, from the world right after its effect (FR-MESSAGE-01). An effector
  * without an action changes nothing: it applies nothing and succeeds. A call that ended early, once its effect applies,
  * has the early end's outcome instead of "success". The changes since the agent last sensed, and who applied them, are
  * read at this moment, beside it. The action is given this moment and, for a run with a calendar, the world's time then.
@@ -874,7 +875,7 @@ function effect<State>(world: World<State>, effector: Effector<State>, call: Age
   const landing = { ...call, atMs: performance.now(), ...withWorldTime(clock) };
   const applied = effector.action === undefined ? "success" : applyCounted(world, changes, call.agent, effector.action, landing);
   const outcome = applied === "success" ? (endedEarly ?? applied) : applied;
-  const text = effector.texts?.[outcome] ?? outcome;
+  const text = outcome === "success" && effector.reply !== undefined ? effector.reply.text(world.state, call) : (effector.texts?.[outcome] ?? outcome);
   if (effector.sight === undefined || !effector.sight.outcomes.includes(outcome)) return { outcome, text, changesSinceSensing, changesSinceSensingBy };
   // What the agent sees from where it is as its call ends: the world right after its effect, if any, was applied.
   const sighting = effector.sight.see(world.state, call.agent);

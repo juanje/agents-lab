@@ -103,6 +103,13 @@ export interface Sight<State> {
   see(state: State, agent: string): { text: string; seen: string };
 }
 
+/** The text an effector's success gives, from the state after its effect and the call (FR-MESSAGE-01). */
+export interface Reply<State> {
+  /** What it gives, as the inventory names it, such as "the message it reads". */
+  of: string;
+  text(state: State, call: AgentCall): string;
+}
+
 /** Why an effector does not take a call as it starts: the call's outcome, and the reason the agent is told after it. */
 export interface Refusal {
   outcome: string;
@@ -137,6 +144,11 @@ export interface Effector<State> extends Declared<State> {
    * state, except what its sight follows it with.
    */
   texts?: Readonly<Record<string, string>>;
+  /**
+   * For an effector whose success gives the agent what it acted on, such as the message read_mail reads (FR-MESSAGE-01):
+   * the text of its success, from the state after its effect and the call, in place of a text it declares.
+   */
+  reply?: Reply<State>;
   /** What the agent sees as the call ends, which follows the text of the outcomes it names (FR-WORKPLACE-08). */
   sight?: Sight<State>;
   /**

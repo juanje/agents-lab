@@ -228,6 +228,7 @@ function refusalOf(settings: Pick<MailSettings, "mailboxes" | "acts">, { to, act
 export const MAIL_DURATIONS: Readonly<Record<string, string>> = {
   send_mail: "send_minutes, plus send_minutes_per_field for each field and one minute per send_words_per_minute words of the subject and text, in world minutes",
   check_mail: "check_minutes, in world minutes",
+  read_mail: "read_minutes, plus one minute per read_words_per_minute words of the message's text, in world minutes",
 };
 
 /** The mail as the inventory gives it (FR-MESSAGE-01): its mailboxes, each recipient's acts, its delivery delay, its durations and its notice. */
@@ -252,7 +253,7 @@ export function mailInventory({ mailboxes, acts, deliveryMinutes, notice, ...set
   };
 }
 
-/** The agents' mail tools (FR-MESSAGE-01): send_mail and check_mail. */
+/** The agents' mail tools (FR-MESSAGE-01): send_mail, check_mail and read_mail. */
 export function mailTools<State>(settings: MailSettings, keeper: MailKeeper<State>): Tool<State>[] {
   const sendMail: Effector<State> = {
     kind: "effector",
@@ -286,7 +287,48 @@ export function mailTools<State>(settings: MailSettings, keeper: MailKeeper<Stat
       return listed.map(({ id, from, subject, received }) => `${id}: from ${from}, subject "${subject}", received ${worldTimeText(received)}`).join("\n");
     },
   };
-  return [sendMail, checkMail];
+  const readMail: Effector<State> = {
+    kind: "effector",
+    name: "read_mail",
+    description: "Read a message in your mailbox, by its id: its sender, its act, its fields and its text. It is marked read.",
+    parameters: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
+    durationMs: (state, call) => ({ worldSeconds: readingMinutes(settings, inMailbox(keeper.of(state), call.agent, call.arguments.id)) * 60 }),
+    action: {
+      precondition: (state, call) => markingRead(keeper).precondition(state, { reader: call.agent, id: call.arguments.id as string }),
+      effect: (state, call) => markingRead(keeper).effect(state, { reader: call.agent, id: call.arguments.id as string }),
+    },
+    reply: { of: "the message it reads: its sender, act, fields and text", text: (state, call) => messageText(inMailbox(keeper.of(state), call.agent, call.arguments.id) as Received) },
+    texts: { no_such_mail: "no_such_mail: the id is not in your mailbox" },
+    readTarget: () => "not_sensed",
+  };
+  return [sendMail, checkMail, readMail];
+}
+
+/** The message of an id in a reader's mailbox, if it is there. */
+function inMailbox(mail: Mail, reader: string, id: unknown): Received | undefined {
+  return (mail.mailboxes[reader] ?? []).find((message) => message.id === id);
+}
+
+/** The world minutes reading a message takes: read_minutes, plus one minute per read_words_per_minute words of its text. */
+function readingMinutes(settings: MailSettings, message: Received | undefined): number {
+  return settings.readMinutes + (settings.readWordsPerMinute === undefined ? 0 : wordsOf(message?.text) / settings.readWordsPerMinute);
+}
+
+/** A message as its reader reads it: "From: <sender>. Act: <act>.", then each field as "<name>: <value>.", then its text. */
+function messageText({ from, act, fields, text }: Message): string {
+  return [`From: ${from}. Act: ${act}.`, ...Object.entries(fields).map(([name, value]) => `${name}: ${value}.`), ...(text === undefined ? [] : [text])].join(" ");
+}
+
+/** A message marked read by its reader, through the arbiter; it fails as no_such_mail when its id is not in the reader's mailbox. */
+function markingRead<State>(keeper: MailKeeper<State>): Action<State, { reader: string; id: string }> {
+  return {
+    precondition: (state, { reader, id }) => (inMailbox(keeper.of(state), reader, id) === undefined ? { holds: false, reason: "no_such_mail" } : { holds: true }),
+    effect: (state, { reader, id }) => {
+      const mail = keeper.of(state);
+      const mailbox = mail.mailboxes[reader].map((message) => (message.id === id ? { ...message, read: true } : message));
+      return keeper.with(state, { ...mail, mailboxes: { ...mail.mailboxes, [reader]: mailbox } });
+    },
+  };
 }
 
 /** The world seconds since day 1's midnight of a world time, which orders world times. */
