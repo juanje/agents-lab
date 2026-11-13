@@ -1082,6 +1082,8 @@ describe("the depot's day", () => {
       const landing = (atMs: number): ComponentLanding => ({ component: component.name, atMs });
       if (step.start !== undefined) expect(world.apply(step.start, landing(startedAtMs))).toEqual({ applied: true });
       const started = world.state;
+      // The workplace's components take their durations in run time.
+      if (typeof step.durationMs !== "number") throw new Error(`"${step.name}" takes a duration in world time`);
       sinceStartMs += step.durationMs;
       const result = world.apply(step.action, landing(sinceStartMs));
       outcome = result.applied ? "success" : result.reason;
