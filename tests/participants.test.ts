@@ -151,6 +151,59 @@ describe("run, with a tool that throws during a participant's call (FR-PARTICIPA
   });
 });
 
+/**
+ * A rule set that, woken by a stimulus, checks its mail, then waits the world minutes given; woken with nothing new, its
+ * wait ended, it ends. It keeps what it perceives and when, by performance.now().
+ */
+function waiting(minutes: number, perceived: { input: Perceived; atMs: number }[]): RuleSet {
+  return {
+    start: () => ({
+      next: (input) => {
+        perceived.push({ input, atMs: performance.now() });
+        if (input.result !== undefined) return { kind: "wait", minutes };
+        return input.stimuli.length === 0 ? { kind: "end" } : { kind: "call", tool: "check_mail", arguments: {} };
+      },
+      outcome: () => ({}),
+    }),
+  };
+}
+
+describe("run, with a rule set that waits (FR-PARTICIPANT-01)", () => {
+  it("wakes it at the end of its wait, given nothing new, and the wait keeps the run going", async () => {
+    const perceived: { input: Perceived; atMs: number }[] = [];
+    const logDirectory = mkdtempSync(join(tmpdir(), "agents-lab-logs-"));
+
+    const { runId } = await run(loadScenario(withDesk(waiting(5, perceived)), 1), [{ name: "ana", model: anaAsks(), activations: 1 }], 1, { ...settings, logDirectory });
+
+    const [checked] = logOf(logDirectory, runId).filter((line) => line.type === "tool_call" && line.agent === "desk");
+    expect(perceived.map(({ input }) => input.stimuli.length)).toEqual([1, 0, 0]);
+    expect(perceived[2].input).toEqual({ stimuli: [] });
+    // Five world minutes after its check ended, at 100 ms each.
+    const waitedMs = perceived[2].atMs - (checked.endedAtMs as number);
+    expect(waitedMs).toBeGreaterThanOrEqual(500);
+    expect(waitedMs).toBeLessThan(540);
+  });
+
+  it("wakes it early at a stimulus that reaches it during its wait, given that stimulus", async () => {
+    const perceived: { input: Perceived; atMs: number }[] = [];
+    const logDirectory = mkdtempSync(join(tmpdir(), "agents-lab-logs-"));
+    const anaAsksTwice = new ScriptedModel([
+      { toolCalls: [{ name: "send_mail", arguments: { to: "desk", act: "ask" } }], delayMs: 0 },
+      { toolCalls: [{ name: "send_mail", arguments: { to: "desk", act: "ask" } }], delayMs: 1000 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+
+    const { runId, startedAtMs } = await run(loadScenario(withDesk(waiting(20, perceived), { reply_minutes: [0, 0] }), 1), [{ name: "ana", model: anaAsksTwice, activations: 1 }], 1, { ...settings, logDirectory });
+
+    const notices = logOf(logDirectory, runId).filter((line) => line.type === "stimulus" && line.agent === "desk");
+    expect(notices).toHaveLength(2);
+    // Woken by the first notice, given its check's result, then woken by the second notice, before its 20 world minutes ended.
+    expect(perceived.map(({ input }) => input.stimuli.length)).toEqual([1, 0, 1, 0, 0]);
+    expect(perceived[2].atMs - (notices[1].deliveredAtMs as number)).toBeLessThan(30);
+    expect(perceived[2].atMs - startedAtMs).toBeLessThan(2000);
+  });
+});
+
 describe("run, recording each participant's outcome (FR-PARTICIPANT-01)", () => {
   it("writes a participant_outcome line for each participant decided by rules, with its rule set's outcome record, when the run ends", async () => {
     const logDirectory = mkdtempSync(join(tmpdir(), "agents-lab-logs-"));
