@@ -172,7 +172,9 @@ describe("the population, a component with its own sequence (FR-POPULATION-01)",
   });
 
   it("answers a request for needs within a day, and draws, for each registrant who would not come, a cancellation with probability 0.5", () => {
-    const asked = cycleUntil(opened({ needsRequested: minutesOf(at(1, "12:00")) }, { diets: { vegan: 1 } }), minutesOf(at(3))).state;
+    // Registrants who gave no diet, asked once the page requires it.
+    const registrant = (id: string) => ({ id, diet: "vegan", access: "none", pays: true, consents: true, no_show: false, registered: 0, given: {} });
+    const asked = cycleUntil(opened({ people: ["a-1", "a-2", "a-3", "a-4"].map(registrant), page: { open: true, price: 100, required_fields: ["diet"], info: [], waiting_list: false }, needsRequested: minutesOf(at(1, "12:00")) }), minutesOf(at(3))).state;
     expect(pop(asked).people.map(({ given }) => given.diet)).toEqual(["vegan", "vegan", "vegan", "vegan"]);
     const told = cycleUntil(opened({ cancelRequested: minutesOf(at(1, "12:00")) }, { no_show_share: 1 }), minutesOf(at(2))).state;
     const draws = pop(told).events?.filter(({ event }) => event === "cancel_draw") ?? [];
