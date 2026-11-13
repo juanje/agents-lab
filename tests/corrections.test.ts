@@ -219,3 +219,19 @@ describe("what the congress gives its parties for FR-CONGRESS-07", () => {
     expect(paramsOf("v2").call_back_minutes).toEqual([5, 5]);
   });
 });
+
+describe("the away factor on the web tools (FR-CONGRESS-07)", () => {
+  it("lengthens travel_options and similar_events by away_factor for the organiser away from the office", () => {
+    const at = (place: string) => {
+      const configuration = parse(congressScenario.baseConfiguration);
+      configuration.city = stringify({ places: [{ id: "office" }, { id: "station" }], passages: [{ between: ["office", "station"], length: 10, step_free: true }] });
+      configuration.organiser_place = place;
+      configuration.away_factor = 1.5;
+      Object.assign(configuration.durations as TomlTable, { travel_options: 2, similar_events: 4 });
+      return loadScenario({ ...(congressScenario as Scenario<unknown>), baseConfiguration: stringify(configuration) }, 1).world.state;
+    };
+    const duration = (state: unknown, tool: string) => (congressScenario.tools.find((each) => each.name === tool) as { durationMs: (...args: unknown[]) => unknown }).durationMs(state, { agent: "organiser", arguments: {} });
+    expect([duration(at("office"), "travel_options"), duration(at("office"), "similar_events")]).toEqual([{ worldSeconds: 120 }, { worldSeconds: 240 }]);
+    expect([duration(at("station"), "travel_options"), duration(at("station"), "similar_events")]).toEqual([{ worldSeconds: 180 }, { worldSeconds: 360 }]);
+  });
+});
