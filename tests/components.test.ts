@@ -5,7 +5,9 @@ import { RunClock } from "../src/engine/clock.ts";
 import { type Component, type ComponentAction, type Step, runComponent } from "../src/engine/components.ts";
 import { Random } from "../src/engine/random.ts";
 import { Stimuli, type Stimulus } from "../src/engine/stimuli.ts";
+import { loadScenario } from "../src/engine/scenario.ts";
 import { World } from "../src/engine/world.ts";
+import { type Post, postScenario } from "./fixtures/post.ts";
 import { type Slots, emptySlots, filler, holder } from "./fixtures/slots.ts";
 
 /** Runs a component in a world until its cycle ends or the signal aborts, giving the actions it recorded and the changes it applied. */
@@ -196,5 +198,76 @@ describe("runComponent", () => {
       { day: 1, weekday: "Monday", seconds: 9 * 3600 + 60 },
       { day: 1, weekday: "Monday", seconds: 9 * 3600 + 120 },
     ].map((time, index) => ({ ...time, seconds: expect.toSatisfy((seconds: number) => seconds >= time.seconds && seconds < time.seconds + 6, `${index}`) })));
+  });
+});
+
+describe("runComponent, with mail (FR-MESSAGE-01)", () => {
+  /** The post test scenario as loaded: its Background's mail, with a message for "desk" at the start. */
+  const loadPost = () =>
+    loadScenario(
+      {
+        ...postScenario,
+        baseConfiguration: `${postScenario.baseConfiguration}[[mail.initial]]\nto = "desk"\nfrom = "ana"\nact = "ask"\nreceived = "day 1 Monday 08:00"\n`,
+      },
+      1,
+    );
+
+  /** Runs a component of the post world whose cycle takes these steps, keeping each outcome and the unread messages it is given. */
+  async function runPost(steps: readonly Step<Post>[]) {
+    const loaded = loadPost();
+    const given: { outcome: string | undefined; unread: string[] }[] = [];
+    const desk: Component<Post> = {
+      name: "desk",
+      kind: "world",
+      description: "Takes its steps.",
+      cycle: () => {
+        let index = 0;
+        return {
+          next: (_state, outcome, _sinceStartMs, _world, unread = []) => {
+            given.push({ outcome, unread: unread.map(({ id }) => id) });
+            return steps[index++] ?? { kind: "end" };
+          },
+        };
+      },
+    };
+    const actions: ComponentAction[] = [];
+    const clock = new RunClock(loaded.calendar);
+    clock.start();
+    await runComponent(desk, { world: loaded.world, random: new Random(1), runEnd: new AbortController().signal, changes: new ChangesSinceSensing(), clock, stimuli: new Stimuli([]), mail: loaded.mail, record: (action) => actions.push(action) });
+    return { world: loaded.world, given, actions };
+  }
+
+  it("gives its cycle its mailbox's unread messages, and marks one read through the arbiter with a read step that lasts read_minutes", async () => {
+    const { world, given, actions } = await runPost([{ kind: "read", id: "m-1" }, { kind: "read", id: "m-7" }]);
+
+    expect(given).toEqual([
+      { outcome: undefined, unread: ["m-1"] },
+      { outcome: "success", unread: [] },
+      { outcome: "no_such_mail", unread: [] },
+    ]);
+    expect(world.state.mail.mailboxes.desk[0].read).toBe(true);
+    expect(actions.map(({ action, outcome }) => [action, outcome])).toEqual([
+      ["read_mail", "success"],
+      ["read_mail", "no_such_mail"],
+    ]);
+    // read_minutes is one world minute, 100 ms of the run.
+    expect(actions[0].endedAtMs - actions[0].startedAtMs).toBeGreaterThanOrEqual(100);
+  });
+
+  it("sends a message with a send step that lasts send_minutes, from itself, with the world's time it was sent", async () => {
+    const { world, actions } = await runPost([{ kind: "send", message: { to: "ana", act: "answer", fields: { free: "yes" } } }]);
+
+    expect(world.state.mail.inTransit).toEqual([{ id: "m-2", from: "desk", to: "ana", act: "answer", fields: { free: "yes" }, subject: "answer", sent: expect.objectContaining({ day: 1, weekday: "Monday" }) }]);
+    expect(actions).toMatchObject([{ component: "desk", action: "send_mail", outcome: "success" }]);
+    expect(actions[0].endedAtMs - actions[0].startedAtMs).toBeGreaterThanOrEqual(300);
+  });
+
+  it("refuses, as it starts, a message its recipient cannot take: it takes no time, is not sent, and its cycle learns the outcome", async () => {
+    const { world, given, actions } = await runPost([{ kind: "send", message: { to: "zoe", act: "ask" } }]);
+
+    expect(given.map(({ outcome }) => outcome)).toEqual([undefined, "unknown_recipient"]);
+    expect(actions).toMatchObject([{ component: "desk", action: "send_mail", outcome: "unknown_recipient" }]);
+    expect(actions[0].endedAtMs - actions[0].startedAtMs).toBeLessThan(5);
+    expect(world.state.mail.inTransit).toEqual([]);
   });
 });

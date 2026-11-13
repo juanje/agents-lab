@@ -531,3 +531,60 @@ Then("the {string} result is {string}", function (this: Context, tool: string, t
 Then("the message's subject was {string}", function (this: Context, subject: string) {
   assert.equal(sentLine(this).subject, subject);
 });
+
+/** How long a component of these scenarios waits before it looks at its unread messages again. */
+const POLL_MS = 10;
+
+/** When such a component gives up, in run milliseconds: after the agents of these scenarios are done. */
+const GIVE_UP_MS = 2000;
+
+Given(
+  "{string}'s cycle answers each unread {string} with the act {string} and the field free {string}, marking it read",
+  function (this: Context, component: string, act: string, answer: string, free: string) {
+    // It marks each unread message of the act read, then answers its sender; it ends once it has answered one and has
+    // no unread message of the act left, so the run ends with the scenario's agents, or else when it gives up.
+    const cycle: Component<Post>["cycle"] = () => {
+      let answering: string | undefined;
+      let answered = 0;
+      return {
+        next: (_state, _outcome, sinceStartMs, _world, unread = []) => {
+          // A run that gives it no mail ends while the scenario's agents are done, so a missing answer fails the check.
+          if (sinceStartMs > GIVE_UP_MS) return { kind: "end" };
+          if (answering !== undefined) {
+            const to = answering;
+            answering = undefined;
+            answered += 1;
+            return { kind: "send", message: { to, act: answer, fields: { free } } };
+          }
+          const asking = unread.find((message) => message.act === act);
+          if (asking !== undefined) {
+            answering = asking.from;
+            return { kind: "read", id: asking.id };
+          }
+          return answered > 0 ? { kind: "end" } : { kind: "wait", ms: POLL_MS };
+        },
+      };
+    };
+    setupOf(this).components.set(component, cycle);
+  },
+);
+
+Then(
+  "{string}'s answer was sent to {string} after {string}'s message landed, and landed one world minute later",
+  function (this: Context, component: string, agent: string, asker: string) {
+    const lines = logLines(this);
+    const sent = (from: string) => {
+      const found = lines.filter((line) => line.type === "message_sent" && line.from === from);
+      assert.equal(found.length, 1, `"${from}" sent ${found.length} messages`);
+      return found[0];
+    };
+    const [asked, answer] = [sent(asker), sent(component)];
+    assert.equal(answer.to, agent);
+    const askLanded = deliveredLine(this, asked.id);
+    const answerLanded = deliveredLine(this, answer.id);
+    assert.ok((answer.atMs as number) > (askLanded.atMs as number), `the answer was sent before "${asker}"'s message landed`);
+    const delayMs = (answerLanded.atMs as number) - (answer.atMs as number);
+    // Within the few milliseconds the engine's own work adds to a delivery.
+    assert.ok(delayMs >= MINUTE_MS && delayMs <= MINUTE_MS + 15, `the answer landed ${Math.round(delayMs)} ms of the run after it was sent`);
+  },
+);
