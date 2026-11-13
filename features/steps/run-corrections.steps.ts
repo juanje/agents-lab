@@ -395,3 +395,25 @@ Then('"c1" handled "final_numbers" before "cancel_order", and answered "cancelle
   assert.ok(["numbers_accepted", "numbers_refused"].includes(acts[1]), `"c1" sent ${acts.join(", ")}`);
   assert.deepEqual(acts.slice(2), ["cancelled"], `"c1" sent ${acts.join(", ")}`);
 });
+
+/** The registrants of the questions' scenario, who register at day 1's 10:00. */
+const REGISTRANTS = ["f-1", "f-2", "f-3", "f-4"];
+
+Given("the attendees material's {string} is {int} and {int} people registered", function (this: Context, key: string, share: number, people: number) {
+  assert.equal(people, REGISTRANTS.length);
+  const fixed = REGISTRANTS.map((id) => ({ id, between: ["day 1 10:00", "day 1 10:00"] }));
+  change(this, (configuration) => (configuration.attendees = stringify({ ...ATTENDEES, [key]: share, fixed })));
+  before(this, [{ toolCalls: [{ name: "edit_ticket_page", arguments: { open: true, price: 10 } }] as never, delayMs: 0 }]);
+});
+
+When("the run's time limit passes {int} world days after they registered", { timeout: 60_000 }, async function (this: Context, days: number) {
+  // From the calendar's start, day 1 at 09:00, to 10:00 that many days later.
+  this.timeLimitMs = (days * 24 + 1) * hourMsOf(this);
+  await runTheScenario(this);
+});
+
+Then("the organiser received {int} questions from registrants", function (this: Context, count: number) {
+  const questions = ranLines(this).filter((line) => line.type === "message_sent" && line.act === "question" && line.to === ORGANISER && REGISTRANTS.includes(String(line.from)));
+  assert.equal(questions.length, count, `the registrants sent ${questions.length} questions`);
+  for (const question of questions) assert.ok(["address", "access", "diet", "refund"].includes(String(fieldsOf(question).about)), `a question about ${String(fieldsOf(question).about)}`);
+});

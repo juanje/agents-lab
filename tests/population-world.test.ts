@@ -181,6 +181,17 @@ describe("the population, a component with its own sequence (FR-POPULATION-01)",
     expect(minutesOf(question.sent) - (w1?.registered as number)).toBeLessThanOrEqual(1440);
   });
 
+  it("has each registrant mail the organiser a question about the address, access, diet or a refund with the question_share, within three days of registering (FR-CONGRESS-09)", () => {
+    const asked = cycleUntil(opened({}, { question_share: 1 }), minutesOf(at(5))).state;
+    const questions = asked.mail.inTransit.filter(({ act, to }) => act === "question" && to === "organiser");
+    expect(questions.map(({ from }) => from).sort()).toEqual(["a-1", "a-2", "a-3", "a-4"]);
+    for (const question of questions) {
+      expect(["address", "access", "diet", "refund"]).toContain(question.fields.about);
+      expect(minutesOf(question.sent) - minutesOf(at(1, "10:00"))).toBeLessThanOrEqual(3 * 1440);
+    }
+    expect(cycleUntil(opened(), minutesOf(at(5))).state.mail.inTransit.filter(({ act }) => act === "question")).toEqual([]);
+  });
+
   it("cancels a registrant at the time drawn as they registered, before the event", () => {
     const { state } = cycleUntil(opened({}, { cancel_share: 1 }), minutesOf(at(26)));
     expect(pop(state).people.every(({ cancelled }) => cancelled !== undefined && cancelled < minutesOf(at(26, "00:00")))).toBe(true);
