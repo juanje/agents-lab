@@ -22,6 +22,7 @@ import {
   getSupportedThinkingLevels,
   validateToolArguments,
 } from "@earendil-works/pi-ai";
+import type { WorldTime } from "./calendar.ts";
 import { type ChangesSinceSensing, applyCounted } from "./changes.ts";
 import { type RunClock, waitAtLeast } from "./clock.ts";
 import { isSummaryRequest, piCompactionSettings } from "./compaction.ts";
@@ -813,7 +814,7 @@ async function perform<State>(
     ? { outcome: CUT_OFF, text: CUT_OFF }
     : tool.kind === "sensor"
       ? sense(world, tool, call, clock)
-      : effect(world, tool, call, changes, early?.ended.aborted ? early.outcome : undefined);
+      : effect(world, tool, call, changes, clock, early?.ended.aborted ? early.outcome : undefined);
   return targetAsSensed === undefined ? result : { ...result, targetAsSensed };
 }
 
@@ -864,18 +865,25 @@ function sense<State>(world: World<State>, sensor: Sensor<State>, call: AgentCal
  * failure's reason, and the agent receives the text the effector declares for it, or the outcome itself. An effector
  * without an action changes nothing: it applies nothing and succeeds. A call that ended early, once its effect applies,
  * has the early end's outcome instead of "success". The changes since the agent last sensed, and who applied them, are
- * read at this moment, beside it.
+ * read at this moment, beside it. The action is given this moment and, for a run with a calendar, the world's time then.
  */
-function effect<State>(world: World<State>, effector: Effector<State>, call: AgentCall, changes: ChangesSinceSensing, endedEarly?: string): CallResult {
+function effect<State>(world: World<State>, effector: Effector<State>, call: AgentCall, changes: ChangesSinceSensing, clock: RunClock, endedEarly?: string): CallResult {
   const changesSinceSensing = changes.since(call.agent);
   const changesSinceSensingBy = changes.appliedBy(call.agent);
-  const applied = effector.action === undefined ? "success" : applyCounted(world, changes, call.agent, effector.action, { ...call, atMs: performance.now() });
+  const landing = { ...call, atMs: performance.now(), ...withWorldTime(clock) };
+  const applied = effector.action === undefined ? "success" : applyCounted(world, changes, call.agent, effector.action, landing);
   const outcome = applied === "success" ? (endedEarly ?? applied) : applied;
   const text = effector.texts?.[outcome] ?? outcome;
   if (effector.sight === undefined || !effector.sight.outcomes.includes(outcome)) return { outcome, text, changesSinceSensing, changesSinceSensingBy };
   // What the agent sees from where it is as its call ends: the world right after its effect, if any, was applied.
   const sighting = effector.sight.see(world.state, call.agent);
   return { outcome, text: `${text} ${sighting.text}`, seen: sighting.seen, changesSinceSensing, changesSinceSensingBy };
+}
+
+/** The world's time now, as a key to spread, for a run with a calendar; nothing for a run without one. */
+function withWorldTime(clock: RunClock): { world?: WorldTime } {
+  const world = clock.worldTime();
+  return world === undefined ? {} : { world };
 }
 
 /** A tool a model is offered for one question: what it is called, what it is for, and what it takes. */

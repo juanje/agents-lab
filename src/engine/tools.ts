@@ -63,9 +63,13 @@ export interface Start<State> extends Action<State, AgentCall> {
   appliesTo?(state: State, call: AgentCall): boolean;
 }
 
-/** An effector's call as its action is checked and applied: with the moment it is, by `performance.now()`. */
+/**
+ * An effector's call as its action is checked and applied: with the moment it is, by `performance.now()`, and the world's
+ * time then, for a run with a calendar (FR-CLOCK-03).
+ */
 export interface LandingCall extends AgentCall {
   atMs: number;
+  world?: WorldTime;
 }
 
 /** An agent's last sensing by a sensor, by the sensor's name, or undefined if it never used it. */
