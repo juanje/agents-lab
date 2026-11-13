@@ -184,6 +184,53 @@ interface Drawn {
   topic: string;
   attendance: number;
   chosen: Record<string, string[]>;
+  /** Each kind's roles, each with the templates that fill it (FR-CONGRESS-01's addition). */
+  roles?: Record<string, Record<string, string[]>>;
+  /** The cost-covering price, the reference price and the gap between them, when the draw gives a price_gap. */
+  cost_covering_price?: number;
+  reference_price?: number;
+  price_gap?: number;
+}
+
+/** A kind's draw as `[draw.<kind>]` gives it: a count, roles with their counts, and a venue role priced as the cheapest fit. */
+interface KindDraw {
+  count?: number;
+  roles?: Record<string, number>;
+  cheapest_fit?: string;
+  cheapest_margin?: [number, number];
+}
+
+/** Whether a value is two numbers above 0, the first not above the second. */
+const isRange = (value: unknown): value is [number, number] =>
+  Array.isArray(value) && value.length === 2 && value.every((each) => typeof each === "number" && each > 0) && (value[0] as number) <= (value[1] as number);
+
+/** The most seats one of a venue template's rooms has. */
+const seatsOf = (template: TomlTable) => Math.max(0, ...((template.rooms ?? []) as { seats?: number }[]).map(({ seats = 0 }) => seats));
+
+/**
+ * A kind's templates by its draw, from the replica's sequence: each role filled by distinct templates that carry it, a
+ * template filling one role at most, then the count from templates with no role; refused, naming it, when a role is asked
+ * for more often than the pool carries it or the count is more than the pool has.
+ */
+function drawKind(kind: string, pool: readonly TomlTable[], draw: KindDraw, random: Random): { chosen: TomlTable[]; roles: Record<string, string[]> } {
+  const taken: TomlTable[] = [];
+  const roles: Record<string, string[]> = {};
+  for (const [role, count] of Object.entries(draw.roles ?? {})) {
+    const carriers = pool.filter((template) => ((template.roles ?? []) as string[]).includes(role));
+    if (!(Number.isInteger(count) && count >= 0 && count <= carriers.length)) throw refused(`draw.${kind}.roles.${role}`, count, `the role "${role}" is carried by ${carriers.length} template${carriers.length === 1 ? "" : "s"} of the pool`);
+    const filled = chooseFrom(
+      carriers.filter((template) => !taken.includes(template)),
+      count,
+      random,
+    );
+    if (filled.length < count || filled.some((template) => template === undefined)) throw refused(`draw.${kind}.roles.${role}`, count, `the role "${role}" has too few templates left once the other roles are filled`);
+    taken.push(...filled);
+    roles[role] = filled.map(({ id }) => id as string);
+  }
+  const unroled = pool.filter((template) => ((template.roles ?? []) as string[]).length === 0);
+  const count = draw.count ?? 0;
+  if (!(typeof count === "number" && count >= 0 && count <= unroled.length)) throw refused(`draw.${kind}.count`, count, `the pool of "${kind}" has ${unroled.length} templates with no role`);
+  return { chosen: [...taken, ...chooseFrom(unroled, count, random)], roles };
 }
 
 /** The pools' templates of each kind, by kind, refusing two templates with one id. */
@@ -214,23 +261,49 @@ function variant(configuration: Configuration, random: Random): { configuration:
   const kinds = templatesOf(pools);
   const settings = (configuration.kinds ?? {}) as TomlTable;
   for (const kind of Object.keys(settings)) if (!Object.hasOwn(kinds, kind)) throw refused(`kinds.${kind}`, settings[kind], `the pools have no template of the kind "${kind}"`);
-  const { attendance = [0, 0], ...counts } = draw;
+  const { attendance = [0, 0], price_gap: priceGap, ...counts } = draw;
+  if (priceGap !== undefined && !isRange(priceGap)) throw refused("draw.price_gap", priceGap, "it is not two numbers above 0, the first not above the second");
   const [fewest, most] = attendance as number[];
   if (!(typeof fewest === "number" && typeof most === "number" && fewest <= most)) throw refused("draw.attendance", attendance, "it is not two numbers, the first not above the second");
   const topics = (pools.topics ?? []) as string[];
   const drawn: Drawn = { topic: topics[Math.floor(random.next() * topics.length)], attendance: fewest + Math.floor(random.next() * (most - fewest + 1)), chosen: {} };
   const templates: TomlTable[] = [];
+  /** Every chosen template, by kind, whether or not its kind makes it a participant. */
+  const chosenOf: Record<string, TomlTable[]> = {};
   for (const [kind, count] of Object.entries(counts)) {
     const pool = kinds[kind];
     if (kind === "partner" && typeof count === "number" && count > 1) throw refused("draw.partner", count, "the congress has one partner");
     if (pool === undefined) throw refused(`draw.${kind}`, count, `the pools have no template of the kind "${kind}"`);
-    if (typeof count !== "number" || !(count >= 0 && count <= pool.filter(({ in_house_for: inHouse }) => inHouse === undefined).length)) throw refused(`draw.${kind}`, count, `the pool of "${kind}" has ${pool.length} templates`);
     // A venue's in-house caterer comes with its venue, not from the draw (FR-CONGRESS-05).
     const drawable = pool.filter(({ in_house_for: inHouse }) => inHouse === undefined);
-    const chosen = chooseFrom(drawable, count, random);
+    let chosen: TomlTable[];
+    if (typeof count === "number") {
+      if (!(count >= 0 && count <= drawable.length)) throw refused(`draw.${kind}`, count, `the pool of "${kind}" has ${pool.length} templates`);
+      chosen = chooseFrom(drawable, count, random);
+    } else {
+      const byRole = count as unknown as KindDraw;
+      if (byRole.cheapest_margin !== undefined && !isRange(byRole.cheapest_margin)) throw refused(`draw.${kind}.cheapest_margin`, byRole.cheapest_margin, "it is not two numbers above 0, the first not above the second");
+      const drawnByRole = drawKind(kind, drawable, byRole, random);
+      chosen = drawnByRole.chosen;
+      if (Object.keys(drawnByRole.roles).length > 0) drawn.roles = { ...drawn.roles, [kind]: drawnByRole.roles };
+    }
+    chosen = chosen.map((template) => ({ ...template }));
+    chosenOf[kind] = chosen;
     drawn.chosen[kind] = chosen.map(({ id }) => id as string);
-    if (Object.hasOwn(settings, kind)) templates.push(...chosen.map((template) => ({ ...template, kind })));
   }
+  // The cheapest-fit role's venue is priced below the cheapest other chosen venue that seats the target (FR-CONGRESS-01's addition).
+  const venueDraw = counts.venue as unknown as KindDraw | undefined;
+  if (typeof venueDraw === "object" && venueDraw.cheapest_fit !== undefined) {
+    const fitted = new Set(drawn.roles?.venue?.[venueDraw.cheapest_fit] ?? []);
+    const others = (chosenOf.venue ?? []).filter(({ id }) => !fitted.has(id as string));
+    const fitting = others.filter((template) => seatsOf(template) >= drawn.attendance).map(({ price }) => price as number);
+    const [lowest, highest] = venueDraw.cheapest_margin ?? [1, 1];
+    for (const template of chosenOf.venue ?? []) {
+      if (fitted.has(template.id as string) && fitting.length > 0) template.price = Math.round(Math.min(...fitting) * (lowest + random.next() * (highest - lowest)));
+    }
+  }
+  if (priceGap !== undefined) Object.assign(drawn, gapPrices(chosenOf, drawn.attendance, priceGap as [number, number], random));
+  for (const [kind, chosen] of Object.entries(chosenOf)) if (Object.hasOwn(settings, kind)) templates.push(...chosen.map((template) => ({ ...template, kind })));
   if (Object.hasOwn(settings, "caterer")) {
     const venues = drawn.chosen.venue ?? [];
     templates.push(...(kinds.caterer ?? []).filter(({ in_house_for: inHouse }) => venues.includes(inHouse as string)).map((template) => ({ ...template, kind: "caterer" })));
@@ -239,7 +312,7 @@ function variant(configuration: Configuration, random: Random): { configuration:
   const city = cityOf(configuration, calendar);
   assertParties(kinds, settings, city);
   travelOf(configuration, city);
-  const perturbations = perturbationsOf(configuration, kinds);
+  const perturbations = perturbationsOf(configuration, kinds, drawn.roles ?? {});
   const chosenVenues = templates.filter(({ kind }) => kind === "venue");
   const accounts: Record<string, TomlTable> = {};
   const participants = Object.fromEntries(
@@ -264,12 +337,40 @@ function variant(configuration: Configuration, random: Random): { configuration:
   const completed: Configuration = {
     ...configuration,
     participants: { ...((configuration.participants ?? {}) as TomlTable), ...participants },
+    // Each perturbation as resolved, one for a role naming the template that filled it.
+    perturbations: Object.fromEntries(perturbations.map(({ name, ...declared }) => [name, declared as unknown as TomlTable])),
     drawn: drawn as unknown as TomlTable,
     ...(mail === undefined ? {} : { mail: { ...mail, mailboxes: [...((mail.mailboxes ?? []) as string[]), ...names], initial: [...((mail.initial ?? []) as TomlTable[]), ...partnerSession(templates, drawn, (configuration.calendar as TomlTable | undefined)?.start)] } }),
     ...(phone === undefined ? {} : { phone: { ...phone, lines: [...((phone.lines ?? []) as string[]), ...names] } }),
     ...(money === undefined ? {} : { money: { ...money, accounts: { ...((money.accounts ?? {}) as TomlTable), ...accounts } } }),
   };
-  return { configuration: completed, drawn: { ...drawn, ...referencePrice(configuration, drawn.topic) } };
+  return { configuration: completed, drawn: { ...drawn, ...(drawn.reference_price === undefined ? referencePrice(configuration, drawn.topic) : {}) } };
+}
+
+/** The sixth: the six lowest fees of the available speakers count toward the cost-covering price. */
+const LOWEST_FEES = 6;
+
+/** The similar events' prices, as shares of the reference price, when the draw gives a price_gap. */
+const SIMILAR_SHARES = [0.8, 1, 1.2];
+
+/**
+ * The cost-covering price (FR-CONGRESS-01's addition): the cheapest chosen venue that seats the target, plus the target
+ * attendance × the chosen caterers' median price per head, plus the six lowest fees of the available chosen speakers,
+ * less the chosen board's funds and sponsors' amounts, over the target attendance, at least 1; and the reference price,
+ * that price over one plus a gap drawn in price_gap.
+ */
+function gapPrices(chosenOf: Readonly<Record<string, TomlTable[]>>, attendance: number, [lowest, highest]: [number, number], random: Random) {
+  const sum = (values: number[]) => values.reduce((total, value) => total + value, 0);
+  const fitting = (chosenOf.venue ?? []).filter((template) => seatsOf(template) >= attendance).map(({ price }) => price as number);
+  const perHead = (chosenOf.caterer ?? []).map(({ price_per_head: price }) => price as number).sort((one, other) => one - other);
+  const middle = Math.floor(perHead.length / 2);
+  const median = perHead.length === 0 ? 0 : perHead.length % 2 === 1 ? perHead[middle] : (perHead[middle - 1] + perHead[middle]) / 2;
+  const fees = (chosenOf.speaker ?? []).filter(({ available }) => available === true).map(({ fee = 0 }) => fee as number).sort((one, other) => one - other).slice(0, LOWEST_FEES);
+  const funds = sum((chosenOf.board ?? []).map(({ funds: given = 0 }) => given as number));
+  const amounts = sum((chosenOf.sponsor ?? []).map(({ amount = 0 }) => amount as number));
+  const covering = Math.max(1, ((fitting.length === 0 ? 0 : Math.min(...fitting)) + attendance * median + sum(fees) - funds - amounts) / attendance);
+  const gap = lowest + random.next() * (highest - lowest);
+  return { cost_covering_price: covering, reference_price: covering / (1 + gap), price_gap: gap };
 }
 
 /**
@@ -431,9 +532,16 @@ interface Perturbation {
 }
 
 /** The configuration's perturbations, refused, naming them, when their times do not follow "day <n> HH:MM" or they are for no venue. */
-function perturbationsOf(configuration: Configuration, kinds: Readonly<Record<string, TomlTable[]>>): Perturbation[] {
+function perturbationsOf(configuration: Configuration, kinds: Readonly<Record<string, TomlTable[]>>, roles: Readonly<Record<string, Record<string, string[]>>> = {}): Perturbation[] {
   return Object.entries((configuration.perturbations ?? {}) as TomlTable).map(([name, written]) => {
-    const declared = { name, ...(written as TomlTable) } as unknown as Perturbation;
+    const { for_role: forRole, ...rest } = written as TomlTable;
+    const declared = { name, ...rest } as unknown as Perturbation;
+    // A perturbation for a role is for the template that filled it (FR-CONGRESS-01's addition).
+    if (forRole !== undefined) {
+      const filled = Object.values(roles).flatMap((byRole) => byRole[forRole as string] ?? [])[0];
+      if (filled === undefined) throw refused(`perturbations.${name}`, written, `its for_role "${String(forRole)}" is a role no draw fills`);
+      declared.for = filled;
+    }
     const times = [...(declared.between ?? []), ...(declared.at === undefined ? [] : [declared.at])];
     if (times.length === 0 || times.some((time) => perturbationMinutes(time) === undefined)) throw refused(`perturbations.${name}`, written, 'its times do not follow "day <n> HH:MM"');
     // A sponsor's withdrawal is for a sponsor; the others are a venue's.
@@ -501,8 +609,21 @@ function initialState(configuration: Configuration, random: Random): Congress {
     money: { balances: {}, invoices: [], commitments: [], ceilings: {}, overruns: [], events: [] },
     // Each train's draw for selling out comes from the travel's own sequence, the replica's initial state's.
     travel: { material: travel, soldOutDraws: Object.fromEntries(travel.trains.map(({ id }) => [id, random.next()])), booked: [] },
-    similar: similarEvents(configuration, (configuration.drawn as unknown as Drawn | undefined)?.topic ?? "").map(({ name, price, size }) => ({ name, price, size })),
+    similar: similarOf(configuration),
   };
+}
+
+/**
+ * The similar congresses of the drawn topic, with their prices and sizes; with a price gap, their prices are the
+ * reference price × 0.8, 1 and 1.2, in the material's order (FR-CONGRESS-01's addition).
+ */
+function similarOf(configuration: Configuration): Congress["similar"] {
+  const drawn = configuration.drawn as unknown as Drawn | undefined;
+  return similarEvents(configuration, drawn?.topic ?? "").map(({ name, price, size }, index) => ({
+    name,
+    price: drawn?.price_gap === undefined || drawn.reference_price === undefined ? price : drawn.reference_price * (SIMILAR_SHARES[index] ?? 1),
+    size,
+  }));
 }
 
 /** The place the organiser is in; in a passage, none. */
