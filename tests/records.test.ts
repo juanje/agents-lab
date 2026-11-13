@@ -66,3 +66,25 @@ describe("the congress's records for its parts (FR-CONGRESS-06)", () => {
     expect(cycle.next(confirmed as never, "success", 0, at(9))).toEqual({ kind: "deliver", agent: "s1", channel: "early_cancel", held: false });
   });
 });
+
+describe("the records only the congress's parts read (FR-CONGRESS-06)", () => {
+  it("records the organiser's visits, announcements and ticket prices with their world times, and gives its parts", () => {
+    const loaded = congress((configuration) => {
+      configuration.attendees = stringify({ pool_factor: 1, base_per_day: 0, unannounced: 0, promotion_factor: 1, payment_fee_share: 0, cancel_share: 0, consent_share: 1, diets: { none: 1 } });
+      configuration.pools = stringify({ ...parse(configuration.pools as string), caterer: [{ id: "c9", price_per_head: 30, final_days: 7, deposit_share: 0.2, deposit_due_days: 3, cancellation: [{ share: 0.3 }], in_house_for: "v1" }] });
+      configuration.pools = stringify({ ...parse(configuration.pools as string), venue: [{ ...(parse(configuration.pools as string).venue as TomlTable[])[0], catering: "in_house" }], speaker: [{ id: "s1", fee: 0, available: true, acceptance: 1, home: "north" }, { id: "s2", fee: 0, available: true, acceptance: 1, home: "local" }] });
+      configuration.kinds = { ...(configuration.kinds as TomlTable) };
+    });
+    const state = loaded.world.state as Congress;
+    expect(state.context).toMatchObject({ homes: { s1: "north" }, catering: { v1: { rule: "in_house", inHouse: "c9" } } });
+    const goTo = congressScenario.tools.find((each) => each.name === "go") as never as { action: { effect: (state: unknown, call: unknown) => Congress } };
+    const moved = { ...state, space: { ...state.space } };
+    const visited = goTo.action.effect(moved, { agent: "organiser", arguments: { place: "v1-entrance" }, atMs: 0, world: at(2, "10:00") });
+    expect(visited.visits).toEqual([{ place: "v1-entrance", at: minutes(2, "10:00") }]);
+    const announced = tool("announce").action.effect(state, { agent: "organiser", arguments: { audience: "registrants", kind: "change" }, atMs: 0, world: at(3) });
+    expect(announced.population?.announcements).toEqual([{ audience: "registrants", kind: "change", at: minutes(3) }]);
+    const priced = tool("edit_ticket_page").action.effect(state, { agent: "organiser", arguments: { price: 40 }, atMs: 0, world: at(4) });
+    expect(priced.population?.edits).toEqual([{ price: 40, at: minutes(4) }]);
+    expect(congressScenario.parts).toBeDefined();
+  });
+});
