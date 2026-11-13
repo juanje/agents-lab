@@ -255,6 +255,7 @@ async function runAgents<State>(
         runEnd: runEnd.signal,
         changes,
         stimuli,
+        ...(mail === undefined ? {} : { mail }),
         record: (action) => recorder.record({ type: "component_action", ...action }),
       }),
     );

@@ -1,5 +1,5 @@
 import type { TomlTable, TomlValue } from "smol-toml";
-import { type Calendar, type WorldTime, readWorldTime } from "./calendar.ts";
+import { type Calendar, type WorldDuration, type WorldTime, readWorldTime } from "./calendar.ts";
 import { type ChangesSinceSensing, applyCounted } from "./changes.ts";
 import { type RunClock, waitAtLeast } from "./clock.ts";
 import { Random } from "./random.ts";
@@ -177,7 +177,7 @@ export function startingMail(settings: MailSettings): Mail {
 }
 
 /** A message as a sender writes it: its recipient, act, fields, subject and text, as given. */
-interface Outgoing {
+export interface Outgoing {
   to: string;
   act: string;
   fields?: Fields;
@@ -433,4 +433,47 @@ export class MailMedium<State> {
     this.#delays.set(sender, delays);
     return delays;
   }
+}
+
+/** A component's mail step (FR-MESSAGE-01): sending a message as it writes it, or reading one of its mailbox by its id. */
+export type MailStep = { kind: "send"; message: Outgoing } | { kind: "read"; id: string };
+
+/** The mail a component's steps use: its settings and where the state keeps it. */
+export interface MailOf<State> {
+  settings: MailSettings;
+  keeper: MailKeeper<State>;
+}
+
+/** A component's unread messages, oldest first, which its cycle is given (FR-MESSAGE-01). */
+export function unreadOf<State>({ keeper }: MailOf<State>, component: string, state: State): readonly Received[] {
+  return (keeper.of(state).mailboxes[component] ?? []).filter(({ read }) => !read);
+}
+
+/**
+ * A component's mail step as an action of its cycle, as an agent's send_mail or read_mail is, from the state as it
+ * starts: why it is refused, for a message its recipient cannot take; otherwise its name, its duration in world time,
+ * and its action through the arbiter, given the world's time it lands.
+ */
+export function mailAction<State>(
+  { settings, keeper }: MailOf<State>,
+  component: string,
+  step: MailStep,
+  state: State,
+): { name: string; refusal: Refusal } | { name: string; durationMs: WorldDuration; action: Action<State, { world?: WorldTime }> } {
+  if (step.kind === "read") {
+    const reading = markingRead(keeper);
+    const args = { reader: component, id: step.id };
+    return {
+      name: "read_mail",
+      durationMs: { worldSeconds: readingMinutes(settings, inMailbox(keeper.of(state), component, step.id)) * 60 },
+      action: { precondition: (now) => reading.precondition(now, args), effect: (now) => reading.effect(now, args) },
+    };
+  }
+  const refusal = refusalOf(settings, step.message);
+  if (refusal !== undefined) return { name: "send_mail", refusal };
+  return {
+    name: "send_mail",
+    durationMs: { worldSeconds: sendingMinutes(settings, step.message) * 60 },
+    action: { precondition: () => ({ holds: true }), effect: (now, { world }) => keeper.with(now, withSent(keeper.of(now), component, step.message, world)) },
+  };
 }

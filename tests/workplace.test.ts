@@ -1084,6 +1084,7 @@ describe("the depot's day", () => {
         deliveries.push({ agent: step.agent, channel: step.channel, atMs: sinceStartMs, after: actions.at(-1)?.name });
         continue;
       }
+      if (step.kind !== "action") throw new Error(`the workplace's components take no "${step.kind}" step`);
       const startedAtMs = sinceStartMs;
       const landing = (atMs: number): ComponentLanding => ({ component: component.name, atMs });
       if (step.start !== undefined) expect(world.apply(step.start, landing(startedAtMs))).toEqual({ applied: true });
@@ -1320,7 +1321,7 @@ brought_by = "ana"
         sinceStartMs += step.ms;
         continue;
       }
-      if (step.kind === "deliver") continue;
+      if (step.kind !== "action") continue;
       names.push(`${step.name} at ${Math.round(sinceStartMs)}`);
       state = step.action.effect(state, { component: "ana", atMs: sinceStartMs });
     }

@@ -2,14 +2,20 @@ import { CUT_OFF } from "./adapter.ts";
 import type { WorldDuration, WorldTime } from "./calendar.ts";
 import { type ChangesSinceSensing, applyCounted } from "./changes.ts";
 import { type RunClock, waitAtLeast } from "./clock.ts";
+import { type MailOf, type MailStep, type Received, mailAction, unreadOf } from "./mail.ts";
+import type { Refusal } from "./tools.ts";
 import type { Random } from "./random.ts";
 import type { Stimuli } from "./stimuli.ts";
 import type { Action, World } from "./world.ts";
 
-/** A component's action as it is checked and applied: the component that acts, and the moment it lands, by `performance.now()`. */
+/**
+ * A component's action as it is checked and applied: the component that acts, the moment it lands, by
+ * `performance.now()`, and the world's time then, for a run with a calendar (FR-CLOCK-03).
+ */
 export interface ComponentLanding {
   component: string;
   atMs: number;
+  world?: WorldTime;
 }
 
 /**
@@ -37,15 +43,21 @@ export type Step<State> =
       agent: string;
       channel: string;
     }
+  /**
+   * Sends a message, or reads one of its mailbox, as an agent's send_mail or read_mail does: an action, through the
+   * arbiter, with the mail's duration; a message its recipient cannot take is refused as it starts (FR-MESSAGE-01).
+   */
+  | MailStep
   | { kind: "end" };
 
 /**
  * A component's life cycle in one run: it chooses each next step from the world's state, the outcome of the step before,
  * when that was an action (undefined before its first step and after a wait or a delivery), the time since the run
- * started, and the world's time then, for a run with a calendar (FR-CLOCK-03).
+ * started, the world's time then, for a run with a calendar (FR-CLOCK-03), and its mailbox's unread messages, oldest
+ * first, for a run with mail (FR-MESSAGE-01).
  */
 export interface Cycle<State> {
-  next(state: State, outcome: string | undefined, sinceStartMs: number, world?: WorldTime): Step<State>;
+  next(state: State, outcome: string | undefined, sinceStartMs: number, world?: WorldTime, unread?: readonly Received[]): Step<State>;
 }
 
 /**
@@ -83,6 +95,8 @@ export interface ComponentRun<State> {
   changes: ChangesSinceSensing;
   /** The run's stimuli, through whose channels a component delivers its own. */
   stimuli: Stimuli;
+  /** The run's mail, for a run with one, which a component's cycle reads and its mail steps use (FR-MESSAGE-01). */
+  mail?: MailOf<State>;
   record(action: ComponentAction): void;
 }
 
@@ -94,12 +108,21 @@ export interface ComponentRun<State> {
  * among the changes since sensing, and recorded; its cycle learns its outcome before it chooses again. An action the
  * run's end cuts short applies nothing and is recorded `cut_off` (FR-CLOCK-02).
  */
-export async function runComponent<State>(component: Component<State>, { world, random, clock, runEnd, changes, stimuli, record }: ComponentRun<State>): Promise<void> {
+export async function runComponent<State>(component: Component<State>, { world, random, clock, runEnd, changes, stimuli, mail, record }: ComponentRun<State>): Promise<void> {
   const cycle = component.cycle(random);
   let outcome: string | undefined;
   while (!runEnd.aborted) {
-    const step = cycle.next(world.state, outcome, clock.sinceStartMs(), clock.worldTime());
+    const unread = mail === undefined ? undefined : unreadOf(mail, component.name, world.state);
+    const chosen = cycle.next(world.state, outcome, clock.sinceStartMs(), clock.worldTime(), unread);
     outcome = undefined;
+    const step = chosen.kind === "send" || chosen.kind === "read" ? mailStep(mail, component.name, chosen, world.state) : chosen;
+    // A message its recipient cannot take is refused as it starts: it takes no time and is not sent (FR-MESSAGE-01).
+    if (step.kind === "refused") {
+      const atMs = performance.now();
+      outcome = step.refusal.outcome;
+      record({ component: component.name, action: step.name, startedAtMs: atMs, endedAtMs: atMs, outcome });
+      continue;
+    }
     if (step.kind === "end") return;
     if (step.kind === "wait") {
       await waitAtLeast(step.ms, runEnd);
@@ -115,7 +138,21 @@ export async function runComponent<State>(component: Component<State>, { world, 
       if (started !== "success") throw new Error(`the start of component "${component.name}"'s action "${step.name}" was refused with "${started}"`);
     }
     await waitAtLeast(clock.runMsOf(step.durationMs), runEnd);
-    outcome = runEnd.aborted ? CUT_OFF : applyCounted(world, changes, component.name, step.action, { component: component.name, atMs: performance.now() });
+    const landing = { component: component.name, atMs: performance.now(), ...withWorldTime(clock) };
+    outcome = runEnd.aborted ? CUT_OFF : applyCounted(world, changes, component.name, step.action, landing);
     record({ component: component.name, action: step.name, startedAtMs, endedAtMs: performance.now(), outcome });
   }
+}
+
+/** A component's mail step as an action of its cycle, or its refusal as it starts; a run without mail cannot take one. */
+function mailStep<State>(mail: MailOf<State> | undefined, component: string, step: MailStep, state: State): Extract<Step<State>, { kind: "action" }> | { kind: "refused"; name: string; refusal: Refusal } {
+  if (mail === undefined) throw new Error(`component "${component}" took a "${step.kind}" step in a run with no mail`);
+  const mailed = mailAction(mail, component, step, state);
+  return "refusal" in mailed ? { kind: "refused", ...mailed } : { kind: "action", ...mailed };
+}
+
+/** The world's time now, as a key to spread, for a run with a calendar; nothing for a run without one. */
+function withWorldTime(clock: RunClock): { world?: WorldTime } {
+  const world = clock.worldTime();
+  return world === undefined ? {} : { world };
 }
