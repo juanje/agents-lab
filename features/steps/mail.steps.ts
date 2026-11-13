@@ -444,3 +444,58 @@ Given("the configuration's mail is changed so that {}", function (this: Context,
   assert.ok(known !== undefined, `the steps do not read the change "${change}"`);
   known[1](this, setupOf(this));
 });
+
+Given(
+  "the configuration puts a message in {string}'s mailbox from {string}, with the act {string}, the subject {string} and the text {string}, received at {string}",
+  function (this: Context, to: string, from: string, act: string, subject: string, text: string, received: string) {
+    const { mail } = setupOf(this);
+    mail.initial = [...((mail.initial ?? []) as TomlTable[]), { to, from, act, fields: {}, subject, text, received }];
+  },
+);
+
+/** A message as a "check_mail" result lists it: its id, sender, subject and the world's time it was received, to the minute. */
+interface Listed {
+  id: string;
+  from: string;
+  subject: string;
+  received: string;
+}
+
+/** The messages a "check_mail" result lists, one per line, or none. */
+function listed(result: string): Listed[] {
+  if (result === "No messages.") return [];
+  return result.split("\n").map((line) => {
+    const [, id, from, subject, received] = /^(\S+): from (.+), subject "(.*)", received (day \d+ \w+ \d{2}:\d{2})$/.exec(line) ?? [];
+    assert.ok(id !== undefined, `the steps do not read the listed message "${line}"`);
+    return { id, from, subject, received };
+  });
+}
+
+/** The text of each "check_mail" result an agent received, in the order of its calls. */
+function checkResults(context: Context): string[] {
+  const calls = (context.toolCalls ?? []).filter((call) => call.tool === "check_mail");
+  assert.ok(calls.length > 0, 'no "check_mail" call was made');
+  return calls.map((call) => {
+    assert.equal(call.outcome, "success", `a "check_mail" call failed with ${call.outcome}`);
+    return call.result as string;
+  });
+}
+
+Then(
+  /^the (first |second )?"check_mail" result lists (one message|no message)(?:, from "([^"]+)", with the subject "([^"]+)"(?:, received at "([^"]+)")?)?$/,
+  function (this: Context, which: string | undefined, count: string, from: string | undefined, subject: string | undefined, received: string | undefined) {
+    const results = checkResults(this);
+    const result = which === "second " ? results[1] : results[0];
+    assert.ok(which !== undefined || results.length === 1, `${results.length} "check_mail" calls were made`);
+    assert.ok(result !== undefined, `no ${which ?? ""}"check_mail" result`);
+    const messages = listed(result);
+    if (count === "no message") {
+      assert.deepEqual(messages, []);
+      return;
+    }
+    assert.equal(messages.length, 1, `the result lists ${messages.length} messages: ${result}`);
+    const [message] = messages;
+    assert.deepEqual({ from: message.from, subject: message.subject }, { from, subject });
+    if (received !== undefined) assert.equal(message.received, received);
+  },
+);

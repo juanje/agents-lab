@@ -5,7 +5,7 @@ import { ChangesSinceSensing } from "../src/engine/changes.ts";
 import { RunClock } from "../src/engine/clock.ts";
 import { type Mail, type MailKeeper, type MailLine, MailMedium, mailTools, readMail, startingMail } from "../src/engine/mail.ts";
 import { Stimuli } from "../src/engine/stimuli.ts";
-import type { Effector, Tool } from "../src/engine/tools.ts";
+import type { Effector, Sensor, Tool } from "../src/engine/tools.ts";
 import { World } from "../src/engine/world.ts";
 import { rhythmChannel } from "./fixtures/slots.ts";
 
@@ -188,6 +188,30 @@ describe("send_mail", () => {
   });
 });
 
+describe("check_mail", () => {
+  const settings = readMail(mailTable({ initial: [atStart({ received: "day 1 Monday 08:15" }), atStart({ from: "the chair", subject: "Rooms", received: "day 1 Monday 07:30" })] }), calendar);
+  const check = () => toolNamed(mailTools(settings, keeper), "check_mail") as Sensor<Post>;
+  const start: Post = { mail: startingMail(settings) };
+
+  it("is a sensor that lasts check_minutes in world time", () => {
+    expect(check().kind).toBe("sensor");
+    expect(check().durationMs(start, { agent: "ana", arguments: {} })).toEqual({ worldSeconds: 120 });
+  });
+
+  it("lists each message in the reader's mailbox, oldest first, with its id, sender, subject and the world's time it was received", () => {
+    expect(check().sense(start, "ana", {}, 0)).toBe(['m-2: from the chair, subject "Rooms", received day 1 Monday 07:30', 'm-1: from the board, subject "Partner session", received day 1 Monday 08:15'].join("\n"));
+    expect(check().sense(start, "ben", {}, 0)).toBe("No messages.");
+  });
+
+  it("lists only the unread messages when asked to", () => {
+    const [first, second] = start.mail.mailboxes.ana;
+    const read: Post = { mail: { ...start.mail, mailboxes: { ...start.mail.mailboxes, ana: [first, { ...second, read: true }] } } };
+
+    expect(check().sense(read, "ana", { unread_only: true }, 0)).toBe('m-1: from the board, subject "Partner session", received day 1 Monday 08:15');
+    expect(check().sense(read, "ana", { unread_only: false }, 0).split("\n")).toHaveLength(2);
+  });
+});
+
 describe("MailMedium", () => {
   /** A medium over a world with the Background's mail, started now, and what it recorded and delivered as stimuli. */
   function started(table = mailTable(), seed = 1) {
@@ -201,7 +225,7 @@ describe("MailMedium", () => {
     const runEnd = new AbortController();
     const medium = new MailMedium({ world, keeper, settings, clock, runEnd: runEnd.signal, changes: new ChangesSinceSensing(), stimuli, seed, agents: ["ana", "ben"], record: (line) => lines.push(line) });
     const startedAtMs = clock.start();
-    medium.start();
+    medium.start(startedAtMs);
     const send = toolNamed(mailTools(settings, keeper), "send_mail") as Effector<Post>;
     const sendNow = (agent: string, args: Record<string, unknown>) => world.apply(send.action!, { agent, arguments: args, atMs: performance.now(), world: clock.worldTime() });
     return { world, lines, delivered, medium, runEnd, startedAtMs, sendNow };
@@ -240,6 +264,13 @@ describe("MailMedium", () => {
       { id: "m-1", from: "ana", to: "ben", act: "ask", fields: {}, subject: "Friday", text: "Free on Friday?", sent: expect.any(Object), received: (landed as { worldTime: unknown }).worldTime, read: false },
     ]);
     expect(delivered).toEqual([["ben", "mail client: New mail from ana: Friday"]]);
+  });
+
+  it("records each message at the start as delivered at the run's start, with the world's time it was received, and sends no notice for it", async () => {
+    const { lines, delivered, startedAtMs } = started(mailTable({ initial: [atStart()] }));
+
+    expect(lines).toEqual([{ type: "message_delivered", id: "m-1", atMs: startedAtMs, worldTime: { day: 1, weekday: "Monday", seconds: 7.5 * 3600 } }]);
+    expect(delivered).toEqual([]);
   });
 
   it("sends no notice for a message that lands in a component's mailbox, nor for any when the mail declares no notice", async () => {
