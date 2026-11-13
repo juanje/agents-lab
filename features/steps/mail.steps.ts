@@ -485,10 +485,11 @@ function checkResults(context: Context): string[] {
 
 Then(
   /^the (first |second )?"check_mail" result lists (one message|no message)(?:, from "([^"]+)", with the subject "([^"]+)"(?:, received at "([^"]+)")?)?$/,
-  function (this: Context, which: string | undefined, count: string, from: string | undefined, subject: string | undefined, received: string | undefined) {
+  function (this: Context, which: string | null, count: string, from: string | null, subject: string | null, received: string | null) {
+    // An optional group the text does not match comes as null.
     const results = checkResults(this);
     const result = which === "second " ? results[1] : results[0];
-    assert.ok(which !== undefined || results.length === 1, `${results.length} "check_mail" calls were made`);
+    assert.ok(which !== null || results.length === 1, `${results.length} "check_mail" calls were made`);
     assert.ok(result !== undefined, `no ${which ?? ""}"check_mail" result`);
     const messages = listed(result);
     if (count === "no message") {
@@ -498,7 +499,7 @@ Then(
     assert.equal(messages.length, 1, `the result lists ${messages.length} messages: ${result}`);
     const [message] = messages;
     assert.deepEqual({ from: message.from, subject: message.subject }, { from, subject });
-    if (received !== undefined) assert.equal(message.received, received);
+    if (received !== null) assert.equal(message.received, received);
   },
 );
 
