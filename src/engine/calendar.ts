@@ -156,17 +156,26 @@ export function worldTimeAt(calendar: Calendar, sinceStartMs: number): WorldTime
   return worldTimeOf(calendar, worldSecondsAt(calendar, sinceStartMs));
 }
 
-/** The world seconds since day 1's midnight at a moment of the run: one run second in a segment is its scale's world seconds. */
-function worldSecondsAt({ start, segments }: Calendar, sinceStartMs: number): number {
-  let segmentStartMs = 0;
-  let segmentStart = start;
-  for (const { scale, until } of segments) {
-    const segmentMs = until === undefined ? Infinity : ((until - segmentStart) / scale) * 1000;
-    if (sinceStartMs < segmentStartMs + segmentMs) return segmentStart + ((sinceStartMs - segmentStartMs) / 1000) * scale;
-    segmentStartMs += segmentMs;
-    segmentStart = until as number;
-  }
-  throw new Error("the calendar's last segment ends, which only a segment that is not the last may do");
+/**
+ * Each segment of a calendar with where it begins and ends, in world seconds since day 1's midnight and in milliseconds
+ * since the run started: one run second in a segment is its scale's world seconds, and the last lasts until the run ends.
+ */
+function spans({ start, segments }: Calendar): { scale: number; from: number; to: number; fromMs: number; toMs: number }[] {
+  let from = start;
+  let fromMs = 0;
+  return segments.map(({ scale, until }) => {
+    const to = until ?? Infinity;
+    const toMs = fromMs + ((to - from) / scale) * 1000;
+    const span = { scale, from, to, fromMs, toMs };
+    [from, fromMs] = [to, toMs];
+    return span;
+  });
+}
+
+/** The world seconds since day 1's midnight at a moment of the run, in the segment that moment falls in. */
+function worldSecondsAt(calendar: Calendar, sinceStartMs: number): number {
+  const { scale, from, fromMs } = spans(calendar).find((span) => sinceStartMs < span.toMs) as ReturnType<typeof spans>[number];
+  return from + ((sinceStartMs - fromMs) / 1000) * scale;
 }
 
 /** The world time of whole world seconds since day 1's midnight: days follow at midnight, weekdays follow the week. */
@@ -186,15 +195,9 @@ export function runMsFor(calendar: Calendar, fromMs: number, worldSeconds: numbe
 }
 
 /** The moment of the run, in milliseconds since it started, at which the world's time reaches world seconds since day 1's midnight. */
-function runMsAt({ start, segments }: Calendar, since: number): number {
-  let segmentStartMs = 0;
-  let segmentStart = start;
-  for (const { scale, until } of segments) {
-    if (until === undefined || since < until) return segmentStartMs + ((since - segmentStart) / scale) * 1000;
-    segmentStartMs += ((until - segmentStart) / scale) * 1000;
-    segmentStart = until;
-  }
-  throw new Error("the calendar's last segment ends, which only a segment that is not the last may do");
+function runMsAt(calendar: Calendar, since: number): number {
+  const { scale, from, fromMs } = spans(calendar).find((span) => since < span.to) as ReturnType<typeof spans>[number];
+  return fromMs + ((since - from) / scale) * 1000;
 }
 
 /** A calendar as the inventory gives it (FR-CLOCK-03): its start, each segment with its scale and run time, and its hours. */
@@ -207,13 +210,9 @@ export interface CalendarInventory {
 
 /** A calendar as the inventory gives it, in the formats a configuration writes it. */
 export function calendarInventory(calendar: Calendar): CalendarInventory {
-  let segmentStart = calendar.start;
-  const segments = calendar.segments.map(({ scale, until }) => {
-    if (until === undefined) return { scale, runTime: "until the run ends" };
-    const runMs = ((until - segmentStart) / scale) * 1000;
-    segmentStart = until;
-    return { scale, until: `day ${dayOf(until)} ${clockOf(until)}`, runTime: `${runMs} ms` };
-  });
+  const segments = spans(calendar).map(({ scale, to, fromMs, toMs }) =>
+    to === Infinity ? { scale, runTime: "until the run ends" } : { scale, until: `day ${dayOf(to)} ${clockOf(to)}`, runTime: `${toMs - fromMs} ms` },
+  );
   const start = worldTimeOf(calendar, calendar.start);
   const hours = Object.fromEntries(Object.entries(calendar.hours).map(([name, { days, from, to }]) => [name, { days: [...days], from: clockOf(from), to: clockOf(to) }]));
   return { start: `day ${start.day} ${start.weekday} ${clockOf(calendar.start)}`, segments, hours };
