@@ -7,7 +7,10 @@ import { describe, expect, it } from "vitest";
 import { readCalendar } from "../src/engine/calendar.ts";
 import { inventory, inventoryMarkdown } from "../src/engine/inventory.ts";
 import { readExperiment } from "../src/engine/experiment.ts";
-import { readMoney } from "../src/engine/money.ts";
+import { INVOICE_NOTICE, type Money, MoneyBook, type MoneyKeeper, invoiced, readMoney } from "../src/engine/money.ts";
+import { RunClock } from "../src/engine/clock.ts";
+import { Stimuli } from "../src/engine/stimuli.ts";
+import { World } from "../src/engine/world.ts";
 import type { RuleSet, RuleStep } from "../src/engine/participants.ts";
 import { run } from "../src/engine/run.ts";
 import { type Scenario, loadScenario } from "../src/engine/scenario.ts";
@@ -212,5 +215,30 @@ describe("inventory, money (FR-MONEY-01)", () => {
       tools: { ana: ["ledger", "pay"], venue: ["issue_invoice", "commit", "release", "ledger"], board: ["approve", "transfer"] },
     });
     expect(inventoryMarkdown(made)).toContain(["### Money\n", "- ana: opening 0; tools ledger, pay", "- venue: unlimited; tools issue_invoice, commit, release, ledger", "- board: opening 5000; tools approve, transfer", "- discretionary_limit 300", ""].join("\n"));
+  });
+});
+
+describe("the invoice notice (FR-CONGRESS-05)", () => {
+  /** A world of money alone, with a book that watches it, and the stimuli given. */
+  function booked(stimuli: Stimuli | undefined) {
+    const keeper: MoneyKeeper<Money> = { of: (state) => state, with: (_state, money) => money };
+    const world = new World<Money>({ balances: { a: 0, b: 0 }, invoices: [], commitments: [], ceilings: {}, overruns: [], events: [] });
+    const clock = new RunClock(readCalendar({ start: "day 1 Monday 09:00", segments: [{ scale: 60 }] }));
+    clock.start();
+    const settings = readMoney({ discretionary_limit: 300, accounts: { a: { opening: 0 }, b: { opening: 0 } } } as never, readCalendar({ start: "day 1 Monday 09:00", segments: [{ scale: 60 }] }), ["a", "b"]);
+    new MoneyBook({ world, keeper, settings, clock, record: () => {}, ...(stimuli === undefined ? {} : { notices: stimuli }) }).start();
+    const invoice = { precondition: () => ({ holds: true }) as const, effect: (money: Money) => invoiced(money, { from: "a", to: "b", amount: 100, due: "day 3", for: "sponsorship" }) };
+    world.apply(invoice, undefined);
+  }
+
+  it("tells an invoice's recipient, from its issuer, on the channel invoice_notice when the run declares it", () => {
+    const stimuli = new Stimuli([{ name: INVOICE_NOTICE, source: "money", stimulus: "New invoice from {from}: {for}" }]);
+    booked(stimuli);
+    expect(stimuli.take("b")).toEqual([{ channel: INVOICE_NOTICE, source: "a", content: "New invoice from a: sponsorship" }]);
+    expect(stimuli.take("a")).toEqual([]);
+  });
+
+  it("tells nobody without the channel", () => {
+    expect(() => booked(undefined)).not.toThrow();
   });
 });
