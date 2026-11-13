@@ -203,6 +203,19 @@ export function runMsFor(calendar: Calendar, fromMs: number, worldSeconds: numbe
   return runMsAt(calendar, worldSecondsAt(calendar, fromMs) + worldSeconds) - fromMs;
 }
 
+/**
+ * The run milliseconds from a moment of the run until the first moment that is at least a duration in world seconds
+ * later and, when hours are named, within them (FR-PARTICIPANT-01).
+ */
+export function reachedAfterMs(calendar: Calendar, fromMs: number, worldSeconds: number, hours?: string): number {
+  let since = worldSecondsAt(calendar, fromMs) + worldSeconds;
+  if (hours !== undefined) {
+    const { within, next } = hoursAt(calendar, hours, worldTimeOf(calendar, since));
+    if (!within) since = sinceDayOne(next);
+  }
+  return runMsAt(calendar, since) - fromMs;
+}
+
 /** The moment of the run, in milliseconds since it started, at which the world's time reaches world seconds since day 1's midnight. */
 function runMsAt(calendar: Calendar, since: number): number {
   const { scale, from, fromMs } = spans(calendar).find((span) => since < span.to) as ReturnType<typeof spans>[number];

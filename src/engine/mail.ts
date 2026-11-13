@@ -360,7 +360,7 @@ export interface MailRun<State> {
   stimuli: Stimuli;
   /** The replica's seed, from which each sender's delays are drawn. */
   seed: number;
-  /** The run's agents, whom a mail notice reaches. */
+  /** Whom a mail notice reaches: the run's agents and participants (FR-PARTICIPANT-01). */
   agents: readonly string[];
   record(line: MailLine): void;
 }
@@ -391,6 +391,11 @@ export class MailMedium<State> {
       const was = new Set(keeper.of(before).inTransit.map(({ id }) => id));
       for (const message of keeper.of(after).inTransit) if (!was.has(message.id)) this.#sent(message);
     });
+  }
+
+  /** Whether a message sent is still in transit. */
+  get busy(): boolean {
+    return this.#pending.size > 0;
   }
 
   /** Resolves once every message sent so far has been delivered, or the run has ended. */

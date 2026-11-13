@@ -74,7 +74,8 @@ Given(
   },
 );
 
-When("the run ends", async function (this: Context) {
+// Longer than cucumber's 5 s: a run that waits for a participant's hours lasts over 6 s (FR-PARTICIPANT-01).
+When("the run ends", { timeout: 15_000 }, async function (this: Context) {
   await runTheScenario(this);
 });
 

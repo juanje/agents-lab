@@ -2,7 +2,8 @@ import { type TomlTable, type TomlValue, parse } from "smol-toml";
 import type { ToolCall } from "./adapter.ts";
 import { type Calendar, readCalendar } from "./calendar.ts";
 import type { Component } from "./components.ts";
-import { MAIL_NOTICE, type MailKeeper, type MailSettings, readMail, startingMail } from "./mail.ts";
+import { MAIL_NOTICE, type MailKeeper, type MailSettings, mailTools, readMail, startingMail } from "./mail.ts";
+import { type ParticipantSettings, type RuleSet, readParticipants } from "./participants.ts";
 import { type Material, type MaterialReference, type Materials, materialReference } from "./materials.ts";
 import { Random } from "./random.ts";
 import { type Channel, RHYTHM_CHANNEL } from "./stimuli.ts";
@@ -68,6 +69,8 @@ export interface Scenario<State> {
   judged?: (configuration: Configuration, toolCalls: readonly ToolCall[]) => Judgeable[];
   /** Where the state keeps the mail, for a scenario whose configuration may declare a [mail] (FR-MESSAGE-01). */
   mail?: MailKeeper<State>;
+  /** The rule sets the scenario provides, by name, which its configuration's participants may be decided by (FR-PARTICIPANT-01). */
+  ruleSets?: Readonly<Record<string, RuleSet>>;
 }
 
 /**
@@ -119,6 +122,8 @@ export interface LoadedScenario<State> {
   calendar?: Calendar;
   /** The mail, for a configuration that declares a [mail]: its settings, and where the state keeps it (FR-MESSAGE-01). */
   mail?: LoadedMail<State>;
+  /** The participants its configuration declares in its [participants] (FR-PARTICIPANT-01). */
+  participants?: readonly ParticipantSettings[];
 }
 
 /** A scenario's mail as loaded: its configuration's settings, and where the scenario's state keeps it (FR-MESSAGE-01). */
@@ -184,16 +189,25 @@ export function loadScenario<State>(
   const components = scenario.components?.(configuration) ?? [];
   const { calendar } = calendarOf(configuration);
   const mail = mailOf(scenario, configuration, calendar);
+  const allChannels = [...channels, ...noticeChannels(mail)];
+  const participants = readParticipants(configuration.participants, {
+    tools: [...scenario.tools, ...(mail === undefined ? [] : mailTools(mail.settings, mail.keeper))].map(({ name }) => name),
+    channels: allChannels.map(({ name }) => name),
+    ...(calendar === undefined ? {} : { calendar }),
+    ruleSets: Object.keys(scenario.ruleSets ?? {}),
+    taken: [...systemPrompts.keys(), ...components.map(({ name }) => name)],
+  });
   return {
     scenario,
     configuration,
     world: new World(mail === undefined ? initial : mail.keeper.with(initial, startingMail(mail.settings))),
     systemPrompts,
-    channels: [...channels, ...noticeChannels(mail)],
+    channels: allChannels,
     firstStimuli,
     rhythms,
     materials,
     components,
+    participants,
     ...(calendar === undefined ? {} : { calendar }),
     ...(mail === undefined ? {} : { mail }),
   };

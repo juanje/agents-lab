@@ -24,6 +24,8 @@ export class Stimuli {
   readonly #first: Map<string, readonly string[]>;
   /** Who watches each agent's stimuli as they are delivered. */
   readonly #watchers = new Map<string, Set<(stimulus: Stimulus) => void>>();
+  /** What holds each recipient's stimuli until they reach it, for a recipient whose stimuli are held. */
+  readonly #holds = new Map<string, (stimulus: Stimulus) => Promise<boolean>>();
 
   /**
    * Takes the scenario's channels, what to do with each stimulus as it is delivered (the run records it), and the
@@ -47,6 +49,27 @@ export class Stimuli {
     const declared = this.#stimulusOf(channel);
     const content = declared.content.replace(/\{(\w+)\}/g, (written, name: string) => (Object.hasOwn(values, name) ? values[name] : written));
     const stimulus = { ...declared, content };
+    const hold = this.#holds.get(agent);
+    if (hold === undefined) {
+      this.#reach(agent, stimulus);
+      return;
+    }
+    void hold(stimulus).then((reached) => {
+      if (reached) this.#reach(agent, stimulus);
+    });
+  }
+
+  /**
+   * Holds each stimulus delivered to a recipient from now on until its hold lets it reach, or drops it when it does not,
+   * as a participant's hours and reply delay hold its stimuli (FR-PARTICIPANT-01). Only a stimulus that reaches its
+   * recipient is recorded, waits for it and is told to its watchers.
+   */
+  hold(agent: string, until: (stimulus: Stimulus) => Promise<boolean>): void {
+    this.#holds.set(agent, until);
+  }
+
+  /** A stimulus reaching its recipient: recorded, waiting for it, and told to its watchers. */
+  #reach(agent: string, stimulus: Stimulus): void {
     this.#delivered(agent, stimulus);
     this.#waiting.set(agent, [...(this.#waiting.get(agent) ?? []), stimulus]);
     for (const watcher of this.#watchers.get(agent) ?? []) watcher(stimulus);

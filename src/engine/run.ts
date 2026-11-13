@@ -7,6 +7,7 @@ import type { Compaction, RateLimitRetry, ThinkingLevel } from "./experiment.ts"
 import { failure } from "./failure.ts";
 import { MailMedium, mailTools } from "./mail.ts";
 import { ParallelismLimit } from "./parallelism.ts";
+import { Participants } from "./participants.ts";
 import { Random } from "./random.ts";
 import { type LogLine, Recorder, type RunSetup, type Sampling } from "./recorder.ts";
 import type { LoadedScenario, Rhythm, Scenario } from "./scenario.ts";
@@ -167,7 +168,7 @@ export const PROVIDER_DEFAULTS = "the provider's defaults";
  * sampling settings the sessions use, or null.
  */
 async function runAgents<State>(
-  { world, scenario, systemPrompts, rhythms, components, calendar, mail }: LoadedScenario<State>,
+  { world, scenario, systemPrompts, rhythms, components, calendar, mail, participants = [] }: LoadedScenario<State>,
   agents: readonly Agent[],
   seed: number,
   settings: RunSettings,
@@ -231,11 +232,26 @@ async function runAgents<State>(
   });
   settings.onStart?.(stimuli);
   const startedAtMs = clock.start();
+  // A participant's stimuli are held by its hours and reply delay, and its rule set woken by them (FR-PARTICIPANT-01).
+  const parties = new Participants({
+    world,
+    tools,
+    participants,
+    ruleSets: scenario.ruleSets ?? {},
+    clock,
+    ...(calendar === undefined ? {} : { calendar }),
+    seed,
+    runEnd: runEnd.signal,
+    stimuli,
+    call: { sensings, changes, stimuli, records, runEnd: runEnd.signal, stop, clock },
+    records,
+  });
+  parties.start();
   // The mail watches the world for messages sent before any agent or component can send one (FR-MESSAGE-01).
   const medium =
     mail === undefined
       ? undefined
-      : new MailMedium({ world, ...mail, clock, runEnd: runEnd.signal, changes, stimuli, seed, agents: agents.map(({ name }) => name), record: (line) => recorder.record(line) });
+      : new MailMedium({ world, ...mail, clock, runEnd: runEnd.signal, changes, stimuli, seed, agents: [...agents.map(({ name }) => name), ...participants.map(({ name }) => name)], record: (line) => recorder.record(line) });
   medium?.start(startedAtMs);
   const sample = () => sampleMetrics(world, toolCalls, scenario.metrics, recorder, performance.now());
   sampleMetrics(world, toolCalls, scenario.metrics, recorder, startedAtMs);
@@ -273,8 +289,12 @@ async function runAgents<State>(
       }
     });
     await Promise.all([...cycles, ...agentLoops]);
-    // A message in transit keeps the run going until it lands, or the run's time limit passes (FR-MESSAGE-01).
-    await medium?.delivered();
+    // A message in transit, a participant's held stimulus or its rule set at work keeps the run going, until none
+    // remains or the run's time limit passes (FR-MESSAGE-01, FR-PARTICIPANT-01).
+    do {
+      await medium?.delivered();
+      await parties.settled();
+    } while (medium?.busy === true || parties.busy);
   } finally {
     // A run that ends at its budget must not leave its time limit pending, nor a sample to write once its log is closed.
     clearTimeout(timer);
