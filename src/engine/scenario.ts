@@ -197,6 +197,13 @@ export function loadScenario<State>(
     ruleSets: Object.keys(scenario.ruleSets ?? {}),
     taken: [...systemPrompts.keys(), ...components.map(({ name }) => name)],
   });
+  // A participant decided by a model runs as an agent of the run, with its own system prompt and the scenario's rhythm.
+  for (const participant of participants) {
+    if (participant.decides !== "model") continue;
+    systemPrompts.set(participant.name, participant.systemPrompt);
+    firstStimuli.set(participant.name, []);
+    rhythms.set(participant.name, scenario.rhythm(configuration, participant.name));
+  }
   return {
     scenario,
     configuration,

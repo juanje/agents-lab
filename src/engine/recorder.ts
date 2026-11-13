@@ -62,6 +62,7 @@ export type LogLine =
   | ({ type: "compaction" } & ContextCompaction)
   | { type: "metric_sample"; atMs: number; version: number; metrics: Record<string, MetricValue> }
   | MailLine
+  | { type: "participant_outcome"; participant: string; outcome: Readonly<Record<string, string | number | boolean>> }
   | { type: "run_stopped"; error: string };
 
 /** Writes a run's log: one new JSONL file, named with the run's id, with a line for each event (FR-RECORD-01). */

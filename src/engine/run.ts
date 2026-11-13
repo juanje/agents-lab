@@ -7,7 +7,8 @@ import type { Compaction, RateLimitRetry, ThinkingLevel } from "./experiment.ts"
 import { failure } from "./failure.ts";
 import { MailMedium, mailTools } from "./mail.ts";
 import { ParallelismLimit } from "./parallelism.ts";
-import { Participants } from "./participants.ts";
+import { type ParticipantSettings, Participants } from "./participants.ts";
+import type { Tool } from "./tools.ts";
 import { Random } from "./random.ts";
 import { type LogLine, Recorder, type RunSetup, type Sampling } from "./recorder.ts";
 import type { LoadedScenario, Rhythm, Scenario } from "./scenario.ts";
@@ -214,7 +215,7 @@ async function runAgents<State>(
   const tools = mail === undefined ? scenario.tools : [...scenario.tools, ...mailTools(mail.settings, mail.keeper)];
   const opening = await Promise.allSettled(
     agents.map((agent) =>
-      openSession(world, tools, agent, runtime, { ...sessionSettings, systemPrompt: systemPromptOf(systemPrompts, agent.name) }, parallelism, records, stimuli, sensings, changes).catch((error: unknown) => {
+      openSession(world, toolsOf(tools, participants, agent.name), agent, runtime, { ...sessionSettings, systemPrompt: systemPromptOf(systemPrompts, agent.name) }, parallelism, records, stimuli, sensings, changes).catch((error: unknown) => {
         throw failure(`the session of agent "${agent.name}" failed to open`, error);
       }),
     ),
@@ -251,7 +252,7 @@ async function runAgents<State>(
   const medium =
     mail === undefined
       ? undefined
-      : new MailMedium({ world, ...mail, clock, runEnd: runEnd.signal, changes, stimuli, seed, agents: [...agents.map(({ name }) => name), ...participants.map(({ name }) => name)], record: (line) => recorder.record(line) });
+      : new MailMedium({ world, ...mail, clock, runEnd: runEnd.signal, changes, stimuli, seed, agents: [...agents.map(({ name }) => name), ...participants.flatMap(({ name, decides }) => (decides === "rules" ? [name] : []))], record: (line) => recorder.record(line) });
   medium?.start(startedAtMs);
   const sample = () => sampleMetrics(world, toolCalls, scenario.metrics, recorder, performance.now());
   sampleMetrics(world, toolCalls, scenario.metrics, recorder, startedAtMs);
@@ -301,6 +302,8 @@ async function runAgents<State>(
     samplingEnd.abort();
     await sampling;
   }
+  // Each participant decided by rules gives its outcome record as the run ends (FR-PARTICIPANT-01).
+  for (const { participant, outcome } of parties.outcomes()) recorder.record({ type: "participant_outcome", participant, outcome });
   sample();
   return { turns, toolCalls, messages, sensings, startedAtMs };
 }
@@ -324,6 +327,12 @@ async function sampleEvery(intervalMs: number, sample: () => void, signal: Abort
     if (signal.aborted) return;
     sample();
   }
+}
+
+/** The tools an agent's session offers: a participant decided by a model is offered only those it declares (FR-PARTICIPANT-01). */
+function toolsOf<State>(tools: readonly Tool<State>[], participants: readonly ParticipantSettings[], agent: string): readonly Tool<State>[] {
+  const participant = participants.find(({ name }) => name === agent);
+  return participant === undefined ? tools : tools.filter(({ name }) => participant.tools.includes(name));
 }
 
 /** The rhythm the loaded scenario gives an agent. */

@@ -3,6 +3,7 @@ import { type SummaryInstructions, summaryInstructions } from "./compaction.ts";
 import type { Component } from "./components.ts";
 import type { Compaction, Experiment, Limits, ThinkingLevel } from "./experiment.ts";
 import { MAIL_DURATIONS, type MailInventory, mailInventory, mailTools } from "./mail.ts";
+import type { ParticipantSettings } from "./participants.ts";
 import { type LoadedScenario, type Scenario, loadScenario } from "./scenario.ts";
 import { Stimuli, type Stimulus } from "./stimuli.ts";
 import type { Tool } from "./tools.ts";
@@ -55,6 +56,8 @@ export interface ConditionInventory {
   calendar?: CalendarInventory;
   /** The mail, for a condition whose configuration declares a [mail] (FR-MESSAGE-01). */
   mail?: MailInventory;
+  /** Each participant, as the condition's configuration declares it, for a condition that declares any (FR-PARTICIPANT-01). */
+  participants?: ParticipantSettings[];
 }
 
 /** A tool as its agents see it, with its duration as the scenario describes it and the text for each of its outcomes. */
@@ -109,7 +112,7 @@ export function inventory<State>(experiment: Experiment, scenario: Partial<Scena
 function conditionInventory<State>(
   { models, thinkingLevel, compaction, limits }: Experiment,
   condition: string,
-  { scenario, configuration, systemPrompts, channels, firstStimuli, materials, components, calendar, mail }: LoadedScenario<State>,
+  { scenario, configuration, systemPrompts, channels, firstStimuli, materials, components, calendar, mail, participants = [] }: LoadedScenario<State>,
 ): ConditionInventory {
   // Each agent's first wake, as a run's stimuli give it, without the rhythm's stimulus, which every wake starts with.
   const stimuli = new Stimuli(channels, undefined, firstStimuli);
@@ -152,6 +155,7 @@ function conditionInventory<State>(
     ...(scenario.clock === undefined ? {} : { clock: scenario.clock(configuration) }),
     ...(calendar === undefined ? {} : { calendar: calendarInventory(calendar) }),
     ...(mail === undefined ? {} : { mail: mailInventory(mail.settings) }),
+    ...(participants.length === 0 ? {} : { participants: participants.map((participant) => ({ ...participant })) }),
   };
 }
 
@@ -189,6 +193,7 @@ export function inventoryMarkdown({ experiment, scenario, conditions }: Inventor
       ...(condition.clock === undefined ? [] : [clockMarkdown(condition.clock)]),
       ...(condition.calendar === undefined ? [] : [calendarMarkdown(condition.calendar)]),
       ...(condition.mail === undefined ? [] : [mailMarkdown(condition.mail)]),
+      ...(condition.participants === undefined ? [] : [participantsMarkdown(condition.participants)]),
     ].join("\n"),
   );
   return [`# Environment inventory of experiment "${experiment}", scenario "${scenario}"\n`, ...sections].join("\n");
@@ -327,6 +332,27 @@ function mailMarkdown({ mailboxes, acts, deliveryMinutes, durations, notice }: M
     notice === undefined ? `- Notice: ${NONE}` : `- Notice from ${notice.source}: ${notice.text}`,
     "",
   ].join("\n");
+}
+
+/** The participants, in Markdown: each one's decider, tools, channels, hours and reply delay. */
+function participantsMarkdown(participants: readonly ParticipantSettings[]): string {
+  const listed = participants.map((participant) => {
+    const params = participant.decides === "rules" ? Object.entries(participant.params).map(([name, value]) => `${name} = ${JSON.stringify(value)}`) : [];
+    const decider =
+      participant.decides === "rules"
+        ? `the rule set "${participant.rules}"${params.length === 0 ? "" : `, with ${params.join(", ")}`}`
+        : `the model "${participant.model}", with the system prompt ${JSON.stringify(participant.systemPrompt)}`;
+    return [
+      `#### Participant "${participant.name}"\n`,
+      `- Decided by: ${decider}`,
+      `- Tools: ${participant.tools.length === 0 ? NONE : participant.tools.join(", ")}`,
+      `- Channels: ${participant.channels.length === 0 ? NONE : participant.channels.join(", ")}`,
+      `- Hours: ${participant.hours ?? NONE}`,
+      `- Reply delay: ${participant.replyMinutes === undefined ? NONE : `${participant.replyMinutes.join(" to ")} world minutes`}`,
+      "",
+    ].join("\n");
+  });
+  return ["### Participants\n", ...listed].join("\n");
 }
 
 /** A text as a fenced block, with a fence longer than any run of backticks in it, so the text is given whole. */

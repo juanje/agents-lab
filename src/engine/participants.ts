@@ -9,19 +9,16 @@ import type { World } from "./world.ts";
 
 /**
  * A participant as a configuration declares it (FR-PARTICIPANT-01): a party of the world that perceives and acts only
- * through its tools and channels, decided by a rule set the scenario provides, with its parameters; its tools and
- * channels, by name; and the hours it keeps and its reply delay, in world minutes, when it has them.
+ * through its tools and channels, by name, with the hours it keeps and its reply delay, in world minutes, when it has
+ * them; decided by a rule set the scenario provides, with its parameters, or by a model, with its system prompt.
  */
-export interface ParticipantSettings {
+export type ParticipantSettings = {
   name: string;
-  decides: "rules";
-  rules: string;
-  params: Readonly<Record<string, unknown>>;
   tools: readonly string[];
   channels: readonly string[];
   hours?: string;
   replyMinutes?: readonly [number, number];
-}
+} & ({ decides: "rules"; rules: string; params: Readonly<Record<string, unknown>> } | { decides: "model"; model: string; systemPrompt: string });
 
 /** What a configuration's participants are checked against: the scenario's tools and channels, its calendar, its rule sets and the names its agents and components have. */
 export interface Declared {
@@ -37,21 +34,65 @@ function isTable(value: TomlValue | undefined): value is TomlTable {
   return typeof value === "object" && !Array.isArray(value) && !(value instanceof Date);
 }
 
-/** Reads a configuration's [participants] (FR-PARTICIPANT-01), in the order it gives them; none when it declares none. */
-export function readParticipants(value: TomlValue | undefined, _declared: Declared): ParticipantSettings[] {
-  return Object.entries(isTable(value) ? value : {}).map(([name, written]) => {
-    const { rules, params, tools, channels, hours, reply_minutes: replyMinutes } = (isTable(written) ? written : {}) as TomlTable;
-    return {
+/** A participant's key that cannot be followed: an error that names it, its value and why. */
+function refused(key: string, value: unknown, why: string): Error {
+  return new Error(`The configuration's ${key} ${JSON.stringify(value) ?? "(none)"} cannot be followed: ${why}`);
+}
+
+/** A list of names, each one the scenario declares, refused, naming its key, otherwise. */
+function namesOf(value: TomlValue | undefined, key: string, declared: readonly string[], what: string): string[] {
+  if (!Array.isArray(value) || !value.every((name) => typeof name === "string")) throw refused(key, value, `it is not a list of ${what} names`);
+  const unknown = (value as string[]).find((name) => !declared.includes(name));
+  if (unknown !== undefined) throw refused(key, value, `the scenario declares no ${what} "${unknown}"`);
+  return value as string[];
+}
+
+/** The reply delay's two numbers of world minutes, refused unless the first is at least 0 and not above the second. */
+function replyMinutesOf(value: TomlValue, key: string): [number, number] {
+  const [fewest, most] = Array.isArray(value) && value.length === 2 && value.every((each) => typeof each === "number") ? (value as [number, number]) : [];
+  if (fewest === undefined || most === undefined) throw refused(key, value, "it is not two numbers of minutes");
+  if (!(fewest >= 0 && fewest <= most)) throw refused(key, value, "its first number is below 0 or above its second");
+  return [fewest, most];
+}
+
+/** A text a participant decided by a model needs, refused, naming its key, when it is missing or empty. */
+function textOf(value: TomlValue | undefined, key: string): string {
+  if (typeof value !== "string" || value.trim() === "") throw refused(key, value, "a participant decided by a model needs it");
+  return value;
+}
+
+/**
+ * Reads a configuration's [participants] (FR-PARTICIPANT-01), in the order it gives them; none when it declares none.
+ * One that cannot be followed is refused, with an error that names the key: a name an agent or a component already has,
+ * a tool or channel the scenario does not declare, hours the calendar does not declare or hours without a calendar,
+ * reply_minutes that are not two numbers from 0 with the first not above the second, decides that is neither rules nor
+ * model, a rule set the scenario does not provide, and a participant decided by a model without a model or a system prompt.
+ */
+export function readParticipants(value: TomlValue | undefined, declared: Declared): ParticipantSettings[] {
+  return Object.entries(isTable(value) ? value : {}).map(([name, written]): ParticipantSettings => {
+    const key = `participants.${name}`;
+    if (declared.taken.includes(name)) throw refused(key, name, `an agent or a component is already named "${name}"`);
+    const table = isTable(written) ? written : {};
+    const { decides, rules, params, model, system_prompt: systemPrompt, hours, reply_minutes: replyMinutes } = table;
+    const kept = {
       name,
-      decides: "rules",
-      rules: rules as string,
-      params: (isTable(params) ? params : {}) as Record<string, unknown>,
-      tools: tools as string[],
-      channels: channels as string[],
-      ...(hours === undefined ? {} : { hours: hours as string }),
-      ...(replyMinutes === undefined ? {} : { replyMinutes: replyMinutes as [number, number] }),
+      tools: namesOf(table.tools, `${key}.tools`, declared.tools, "tool"),
+      channels: namesOf(table.channels, `${key}.channels`, declared.channels, "channel"),
+      ...(hours === undefined ? {} : { hours: hoursOf(hours, `${key}.hours`, declared.calendar) }),
+      ...(replyMinutes === undefined ? {} : { replyMinutes: replyMinutesOf(replyMinutes, `${key}.reply_minutes`) }),
     };
+    if (decides === "model") return { ...kept, decides, model: textOf(model, `${key}.model`), systemPrompt: textOf(systemPrompt, `${key}.system_prompt`) };
+    if (decides !== "rules") throw refused(`${key}.decides`, decides, 'it is neither "rules" nor "model"');
+    if (typeof rules !== "string" || !declared.ruleSets.includes(rules)) throw refused(`${key}.rules`, rules, `the scenario provides no rule set "${String(rules)}"`);
+    return { ...kept, decides, rules, params: (isTable(params) ? params : {}) as Record<string, unknown> };
   });
+}
+
+/** The name of a set of hours a participant keeps, refused, naming its key, when the calendar does not declare it or there is no calendar. */
+function hoursOf(value: TomlValue, key: string, calendar: Calendar | undefined): string {
+  if (calendar === undefined) throw refused(key, value, "the configuration declares no [calendar]");
+  if (typeof value !== "string" || !Object.hasOwn(calendar.hours, value)) throw refused(key, value, `the calendar declares no hours "${String(value)}"`);
+  return value;
 }
 
 /** What a rule set perceives at each step (FR-PARTICIPANT-01): the stimuli that reached its participant since its last step, and its last call's result. */
@@ -101,6 +142,8 @@ export class Participants<State> {
   /** The held stimuli and the rule sets at work, which keep the run going. */
   readonly #pending = new Set<Promise<unknown>>();
   readonly #awake = new Set<string>();
+  /** Each rule set at work in the run, by its participant's name. */
+  readonly #rules = new Map<string, Rules>();
 
   constructor(run: ParticipantsRun<State>) {
     this.#run = run;
@@ -114,9 +157,16 @@ export class Participants<State> {
         const delays = Random.derive(this.#run.seed, `replies of ${participant.name}`);
         stimuli.hold(participant.name, () => this.#track(this.#held(participant, delays)));
       }
+      if (participant.decides !== "rules") continue;
       const rules = ruleSets[participant.rules].start(participant.params);
+      this.#rules.set(participant.name, rules);
       stimuli.watch(participant.name, () => this.#wake(participant, rules));
     }
+  }
+
+  /** Each participant decided by rules with its rule set's outcome record, as the run ends. */
+  outcomes(): { participant: string; outcome: Readonly<Record<string, string | number | boolean>> }[] {
+    return [...this.#rules].map(([participant, rules]) => ({ participant, outcome: rules.outcome() }));
   }
 
   /** Whether a held stimulus or a rule set at work remains. */
@@ -156,13 +206,14 @@ export class Participants<State> {
    * Runs a rule set's steps from the stimuli that woke it until it ends with none waiting: each call through the
    * participant's tool, recorded under its name. A call of a tool the participant does not declare stops the run.
    */
-  async #act({ name }: ParticipantSettings, rules: Rules): Promise<void> {
+  async #act({ name, tools: declared }: ParticipantSettings, rules: Rules): Promise<void> {
     const { world, tools, stimuli, runEnd, call, records } = this.#run;
     try {
       for (let waiting = stimuli.take(name); waiting.length > 0 && !runEnd.aborted; waiting = stimuli.take(name)) {
         let step = rules.next({ stimuli: waiting });
         while (step.kind === "call") {
           const { tool: named, arguments: args } = step;
+          if (!declared.includes(named)) throw new Error(`participant "${name}"'s rule set called the tool "${named}", which "${name}" does not declare`);
           const tool = tools.find((each) => each.name === named) as Tool<State>;
           const { executed, text } = await callTool(world, tool, name, args, call);
           records.toolCall({ agent: name, tool: tool.name, arguments: args, ...executed });
