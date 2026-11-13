@@ -18,6 +18,7 @@ import {
   turnsBefore,
 } from "./congress.steps.ts";
 import { linesOf } from "./record.steps.ts";
+import { assertReadyValues, madeReadyInventory } from "./ready.steps.ts";
 import { runTheScenario, script } from "./tool.steps.ts";
 
 /** The congress's one agent. */
@@ -519,6 +520,11 @@ Given(
 );
 
 Then("it is not refused, and the inventory gives those values", function (this: Context) {
+  // FR-CONGRESS-08's scenario of the same text checks the experiment it wrote.
+  if (madeReadyInventory(this)) {
+    assertReadyValues(this);
+    return;
+  }
   assert.equal(this.runError, undefined, `the run was refused: ${this.runError?.message}`);
   const experiment = readExperiment(
     [
