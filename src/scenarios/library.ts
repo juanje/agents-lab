@@ -1,4 +1,5 @@
 import type { Scenario } from "../engine/scenario.ts";
+import { congressScenario } from "./congress.ts";
 import { neighbourhoodScenario } from "./neighbourhood.ts";
 import { workplaceScenario } from "./workplace.ts";
 
@@ -11,5 +12,5 @@ export type LibraryScenario = Partial<Scenario<any>>;
 
 /** The scenario library: each reusable scenario, by its name. */
 export const scenarioLibrary: ReadonlyMap<string, LibraryScenario> = new Map(
-  [neighbourhoodScenario, workplaceScenario].map((scenario) => [scenario.name, scenario]),
+  [neighbourhoodScenario, workplaceScenario, congressScenario].map((scenario) => [scenario.name, scenario]),
 );
