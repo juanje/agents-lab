@@ -30,6 +30,14 @@ interface MailSetup {
 
 const setups = new WeakMap<Context, MailSetup>();
 
+/** The mail of the test world each scenario last loaded, for every test scenario that keeps mail in its world. */
+const loadedMail = new WeakMap<Context, () => Mail | undefined>();
+
+/** Says where the mail of the test world a scenario loads is, for the steps that read a mailbox. */
+export function keepsMail(context: Context, mail: () => Mail | undefined): void {
+  loadedMail.set(context, mail);
+}
+
 function setupOf(context: Context): MailSetup {
   const setup = setups.get(context);
   assert.ok(setup !== undefined, "the scenario set up no mail test scenario");
@@ -69,6 +77,7 @@ Given(
   function (this: Context, first: string, second: string, component: string) {
     const setup: MailSetup = { agents: [first, second], components: new Map([[component, idle]]), mail: { mailboxes: [first, second, component] } };
     setups.set(this, setup);
+    keepsMail(this, () => setup.loaded?.world.state.mail);
     // Each agent ends its only activation at once unless the scenario scripts its turns.
     for (const agent of setup.agents) script(this, agent, [{ text: "Nothing to do.", delayMs: 0 }]);
     this.inventoryScenario = () => mailScenario(this, setup.agents);
@@ -325,7 +334,7 @@ Then("{string} received no stimulus through the channel {string}", function (thi
 Then("the message landed in {string}'s mailbox", function (this: Context, recipient: string) {
   const { id } = sentLine(this);
   deliveredLine(this, id);
-  assert.ok((setupOf(this).loaded?.world.state.mail.mailboxes[recipient] ?? []).some((message) => message.id === id), `"${recipient}"'s mailbox does not hold ${String(id)}`);
+  assert.ok((loadedMail.get(this)?.()?.mailboxes[recipient] ?? []).some((message) => message.id === id), `"${recipient}"'s mailbox does not hold ${String(id)}`);
 });
 
 Then("no channel {string} is declared, and {string} received no stimulus from the mail", function (this: Context, channel: string, agent: string) {

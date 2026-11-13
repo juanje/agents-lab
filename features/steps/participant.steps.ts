@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { Given, Then, When } from "@cucumber/cucumber";
 import { getCurrentTools } from "@earendil-works/pi-ai";
 import { type TomlTable, stringify } from "smol-toml";
-import { type WorldTime, readCalendar, worldTimeAt } from "../../src/engine/calendar.ts";
+import { type WorldTime, readCalendar, sinceDayOne, worldTimeAt } from "../../src/engine/calendar.ts";
 import { inventoryMarkdown } from "../../src/engine/inventory.ts";
 import type { Mail } from "../../src/engine/mail.ts";
 import { type LoadedScenario, type Scenario, loadScenario } from "../../src/engine/scenario.ts";
@@ -10,7 +10,7 @@ import type { Stimulus } from "../../src/engine/stimuli.ts";
 import { rhythmChannel } from "../../tests/fixtures/slots.ts";
 import type { Context } from "../support/context.ts";
 import { madeInventory, toTheMinute } from "./calendar.steps.ts";
-import { listed } from "./mail.steps.ts";
+import { keepsMail, listed } from "./mail.steps.ts";
 import { linesOf, logLines } from "./record.steps.ts";
 import { asRead } from "./stimulus.steps.ts";
 import { modelOf, runScenario, script } from "./tool.steps.ts";
@@ -26,8 +26,8 @@ interface Perceived {
   result?: { tool: string; outcome: string; text: string };
 }
 
-/** A rule set's next step, as these scenarios use them: a call of one of its participant's tools, or the end. */
-type RuleStep = { kind: "call"; tool: string; arguments: Record<string, unknown> } | { kind: "end" };
+/** A rule set's next step, as these scenarios use them: a call of one of its participant's tools, a wait in world minutes, or the end. */
+type RuleStep = { kind: "call"; tool: string; arguments: Record<string, unknown> } | { kind: "wait"; minutes: number } | { kind: "end" };
 
 /** How the scenario changes "echo" from what the Background says it does. */
 interface EchoChanges {
@@ -35,16 +35,23 @@ interface EchoChanges {
   callsWhenWoken?: string;
   /** Whether its outcome gives the number of messages it answered; otherwise it gives none. */
   givesAnswered?: boolean;
+  /** The world minutes it waits once it has answered, before it waits for the next stimulus; otherwise it does not wait. */
+  waitsAfterAnswering?: number;
 }
 
 /** What the participant scenarios set up: the agents, the [mail] and [participants] of the configuration, "echo" and what it was given. */
 interface ParticipantSetup {
   agents: string[];
-  mail: TomlTable;
+  /** The configuration's [mail]; none when it declares none. */
+  mail?: TomlTable;
   participants: Record<string, TomlTable>;
   echo: EchoChanges;
   /** Every input "echo" was given, in order: what its rule set was started with, then what it perceived at each step. */
   inputs: unknown[];
+  /** When "echo" was given each of its inputs after the first, by performance.now(). */
+  givenAtMs: number[];
+  /** The participant whose mailbox fails to be read with this error once it holds mail, when the scenario changes "check_mail" so. */
+  failing?: { participant: string; error: string };
   loaded?: LoadedScenario<Post>;
 }
 
@@ -56,6 +63,26 @@ function setupOf(context: Context): ParticipantSetup {
   return setup;
 }
 
+/** The configuration's [mail], which the scenario declares unless a step removed it. */
+function mailOf(setup: ParticipantSetup): TomlTable {
+  assert.ok(setup.mail !== undefined, "the configuration declares no mail");
+  return setup.mail;
+}
+
+/**
+ * The mail as a store that fails: reading a participant's mailbox once it holds mail throws the error given. In these
+ * scenarios the first to read it then is the participant's own "check_mail", so it is that tool that throws.
+ */
+function failingMail(mail: Mail, { participant, error }: { participant: string; error: string }): Mail {
+  const mailboxes = new Proxy(mail.mailboxes, {
+    get: (target, name, receiver) => {
+      if (name === participant && (target[participant]?.length ?? 0) > 0) throw new Error(error);
+      return Reflect.get(target, name, receiver) as unknown;
+    },
+  });
+  return { ...mail, mailboxes };
+}
+
 /** The ids a "check_mail" result lists, oldest first. */
 function idsOf(text: string): string[] {
   return listed(text).map(({ id }) => id);
@@ -64,8 +91,9 @@ function idsOf(text: string): string[] {
 /**
  * "echo", as the Background says: woken by a mail notice, it calls "check_mail" for its unread messages, then
  * "read_mail" for each, then answers each with "send_mail" back to its sender, with the act "answer", then waits for the
- * next stimulus; a notice that comes while it answers makes it check again before it waits. It keeps every input it is
- * given.
+ * next stimulus; a notice that comes while it answers makes it check again before it waits. Changed to wait once it has
+ * answered, it asks for that wait, and ends when the wait ends with no stimulus. It keeps every input it is given, and
+ * when it was given it.
  */
 function echo(setup: ParticipantSetup) {
   return {
@@ -74,18 +102,27 @@ function echo(setup: ParticipantSetup) {
       let unread: string[] = [];
       let again = false;
       let answered = 0;
+      let answeredSinceWait = false;
       const call = (tool: string, args: Record<string, unknown> = {}): RuleStep => ({ kind: "call", tool, arguments: args });
       const readNext = (): RuleStep => {
         const id = unread.shift();
         if (id !== undefined) return call("read_mail", { id });
-        if (!again) return { kind: "end" };
-        again = false;
-        return call("check_mail", { unread_only: true });
+        if (again) {
+          again = false;
+          return call("check_mail", { unread_only: true });
+        }
+        const minutes = setup.echo.waitsAfterAnswering;
+        if (minutes === undefined || !answeredSinceWait) return { kind: "end" };
+        answeredSinceWait = false;
+        return { kind: "wait", minutes };
       };
       return {
         next: (perceived: Perceived): RuleStep => {
           setup.inputs.push(perceived);
+          setup.givenAtMs.push(performance.now());
           const { stimuli, result } = perceived;
+          // Woken with nothing new: its wait ended.
+          if (result === undefined && stimuli.length === 0) return { kind: "end" };
           if (result === undefined) return setup.echo.callsWhenWoken === undefined ? call("check_mail", { unread_only: true }) : call(setup.echo.callsWhenWoken);
           if (stimuli.length > 0) again = true;
           if (result.tool === "check_mail") {
@@ -98,6 +135,7 @@ function echo(setup: ParticipantSetup) {
             return call("send_mail", { to: from, act: "answer" });
           }
           answered += 1;
+          answeredSinceWait = true;
           return readNext();
         },
         outcome: () => (setup.echo.givesAnswered === true ? { answered } : {}),
@@ -113,6 +151,7 @@ function echo(setup: ParticipantSetup) {
  */
 function participantScenario(context: Context): Scenario<Post> {
   const setup = setupOf(context);
+  const { failing } = setup;
   return {
     name: "participants",
     agents: () => setup.agents,
@@ -125,20 +164,21 @@ function participantScenario(context: Context): Scenario<Post> {
     rhythm: () => () => 0,
     describeDuration: () => "As the mail gives it.",
     describeRhythm: () => "No wait before any activation.",
-    mail: { of: (state) => state.mail, with: (state, mail) => ({ ...state, mail }) },
+    mail: { of: (state) => (failing === undefined ? state.mail : failingMail(state.mail, failing)), with: (state, mail) => ({ ...state, mail }) },
     ruleSets: { echo: echo(setup) },
     baseConfiguration: stringify({
       agents: setup.agents,
       ...(context.calendar === undefined ? {} : { calendar: context.calendar }),
-      mail: setup.mail,
+      ...(setup.mail === undefined ? {} : { mail: setup.mail }),
       participants: setup.participants,
     }),
   } as Scenario<Post>;
 }
 
 Given("a test scenario with the agent {string} and the participant {string}, both with a mailbox", function (this: Context, agent: string, participant: string) {
-  const setup: ParticipantSetup = { agents: [agent], mail: { mailboxes: [agent, participant] }, participants: { [participant]: {} }, echo: {}, inputs: [] };
+  const setup: ParticipantSetup = { agents: [agent], mail: { mailboxes: [agent, participant] }, participants: { [participant]: {} }, echo: {}, inputs: [], givenAtMs: [] };
   setups.set(this, setup);
+  keepsMail(this, () => setup.loaded?.world.state.mail);
   // The agent ends its only activation at once unless the scenario scripts its turns.
   script(this, agent, [{ text: "Nothing to do.", delayMs: 0 }]);
   this.inventoryScenario = () => participantScenario(this);
@@ -156,7 +196,7 @@ Given("a test scenario with the agent {string} and the participant {string}, bot
 Given(
   /^the mail's "delivery_minutes" is \[(\d+), (\d+)\], its "send_minutes" (\d+), its "check_minutes" (\d+) and its "read_minutes" (\d+), with a notice from "([^"]+)"$/,
   function (this: Context, from: string, to: string, send: string, check: string, read: string, source: string) {
-    Object.assign(setupOf(this).mail, {
+    Object.assign(mailOf(setupOf(this)), {
       delivery_minutes: [Number(from), Number(to)],
       send_minutes: Number(send),
       check_minutes: Number(check),
@@ -247,7 +287,7 @@ Then(
       calls.map((call) => call.tool),
       [first, second, third],
     );
-    const { mail } = setupOf(this);
+    const mail = mailOf(setupOf(this));
     const minutes = [mail.check_minutes, mail.read_minutes, mail.send_minutes] as number[];
     for (const [index, call] of calls.entries()) {
       assert.equal(call.outcome, "success", `the "${call.tool}" call failed with ${call.outcome}`);
@@ -514,4 +554,97 @@ Given('"desk"\'s configuration is changed so that {}', function (this: Context, 
   assert.ok(known !== undefined, `the steps do not read the change "${change}"`);
   const setup = setupOf(this);
   known[1](setup.participants.desk, setup);
+});
+
+Given(/^"echo" is changed to wait (\d+) world minutes after it has answered$/, function (this: Context, minutes: string) {
+  setupOf(this).echo.waitsAfterAnswering = Number(minutes);
+});
+
+Given(
+  /^"echo" is changed to wait (\d+) world minutes after it has answered, and "(\w+)"'s "reply_minutes" is \[(\d+), (\d+)\]$/,
+  function (this: Context, minutes: string, participant: string, fewest: string, most: string) {
+    const setup = setupOf(this);
+    setup.echo.waitsAfterAnswering = Number(minutes);
+    setup.participants[participant].reply_minutes = [Number(fewest), Number(most)];
+  },
+);
+
+/** What "echo" was given at each step after it was started, with when, in order. */
+function givenOf(setup: ParticipantSetup): { perceived: Perceived; atMs: number }[] {
+  return setup.inputs.slice(1).map((perceived, index) => ({ perceived: perceived as Perceived, atMs: setup.givenAtMs[index] }));
+}
+
+/** When "desk"'s "send_mail" calls ended, by performance.now(), in order: when its answers were sent. */
+function answersSentAtMs(lines: readonly Record<string, unknown>[]): number[] {
+  return callLines(lines, "desk")
+    .filter((call) => call.tool === "send_mail" && call.outcome === "success")
+    .map((call) => call.endedAtMs as number);
+}
+
+/** Checks that a moment of the last run was at a world time ("day <n> <weekday> HH:MM"), within one world minute. */
+function assertWithinAMinute(context: Context, what: string, atMs: number, time: string): void {
+  const at = worldTimeOf(context, atMs);
+  assert.ok(Math.abs(sinceDayOne(at) - minutesOf(time) * 60) <= 60, `${what} at ${toTheMinute(at)}, not ${time} within one world minute`);
+}
+
+Then(
+  /^"echo" was woken again by the end of its wait at "([^"]+)", within one world minute, (\d+) world minutes after its answer was sent at (\d\d:\d\d)$/,
+  function (this: Context, time: string, minutes: string, sentAt: string) {
+    const lines = ranLines(this);
+    const [sentMs] = answersSentAtMs(lines);
+    assert.ok(sentMs !== undefined, '"desk" sent no answer');
+    assert.equal(toTheMinute(worldTimeOf(this, sentMs)).slice(-5), sentAt);
+    // Woken by nothing but the end of its wait: given no stimulus and no call's result.
+    const woken = givenOf(setupOf(this)).filter(({ perceived }) => perceived.result === undefined && perceived.stimuli.length === 0);
+    assert.equal(woken.length, 1, `"echo" was woken ${woken.length} times with no stimulus`);
+    assertWithinAMinute(this, '"echo" was woken', woken[0].atMs, time);
+    assert.ok(Math.abs(woken[0].atMs - sentMs - Number(minutes) * MINUTE_MS) <= MINUTE_MS, `"echo" was woken ${Math.round(woken[0].atMs - sentMs)} ms of the run after its answer was sent`);
+  },
+);
+
+Then(
+  /^"echo" was woken by the second message's notice at "([^"]+)", within one world minute, before its wait ended$/,
+  function (this: Context, time: string) {
+    const lines = ranLines(this);
+    const waits = setupOf(this).echo.waitsAfterAnswering;
+    assert.ok(waits !== undefined, '"echo" does not wait');
+    const woken = givenOf(setupOf(this)).filter(({ perceived }) => perceived.result === undefined);
+    // Woken first by the first message's notice, then by the second's.
+    assert.ok(woken.length >= 2, `"echo" was woken ${woken.length} times`);
+    const [first, second] = woken;
+    assert.ok(first.perceived.stimuli.length > 0 && second.perceived.stimuli.length > 0, `"echo" was woken by ${JSON.stringify(second.perceived)}, not a notice`);
+    assertWithinAMinute(this, '"echo" was woken by the second notice', second.atMs, time);
+    const [answeredMs] = answersSentAtMs(lines);
+    assert.ok(second.atMs < answeredMs + waits * MINUTE_MS, `"echo" was woken at ${toTheMinute(worldTimeOf(this, second.atMs))}, once its wait had ended`);
+  },
+);
+
+Given("{string} declares no channel", function (this: Context, participant: string) {
+  setupOf(this).participants[participant].channels = [];
+});
+
+Then('"echo" was never woken', function (this: Context) {
+  ranLines(this);
+  assert.deepEqual(givenOf(setupOf(this)), []);
+});
+
+Given("the tool {string} is changed to throw {string} when {string} calls it", function (this: Context, tool: string, error: string, participant: string) {
+  // The mail tools are the engine's; "check_mail" reads the mailbox from the scenario's mail, which then fails.
+  assert.equal(tool, "check_mail");
+  setupOf(this).failing = { participant, error };
+});
+
+Then("the run stopped with an error that names the participant {string} and gives {string}", function (this: Context, participant: string, error: string) {
+  assert.ok(this.runError !== undefined, "the run did not stop");
+  assert.ok(this.runError.message.includes(`participant "${participant}"`), `the error does not name the participant "${participant}": ${this.runError.message}`);
+  assert.ok(!this.runError.message.includes(`agent "${participant}"`), `the error names "${participant}" an agent: ${this.runError.message}`);
+  assert.ok(this.runError.message.includes(error), `the error does not give "${error}": ${this.runError.message}`);
+});
+
+Given(/^the configuration has no calendar and no mail, and "(\w+)" has "reply_minutes" \[(\d+), (\d+)\]$/, function (this: Context, participant: string, fewest: string, most: string) {
+  const setup = setupOf(this);
+  this.calendar = undefined;
+  delete setup.mail;
+  // With no mail, the scenario declares no mail tool and no mail notice for the participant to keep.
+  Object.assign(setup.participants[participant], { tools: [], channels: [], reply_minutes: [Number(fewest), Number(most)] });
 });
