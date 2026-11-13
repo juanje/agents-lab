@@ -108,7 +108,7 @@ Experiments are written outside this repository, in the experiment language (FR-
 7. FR-CONGRESS-02 (venues and the board)
 7b. FR-CONGRESS-04 (speakers and the partner's session)
 7c. FR-CONGRESS-05 (caterers, sponsors and services)
-8. FR-POPULATION-01 (attendees and the ticket page), not written
+8. FR-POPULATION-01 (attendees, the ticket page, the programme and announcements)
 9. FR-PARTS-01 (parts as held-out keys), not written
 10. FR-CONGRESS-03 (the day), after the pilot, not written
 11. FR-ANALYSIS-04 (success by kind of part and text length), a light version for the pilot, not written
@@ -492,6 +492,32 @@ After an agreement, a sponsor pays any invoice from the organiser for at most it
 
 **Refusals**, before any model call, with an error that names it: a negative price, limit, minimum or amount; a `final_days` below 1; a sponsor condition not among those above, or one it insists on that is not among its conditions; a `counter_acceptance` outside 0–1; `pay_days` whose first number is above its second; an `in_house_for` that is no venue in the pools; a travel option that names no station or hotel; a `sponsor_withdraws` for a party that is no sponsor.
 *Why:* food, money from sponsors and the services around a congress are where its numbers and deadlines bite: a caterer's limit on a diet, a final-numbers date before the late registrations, a sponsor that wants what it cannot be given, prices that rise as the day nears. Each answers from its template and its own sequence, the same in every condition.
+
+#### FR-POPULATION-01: Attendees, the ticket page, the programme and announcements
+The congress's attendees are a population: a component (FR-PROCESS-01) with its own sequence (`cycle of attendees`), from an `attendees` material and the variant.
+
+**The pool.** About `pool_factor` × the target attendance people (`a-<n>`), each with a diet drawn from the material's shares (`none`, `vegetarian`, `vegan`, `gluten_free`, `halal`, `nut_allergy`, …), an access need (none, `wheelchair`, `interpreter`), whether they would pay, and whether they would consent to share their contact with sponsors (`consent_share`). The material also gives people present in every replica, each with a registration window (two world times): a wheelchair user, a deaf person who needs an interpreter, and a group (`group_size`, two numbers) with a shared diet that registers together.
+
+**Registration.** A person registers only through the ticket page, while it is open, before its closing date and while registrations are below its cap; above the cap, onto the waiting list if the page keeps one. Each world hour, a person not yet registered registers with probability `base_per_day / 24 × f × g × h × r × m`, from the population's sequence:
+- `f`: 1 once `registration_open` was announced to `association_list`, else `unannounced` (from the material);
+- `g`: 1 when the price is at most the reference price (FR-CONGRESS-05) or 0, else `exp(−2.5 × (price / reference − 1))`;
+- `h`: `1 + 0.1 ×` the total `draw` of the speakers in the latest published programme;
+- `r`: with `days left` the event's day number less the current day's, 1 when more than 14 days are left, `1 + 2 × (14 − days left) / 7` from 14 to 7, and 3 when 7 or fewer are left;
+- `m`: the product of the promotions running, each `promotion_factor` (from the material) for 2 world days after it starts.
+A fixed person registers at a time drawn in their window, if the page lets them then, and otherwise at the first hour after it does. A paying person pays the price at registration: the `attendees` account (unlimited) transfers it to the organiser, less `payment_fee_share`. A registrant gives a diet, an access need and consent only for the fields the page requires; a person whose diet is `gluten_free` or whose need is `wheelchair` or `interpreter` and who was not asked mails the organiser a question about it within a day of registering, from their id (they take no mail). Each registrant cancels with probability `cancel_share`, at a time drawn before the event.
+
+**The organiser's tools**, with their durations from `[durations]`:
+- **`edit_ticket_page`** (effector) any of `open`, `price`, `cap`, `close_date` (`"day <n>"`), `required_fields` (any of `diet`, `access`, `consent_sponsors`), `info` (any of `date`, `address`, `outline`, `inclusions`, `refund_policy`), `waiting_list`: the page changes from then on; a value it cannot take is `invalid_value`.
+- **`ticket_page`** `detail` (sensor): `summary` gives the page's settings, registrations by day, and counts by diet and access need among those who gave them; `list` gives each registrant with the fields the page collected, and the waiting list.
+- **`publish_programme`** (effector) `sessions` (each `start`, `end`, `title`, `speakers`, `room`), `breaks`, `sponsor_slots`, `logos`: a new version of the programme on the ticket page; two sessions in one room at once, or a room the booked venue does not have, is `invalid_value`. Each speaker named in it believes its time and room from then on (FR-CONGRESS-04), unless a later confirmation or change says otherwise.
+- **`announce`** (effector) `audience` (`registrants`, `association_list`, `speakers`, `sponsors`), `kind` (`registration_open`, `programme`, `change`, `reminder`, `promotion`, `request_needs`, `request_cancel_if_not_coming`), `text?`: one mail to each member of the audience. To `association_list`, `registration_open` sets `f` and `promotion` starts a promotion. To `registrants`, `programme` and `change` make each registrant believe the latest published version; `request_needs` makes each registrant who has not given a diet, an access need or consent give them within a day; `request_cancel_if_not_coming` makes each registrant who would not come cancel with probability 0.5.
+
+**What other parties gain.** A speaker's `ask_promote` (FR-CONGRESS-04) starts a promotion scaled by its draw (`promotion_factor × (1 + 0.25 × draw)`); a sponsor reads the published programme with the tool `read_programme` on `day 19` and `day 25` and mails the organiser `condition_missing` naming a logo or slot it agreed to that is not there (FR-CONGRESS-05).
+
+**Recorded.** Each registration, payment, cancellation, waiting-list entry and change of a registrant's belief adds a `population` line; the population's outcome gives registrations by day and by diet and access need, payments, cancellations, the waiting list, consents, and which programme version each registrant believes. The inventory gives the material's shares, rates and formulas, the fixed people's windows and the page's tools.
+
+**Refusals**, before any model call, with an error that names it: diet shares that do not add up to 1 (within 0.001); a negative rate, factor or share; a `consent_share`, `cancel_share` or `payment_fee_share` outside 0–1; a fixed person's window that does not follow the calendar's format or whose first time is after its second; a `group_size` whose first number is above its second.
+*Why:* who comes, when and with what needs is what the organiser's decisions about price, rooms, food and access are measured against. The rules are simple and published here, so that anyone reading the results knows what was assumed about the market; registrations come late, react to price and to the programme, and tell the organiser only what it asks for.
 #### FR-METRIC-01: Generic metrics for every run
 At the end of every run the core reports, per agent and in total:
 - activations and model turns;
