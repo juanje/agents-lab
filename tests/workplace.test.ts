@@ -993,7 +993,7 @@ describe("the depot's day", () => {
       const state = day({ wait_max_minutes: 30 });
 
       expect([1, 30].map((minutes) => wait().refuses?.(state, waiting(minutes)))).toEqual([undefined, undefined]);
-      expect([0, 31, -5].map((minutes) => wait().refuses?.(state, waiting(minutes)))).toEqual(Array(3).fill('"wait" takes from 1 to 30 minutes'));
+      expect([0, 31, -5].map((minutes) => wait().refuses?.(state, waiting(minutes)))).toEqual(Array(3).fill({ outcome: "invalid_arguments", reason: '"wait" takes from 1 to 30 minutes' }));
       expect(wait().parameters).toEqual({ type: "object", properties: { minutes: { type: "integer" } }, required: ["minutes"] });
     });
 

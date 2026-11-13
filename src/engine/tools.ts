@@ -103,15 +103,21 @@ export interface Sight<State> {
   see(state: State, agent: string): { text: string; seen: string };
 }
 
+/** Why an effector does not take a call as it starts: the call's outcome, and the reason the agent is told after it. */
+export interface Refusal {
+  outcome: string;
+  reason: string;
+}
+
 /** A tool that changes the world through the arbiter. */
 export interface Effector<State> extends Declared<State> {
   kind: "effector";
   /**
-   * Why the effector does not take a call's arguments, from the state as the call starts, for a limit its schema cannot
-   * give, such as one the configuration sets; undefined when it takes them. A call it does not take is invalid_arguments:
-   * it applies nothing and takes no time (FR-TOOL-02).
+   * Why the effector does not take a call, from the state as the call starts: its outcome and reason, such as
+   * invalid_arguments for a limit its schema cannot give (FR-TOOL-02), or a message its recipient cannot take
+   * (FR-MESSAGE-01); undefined when it takes it. A call it does not take applies nothing and takes no time.
    */
-  refuses?(state: State, call: AgentCall): string | undefined;
+  refuses?(state: State, call: AgentCall): Refusal | undefined;
   /** What ends a call before its duration has passed, for an effector that declares it (FR-WORKPLACE-07). */
   endsEarly?: EarlyEnd<State>;
   /**

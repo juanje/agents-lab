@@ -763,12 +763,13 @@ function undeclared<State>(tool: Tool<State>, args: Record<string, unknown>): Ca
 }
 
 /**
- * Rejects a call whose arguments an effector says, from the state as the call starts, it does not take, with its reason:
- * a limit its schema cannot give, such as one the configuration sets (FR-TOOL-02). It applies nothing and takes no time.
+ * Rejects a call an effector says, from the state as the call starts, it does not take, with the outcome and reason it
+ * gives: a limit its schema cannot give, such as one the configuration sets (FR-TOOL-02), or a message its recipient
+ * cannot take (FR-MESSAGE-01). It applies nothing and takes no time.
  */
 function refused<State>(world: World<State>, tool: Tool<State>, call: AgentCall): CallResult | undefined {
-  const reason = tool.kind === "effector" ? tool.refuses?.(world.state, call) : undefined;
-  return reason === undefined ? undefined : { outcome: "invalid_arguments", text: `invalid_arguments: ${reason}` };
+  const refusal = tool.kind === "effector" ? tool.refuses?.(world.state, call) : undefined;
+  return refusal === undefined ? undefined : { outcome: refusal.outcome, text: `${refusal.outcome}: ${refusal.reason}` };
 }
 
 /** What a call of an agent's reads and is told of: its sensings, the changes since it sensed, and its stimuli. */

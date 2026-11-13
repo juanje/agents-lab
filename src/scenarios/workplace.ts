@@ -1105,7 +1105,7 @@ const wait: Effector<Workplace> = {
   refuses: (state, call) => {
     const minutes = call.arguments.minutes as number;
     const max = state.settings.waitMaxMinutes;
-    return minutes >= 1 && minutes <= max ? undefined : `"wait" takes from 1 to ${max} minutes`;
+    return minutes >= 1 && minutes <= max ? undefined : { outcome: "invalid_arguments", reason: `"wait" takes from 1 to ${max} minutes` };
   },
   endsEarly: {
     outcome: INTERRUPTED,

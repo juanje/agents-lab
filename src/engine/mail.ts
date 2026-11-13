@@ -4,7 +4,7 @@ import { type ChangesSinceSensing, applyCounted } from "./changes.ts";
 import { type RunClock, waitAtLeast } from "./clock.ts";
 import { Random } from "./random.ts";
 import type { Stimuli } from "./stimuli.ts";
-import type { Effector, Tool } from "./tools.ts";
+import type { Effector, Refusal, Tool } from "./tools.ts";
 import type { Action, World } from "./world.ts";
 
 /** A message's fields: named values that a rule-based participant can read (FR-MESSAGE-01). */
@@ -126,6 +126,19 @@ function withSent(mail: Mail, from: string, { to, act, fields = {}, subject, tex
   return { ...mail, inTransit: [...mail.inTransit, message] };
 }
 
+/**
+ * Why a message cannot be sent, as it starts: its recipient has no mailbox, does not take its act, or its act requires a
+ * field it lacks; undefined when it can. A recipient that declares no acts takes every act.
+ */
+function refusalOf(settings: MailSettings, { to, act, fields = {} }: Outgoing): Refusal | undefined {
+  if (!settings.mailboxes.includes(to)) return { outcome: "unknown_recipient", reason: `"${to}" has no mailbox` };
+  const acts = settings.acts[to];
+  if (acts === undefined) return undefined;
+  if (!Object.hasOwn(acts, act)) return { outcome: "act_not_taken", reason: `"${to}" takes the acts ${Object.keys(acts).join(", ")}` };
+  const missing = acts[act].find((field) => !Object.hasOwn(fields, field));
+  return missing === undefined ? undefined : { outcome: "missing_field", reason: `the act "${act}" requires the field "${missing}"` };
+}
+
 /** The agents' mail tools (FR-MESSAGE-01): send_mail. */
 export function mailTools<State>(settings: MailSettings, keeper: MailKeeper<State>): Tool<State>[] {
   const sendMail: Effector<State> = {
@@ -138,6 +151,7 @@ export function mailTools<State>(settings: MailSettings, keeper: MailKeeper<Stat
       properties: { to: { type: "string" }, act: { type: "string" }, fields: { type: "object" }, subject: { type: "string" }, text: { type: "string" } },
       required: ["to", "act"],
     },
+    refuses: (_state, call) => refusalOf(settings, call.arguments as unknown as Outgoing),
     durationMs: (_state, call) => ({ worldSeconds: sendingMinutes(settings, call.arguments as unknown as Outgoing) * 60 }),
     action: {
       precondition: () => ({ holds: true }),
