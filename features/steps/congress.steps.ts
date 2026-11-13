@@ -67,7 +67,7 @@ step_free = "3 steps"
 `;
 
 /** What a congress scenario sets up besides its configuration, which the library scenario of the context keeps: the conditions it runs under. */
-interface CongressSetup {
+export interface CongressSetup {
   context: Context;
   conditions: Condition[];
   /** Each run's log lines, by condition, for the scenarios that run more than one. */
@@ -77,19 +77,19 @@ interface CongressSetup {
 
 const setups = new WeakMap<Context, CongressSetup>();
 
-function setupOf(context: Context): CongressSetup {
+export function setupOf(context: Context): CongressSetup {
   const setup = setups.get(context);
   assert.ok(setup !== undefined, "the scenario set up no congress");
   return setup;
 }
 
 /** The congress's configuration as the steps set it up: the library scenario's base configuration, which a step changes through \`change\`. */
-function configurationOf(context: Context): TomlTable {
+export function configurationOf(context: Context): TomlTable {
   return parse(context.libraryScenario.baseConfiguration ?? "");
 }
 
 /** Changes the congress's configuration. */
-function change(context: Context, changing: (configuration: TomlTable) => void): void {
+export function change(context: Context, changing: (configuration: TomlTable) => void): void {
   const configuration = configurationOf(context);
   changing(configuration);
   context.libraryScenario = { ...context.libraryScenario, baseConfiguration: stringify(configuration) };
@@ -125,7 +125,7 @@ function congressOf(setup: CongressSetup) {
 }
 
 /** Loads and runs the congress under a condition, if one is given, keeping its log's lines; a refusal is kept as the run's error. */
-async function runCongress(context: Context, condition?: Condition): Promise<void> {
+export async function runCongress(context: Context, condition?: Condition): Promise<void> {
   const setup = setupOf(context);
   try {
     setup.loaded = loadScenario(congressOf(setup), context.seed, condition);
@@ -139,22 +139,28 @@ Given(
   'the congress scenario, whose calendar starts at {string} with one segment of scale {int}, so one world minute is {int} milliseconds of the run, and declares the hours "office" on Monday to Friday from {string} to {string}',
   function (this: Context, start: string, scale: number, minuteMs: number, from: string, to: string) {
     assert.equal((60 * 1000) / scale, minuteMs);
-    const scenario = scenarioLibrary.get("congress");
-    assert.ok(scenario !== undefined, "the library has no congress scenario");
-    this.libraryScenario = scenario;
-    const setup: CongressSetup = { context: this, conditions: [], runs: [] };
-    setups.set(this, setup);
-    change(this, (configuration) => {
-      configuration.calendar = { start, segments: [{ scale }], hours: { office: { days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"], from, to } } };
-      // The organiser wakes at once.
-      configuration.rhythm = { ...(configuration.rhythm as TomlTable), min_ms: 0, max_ms: 0 };
-    });
-    this.seed = 1;
-    script(this, ORGANISER, [{ text: "Nothing to do.", delayMs: 0 }]);
-    this.inventoryScenario = () => congressOf(setup);
-    this.runInstead = () => runCongress(this);
+    setUpCongress(this, { start, segments: [{ scale }], hours: { office: { days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"], from, to } } });
   },
 );
+
+/** Sets up the library's congress for a scenario, with this calendar, the organiser waking at once and ending its turns at once unless scripted. */
+export function setUpCongress(context: Context, calendar: TomlTable): CongressSetup {
+  const scenario = scenarioLibrary.get("congress");
+  assert.ok(scenario !== undefined, "the library has no congress scenario");
+  context.libraryScenario = scenario;
+  const setup: CongressSetup = { context, conditions: [], runs: [] };
+  setups.set(context, setup);
+  change(context, (configuration) => {
+    configuration.calendar = calendar;
+    // The organiser wakes at once.
+    configuration.rhythm = { ...(configuration.rhythm as TomlTable), min_ms: 0, max_ms: 0 };
+  });
+  context.seed = 1;
+  script(context, ORGANISER, [{ text: "Nothing to do.", delayMs: 0 }]);
+  context.inventoryScenario = () => congressOf(setup);
+  context.runInstead = () => runCongress(context);
+  return setup;
+}
 
 Given(
   'its "city" has the places "office", "station", and the venues "v1", "v2" and "v3" with their entrances "v1-entrance", "v2-entrance" and "v3-entrance", joined to "office" by passages of 40, 60 and 75 world minutes, all step-free',
@@ -214,6 +220,9 @@ function callOf(written: string): { name: string; arguments: Record<string, unkn
   const [, tool, rest = ""] = /^(?:call )?"(\w+)"\s*(.*)$/.exec(written) ?? [];
   assert.ok(tool !== undefined, `the steps do not read the call "${written}"`);
   const quoted = [...rest.matchAll(/"([^"]*)"/g)].map(([, text]) => text);
+  // A message or a call to a party, with its act and fields (FR-CONGRESS-02).
+  if (tool === "send_mail" || tool === "call") return { name: tool, arguments: messageOf(rest) };
+  if (tool === "read_mail" && rest === "the first message") return { name: tool, arguments: { id: FIRST_RECEIVED } };
   if (tool === "go") return { name: tool, arguments: { place: /^to "([^"]+)"$/.exec(rest)?.[1] } };
   if (tool === "write_note") return { name: tool, arguments: { title: quoted[0], text: quoted[1] } };
   if (tool === "read_notes") return { name: tool, arguments: quoted.length === 0 ? {} : { title: quoted[0] } };
@@ -222,11 +231,55 @@ function callOf(written: string): { name: string; arguments: Record<string, unkn
   return { name: tool, arguments: {} };
 }
 
+/**
+ * The id of the first message the organiser receives, when it has sent one before it: messages are numbered across the
+ * run, in the order sent (FR-MESSAGE-01).
+ */
+const FIRST_RECEIVED = "m-2";
+
+/** The contract id a venue gives its first contract (FR-CONGRESS-02). */
+export const FIRST_CONTRACT = (venue: string) => `${venue}-contract-1`;
+
+/**
+ * A message or a call as the contract writes it: `to "<party>" with the act "<act>"`, then its fields, each `name "text"`
+ * or `name number`, or "the contract's id"; the act's fields joined by ", " and " and ".
+ */
+function messageOf(written: string): Record<string, unknown> {
+  const [, to, act, rest = ""] = /^to "(\w+)" with the act "(\w+)"(.*)$/.exec(written) ?? [];
+  assert.ok(to !== undefined, `the steps do not read the message "${written}"`);
+  const fields: Record<string, unknown> = {};
+  for (const [, name, text, number] of rest.matchAll(/(\w+) (?:"([^"]*)"|(-?\d+(?:\.\d+)?))/g)) fields[name] = text ?? Number(number);
+  if (rest.includes("the contract's id")) fields.contract = FIRST_CONTRACT(to);
+  return { to, act, ...(Object.keys(fields).length === 0 ? {} : { fields }) };
+}
+
+/** The organiser's scripted answers as the contract writes its turns, joined by ", then ": calls, and waits of world hours, each before the next call. */
+export function organiserTurns(written: string, hourMs: number): { toolCalls: never; delayMs: number }[] {
+  const turns: { toolCalls: never; delayMs: number }[] = [];
+  let delayMs = 0;
+  for (const part of written.split(", then ")) {
+    const wait = /^wait (\d+) world hours?$/.exec(part);
+    if (wait !== null) {
+      delayMs += Number(wait[1]) * hourMs;
+      continue;
+    }
+    turns.push({ toolCalls: [callOf(part)] as never, delayMs });
+    delayMs = 0;
+  }
+  return turns;
+}
+
+/** The turns a scenario has the organiser take before the turns it then scripts, such as accepting a contract (FR-CONGRESS-02). */
+export const turnsBefore = new WeakMap<Context, { toolCalls: never; delayMs: number }[]>();
+
+/** The milliseconds of the run one world hour takes, by the congress's calendar. */
+export function hourMsOf(context: Context): number {
+  const [segment] = (configurationOf(context).calendar as { segments: { scale: number }[] }).segments;
+  return (3600 * 1000) / segment.scale;
+}
+
 Given(/^the organiser's scripted turns (call .+), then end$/, function (this: Context, written: string) {
-  script(this, ORGANISER, [
-    ...written.split(", then ").map((part) => ({ toolCalls: [callOf(part)] as never, delayMs: 0 })),
-    { text: "Done.", delayMs: 0 },
-  ]);
+  script(this, ORGANISER, [...(turnsBefore.get(this) ?? []), ...organiserTurns(written, hourMsOf(this)), { text: "Done.", delayMs: 0 }]);
 });
 
 Given("the organiser's scripted turns end at once", function (this: Context) {
@@ -557,7 +610,7 @@ Then(
 );
 
 /** Each change the contract makes to the congress's configuration, by how it writes it. */
-const congressChanges: [RegExp, (setup: CongressSetup) => void][] = [
+export const congressChanges: [RegExp, (setup: CongressSetup) => void][] = [
   [/^"city" is not valid TOML$/, (setup) => change(setup.context, (configuration) => (configuration.city = "[[places]\nid = "))],
   [
     /^a passage joins "office" to "moon"$/,
