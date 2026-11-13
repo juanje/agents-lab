@@ -11,7 +11,7 @@ import { rhythmChannel } from "../../tests/fixtures/slots.ts";
 import type { Context } from "../support/context.ts";
 import { madeInventory, toTheMinute } from "./calendar.steps.ts";
 import { listed } from "./mail.steps.ts";
-import { linesOf } from "./record.steps.ts";
+import { linesOf, logLines } from "./record.steps.ts";
 import { asRead } from "./stimulus.steps.ts";
 import { modelOf, runScenario, script } from "./tool.steps.ts";
 
@@ -190,7 +190,8 @@ function ranLines(context: Context): Record<string, unknown>[] {
 
 /** The lines of the log the scenario's last run wrote, parsed, whether or not it stopped. */
 function stoppedLines(context: Context): Record<string, unknown>[] {
-  assert.ok(context.runId !== undefined, "no run gave its id");
+  // A run that stopped gives no id: its log is then the only one the scenario's run wrote.
+  if (context.runId === undefined) return logLines(context);
   return linesOf(context, `${context.runId}.jsonl`).map((line) => JSON.parse(line) as Record<string, unknown>);
 }
 
