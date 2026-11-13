@@ -109,3 +109,43 @@ Feature: The congress world from materials
       | "wait_max_minutes" is 2000                                   | wait_max_minutes         |
       | "away_factor" is 0.5                                         | away_factor              |
       | two speakers in the pool have the id "s1"                    | s1                       |
+
+  # Approved addition (2026-11-13): draws by role, and the price gap. Appended to FR-CONGRESS-01.feature when the FR is reopened.
+
+  Scenario: Each role is filled by a template that carries it
+    Given the pools' venues "v1" (roles "false_claim"), "v2" (roles "high_demand") and "v3" (no role), and the "draw" asks for the venue roles "false_claim" 1 and "high_demand" 1 and 1 venue with no role
+    When ten replicas run with the seeds 1 to 10
+    Then every variant line gives "false_claim" "v1", "high_demand" "v2" and the venue "v3"
+
+  Scenario: A role is filled by distinct templates, drawn from the seed
+    Given the pools' speakers "s1" to "s4" carry the role "unavailable" and the "draw" asks for 2 of them
+    When two replicas run with the seed 42, the second with another condition
+    Then both variant lines give the same 2 distinct speakers for "unavailable"
+
+  Scenario: The cheapest-fit role is priced below every other venue that fits
+    Given the role "false_claim" is marked "cheapest_fit" with "cheapest_margin" [0.85, 0.95], "v1"'s price is 3000, "v2" seats the target at 2000 and "v3" does not seat it at 1000
+    When the variant is drawn
+    Then "v1"'s day price is between 1700 and 1900
+
+  Scenario: A perturbation names a role
+    Given the perturbation "sponsor_withdraws" names "for_role" "withdraws", and the draw fills the role "withdraws" with "sp3"
+    When the run ends
+    Then the perturbation acted on "sp3"
+
+  Scenario: The reference price is the cost-covering price less a drawn gap
+    Given the cheapest fitting venue costs 2000, the caterers' median price per head is 30, the six lowest available fees add up to 600, the board's funds are 1000, the sponsors' amounts add up to 1000, the target attendance is 50, and "price_gap" is [0.5, 0.5]
+    When the variant is drawn
+    Then the cost-covering price is 42, the reference price is 28, and the similar events cost 22.4, 28 and 33.6
+    And the variant line gives both prices and the gap
+
+  Scenario Outline: A draw by role that cannot be followed is refused before any model call
+    Given the configuration is changed so that <change>
+    When the run is attempted
+    Then it is refused before any model call, with an error that names "<it>"
+
+    Examples:
+      | change                                                         | it              |
+      | the draw asks for 2 "false_claim" venues and the pool has 1    | false_claim     |
+      | "cheapest_margin" is [0.95, 0.85]                              | cheapest_margin |
+      | "price_gap" is [0, 0.5]                                        | price_gap       |
+      | a perturbation names "for_role" "ghost", which no draw fills   | ghost           |
