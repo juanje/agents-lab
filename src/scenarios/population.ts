@@ -111,6 +111,10 @@ export interface Population {
   cancelRequested?: number;
   /** Every change it went through, in order, for the run's log. */
   events?: PopulationEvent[];
+  /** Each announcement, with its audience, kind and world minutes (FR-CONGRESS-06). */
+  announcements?: { audience: string; kind: string; at: number }[];
+  /** Each price the page was set to, with its world minutes (FR-CONGRESS-06). */
+  edits?: { price: number; at: number }[];
 }
 
 /** World minutes since day 1's midnight of "day <n> HH:MM". */

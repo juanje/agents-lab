@@ -98,6 +98,10 @@ export interface PartsContext {
   roles: Readonly<Record<string, Readonly<Record<string, readonly string[]>>>>;
   noShowCut: number;
   discretionaryLimit: number;
+  /** Each travelling speaker's station, by its id. */
+  homes?: Readonly<Record<string, string>>;
+  /** Each chosen venue's catering rule and in-house caterer, by its id. */
+  catering?: Readonly<Record<string, { rule?: string; inHouse?: string }>>;
 }
 
 /** The congress's world (FR-CONGRESS-01). */
@@ -123,6 +127,8 @@ export interface Congress {
   perturbations: { name: string; target: string; at: number }[];
   /** What the congress's parts read besides the records (FR-CONGRESS-06). */
   context: PartsContext;
+  /** Each place the organiser entered, with its world time, in world minutes (FR-CONGRESS-06). */
+  visits?: { place: string; at: number }[];
   /** The similar congresses of the drawn topic (FR-CONGRESS-05). */
   similar: { name: string; price: number; size: number }[];
   /** The attendees, the ticket page and the programme, when the configuration gives an attendees material (FR-POPULATION-01). */
