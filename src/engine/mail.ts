@@ -299,7 +299,14 @@ export function mailTools<State>(settings: MailSettings, keeper: MailKeeper<Stat
       precondition: (state, call) => markingRead(keeper).precondition(state, { reader: call.agent, id: call.arguments.id as string }),
       effect: (state, call) => markingRead(keeper).effect(state, { reader: call.agent, id: call.arguments.id as string }),
     },
-    reply: { of: "the message it reads: its sender, act, fields and text", text: (state, call) => messageText(inMailbox(keeper.of(state), call.agent, call.arguments.id) as Received) },
+    reply: {
+      of: "the message it reads: its sender, act, fields and text",
+      text: (state, call) => messageText(inMailbox(keeper.of(state), call.agent, call.arguments.id) as Received),
+      record: (state, call) => {
+        const { from, act, fields, text } = inMailbox(keeper.of(state), call.agent, call.arguments.id) as Received;
+        return { from, act, fields, ...(text === undefined ? {} : { text }) };
+      },
+    },
     texts: { no_such_mail: "no_such_mail: the id is not in your mailbox" },
     readTarget: () => "not_sensed",
   };

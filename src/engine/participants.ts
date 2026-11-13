@@ -96,7 +96,8 @@ function hoursOf(value: TomlValue, key: string, calendar: Calendar | undefined):
 /** What a rule set perceives at each step (FR-PARTICIPANT-01): the stimuli that reached its participant since its last step, and its last call's result. */
 export interface Perceived {
   stimuli: readonly Stimulus[];
-  result?: { tool: string; outcome: string; text: string };
+  /** Its last call's result: beside the text, the world's record of what it gives, for a tool that declares one (FR-CONGRESS-09). */
+  result?: { tool: string; outcome: string; text: string; record?: Readonly<Record<string, unknown>> };
 }
 
 /**
@@ -236,10 +237,10 @@ export class Participants<State> {
           const { tool: named, arguments: args } = step;
           if (!declared.includes(named)) throw new Error(`participant "${name}"'s rule set called the tool "${named}", which "${name}" does not declare`);
           const tool = tools.find((each) => each.name === named) as Tool<State>;
-          const { executed, text } = await callTool(world, tool, name, args, { ...call, caller: "participant" });
+          const { executed, text, record } = await callTool(world, tool, name, args, { ...call, caller: "participant" });
           records.toolCall({ agent: name, tool: tool.name, arguments: args, ...executed });
           if (runEnd.aborted) return;
-          step = rules.next({ stimuli: stimuli.take(name), result: { tool: tool.name, outcome: executed.outcome, text } });
+          step = rules.next({ stimuli: stimuli.take(name), result: { tool: tool.name, outcome: executed.outcome, text, ...(record === undefined ? {} : { record }) } });
         }
       }
     } catch (error) {

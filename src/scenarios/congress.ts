@@ -368,7 +368,17 @@ function variant(configuration: Configuration, random: Random): { configuration:
     // Each perturbation as resolved, one for a role naming the template that filled it.
     perturbations: Object.fromEntries(perturbations.map(({ name, ...declared }) => [name, declared as unknown as TomlTable])),
     drawn: drawn as unknown as TomlTable,
-    ...(mail === undefined ? {} : { mail: { ...mail, mailboxes: [...((mail.mailboxes ?? []) as string[]), ...names], initial: [...((mail.initial ?? []) as TomlTable[]), ...partnerSession(templates, drawn, (configuration.calendar as TomlTable | undefined)?.start)] } }),
+    ...(mail === undefined
+      ? {}
+      : {
+          mail: {
+            ...mail,
+            mailboxes: [...((mail.mailboxes ?? []) as string[]), ...names],
+            initial: [...((mail.initial ?? []) as TomlTable[]), ...partnerSession(templates, drawn, (configuration.calendar as TomlTable | undefined)?.start)],
+            // Each party takes its rule set's acts, so a wrong act or a missing field fails at once (FR-CONGRESS-09).
+            acts: { ...((mail.acts ?? {}) as TomlTable), ...actsOf(participants) },
+          },
+        }),
     ...(phone === undefined ? {} : { phone: { ...phone, lines: [...((phone.lines ?? []) as string[]), ...names] } }),
     ...(money === undefined ? {} : { money: { ...money, accounts: { ...((money.accounts ?? {}) as TomlTable), ...accounts } } }),
   };
@@ -396,6 +406,22 @@ const RULE_SET_ACTS: Readonly<Record<string, readonly string[]>> = {
   sponsor: ["ask_conditions", "accept_sponsorship (conditions)", "counter (conditions)", "send_attendee_list (list)", "send_evidence"],
   agency: ["ask_quote (date)", "book (date)", "cancel"],
 };
+
+/** An act as the table writes it, "<act> (<field>, …)", as its name and required fields. */
+function actOf(written: string): [string, string[]] {
+  const [, act, fields = ""] = /^(\w+)(?: \((.*)\))?$/.exec(written) ?? [];
+  return [act, fields === "" ? [] : fields.split(", ")];
+}
+
+/** The acts each party decided by a rule set the table lists takes, with their required fields (FR-CONGRESS-09). */
+function actsOf(participants: Readonly<Record<string, TomlTable>>): TomlTable {
+  return Object.fromEntries(
+    Object.entries(participants).flatMap(([id, { rules }]) => {
+      const acts = RULE_SET_ACTS[String(rules)];
+      return acts === undefined ? [] : [[id, Object.fromEntries(acts.map(actOf))]];
+    }),
+  );
+}
 
 /**
  * The directory of the drawn parties (FR-CONGRESS-08): a line for each, with its id, its kind, whether it has a mailbox

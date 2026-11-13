@@ -110,6 +110,11 @@ export interface Reply<State> {
   /** What it gives, as the inventory names it, such as "the message it reads". */
   of: string;
   text(state: State, call: AgentCall): string;
+  /**
+   * The world's record of what it gives, which a rule set reads in place of the text, so free text cannot change a field
+   * (FR-CONGRESS-09); a model's agent receives the text only.
+   */
+  record?(state: State, call: AgentCall): Readonly<Record<string, unknown>> | undefined;
 }
 
 /** Why an effector does not take a call as it starts: the call's outcome, and the reason the agent is told after it. */

@@ -15,6 +15,8 @@ export interface Stimulus {
   channel: string;
   source: string;
   content: string;
+  /** The world's record of what the stimulus tells, such as a ring's call, which a rule set reads in place of its content (FR-CONGRESS-09). */
+  record?: Readonly<Record<string, unknown>>;
 }
 
 /**
@@ -24,6 +26,8 @@ export interface Stimulus {
 export interface Delivery {
   source?: string;
   held?: boolean;
+  /** The world's record of what it tells, kept beside its content (FR-CONGRESS-09). */
+  record?: Readonly<Record<string, unknown>>;
 }
 
 /** The stimuli waiting for each agent, until its session takes them (FR-STIMULUS-01). */
@@ -63,7 +67,7 @@ export class Stimuli {
   deliver(agent: string, channel: string, values: Readonly<Record<string, string>> = {}, how: Delivery = {}): void {
     const declared = this.#stimulusOf(channel);
     const content = declared.content.replace(/\{(\w+)\}/g, (written, name: string) => (Object.hasOwn(values, name) ? values[name] : written));
-    const stimulus = { ...declared, content, ...(how.source === undefined ? {} : { source: how.source }) };
+    const stimulus = { ...declared, content, ...(how.source === undefined ? {} : { source: how.source }), ...(how.record === undefined ? {} : { record: how.record }) };
     if (!(this.#declared.get(agent)?.includes(channel) ?? true)) return;
     const hold = how.held === false ? undefined : this.#holds.get(agent);
     if (hold === undefined) {

@@ -680,7 +680,7 @@ export async function callTool<State>(
   agent: string,
   args: Record<string, unknown>,
   { sensings, changes, stimuli, records, runEnd, stop, clock, caller = "agent" }: CallContext,
-): Promise<{ executed: Executed; text: string }> {
+): Promise<{ executed: Executed; text: string; record?: Readonly<Record<string, unknown>> }> {
   const startedAtMs = performance.now();
   let called: CallResult;
   // An effector's start is recorded as it is applied, at the moment the call started (FR-SPACE-03).
@@ -698,7 +698,7 @@ export async function callTool<State>(
     stop(failure(`${caller} "${agent}"'s "${tool.name}" call failed`, error));
     throw error;
   }
-  const { outcome, text, takenFrom, seen, ...perceived } = called;
+  const { outcome, text, takenFrom, seen, record, ...perceived } = called;
   const endedAtMs = performance.now();
   const sensed = tool.kind === "sensor" && outcome === "success";
   // An effector call the tool ran is one that read its target; its record keeps the text its agent received.
@@ -717,7 +717,7 @@ export async function callTool<State>(
   }
   // What an effector's sight saw is no sensing: the agent's last sensing, and the changes since it, stay as they were.
   if (seen !== undefined) sensings.sighted(agent, { tool: tool.name, result: seen, atMs: endedAtMs });
-  return { executed, text };
+  return { executed, text, ...(record === undefined ? {} : { record }) };
 }
 
 /**
@@ -770,6 +770,8 @@ interface CallResult {
   targetAsSensed?: TargetAsSensed;
   changesSinceSensing?: number | null;
   changesSinceSensingBy?: string[] | null;
+  /** For an effector's success that declares it, the world's record of what its reply gives, for a rule set (FR-CONGRESS-09). */
+  record?: Readonly<Record<string, unknown>>;
 }
 
 /**
@@ -904,6 +906,8 @@ function effect<State>(world: World<State>, effector: Effector<State>, call: Age
   const applied = effector.action === undefined ? "success" : applyCounted(world, changes, call.agent, effector.action, landing);
   const outcome = applied === "success" ? (endedEarly ?? applied) : applied;
   const text = outcome === "success" && effector.reply !== undefined ? effector.reply.text(world.state, call) : (effector.texts?.[outcome] ?? outcome);
+  const record = outcome === "success" ? effector.reply?.record?.(world.state, call) : undefined;
+  if (record !== undefined) return { outcome, text, changesSinceSensing, changesSinceSensingBy, record };
   if (effector.sight === undefined || !effector.sight.outcomes.includes(outcome)) return { outcome, text, changesSinceSensing, changesSinceSensingBy };
   // What the agent sees from where it is as its call ends: the world right after its effect, if any, was applied.
   const sighting = effector.sight.see(world.state, call.agent);

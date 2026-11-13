@@ -370,7 +370,8 @@ export class PhoneExchange<State> {
     if (call.status === "ringing") {
       this.#momentOf(call.id).rang = this.#now();
       const values = { from: call.from, act: call.act, fields: fieldsText(call.fields).map((text) => `${text} `).join(""), text: call.text ?? "", call: call.id };
-      stimuli.deliver(call.to, PHONE_CHANNEL, values, { source: call.from, held: false });
+      const record = { from: call.from, call: call.id, act: call.act, fields: call.fields, ...(call.text === undefined ? {} : { text: call.text }) };
+      stimuli.deliver(call.to, PHONE_CHANNEL, values, { source: call.from, held: false, record });
     }
     // A line that is not free fails after a minute; any other call rings for its ring_minutes (FR-CONGRESS-07).
     const minutes = call.failing === "busy" ? BUSY_MINUTES : settings.ringMinutes;

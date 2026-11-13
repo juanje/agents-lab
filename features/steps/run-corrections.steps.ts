@@ -5,7 +5,7 @@ import type { Context } from "../support/context.ts";
 import { change, hourMsOf, organiserTurns, setUpCongress } from "./congress.steps.ts";
 import { changePools, fieldsOf, ranLines, sentBy, sentWith } from "./congress-parties.steps.ts";
 import { organiserSummary } from "./services.steps.ts";
-import { script } from "./tool.steps.ts";
+import { modelOf, script } from "./tool.steps.ts";
 
 /** A step's text as a regular expression that matches it alone, so its parentheses are text. */
 const literal = (text: string) => new RegExp(`^${text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`);
@@ -113,7 +113,9 @@ Then(/^the "send_mail" call failed with the outcome "(\w+)" and took no time, (l
   const call = organiserCall(this, "send_mail");
   assert.equal(call.outcome, outcome);
   assert.equal(call.durationMs ?? 0, 0, `the call took ${String(call.durationMs)} ms`);
-  const reason = String(call.reason ?? call.text ?? "");
+  // The reason reaches the organiser's model as its call's result.
+  const messages = modelOf(this, ORGANISER).received.at(-1) ?? [];
+  const reason = JSON.stringify(messages.filter((message) => message.role === "toolResult" && message.toolName === "send_mail").map((message) => message.content)).replaceAll('\\"', '"');
   if (result === 'naming "income"') assert.match(reason, /"income"/);
   else for (const act of ["ask_conditions", "accept_sponsorship", "counter", "send_attendee_list", "send_evidence"]) assert.ok(reason.includes(act), `the reason does not list "${act}": ${reason}`);
   // Nothing reached the party.

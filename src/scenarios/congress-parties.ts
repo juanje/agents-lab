@@ -25,29 +25,19 @@ interface Answer {
 
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
-/** A field's text as a value: a number, a truth value, or the text. */
-function valueOf(text: string): string | number | boolean {
-  if (text === "true" || text === "false") return text === "true";
-  return /^-?\d+(\.\d+)?$/.test(text) ? Number(text) : text;
+/**
+ * What reached a party, from the world's record of a message or a call (FR-CONGRESS-09): its sender, act and fields,
+ * never read from the text rendered for a model, so free text cannot change a field.
+ */
+function receivedOf(record: Readonly<Record<string, unknown>> | undefined): Received | undefined {
+  if (record === undefined || typeof record.from !== "string" || typeof record.act !== "string") return undefined;
+  return { from: record.from, act: record.act, fields: { ...((record.fields ?? {}) as Fields) } };
 }
 
-/** The fields of a text written as "<name>: <value>." one after another. */
-function fieldsIn(text: string): Fields {
-  const fields: Fields = {};
-  for (const [, name, value] of text.matchAll(/(\w+): (.*?)\.(?= \w+: | ?$)/g)) fields[name] = valueOf(value);
-  return fields;
-}
-
-/** A message as read_mail gives it: "From: <sender>. Act: <act>.", then its fields. */
-function readMessage(text: string): Received | undefined {
-  const [, from, act, rest = ""] = /^From: (.+?)\. Act: (\w+)\.\s*(.*)$/.exec(text) ?? [];
-  return from === undefined ? undefined : { from, act, fields: fieldsIn(rest) };
-}
-
-/** A ring as the congress's ring text gives it: "<caller> calls (<call>): <act>. <fields>". */
-function readRing(text: string): (Received & { call: string }) | undefined {
-  const [, from, call, act, rest = ""] = /^(\S+) calls \((c-\d+)\): (\w+)\.\s*(.*)$/.exec(text) ?? [];
-  return from === undefined ? undefined : { from, call, act, fields: fieldsIn(rest.trim()) };
+/** A ring, from the world's record of its call. */
+function readRing(stimulus: Stimulus): (Received & { call: string }) | undefined {
+  const received = receivedOf(stimulus.record);
+  return received === undefined || typeof stimulus.record?.call !== "string" ? undefined : { ...received, call: stimulus.record.call };
 }
 
 /** A world time "day <n> <weekday> HH:MM" as world minutes since day 1's midnight, with the weekday of day 1. */
@@ -93,7 +83,7 @@ class Party {
   }
 
   /** A call of one of its tools; it gives the call's result and keeps any stimulus that came meanwhile. */
-  *call(tool: string, args: Record<string, unknown> = {}): Generator<RuleStep, { outcome: string; text: string }, Perceived> {
+  *call(tool: string, args: Record<string, unknown> = {}): Generator<RuleStep, NonNullable<Perceived["result"]> | { outcome: string; text: string; record?: undefined }, Perceived> {
     const perceived = yield { kind: "call", tool, arguments: args };
     this.stimuli.push(...perceived.stimuli);
     return perceived.result ?? { outcome: "none", text: "" };
@@ -141,7 +131,7 @@ class Party {
     const listed = (yield* this.call("check_mail", { unread_only: true })).text;
     const read: Received[] = [];
     for (const [, id] of listed.matchAll(/^(m-\d+):/gm)) {
-      const message = readMessage((yield* this.call("read_mail", { id })).text);
+      const message = receivedOf((yield* this.call("read_mail", { id })).record);
       if (message !== undefined) read.push(message);
     }
     return read;
@@ -171,7 +161,7 @@ class Party {
       const stimulus = this.stimuli.shift() as Stimulus;
       if (stimulus.channel === "mail_notice") mail = true;
       if (stimulus.channel !== "phone") continue;
-      const ring = readRing(stimulus.content);
+      const ring = readRing(stimulus);
       if (ring === undefined) continue;
       if (!(random.next() < pickUp)) {
         // A missed ring is called back with probability 0.5, within the party's reply delay after the ring ends (FR-CONGRESS-07).
