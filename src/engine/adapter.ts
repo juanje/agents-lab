@@ -22,7 +22,6 @@ import {
   getSupportedThinkingLevels,
   validateToolArguments,
 } from "@earendil-works/pi-ai";
-import type { WorldTime } from "./calendar.ts";
 import { type ChangesSinceSensing, applyCounted } from "./changes.ts";
 import { type RunClock, waitAtLeast } from "./clock.ts";
 import { isSummaryRequest, piCompactionSettings } from "./compaction.ts";
@@ -872,7 +871,7 @@ function sense<State>(world: World<State>, sensor: Sensor<State>, call: AgentCal
 function effect<State>(world: World<State>, effector: Effector<State>, call: AgentCall, changes: ChangesSinceSensing, clock: RunClock, endedEarly?: string): CallResult {
   const changesSinceSensing = changes.since(call.agent);
   const changesSinceSensingBy = changes.appliedBy(call.agent);
-  const landing = { ...call, atMs: performance.now(), ...withWorldTime(clock) };
+  const landing = { ...call, atMs: performance.now(), ...clock.worldTimeKey() };
   const applied = effector.action === undefined ? "success" : applyCounted(world, changes, call.agent, effector.action, landing);
   const outcome = applied === "success" ? (endedEarly ?? applied) : applied;
   const text = outcome === "success" && effector.reply !== undefined ? effector.reply.text(world.state, call) : (effector.texts?.[outcome] ?? outcome);
@@ -882,11 +881,6 @@ function effect<State>(world: World<State>, effector: Effector<State>, call: Age
   return { outcome, text: `${text} ${sighting.text}`, seen: sighting.seen, changesSinceSensing, changesSinceSensingBy };
 }
 
-/** The world's time now, as a key to spread, for a run with a calendar; nothing for a run without one. */
-function withWorldTime(clock: RunClock): { world?: WorldTime } {
-  const world = clock.worldTime();
-  return world === undefined ? {} : { world };
-}
 
 /** A tool a model is offered for one question: what it is called, what it is for, and what it takes. */
 export interface OfferedTool {

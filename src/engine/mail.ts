@@ -1,5 +1,5 @@
 import type { TomlTable, TomlValue } from "smol-toml";
-import { type Calendar, type WorldDuration, type WorldTime, readWorldTime } from "./calendar.ts";
+import { type Calendar, type WorldDuration, type WorldTime, readWorldTime, sinceDayOne, worldTimeText } from "./calendar.ts";
 import { type ChangesSinceSensing, applyCounted } from "./changes.ts";
 import { type RunClock, waitAtLeast } from "./clock.ts";
 import { Random } from "./random.ts";
@@ -282,7 +282,7 @@ export function mailTools<State>(settings: MailSettings, keeper: MailKeeper<Stat
     durationMs: () => ({ worldSeconds: settings.checkMinutes * 60 }),
     sense: (state, agent, args) => {
       const mailbox = keeper.of(state).mailboxes[agent] ?? [];
-      const listed = [...mailbox].sort((one, other) => sinceMidnightOfDayOne(one.received) - sinceMidnightOfDayOne(other.received)).filter(({ read }) => args.unread_only !== true || !read);
+      const listed = [...mailbox].sort((one, other) => sinceDayOne(one.received) - sinceDayOne(other.received)).filter(({ read }) => args.unread_only !== true || !read);
       if (listed.length === 0) return "No messages.";
       return listed.map(({ id, from, subject, received }) => `${id}: from ${from}, subject "${subject}", received ${worldTimeText(received)}`).join("\n");
     },
@@ -329,17 +329,6 @@ function markingRead<State>(keeper: MailKeeper<State>): Action<State, { reader: 
       return keeper.with(state, { ...mail, mailboxes: { ...mail.mailboxes, [reader]: mailbox } });
     },
   };
-}
-
-/** The world seconds since day 1's midnight of a world time, which orders world times. */
-function sinceMidnightOfDayOne({ day, seconds }: WorldTime): number {
-  return (day - 1) * 24 * 3600 + seconds;
-}
-
-/** A world time to the minute, as the mail's tools give it: "day <n> <weekday> HH:MM". */
-function worldTimeText({ day, weekday, seconds }: WorldTime): string {
-  const two = (value: number) => String(value).padStart(2, "0");
-  return `day ${day} ${weekday} ${two(Math.floor(seconds / 3600))}:${two(Math.floor(seconds / 60) % 60)}`;
 }
 
 /** The delivery of a message in transit: it lands in its recipient's mailbox, unread, at the world's time given. */

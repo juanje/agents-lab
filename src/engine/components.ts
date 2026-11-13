@@ -138,7 +138,7 @@ export async function runComponent<State>(component: Component<State>, { world, 
       if (started !== "success") throw new Error(`the start of component "${component.name}"'s action "${step.name}" was refused with "${started}"`);
     }
     await waitAtLeast(clock.runMsOf(step.durationMs), runEnd);
-    const landing = { component: component.name, atMs: performance.now(), ...withWorldTime(clock) };
+    const landing = { component: component.name, atMs: performance.now(), ...clock.worldTimeKey() };
     outcome = runEnd.aborted ? CUT_OFF : applyCounted(world, changes, component.name, step.action, landing);
     record({ component: component.name, action: step.name, startedAtMs, endedAtMs: performance.now(), outcome });
   }
@@ -151,8 +151,3 @@ function mailStep<State>(mail: MailOf<State> | undefined, component: string, ste
   return "refusal" in mailed ? { kind: "refused", ...mailed } : { kind: "action", ...mailed };
 }
 
-/** The world's time now, as a key to spread, for a run with a calendar; nothing for a run without one. */
-function withWorldTime(clock: RunClock): { world?: WorldTime } {
-  const world = clock.worldTime();
-  return world === undefined ? {} : { world };
-}

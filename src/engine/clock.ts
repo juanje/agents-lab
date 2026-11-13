@@ -46,6 +46,15 @@ export class RunClock {
     return this.#calendar === undefined ? undefined : worldTimeAt(this.#calendar, this.sinceStartMs());
   }
 
+  /**
+   * The world's time now as a key to spread into what an action is given (FR-CLOCK-03): `{ world }` for a run with a
+   * calendar, nothing for a run without one.
+   */
+  worldTimeKey(): { world?: WorldTime } {
+    const world = this.worldTime();
+    return world === undefined ? {} : { world };
+  }
+
   /** Starts the run's time now, by performance.now(), and gives that moment. */
   start(): number {
     this.#startedAtMs = performance.now();

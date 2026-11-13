@@ -227,6 +227,16 @@ export function calendarInventory(calendar: Calendar): CalendarInventory {
   return { start: `day ${start.day} ${start.weekday} ${clockOf(calendar.start)}`, segments, hours };
 }
 
+/** A world time to the minute, as the world's parts tell it: "day <n> <weekday> HH:MM". */
+export function worldTimeText({ day, weekday, seconds }: WorldTime): string {
+  return `day ${day} ${weekday} ${clockOf(seconds)}`;
+}
+
+/** The world seconds since day 1's midnight of a world time, which orders world times. */
+export function sinceDayOne({ day, seconds }: WorldTime): number {
+  return (day - 1) * DAY_SECONDS + seconds;
+}
+
 /** The day number of world seconds since day 1's midnight. */
 function dayOf(since: number): number {
   return Math.floor(since / DAY_SECONDS) + 1;
