@@ -3,10 +3,10 @@ import { Given, Then, When } from "@cucumber/cucumber";
 import { type TomlTable, stringify } from "smol-toml";
 import { loadScenario } from "../../src/engine/scenario.ts";
 import type { Context } from "../support/context.ts";
-import { change, hourMsOf, organiserTurns, setUpCongress } from "./congress.steps.ts";
-import { before, changePools, fieldsOf, moneyLines, ranLines, sentBy, sentWith } from "./congress-parties.steps.ts";
+import { change, hourMsOf, organiserTurns, setUpCongress, turnsBefore } from "./congress.steps.ts";
+import { before, changePools, fieldsOf, moneyLines, ranLines, sentBy, sentWith, untilTime } from "./congress-parties.steps.ts";
 import { organiserSummary } from "./services.steps.ts";
-import { modelOf, script } from "./tool.steps.ts";
+import { modelOf, runTheScenario, script } from "./tool.steps.ts";
 
 /** A step's text as a regular expression that matches it alone, so its parentheses are text. */
 const literal = (text: string) => new RegExp(`^${text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`);
@@ -259,3 +259,59 @@ Then("each directory lists the same parties, in an order drawn from its seed, no
   const byKind = (order: string[]) => ["chair", "v1", "s", "sp1"].map((kind) => order.filter((id) => id === kind || (kind === "s" && /^s\d$/.test(id)))).flat();
   assert.ok(first.join() !== byKind(first).join() || second.join() !== byKind(second).join(), `the directories are grouped by kind: ${first.join(", ")}; ${second.join(", ")}`);
 });
+
+/** The organiser's turns that book "v1" for "day 26" with these rooms and accept its contract. */
+function bookingTurns(context: Context, rooms: string, accepts = true) {
+  return organiserTurns(
+    [
+      `call "send_mail" to "v1" with the act "book", date "day 26", rooms "${rooms}" and hours "08:00-18:00"`,
+      "wait 1 world hour",
+      ...(accepts ? [`"send_mail" to "v1" with the act "accept_contract" and the contract's id`, "wait 1 world hour"] : []),
+      '"check_time"',
+    ].join(", then "),
+    hourMsOf(context),
+  );
+}
+
+Given('the organiser holds a contract "v1-contract-1" with "v1" for "day 26"', function (this: Context) {
+  before(this, bookingTurns(this, "hall-a", false));
+});
+
+Then('"v1" answered "contract_held" with "v1-contract-1"', function (this: Context) {
+  assert.equal(fieldsOf(sentWith(this, "v1", "contract_held")).contract, "v1-contract-1");
+  assert.equal(sentAll(this, "v1", "contract").length, 1);
+});
+
+/** The perturbation "change" of the kind "room_lost", at day 1's 13:00, after the contract is accepted. */
+function roomLostAt(context: Context) {
+  change(context, (configuration) => ((configuration.perturbations as TomlTable).change = { at: "day 1 13:00", kind: "room_lost" }));
+}
+
+Given('the organiser\'s contract with "v1" has only "hall-a", and the perturbation "change" of the kind "room_lost" fires', function (this: Context) {
+  before(this, bookingTurns(this, "hall-a"));
+  roomLostAt(this);
+});
+
+Then('"v1" lost no room', function (this: Context) {
+  sentWith(this, "v1", "confirmed");
+  assert.equal(sentAll(this, "v1", "room_lost").length, 0, '"v1" lost a room');
+});
+
+Then(
+  'with the rooms "hall-a" and "hall-b" booked instead, "v1" lost "hall-b", and a later "change_booking" adding "hall-b" is answered "unavailable"',
+  { timeout: 30_000 },
+  async function (this: Context) {
+    turnsBefore.set(this, []);
+    before(this, [
+      ...bookingTurns(this, "hall-a, hall-b"),
+      // The room is lost at 13:00; the organiser drops it, then asks for it back.
+      ...organiserTurns('call "send_mail" to "v1" with the act "change_booking", rooms "hall-a" and hours "08:00-18:00", then wait 1 world hour, then "check_time"', hourMsOf(this)),
+    ]);
+    untilTime(this, "day 1 13:30");
+    before(this, organiserTurns('call "send_mail" to "v1" with the act "change_booking", rooms "hall-a, hall-b" and hours "08:00-18:00", then wait 1 world hour, then "check_time"', hourMsOf(this)));
+    this.timeLimitMs = 6 * hourMsOf(this);
+    await runTheScenario(this);
+    assert.equal(fieldsOf(sentWith(this, "v1", "room_lost")).room, "hall-b");
+    assert.equal(sentAll(this, "v1", "unavailable").length, 1, `"v1" sent ${sentBy(this, "v1").map((line) => line.act).join(", ")}`);
+  },
+);

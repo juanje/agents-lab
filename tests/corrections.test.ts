@@ -130,6 +130,37 @@ describe("a caterer at a venue with a catering rule (FR-CONGRESS-07)", () => {
   });
 });
 
+describe("a venue's bookings and lost rooms (FR-CONGRESS-09)", () => {
+  it("answers a second book from a customer that holds a contract for that date with contract_held and that contract's id", () => {
+    const { steps } = conversation(venueRules.start(venue(), new Random(1)), [book("main-hall"), book("main-hall, room-b")]);
+    expect(mailed(steps).at(-1)).toEqual({ act: "contract_held", fields: { contract: "v1-contract-1", date: "day 26" } });
+  });
+
+  /** A booking with these rooms, accepted, and the room_lost change at noon: what the venue mailed at noon, and then. */
+  function losing(rooms: string, then: [string, string][] = []) {
+    const rules = venueRules.start(venue({ perturbations: [{ name: "change", kind: "room_lost", at: "day 1 12:00" }] }), new Random(1));
+    const first = conversation(rules, [book(rooms), accept]);
+    first.clock.time = "day 1 Monday 12:00";
+    const changed = drive(rules, tools(() => "", () => first.clock.time), [[]], true);
+    const later = then.flatMap(([time, message]) => {
+      first.clock.time = time;
+      return drive(rules, tools(() => message, () => first.clock.time), [[notice]], true);
+    });
+    return { changed: calls(changed, "send_mail"), later: calls(later, "send_mail") };
+  }
+
+  it("takes a room only from a booking with more than one; the lost room stays unavailable for that date", () => {
+    expect(losing("main-hall").changed).toEqual([]);
+
+    const { changed, later } = losing("main-hall, room-b", [
+      ["day 1 Monday 13:00", "From: organiser. Act: change_booking. rooms: main-hall. hours: 08:00-18:00."],
+      ["day 1 Monday 14:00", "From: organiser. Act: change_booking. rooms: main-hall, room-b. hours: 08:00-18:00."],
+    ]);
+    expect(changed).toMatchObject([{ act: "room_lost", fields: { room: "room-b", cut: 500 } }]);
+    expect(later.map(({ act }) => act)).toEqual(["contract_changed", "unavailable"]);
+  });
+});
+
 describe("the board before a budget (FR-CONGRESS-07)", () => {
   it("refuses a request for approval while no budget is approved, with the reason no_budget", () => {
     const { steps } = conversation(boardRules.start({ id: "board", funds: 6000, reserve: 1000, organiser: "organiser" }, new Random(1)), [[DAY, "From: organiser. Act: request_approval. amount: 400. reason: interpreter."]]);
