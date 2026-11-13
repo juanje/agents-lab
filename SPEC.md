@@ -420,7 +420,7 @@ The congress provides the rule sets `venue` and `board` (FR-PARTICIPANT-01). Eac
 | `request_approval` (amount, reason) | `approved` when `amount` fits its reserve left: it raises the organiser's ceiling by `amount`; else `refused` |
 | `report` (any fields) | `acknowledged` |
 
-**Outcome.** A venue's record gives its holds, contracts, confirmations, cancellations, invoices issued and paid, and what it lost to other customers; the board's gives its approvals, its refusals, the funds it transferred and the organiser's overruns (FR-MONEY-01).
+**Outcome.** A venue's record gives its holds, contracts, confirmations, cancellations, invoices issued and paid, and what it lost to other customers; the board's gives its approvals, its refusals and the funds it transferred; the organiser's overruns are in the money records (FR-MONEY-01), which no party's rules can read.
 
 **The inventory** gives each venue's and the board's parameters, the declared perturbations and their times.
 
