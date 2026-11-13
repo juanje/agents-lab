@@ -1081,14 +1081,14 @@ function hasCancelled(state: Congress, speaker: string): boolean {
 }
 
 /**
- * When a speaker was confirmed, in world minutes: it accepted a session and acknowledged its confirmation, as its
- * acknowledgement reached the organiser's mailbox (FR-CONGRESS-09); none when it has not.
+ * When a speaker was confirmed, in world minutes: when the organiser's confirm reached it, once it has accepted a
+ * session and acknowledged its confirmation (FR-CONGRESS-09); none until then.
  */
 function confirmedAt(state: Congress, speaker: string): number | undefined {
   const sent = (state.mail.mailboxes[ORGANISER] ?? []).filter(({ from }) => from === speaker);
-  if (!sent.some(({ act }) => act === "accept")) return undefined;
-  const acknowledged = sent.find(({ act }) => act === "acknowledged");
-  return acknowledged === undefined ? undefined : minutesOfWorld(acknowledged.received);
+  if (!sent.some(({ act }) => act === "accept") || !sent.some(({ act }) => act === "acknowledged")) return undefined;
+  const confirm = (state.mail.mailboxes[speaker] ?? []).find(({ from, act }) => from === ORGANISER && act === "confirm");
+  return confirm === undefined ? undefined : minutesOfWorld(confirm.received);
 }
 
 /** How long two days are after a speaker is confirmed when early_cancel found none confirmed at its time. */

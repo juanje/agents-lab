@@ -341,10 +341,12 @@ describe("the cancellations, perturbations that find their speaker in the world'
     const [hours, minutes] = clock.split(":").map(Number);
     return { day, weekday: "Monday" as const, seconds: hours * 3600 + minutes * 60 };
   };
-  /** What a speaker that accepted and acknowledged its confirmation sent the organiser, the acknowledgement received at that time (FR-CONGRESS-09). */
+  /** The organiser's confirm, received by a speaker at a time. */
+  const confirmTo = (to: string, received: ReturnType<typeof at>) => ({ id: `m-${to}`, from: "organiser", to, act: "confirm", fields: {}, subject: "confirm", received, read: false });
+  /** What a speaker that accepted and acknowledged its confirmation sent the organiser, received an hour after the time given (FR-CONGRESS-09). */
   const confirmedBy = (speaker: string, received: ReturnType<typeof at>) => [
-    { id: `m-${speaker}-1`, from: speaker, to: "organiser", act: "accept", fields: { session: 2 }, subject: "accept", received, read: false },
-    { id: `m-${speaker}-2`, from: speaker, to: "organiser", act: "acknowledged", fields: {}, subject: "acknowledged", received, read: false },
+    { id: `m-${speaker}-1`, from: speaker, to: "organiser", act: "accept", fields: { session: 2 }, subject: "accept", received: { ...received, seconds: received.seconds + 3600 }, read: false },
+    { id: `m-${speaker}-2`, from: speaker, to: "organiser", act: "acknowledged", fields: {}, subject: "acknowledged", received: { ...received, seconds: received.seconds + 3600 }, read: false },
   ];
   /** A congress world with the mail and the phone given; the base calendar makes a world minute a second of the run. */
   const world = (mailboxes: Record<string, unknown[]>, calls: unknown[] = []) => ({ mail: { mailboxes, inTransit: [] }, phone: { calls } }) as never;
@@ -368,7 +370,7 @@ describe("the cancellations, perturbations that find their speaker in the world'
     expect(ms).toBeGreaterThanOrEqual(8 * 1440 * 1000);
     expect(ms).toBeLessThanOrEqual((8 * 1440 + 180) * 1000);
 
-    const confirmed = world({ organiser: confirmedBy("s4", at(2, "10:01")) });
+    const confirmed = world({ s4: [confirmTo("s4", at(2, "10:01"))], organiser: confirmedBy("s4", at(2, "10:01")) });
     expect(fired(cycle, confirmed, undefined, ms, at(9, "12:00"))).toEqual({ kind: "deliver", agent: "s4", channel: "early_cancel", held: false });
     expect(cycle.next(confirmed, undefined, ms, at(9, "12:00"))).toEqual({ kind: "end" });
   });
@@ -379,7 +381,7 @@ describe("the cancellations, perturbations that find their speaker in the world'
     cycle.next(world({}), undefined, 0, at(1, "09:00"));
     expect(cycle.next(world({ s1: [], s4: [] }), undefined, 0, at(9, "12:00")).kind).toBe("wait");
 
-    const confirmed = world({ organiser: confirmedBy("s1", at(11, "10:01")) });
+    const confirmed = world({ s1: [confirmTo("s1", at(11, "10:01"))], organiser: confirmedBy("s1", at(11, "10:01")) });
     const waiting = cycle.next(confirmed, undefined, 0, at(11, "11:00"));
     // From 11:00 on day 11 to 10:01 on day 13.
     expect(waiting).toEqual({ kind: "wait", ms: (2 * 1440 - 59) * 1000 });
@@ -389,14 +391,15 @@ describe("the cancellations, perturbations that find their speaker in the world'
   it("late_cancel hits a confirmed speaker who has not cancelled, and nobody when none is left", () => {
     const [late] = cancellations({ late_cancel: { at: "day 23 10:00" } });
     const s1Cancelled = { id: "m-9", from: "s1", to: "organiser", act: "cancel", fields: {}, subject: "cancel", received: at(9, "10:00"), read: false };
-    const both = [...confirmedBy("s1", at(2, "10:01")), ...confirmedBy("s4", at(2, "10:01"))];
+    const both = { s1: [confirmTo("s1", at(2, "10:01"))], s4: [confirmTo("s4", at(2, "10:01"))] };
+    const acknowledged = [...confirmedBy("s1", at(2, "10:01")), ...confirmedBy("s4", at(2, "10:01"))];
 
     const cycle = late.cycle(new Random(3));
-    expect(fired(cycle, world({ organiser: [...both, s1Cancelled] }), undefined, 0, at(23, "10:00"))).toEqual({ kind: "deliver", agent: "s4", channel: "late_cancel", held: false });
+    expect(fired(cycle, world({ ...both, organiser: [...acknowledged, s1Cancelled] }), undefined, 0, at(23, "10:00"))).toEqual({ kind: "deliver", agent: "s4", channel: "late_cancel", held: false });
 
     const called = late.cycle(new Random(3));
     const s4Called = { id: "c-1", from: "s4", to: "organiser", act: "cancel", fields: {}, status: "ended" };
-    expect(called.next(world({ organiser: [...both, s1Cancelled] }, [s4Called]), undefined, 0, at(23, "10:00"))).toEqual({ kind: "end" });
+    expect(called.next(world({ ...both, organiser: [...acknowledged, s1Cancelled] }, [s4Called]), undefined, 0, at(23, "10:00"))).toEqual({ kind: "end" });
   });
 
   it("choose only a speaker who accepted a session and acknowledged its confirmation, not one a confirm merely reached (FR-CONGRESS-09)", () => {
@@ -406,7 +409,7 @@ describe("the cancellations, perturbations that find their speaker in the world'
       { id: "m-2", from: "s1", to: "organiser", act: "not_available", fields: { what: "acceptance" }, subject: "not_available", received: at(2, "11:00"), read: false },
     ];
     const s1Confirm = { id: "m-3", from: "organiser", to: "s1", act: "confirm", fields: {}, subject: "confirm", received: at(2, "10:30"), read: false };
-    const state = world({ s1: [s1Confirm], organiser: [...declinedThenConfirmed, ...confirmedBy("s4", at(3, "10:00"))] });
+    const state = world({ s1: [s1Confirm], s4: [confirmTo("s4", at(3, "10:00"))], organiser: [...declinedThenConfirmed, ...confirmedBy("s4", at(3, "10:00"))] });
 
     for (let seed = 1; seed <= 10; seed += 1) {
       const cycle = early.cycle(new Random(seed));

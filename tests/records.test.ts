@@ -59,7 +59,7 @@ describe("the congress's records for its parts (FR-CONGRESS-06)", () => {
     const loaded = congress((configuration) => ((configuration.perturbations as TomlTable).early_cancel = { between: ["day 9 09:00", "day 9 09:00"] }));
     const [early] = loaded.components;
     const cycle = early.cycle(new Random(1));
-    const confirmed = { ...(loaded.world.state as Congress), mail: { mailboxes: { organiser: ["accept", "acknowledged"].map((act, index) => ({ id: `m-${index + 1}`, from: "s1", to: "organiser", act, fields: {}, subject: act, received: at(2), read: false })) }, inTransit: [] } } as unknown as Congress;
+    const confirmed = { ...(loaded.world.state as Congress), mail: { mailboxes: { s1: [{ id: "m-0", from: "organiser", to: "s1", act: "confirm", fields: {}, subject: "confirm", received: at(2), read: false }], organiser: ["accept", "acknowledged"].map((act, index) => ({ id: `m-${index + 1}`, from: "s1", to: "organiser", act, fields: {}, subject: act, received: at(2), read: false })) }, inTransit: [] } } as unknown as Congress;
     const step = cycle.next(confirmed as never, undefined, 0, at(9)) as { kind: string; action: { effect: (state: Congress, landing: unknown) => Congress } };
     expect(step.kind).toBe("action");
     expect(step.action.effect(confirmed, { component: "early_cancel", atMs: 0, world: at(9) }).perturbations).toEqual([{ name: "early_cancel", target: "s1", at: minutes(9) }]);
