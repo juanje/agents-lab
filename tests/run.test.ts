@@ -767,20 +767,28 @@ describe("run", () => {
     expect(loaded.world.version).toBe(0);
   });
 
-  it("refuses, as invalid_arguments and taking no time, a call whose arguments the effector says it does not take, with its reason", async () => {
-    const refusing: Effector<Slots> = { ...patientTake, refuses: (slots, call) => ((call.arguments.slot as number) > slots.length ? `"take" takes a slot up to ${slots.length}` : undefined) };
+  it("refuses, with the outcome and reason the effector gives and taking no time, a call it says it does not take as it starts", async () => {
+    const refusing: Effector<Slots> = {
+      ...patientTake,
+      refuses: (slots, call) => {
+        const slot = call.arguments.slot as number;
+        if (slot > slots.length) return { outcome: "invalid_arguments", reason: `"take" takes a slot up to ${slots.length}` };
+        return slot === 2 ? { outcome: "slot_closed", reason: "slot 2 is closed" } : undefined;
+      },
+    };
     const loaded = slots({ tools: [refusing] });
     const model = new ScriptedModel([
       { toolCalls: [{ name: "take", arguments: { slot: 4 } }], delayMs: 0 },
+      { toolCalls: [{ name: "take", arguments: { slot: 2 } }], delayMs: 0 },
       { text: "Done.", delayMs: 0 },
     ]);
 
     const { toolCalls } = await run(loaded, [{ name: "a", model, activations: 1 }], seed, settings);
 
-    const [call] = toolCalls;
-    expect(call).toMatchObject({ outcome: "invalid_arguments" });
-    expect(call.endedAtMs - call.startedAtMs).toBeLessThan(5);
+    expect(toolCalls.map(({ outcome }) => outcome)).toEqual(["invalid_arguments", "slot_closed"]);
+    for (const call of toolCalls) expect(call.endedAtMs - call.startedAtMs).toBeLessThan(5);
     expect(model.received[1]?.at(-1)).toMatchObject({ role: "toolResult", isError: true, content: [{ type: "text", text: 'invalid_arguments: "take" takes a slot up to 3' }] });
+    expect(model.received[2]?.at(-1)).toMatchObject({ role: "toolResult", isError: true, content: [{ type: "text", text: "slot_closed: slot 2 is closed" }] });
     expect(loaded.world.version).toBe(0);
   });
 

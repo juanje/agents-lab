@@ -94,6 +94,20 @@ describe("send_mail", () => {
     });
   });
 
+  it("refuses, as it starts, a message whose recipient has no mailbox, whose act the recipient does not take, or that lacks a field its act requires", () => {
+    const refusal = (to: string, act: string, fields: Record<string, unknown> = {}) => send.refuses?.(state, { agent: "ana", arguments: { to, act, fields } });
+
+    expect(refusal("zoe", "ask")).toEqual({ outcome: "unknown_recipient", reason: '"zoe" has no mailbox' });
+    expect(refusal("desk", "order")).toEqual({ outcome: "act_not_taken", reason: '"desk" takes the acts book, ask' });
+    expect(refusal("desk", "book", { date: "day 26" })).toEqual({ outcome: "missing_field", reason: 'the act "book" requires the field "rooms"' });
+    expect(refusal("desk", "book", { date: "day 26", rooms: 4 })).toBeUndefined();
+    expect(refusal("desk", "ask")).toBeUndefined();
+  });
+
+  it("takes every act for a recipient that declares none", () => {
+    expect(send.refuses?.(state, { agent: "ana", arguments: { to: "ben", act: "anything" } })).toBeUndefined();
+  });
+
   it("numbers each message after every message sent or received before it", () => {
     const first = send.action?.effect(state, { agent: "ana", arguments: { to: "ben", act: "ask", subject: "Friday", text: "Free on Friday?" }, atMs: 0, world }) as Post;
     const second = send.action?.effect(first, { agent: "ben", arguments: { to: "ana", act: "ask" }, atMs: 0, world }) as Post;

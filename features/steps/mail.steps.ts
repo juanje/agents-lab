@@ -12,7 +12,7 @@ import type { Context } from "../support/context.ts";
 import { toTheMinute } from "./calendar.steps.ts";
 import { linesOf, logLines } from "./record.steps.ts";
 import { asRead } from "./stimulus.steps.ts";
-import { runTheScenario, script } from "./tool.steps.ts";
+import { returned, runTheScenario, script } from "./tool.steps.ts";
 
 /** The test scenario's world: the mail the engine keeps in it, and nothing else. */
 interface Post {
@@ -373,4 +373,49 @@ Then("a {string} line with the same id and the run time and world time it landed
   const line = deliveredLine(this, id);
   assert.ok((line.atMs as number) > (atMs as number), "it landed before it was sent");
   assert.ok((line.worldTime as WorldTime).seconds > (worldTime as WorldTime).seconds, "it landed at a world time before it was sent");
+});
+
+/** The run's only call of a tool, which "its" names from here on. */
+function onlyCall(context: Context, tool: string) {
+  const calls = (context.toolCalls ?? []).filter((call) => call.tool === tool);
+  assert.equal(calls.length, 1, `${calls.length} "${tool}" calls were made`);
+  context.lastToolCall = calls[0];
+  return calls[0];
+}
+
+/** The text the agent received for the call "its" names. */
+function itsResult(context: Context): string {
+  const call = context.lastToolCall;
+  assert.ok(call !== undefined, "no call was checked");
+  return returned(context, call.agent, call.tool);
+}
+
+Then("the {string} call failed with the outcome {string} and took no time", function (this: Context, tool: string, outcome: string) {
+  const call = onlyCall(this, tool);
+  assert.equal(call.outcome, outcome);
+  assert.ok(call.endedAtMs - call.startedAtMs < 5, `the call took ${Math.round(call.endedAtMs - call.startedAtMs)} ms of the run`);
+});
+
+Then("the {string} call failed with the outcome {string}", function (this: Context, tool: string, outcome: string) {
+  assert.equal(onlyCall(this, tool).outcome, outcome);
+});
+
+Then("its result lists the acts {string}", function (this: Context, acts: string) {
+  assert.ok(itsResult(this).includes(acts), `the result does not list ${acts}: ${itsResult(this)}`);
+});
+
+Then("its result names the field {string}", function (this: Context, field: string) {
+  assert.ok(itsResult(this).includes(`"${field}"`), `the result does not name the field "${field}": ${itsResult(this)}`);
+});
+
+Then("its result names {string}", function (this: Context, name: string) {
+  assert.ok(itsResult(this).includes(`"${name}"`), `the result does not name "${name}": ${itsResult(this)}`);
+});
+
+Then("no message was sent", function (this: Context) {
+  assert.deepEqual(
+    logLines(this).filter((line) => line.type === "message_sent"),
+    [],
+  );
+  assert.deepEqual(setupOf(this).loaded?.world.state.mail.inTransit, []);
 });
