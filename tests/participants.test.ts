@@ -9,6 +9,7 @@ import { type Declared, type Perceived, type RuleSet, readParticipants } from ".
 import { type RunSettings, run } from "../src/engine/run.ts";
 import { type Scenario, loadScenario } from "../src/engine/scenario.ts";
 import { ScriptedModel } from "../src/engine/scripted-model.ts";
+import type { Tool } from "../src/engine/tools.ts";
 import { type Post, postScenario } from "./fixtures/post.ts";
 
 /** A calendar where one world minute is 100 ms of the run, with office hours. */
@@ -134,6 +135,19 @@ describe("run, with a rule set that calls a tool its participant does not declar
 
     await expect(running).rejects.toThrow(/"desk".*"look"/);
     expect(logOf(logDirectory, runId).at(-1)).toMatchObject({ type: "run_stopped", error: expect.stringMatching(/"desk".*"look"/) });
+  });
+});
+
+describe("run, with a tool that throws during a participant's call (FR-PARTICIPANT-01)", () => {
+  it("stops, with an error that names the participant, not an agent, and gives the tool's error", async () => {
+    const failing: RuleSet = { start: () => ({ next: (input) => (input.result === undefined ? { kind: "call", tool: "jam", arguments: {} } : { kind: "end" }), outcome: () => ({}) }) };
+    const jam: Tool<Post> = { kind: "sensor", name: "jam", description: "Fails.", parameters: { type: "object", properties: {} }, durationMs: () => 0, sense: () => { throw new Error("disk full"); } };
+    const scenario = withDesk(failing, { tools: ["check_mail", "jam"] });
+    const logDirectory = mkdtempSync(join(tmpdir(), "agents-lab-logs-"));
+
+    const running = run(loadScenario({ ...scenario, tools: [jam] }, 1), [{ name: "ana", model: anaAsks(), activations: 1 }], 1, { ...settings, logDirectory, runId: "jammed" });
+
+    await expect(running).rejects.toThrow(/^participant "desk"'s "jam" call failed: disk full$/);
   });
 });
 
