@@ -1,8 +1,11 @@
+import { type TomlTable, parse, stringify } from "smol-toml";
 import { describe, expect, it } from "vitest";
 import type { Perceived, RuleStep, Rules } from "../src/engine/participants.ts";
 import { Random } from "../src/engine/random.ts";
+import { type Scenario, loadScenario } from "../src/engine/scenario.ts";
 import type { Stimulus } from "../src/engine/stimuli.ts";
 import { speakerRules } from "../src/scenarios/congress-parties.ts";
+import { congressScenario } from "../src/scenarios/congress.ts";
 
 /** A speaker's parameters as the congress gives its rule set: its template and what the world adds. */
 const params = (changes: Record<string, unknown> = {}) => ({
@@ -92,5 +95,60 @@ describe("a speaker's answer to an invitation (FR-CONGRESS-04)", () => {
       const declines = new Random(seed).next() < 0.5;
       expect(answerTo(invite(), { acceptance: 0.5 }, seed)[0].act).toBe(declines ? "decline" : "accept");
     }
+  });
+});
+
+describe("the congress's speakers and partner (FR-CONGRESS-04)", () => {
+  const S1 = { id: "s1", title: "Soil life", draw: 1, fee: 0, home: "local", available: true, acceptance: 1, reply_minutes: [60, 60], pick_up: 1 };
+  const P1 = { id: "p1", title: "The partner's survey", session: 3 };
+
+  /** The congress with one speaker, "s1", a partner, "p1", and a board, changed as given. */
+  function congress(changes: (configuration: TomlTable, pools: TomlTable) => void = () => {}): Scenario<unknown> {
+    const configuration = parse(congressScenario.baseConfiguration);
+    const pools: TomlTable = { topics: ["soil"], venue: [], speaker: [structuredClone(S1)], partner: [structuredClone(P1)], board: [{ id: "board", funds: 6000 }] };
+    configuration.draw = stringify({ attendance: [50, 80], speaker: 1, partner: 1, board: 1 });
+    changes(configuration, pools);
+    configuration.pools = stringify(pools);
+    return { ...(congressScenario as Scenario<unknown>), baseConfiguration: stringify(configuration) };
+  }
+
+  it("makes each chosen speaker and partner a participant, with the reply delay its template gives, and an account to commit and invoice from", () => {
+    const loaded = loadScenario(congress(), 1);
+
+    const s1 = loaded.participants?.find(({ name }) => name === "s1");
+    expect(s1).toMatchObject({ decides: "rules", rules: "speaker", replyMinutes: [60, 60] });
+    expect(s1?.decides === "rules" && s1.params).toMatchObject({ acceptance: 1, organiser: "organiser", event_day: 26 });
+    expect(s1?.decides === "rules" && s1.params).not.toHaveProperty("reply_minutes");
+    expect(s1?.tools).toEqual(expect.arrayContaining(["send_mail", "check_mail", "read_mail", "call", "answer_call", "check_time", "commit", "issue_invoice"]));
+    expect(s1?.channels).toEqual(expect.arrayContaining(["mail_notice", "phone", "early_cancel", "late_cancel"]));
+    expect(loaded.participants?.find(({ name }) => name === "p1")).toMatchObject({ decides: "rules", rules: "partner" });
+    expect(loaded.money?.settings.accounts).toEqual(expect.arrayContaining([{ name: "s1", unlimited: true }]));
+  });
+
+  it("puts the board's mail about the partner's session in the organiser's mailbox at the calendar's start", () => {
+    const loaded = loadScenario(congress(), 1);
+
+    expect(loaded.mail?.settings.initial).toEqual([
+      { id: "m-1", from: "board", to: "organiser", act: "partner_session", subject: "partner_session", fields: { speaker: "p1", session: 3 }, received: { day: 1, weekday: "Monday", seconds: 9 * 3600 }, read: false },
+    ]);
+  });
+
+  it("refuses, naming it, a speaker template it cannot follow, a cancellation whose time it cannot read and a draw of more than one partner", () => {
+    const refusing = (changing: (configuration: TomlTable, pools: TomlTable) => void) => () => loadScenario(congress(changing), 1);
+    const s1 = (changing: (template: TomlTable) => void) => (_configuration: TomlTable, pools: TomlTable) => changing((pools.speaker as TomlTable[])[0]);
+
+    expect(refusing(s1((template) => (template.acceptance = 1.2)))).toThrow(/"s1".*acceptance/);
+    expect(refusing(s1((template) => (template.pick_up = 2)))).toThrow(/"s1".*pick_up/);
+    expect(refusing(s1((template) => (template.draw = 4)))).toThrow(/"s1".*draw/);
+    expect(refusing(s1((template) => (template.fee = -50)))).toThrow(/"s1".*fee/);
+    expect(refusing(s1((template) => (template.condition = "lunch")))).toThrow(/"s1".*condition/);
+    expect(refusing(s1((template) => (template.constraint = "evening")))).toThrow(/"s1".*constraint/);
+    expect(refusing((configuration) => ((configuration.perturbations as TomlTable).late_cancel = { at: "Monday" }))).toThrow(/perturbations\.late_cancel/);
+    expect(
+      refusing((configuration, pools) => {
+        pools.partner = [P1, { ...P1, id: "p2" }];
+        configuration.draw = stringify({ attendance: [50, 80], speaker: 1, partner: 2, board: 1 });
+      }),
+    ).toThrow(/draw\.partner/);
   });
 });
