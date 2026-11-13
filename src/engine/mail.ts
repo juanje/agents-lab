@@ -1,5 +1,5 @@
 import type { TomlTable, TomlValue } from "smol-toml";
-import { type Calendar, type WorldDuration, type WorldTime, readWorldTime, sinceDayOne, worldTimeText } from "./calendar.ts";
+import { type Calendar, type WorldDuration, type WorldTime, minutesBetween, readWorldTime, sinceDayOne, worldTimeText } from "./calendar.ts";
 import { type ChangesSinceSensing, applyCounted } from "./changes.ts";
 import { type RunClock, waitAtLeast } from "./clock.ts";
 import { Random } from "./random.ts";
@@ -96,14 +96,6 @@ function wordsPerMinute(table: TomlTable, key: string, name: string): Record<str
   return { [name]: value };
 }
 
-/** The delivery delay's two numbers of world minutes, refused unless the first is at least 0 and not above the second. */
-function deliveryMinutesOf(value: TomlValue | undefined): [number, number] {
-  const [fewest, most] = Array.isArray(value) && value.length === 2 && value.every((each) => typeof each === "number") ? (value as [number, number]) : [];
-  if (fewest === undefined || most === undefined) throw refused("mail.delivery_minutes", value, "it is not two numbers of minutes");
-  if (!(fewest >= 0 && fewest <= most)) throw refused("mail.delivery_minutes", value, "its first number is below 0 or above its second");
-  return [fewest, most];
-}
-
 /** Each recipient's acts with the fields each requires, refused for a participant with no mailbox or a field list that is not a list of words. */
 function actsOf(value: TomlValue | undefined, mailboxes: readonly string[]): MailSettings["acts"] {
   return Object.fromEntries(
@@ -158,7 +150,7 @@ export function readMail(value: TomlValue, calendar: Calendar | undefined): Mail
   return {
     mailboxes,
     acts,
-    deliveryMinutes: deliveryMinutesOf(table.delivery_minutes),
+    deliveryMinutes: minutesBetween(table.delivery_minutes, "mail.delivery_minutes"),
     sendMinutes: minutesOf(table, "send_minutes"),
     sendMinutesPerField: table.send_minutes_per_field === undefined ? 0 : minutesOf(table, "send_minutes_per_field"),
     ...wordsPerMinute(table, "send_words_per_minute", "sendWordsPerMinute"),

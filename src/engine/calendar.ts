@@ -128,6 +128,18 @@ export function readWorldTime(calendar: Calendar, value: unknown, key: string): 
   return { time: worldTimeOf(calendar, since), since };
 }
 
+/**
+ * Two numbers of world minutes a delay is drawn between, such as the mail's delivery_minutes (FR-MESSAGE-01) or a
+ * participant's reply_minutes (FR-PARTICIPANT-01), refused, naming the key, unless the first is at least 0 and not above
+ * the second.
+ */
+export function minutesBetween(value: unknown, key: string): [number, number] {
+  const [fewest, most] = Array.isArray(value) && value.length === 2 && value.every((each) => typeof each === "number") ? (value as [number, number]) : [];
+  if (fewest === undefined || most === undefined) throw refused(key, value, "it is not two numbers of minutes");
+  if (!(fewest >= 0 && fewest <= most)) throw refused(key, value, "its first number is below 0 or above its second");
+  return [fewest, most];
+}
+
 /** A named set of weekly hours, refused, naming its key, when its days are empty or unknown, or its from is not before its to. */
 function hoursOf(value: TomlValue, key: string): Hours {
   const { days, from, to } = isTable(value) ? value : {};

@@ -1,6 +1,6 @@
 import type { TomlTable, TomlValue } from "smol-toml";
 import { type CallContext, type Records, callTool } from "./adapter.ts";
-import { type Calendar, reachedAfterMs } from "./calendar.ts";
+import { type Calendar, minutesBetween, reachedAfterMs } from "./calendar.ts";
 import { type RunClock, waitAtLeast } from "./clock.ts";
 import { Random } from "./random.ts";
 import type { Stimuli, Stimulus } from "./stimuli.ts";
@@ -47,14 +47,6 @@ function namesOf(value: TomlValue | undefined, key: string, declared: readonly s
   return value as string[];
 }
 
-/** The reply delay's two numbers of world minutes, refused unless the first is at least 0 and not above the second. */
-function replyMinutesOf(value: TomlValue, key: string): [number, number] {
-  const [fewest, most] = Array.isArray(value) && value.length === 2 && value.every((each) => typeof each === "number") ? (value as [number, number]) : [];
-  if (fewest === undefined || most === undefined) throw refused(key, value, "it is not two numbers of minutes");
-  if (!(fewest >= 0 && fewest <= most)) throw refused(key, value, "its first number is below 0 or above its second");
-  return [fewest, most];
-}
-
 /** A text a participant decided by a model needs, refused, naming its key, when it is missing or empty. */
 function textOf(value: TomlValue | undefined, key: string): string {
   if (typeof value !== "string" || value.trim() === "") throw refused(key, value, "a participant decided by a model needs it");
@@ -79,7 +71,7 @@ export function readParticipants(value: TomlValue | undefined, declared: Declare
       tools: namesOf(table.tools, `${key}.tools`, declared.tools, "tool"),
       channels: namesOf(table.channels, `${key}.channels`, declared.channels, "channel"),
       ...(hours === undefined ? {} : { hours: hoursOf(hours, `${key}.hours`, declared.calendar) }),
-      ...(replyMinutes === undefined ? {} : { replyMinutes: replyMinutesOf(replyMinutes, `${key}.reply_minutes`) }),
+      ...(replyMinutes === undefined ? {} : { replyMinutes: minutesBetween(replyMinutes, `${key}.reply_minutes`) }),
     };
     if (decides === "model") return { ...kept, decides, model: textOf(model, `${key}.model`), systemPrompt: textOf(systemPrompt, `${key}.system_prompt`) };
     if (decides !== "rules") throw refused(`${key}.decides`, decides, 'it is neither "rules" nor "model"');
