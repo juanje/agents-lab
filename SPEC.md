@@ -512,7 +512,7 @@ After an agreement, a sponsor pays any invoice from the organiser for at most it
 
 **Speakers.** A constraint is hard: an invitation at a time that breaks it is declined, whatever the speaker's condition; `accept_if` comes only from the condition. The cancellation perturbations never choose the partner's speaker. A `confirm` to a speaker who has not accepted, or whose condition is unmet, is answered `not_available` with what `acceptance` and changes nothing. The fee committed is the invitation's fee, or the template's when the condition was `fee` and was accepted. A withdrawn invitation claims the fee only.
 
-**The phone.** A party that does not pick up a call calls back with probability 0.5, drawn from its sequence, within its reply delay, with the act `missed_call`; answered, it then handles the original act. A call to a line that is not free fails as `busy` after 1 world minute. A ring that reaches the organiser during a tool call is delivered at its next model turn, so a long walk can miss a call (a known limit).
+**The phone.** A party that does not pick up a call calls back with probability 0.5, drawn from its sequence, between one world minute after the missed ring ends and that plus its reply delay, with the act `missed_call`; answered, it then handles the original act. A call to a line that is not free fails as `busy` after 1 world minute. A ring that reaches the organiser during a tool call is delivered at its next model turn, so a long walk can miss a call (a known limit).
 
 **`away_factor`** also lengthens `ledger`, `travel_options`, `similar_events` and `ticket_page`.
 

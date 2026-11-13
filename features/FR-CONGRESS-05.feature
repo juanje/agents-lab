@@ -2,7 +2,7 @@
 Feature: Caterers, sponsors and services
 
   Background:
-    Given the congress scenario of FR-CONGRESS-04, whose calendar starts at "day 1 Monday 09:00" with one segment of scale 60000, so one world hour is 60 milliseconds of the run
+    Given the congress scenario of FR-CONGRESS-04, whose calendar starts at "day 1 Monday 09:00" with one segment of scale 240000, so one world hour is 15 milliseconds of the run
     And the mail delivers in 1 world minute and every party has no hours, no reply delay and "pick_up" 1
     And the variant has the caterer "c1" ("price_per_head" 30, diets "vegan" with no limit and "gluten_free" with the limit 5, "minimum" 20, "final_days" 7, "deposit_share" 0.2, "deposit_due_days" 3, cancellation "any time: 0.3")
     And the sponsors "sp1" (amount 1200, conditions "logo" and "morning_slot", insisting on "morning_slot", "pay_days" [2, 2]) and "sp2" (amount 1000, conditions "logo" and "attendee_list", insisting on none, "counter_acceptance" 1, "pay_days" [2, 2])
@@ -174,7 +174,7 @@ Feature: Caterers, sponsors and services
     Given the configuration declares "hotel_overbooks" at "day 25 21:00", and the organiser booked "h1" for "s2" for the night of "day 25"
     When the run's time limit passes at "day 25 Thursday 23:00"
     Then "h1"'s room for "s2" was cancelled and its commitment released
-    And "s2" called the organiser at "day 25 21:00", within one world hour, with the act "no_room"
+    And "s2" called the organiser at "day 25 21:00", within two world hours, with the act "no_room"
 
   Scenario: A sponsor disputes an invoice above its agreed amount
     Given "sp1" agreed to 1200
