@@ -35,25 +35,63 @@ export interface Calendar {
   start: number;
   weekdayOfDayOne: number;
   segments: readonly Segment[];
+  /** Each named set of weekly hours, by its name. */
+  hours: Readonly<Record<string, Hours>>;
+}
+
+/** A named set of weekly hours: the weekdays they fall on, and when they begin and end, in seconds since midnight. */
+interface Hours {
+  days: readonly Weekday[];
+  from: number;
+  to: number;
+}
+
+/** The seconds since midnight of a time "HH:MM". */
+function secondsOfDay(time: string): number {
+  const [, hours, minutes] = /^(\d{2}):(\d{2})$/.exec(time) ?? [];
+  return Number(hours) * 3600 + Number(minutes) * 60;
 }
 
 /** The world seconds since day 1's midnight of a day number and a time "HH:MM". */
-function worldSeconds(day: number, hours: number, minutes: number): number {
-  return (day - 1) * DAY_SECONDS + hours * 3600 + minutes * 60;
+function worldSeconds(day: number, time: string): number {
+  return (day - 1) * DAY_SECONDS + secondsOfDay(time);
 }
 
 /** Reads a configuration's [calendar]. */
 export function readCalendar(value: TomlValue): Calendar {
   const table = value as TomlTable;
-  const [, day, weekday, hours, minutes] = /^day (\d+) (\w+) (\d{2}):(\d{2})$/.exec(table.start as string) ?? [];
-  const start = worldSeconds(Number(day), Number(hours), Number(minutes));
+  const [, day, weekday, time] = /^day (\d+) (\w+) (\d{2}:\d{2})$/.exec(table.start as string) ?? [];
+  const start = worldSeconds(Number(day), time);
   const weekdayOfDayOne = WEEKDAYS.indexOf(weekday as Weekday) - (Number(day) - 1);
   const segments = (table.segments as TomlTable[]).map((segment) => {
     if (segment.until === undefined) return { scale: segment.scale as number };
-    const [, untilDay, untilHours, untilMinutes] = /^day (\d+) (\d{2}):(\d{2})$/.exec(segment.until as string) ?? [];
-    return { scale: segment.scale as number, until: worldSeconds(Number(untilDay), Number(untilHours), Number(untilMinutes)) };
+    const [, untilDay, untilTime] = /^day (\d+) (\d{2}:\d{2})$/.exec(segment.until as string) ?? [];
+    return { scale: segment.scale as number, until: worldSeconds(Number(untilDay), untilTime) };
   });
-  return { start, weekdayOfDayOne, segments };
+  const hours = Object.fromEntries(
+    Object.entries((table.hours ?? {}) as Record<string, TomlTable>).map(([name, { days, from, to }]) => [
+      name,
+      { days: days as Weekday[], from: secondsOfDay(from as string), to: secondsOfDay(to as string) },
+    ]),
+  );
+  return { start, weekdayOfDayOne, segments, hours };
+}
+
+/**
+ * Whether a world time is within a calendar's named hours, from their start up to and not at their end, on a day they
+ * fall on; and when they next begin after it, which is not a beginning at that very time.
+ */
+export function hoursAt(calendar: Calendar, name: string, time: WorldTime): { within: boolean; next: WorldTime } {
+  if (!Object.hasOwn(calendar.hours, name)) throw new Error(`The calendar declares no hours "${name}"`);
+  const { days, from, to } = calendar.hours[name];
+  const weekdayIn = (days: number) => WEEKDAYS[(WEEKDAYS.indexOf(time.weekday) + days) % 7];
+  const within = days.includes(time.weekday) && from <= time.seconds && time.seconds < to;
+  // Hours with a day fall on it once a week at least, so their next beginning is within the next seven days.
+  for (let ahead = 0; ahead <= 7; ahead += 1) {
+    const weekday = weekdayIn(ahead);
+    if (days.includes(weekday) && (ahead > 0 || from > time.seconds)) return { within, next: { day: time.day + ahead, weekday, seconds: from } };
+  }
+  throw new Error(`The calendar's hours "${name}" fall on no day`);
 }
 
 /** The world's time at a moment of the run, in milliseconds since it started, following the calendar segment by segment. */
