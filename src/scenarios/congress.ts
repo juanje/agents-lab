@@ -26,6 +26,7 @@ import {
   sponsorRules,
   venueRules,
 } from "./congress-parties.ts";
+import { type AttendeesMaterial, type Population, minutesOfTime, populationComponent, populationTools } from "./population.ts";
 import { describeUniformRhythm, rhythmChannels, uniformRhythm } from "./rhythm.ts";
 
 /** The congress's one agent. */
@@ -50,7 +51,7 @@ type Place = "system" | "person";
 const MAX_WAIT_MINUTES = 1440;
 
 /** The organiser's durations, in world minutes, by tool, as `[durations]` gives them. */
-const DURATION_KEYS = ["check_time", "look", "write_note", "read_notes", "travel_options", "book_travel", "similar_events"] as const;
+const DURATION_KEYS = ["check_time", "look", "write_note", "read_notes", "travel_options", "book_travel", "similar_events", "edit_ticket_page", "ticket_page", "publish_programme", "announce", "read_programme"] as const;
 
 /** A room of a venue's interior: its id, seats and visible equipment. */
 interface Room {
@@ -109,6 +110,8 @@ export interface Congress {
   travel: { material: Travel; soldOutDraws: Record<string, number>; booked: { option: string; traveller: string; price: number }[] };
   /** The similar congresses of the drawn topic (FR-CONGRESS-05). */
   similar: { name: string; price: number; size: number }[];
+  /** The attendees, the ticket page and the programme, when the configuration gives an attendees material (FR-POPULATION-01). */
+  population?: Population;
 }
 
 /** A key of the congress that cannot be followed: an error that names it, its value and why. */
@@ -616,6 +619,7 @@ function initialState(configuration: Configuration, random: Random): Congress {
     // Each train's draw for selling out comes from the travel's own sequence, the replica's initial state's.
     travel: { material: travel, soldOutDraws: Object.fromEntries(travel.trains.map(({ id }) => [id, random.next()])), booked: [] },
     similar: similarOf(configuration),
+    ...(attendeesOf(configuration) === undefined ? {} : { population: populationOf(configuration, attendeesOf(configuration) as AttendeesMaterial) }),
   };
 }
 
@@ -630,6 +634,56 @@ function similarOf(configuration: Configuration): Congress["similar"] {
     price: drawn?.price_gap === undefined || drawn.reference_price === undefined ? price : drawn.reference_price * (SIMILAR_SHARES[index] ?? 1),
     size,
   }));
+}
+
+/** The share keys of an attendees material, each a number from 0 to 1. */
+const MATERIAL_SHARES = ["consent_share", "payment_fee_share", "cancel_share", "pay_share", "no_show_share"] as const;
+
+/**
+ * The configuration's attendees material (FR-POPULATION-01), none when it gives none; refused, naming its key, when its
+ * diet or access shares do not add up to 1, a rate is negative, a share is outside 0 to 1, a fixed person's window ends
+ * before it begins, or the group's size is not two numbers, the first not above the second.
+ */
+function attendeesOf(configuration: Configuration): AttendeesMaterial | undefined {
+  if (typeof configuration.attendees !== "string" || configuration.attendees.trim() === "") return undefined;
+  const material = textOf(configuration, "attendees") as unknown as AttendeesMaterial;
+  for (const key of ["diets", "access"] as const) {
+    const shares = Object.values(material[key] ?? { none: 1 });
+    if (Math.abs(shares.reduce((sum, share) => sum + share, 0) - 1) > 1e-9) throw refused(`attendees.${key}`, material[key], "its shares do not add up to 1");
+  }
+  for (const key of ["pool_factor", "base_per_day", "unannounced", "promotion_factor"] as const) {
+    if (!(typeof material[key] === "number" && material[key] >= 0)) throw refused(`attendees.${key}`, material[key], "it is not a number of at least 0");
+  }
+  for (const key of MATERIAL_SHARES) if (material[key] !== undefined && !isShare(material[key])) throw refused(`attendees.${key}`, material[key], "it is not a share from 0 to 1");
+  for (const fixed of material.fixed ?? []) {
+    const [from, to] = fixed.between;
+    if (!(perturbationMinutes(from) !== undefined && perturbationMinutes(to) !== undefined && minutesOfTime(from) <= minutesOfTime(to))) throw refused(`attendees.fixed "${fixed.id}"`, fixed.between, "its window ends before it begins");
+  }
+  const [fewest, most] = (material.group?.size ?? [0, 0]) as number[];
+  if (!(fewest <= most)) throw refused("attendees.group_size", material.group?.size, "it is not two numbers, the first not above the second");
+  return material;
+}
+
+/** The population as a replica starts (FR-POPULATION-01): its material, the event's day, the reference price, each chosen speaker's draw, and a closed page. */
+function populationOf(configuration: Configuration, material: AttendeesMaterial): Population {
+  const drawn = configuration.drawn as unknown as Drawn | undefined;
+  const draws = Object.fromEntries(
+    Object.entries((configuration.participants ?? {}) as TomlTable)
+      .filter(([, participant]) => (participant as TomlTable).rules === "speaker")
+      .map(([name, participant]) => [name, (((participant as TomlTable).params as TomlTable | undefined)?.draw as number | undefined) ?? 0]),
+  );
+  return {
+    material,
+    eventDay: configuration.event_day as number,
+    referencePrice: drawn?.reference_price ?? referencePrice(configuration, drawn?.topic ?? "").reference_price ?? 0,
+    draws,
+    people: [],
+    page: { open: false, price: 0, required_fields: [], info: [], waiting_list: false },
+    announced: false,
+    promotions: [],
+    programme: [],
+    sponsorData: {},
+  };
 }
 
 /** The place the organiser is in; in a passage, none. */
@@ -979,16 +1033,19 @@ function components(configuration: Configuration): Component<Congress>[] {
   const declared = Object.entries((configuration.perturbations ?? {}) as TomlTable)
     .filter(([name]) => SPEAKER_PERTURBATIONS.includes(name) || name === SPONSOR_PERTURBATION || name === HOTEL_OVERBOOKS)
     .map(([name, written]) => ({ name, ...(written as TomlTable) }) as unknown as Perturbation);
-  if (declared.length === 0) return [];
   const calendar = readCalendar(configuration.calendar);
+  // The attendees, when the configuration gives their material (FR-POPULATION-01).
+  const target = (configuration.drawn as unknown as Drawn | undefined)?.attendance ?? 0;
+  const attendees = attendeesOf(configuration) === undefined ? [] : [populationComponent<Congress>({ organiser: ORGANISER, target, msFor: (minutes, sinceStartMs) => reachedAfterMs(calendar, sinceStartMs, minutes * 60) })];
+  if (declared.length === 0) return attendees;
   const speakers = Object.entries((configuration.participants ?? {}) as TomlTable)
     .filter(([, participant]) => (participant as TomlTable).rules === "speaker")
     .map(([name]) => name);
-  return declared.map((each) => {
+  return [...attendees, ...declared.map((each) => {
     if (each.name === SPONSOR_PERTURBATION) return sponsorWithdrawal(each, calendar);
     if (each.name === HOTEL_OVERBOOKS) return hotelOverbooking(each, calendar, configuration.event_day as number);
     return cancellation(each, speakers, calendar);
-  });
+  })];
 }
 
 /** The factor by which the organiser's web tools take longer away from the office (FR-CONGRESS-01, FR-CONGRESS-07). */
@@ -1103,7 +1160,23 @@ const similarEventsTool: Sensor<Congress> = {
 };
 
 /** The organiser's own tools, besides the mail's and the phone's. */
-const TOOLS: readonly Tool<Congress>[] = [checkTime, look, go, writeNote, readNotes, wait, travelOptions, bookTravel, similarEventsTool];
+const TOOLS: readonly Tool<Congress>[] = [
+  checkTime,
+  look,
+  go,
+  writeNote,
+  readNotes,
+  wait,
+  travelOptions,
+  bookTravel,
+  similarEventsTool,
+  // The ticket page, the programme and announcements (FR-POPULATION-01).
+  ...populationTools<Congress>({
+    organiser: ORGANISER,
+    roomsOf: (state) => Object.keys(state.rooms),
+    durationOf: (state, tool) => state.settings.durations[tool] * awayFactorOf(state, ORGANISER),
+  }),
+];
 
 /** The configuration's placement; one that names a text the congress does not have, or no place, is refused, naming it. */
 function placementOf(configuration: Configuration): Readonly<Record<string, Place>> {
@@ -1137,6 +1210,11 @@ function describeDuration(configuration: Configuration, tool: string): string {
     travel_options: `${durations.travel_options} world minutes.`,
     book_travel: `${durations.book_travel} world minutes.`,
     similar_events: `${durations.similar_events} world minutes.`,
+    edit_ticket_page: `${durations.edit_ticket_page} world minutes.`,
+    ticket_page: `${durations.ticket_page} world minutes, longer away from the office.`,
+    publish_programme: `${durations.publish_programme} world minutes.`,
+    announce: `${durations.announce} world minutes.`,
+    read_programme: `${durations.read_programme} world minutes.`,
   };
   if (!Object.hasOwn(described, tool)) throw new Error(`The congress has no tool "${tool}"`);
   return described[tool];
@@ -1221,6 +1299,9 @@ const BASE_CONFIGURATION = [
   // The world's travel, which invoices the organiser for what it books (FR-CONGRESS-05).
   "[money.accounts.travel]",
   "unlimited = true",
+  // The attendees, who pay the organiser for each ticket (FR-POPULATION-01).
+  "[money.accounts.attendees]",
+  "unlimited = true",
   "[money.accounts.organiser]",
   "opening = 0",
   'tools = ["ledger", "pay", "issue_invoice"]',
@@ -1238,14 +1319,14 @@ const BASE_CONFIGURATION = [
   'account = "funds"',
   ...[
     ["caterer", '["send_mail", "check_mail", "read_mail", "call", "answer_call", "check_time", "ledger", "commit", "release", "issue_invoice"]', '["mail_notice", "phone"]', '"unlimited"'],
-    ["sponsor", '["send_mail", "check_mail", "read_mail", "call", "answer_call", "check_time", "ledger", "pay"]', `["mail_notice", "phone", "${SPONSOR_PERTURBATION}", "${INVOICE_NOTICE}"]`, '"amount"'],
+    ["sponsor", '["send_mail", "check_mail", "read_mail", "call", "answer_call", "check_time", "ledger", "pay", "read_programme"]', `["mail_notice", "phone", "${SPONSOR_PERTURBATION}", "${INVOICE_NOTICE}"]`, '"amount"'],
     ["agency", '["send_mail", "check_mail", "read_mail", "call", "answer_call", "check_time", "ledger", "commit", "release"]', '["mail_notice", "phone"]', '"unlimited"'],
   ].flatMap(([kind, tools, channels, account]) => [`[kinds.${kind}]`, `rules = "${kind}"`, `tools = ${tools}`, `channels = ${channels}`, "reply_minutes = [0, 0]", `account = ${account}`]),
   ...["speaker", "partner"].flatMap((kind) => [
     `[kinds.${kind}]`,
     `rules = "${kind}"`,
     'tools = ["send_mail", "check_mail", "read_mail", "call", "answer_call", "check_time", "commit", "issue_invoice"]',
-    `channels = ["mail_notice", "phone", ${[...SPEAKER_PERTURBATIONS, HOTEL_OVERBOOKS].map((name) => `"${name}"`).join(", ")}]`,
+    `channels = ["mail_notice", "phone", ${[...SPEAKER_PERTURBATIONS, HOTEL_OVERBOOKS, "programme"].map((name) => `"${name}"`).join(", ")}]`,
     "reply_minutes = [0, 0]",
     'account = "unlimited"',
   ]),
@@ -1258,6 +1339,11 @@ const BASE_CONFIGURATION = [
   "travel_options = 0",
   "book_travel = 0",
   "similar_events = 0",
+  "edit_ticket_page = 0",
+  "ticket_page = 0",
+  "publish_programme = 0",
+  "announce = 0",
+  "read_programme = 0",
   "[rhythm]",
   'source = "rhythm"',
   'text = "You wake up."',
@@ -1288,6 +1374,8 @@ export const congressScenario: Scenario<Congress> = {
     ...SPEAKER_PERTURBATIONS.map((name) => ({ name, source: "illness", stimulus: "You are ill and cannot give your session." })),
     { name: SPONSOR_PERTURBATION, source: "the sponsor's board", stimulus: "Your board withdraws the sponsorship." },
     { name: HOTEL_OVERBOOKS, source: "the hotel", stimulus: "Your hotel room for the night before the event is cancelled: the hotel is overbooked." },
+    // A published programme tells each of its speakers its session (FR-POPULATION-01).
+    { name: "programme", source: "the programme", stimulus: "Your session in the programme: {time} in {room}." },
     // An invoice reaches its recipient from its issuer, as a message does (FR-CONGRESS-05).
     { name: INVOICE_NOTICE, source: "money", stimulus: "New invoice from {from}: {for}" },
   ],
@@ -1301,7 +1389,9 @@ export const congressScenario: Scenario<Congress> = {
   phone: { of: (state) => state.phone, with: (state, phone) => ({ ...state, phone }) },
   money: { of: (state) => state.money, with: (state, money) => ({ ...state, money }) },
   components,
-  worldAccounts: [TRAVEL],
+  worldAccounts: [TRAVEL, "attendees"],
+  // Each change of the population is a line of the run's log (FR-POPULATION-01).
+  logLines: (before, after) => (after.population?.events ?? []).slice(before.population?.events?.length ?? 0).map((event) => ({ type: "population", ...event })),
   ruleSets: { venue: venueRules, board: boardRules, speaker: speakerRules, partner: partnerRules, caterer: catererRules, sponsor: sponsorRules, agency: agencyRules },
   variant,
   slowedBy: awayFactorOf,

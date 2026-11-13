@@ -242,8 +242,8 @@ function countsOf(values: readonly (string | undefined)[]): Record<string, numbe
 const byDay = (people: readonly Person[]) => countsOf(people.map(({ registered }) => (registered === undefined ? undefined : `day ${Math.floor(registered / 1440) + 1}`)));
 
 /**
- * The organiser's tools for the population (FR-POPULATION-01): edit_ticket_page, ticket_page, publish_programme and
- * announce, each taking the duration its world gives.
+ * The tools of the population (FR-POPULATION-01): the organiser's edit_ticket_page, ticket_page, publish_programme and
+ * announce, and read_programme, which sponsors read the programme with, each taking the duration its world gives.
  */
 export function populationTools<State extends PopulationWorld>(options: PopulationToolOptions<State>): Tool<State>[] {
   const roomsOf = options.roomsOf ?? ((state: State) => (state.rooms ?? []) as string[]);
@@ -252,6 +252,20 @@ export function populationTools<State extends PopulationWorld>(options: Populati
   const withPopulation = (state: State, change: (population: Population) => Population): State => ({ ...state, population: change(state.population as Population) });
   const invalid = (reason: string) => ({ outcome: INVALID_VALUE, reason });
   const nowOf = (world: WorldTime | undefined) => (world === undefined ? 0 : minutesOfWorld(world));
+  // A congress without attendees has no ticket page.
+  const noPage = invalid("the congress has no ticket page");
+
+  const readProgramme: Sensor<State> = {
+    kind: "sensor",
+    name: "read_programme",
+    description: "Read the latest programme published on the ticket page.",
+    parameters: { type: "object", properties: {} },
+    durationMs: duration("read_programme"),
+    sense: (state) => {
+      const latest = state.population?.programme.at(-1);
+      return latest === undefined ? "No programme is published." : JSON.stringify(latest);
+    },
+  };
 
   const editTicketPage: Effector<State> = {
     kind: "effector",
@@ -269,7 +283,8 @@ export function populationTools<State extends PopulationWorld>(options: Populati
         waiting_list: { type: "boolean" },
       },
     },
-    refuses: (_state, { arguments: args }) => {
+    refuses: (state, { arguments: args }) => {
+      if (state.population === undefined) return noPage;
       if (args.price !== undefined && !(typeof args.price === "number" && args.price >= 0)) return invalid("the price is not an amount of at least 0");
       if (args.cap !== undefined && !(Number.isInteger(args.cap) && (args.cap as number) >= 0)) return invalid("the cap is not a whole number of at least 0");
       if (args.close_date !== undefined && !/^day \d+$/.test(String(args.close_date))) return invalid('the close date is not "day <n>"');
@@ -297,7 +312,8 @@ export function populationTools<State extends PopulationWorld>(options: Populati
     parameters: { type: "object", properties: { detail: { type: "string", enum: ["summary", "list"] } }, required: ["detail"] },
     durationMs: duration("ticket_page"),
     sense: (state, _agent, { detail }) => {
-      const population = state.population as Population;
+      if (state.population === undefined) return "There is no ticket page.";
+      const population = state.population;
       const registrants = registrantsOf(population);
       const waiting = population.people.filter(({ waiting: onList }) => onList === true).map(({ id }) => id);
       if (detail === "list") return JSON.stringify({ registrants: registrants.map(({ id, given }) => ({ id, ...given })), waiting_list: waiting });
@@ -329,6 +345,7 @@ export function populationTools<State extends PopulationWorld>(options: Populati
       required: ["sessions"],
     },
     refuses: (state, { arguments: { sessions } }) => {
+      if (state.population === undefined) return noPage;
       const given = (Array.isArray(sessions) ? sessions : []) as Session[];
       const rooms = roomsOf(state);
       const stranger = given.find(({ room }) => !rooms.includes(room));
@@ -354,7 +371,7 @@ export function populationTools<State extends PopulationWorld>(options: Populati
     name: "announce",
     description: `Announce something: to an audience (${AUDIENCES.join(", ")}), of a kind (${KINDS.join(", ")}), with an optional text; one mail to each member of the audience.`,
     parameters: { type: "object", properties: { audience: { type: "string" }, kind: { type: "string" }, text: { type: "string" } }, required: ["audience", "kind"] },
-    refuses: (_state, { arguments: { audience, kind } }) => (AUDIENCES.includes(String(audience)) && KINDS.includes(String(kind)) ? undefined : invalid("no such audience or kind")),
+    refuses: (state, { arguments: { audience, kind } }) => (state.population === undefined ? noPage : AUDIENCES.includes(String(audience)) && KINDS.includes(String(kind)) ? undefined : invalid("no such audience or kind")),
     durationMs: duration("announce"),
     action: {
       precondition: () => ({ holds: true }),
@@ -388,7 +405,7 @@ export function populationTools<State extends PopulationWorld>(options: Populati
     readTarget: () => "not_sensed",
   };
 
-  return [editTicketPage, ticketPage, publishProgramme, announce];
+  return [editTicketPage, ticketPage, publishProgramme, announce, readProgramme];
 }
 
 /** How the population's component reads its world: the organiser, the target attendance, and run milliseconds for world minutes. */

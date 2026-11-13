@@ -725,6 +725,9 @@ const inMorning = (time: unknown) => String(time) < "12:00";
 /** The perturbations that make a speaker cancel, each reaching it on a channel of its own name. */
 export const SPEAKER_PERTURBATIONS = ["early_cancel", "late_cancel"];
 
+/** The channel by which a published programme tells a speaker its session (FR-POPULATION-01). */
+const PROGRAMME = "programme";
+
 /** The perturbation that cancels a speaker's hotel room for the night before the event (FR-CONGRESS-05's addition). */
 const HOTEL_OVERBOOKS = "hotel_overbooks";
 
@@ -864,9 +867,14 @@ export const speakerRules: RuleSet = {
       yield* party.clock();
       for (;;) {
         const ill = party.stimuli.filter(({ channel }) => SPEAKER_PERTURBATIONS.includes(channel));
+        // A published programme gives it its session, until a later confirmation or change says otherwise (FR-POPULATION-01).
+        for (const { content } of party.stimuli.filter(({ channel }) => channel === PROGRAMME)) {
+          const [, time, room] = /(\d\d:\d\d) in (\S+)\.$/.exec(content) ?? [];
+          if (time !== undefined) Object.assign(record, { believes_time: time, believes_room: room });
+        }
         // A hotel room lost the night before the event is urgent: it phones (FR-CONGRESS-05's addition).
         const roomless = party.stimuli.some(({ channel }) => channel === HOTEL_OVERBOOKS);
-        party.stimuli.splice(0, party.stimuli.length, ...party.stimuli.filter((stimulus) => !ill.includes(stimulus) && stimulus.channel !== HOTEL_OVERBOOKS));
+        party.stimuli.splice(0, party.stimuli.length, ...party.stimuli.filter((stimulus) => !ill.includes(stimulus) && stimulus.channel !== HOTEL_OVERBOOKS && stimulus.channel !== PROGRAMME));
         for (const { channel } of ill) yield* cancel(channel);
         if (roomless) yield* tell("no_room");
         yield* party.handle(answer, speaker.pick_up ?? 1, random);
@@ -1120,6 +1128,9 @@ export const agencyRules: RuleSet = {
 /** The conditions a sponsor may set. */
 export const SPONSOR_CONDITIONS = ["logo", "morning_slot", "table", "attendee_list", "passes", "consented_list"] as const;
 
+/** The days a sponsor reads the programme on (FR-POPULATION-01). */
+const PROGRAMME_CHECK_DAYS = [19, 25];
+
 /** The perturbation that makes a sponsor withdraw, reaching it on a channel of its own name. */
 export const SPONSOR_PERTURBATION = "sponsor_withdraws";
 
@@ -1185,6 +1196,21 @@ export const sponsorRules: RuleSet = {
           return { act: "not_available", fields: { what: act } };
       }
     };
+    /** When it reads the programme: the starts of days 19 and 25, in world minutes. */
+    const checks = PROGRAMME_CHECK_DAYS.map((day) => (day - 1) * 1440);
+
+    /** Reads the programme, and mails condition_missing for each logo or morning slot it agreed to that is not there. */
+    function* checkProgramme(): Generator<RuleStep, void, Perceived> {
+      const read = (yield* party.call("read_programme")).text;
+      const programme = (read.startsWith("{") ? JSON.parse(read) : { logos: [], sponsor_slots: [] }) as { logos?: string[]; sponsor_slots?: { sponsor: string; start: string }[] };
+      const agreed = listIn(record.agreement);
+      const missing = [
+        ...(agreed.includes("logo") && !(programme.logos ?? []).includes(sponsor.id) ? ["logo"] : []),
+        ...(agreed.includes("morning_slot") && !(programme.sponsor_slots ?? []).some(({ sponsor: slot, start }) => slot === sponsor.id && start < "12:00") ? ["morning_slot"] : []),
+      ];
+      for (const condition of missing) yield* party.call("send_mail", { to: sponsor.organiser, act: "condition_missing", fields: { condition } });
+    }
+
     /** The payments it has set, each an invoice and when it pays it, in world minutes. */
     const payments: { invoice: string; amount: number; at: number }[] = [];
     const settled = new Set<string>();
@@ -1219,14 +1245,21 @@ export const sponsorRules: RuleSet = {
         party.stimuli.splice(0, party.stimuli.length, ...party.stimuli.filter(({ channel }) => channel !== SPONSOR_PERTURBATION && channel !== INVOICE_NOTICE));
         if (noticed && record.agreement !== "none") yield* readInvoices();
         yield* party.handle(answer, sponsor.pick_up ?? 1, random);
-        if (payments.length > 0) yield* party.clock();
+        const checking = record.agreement !== "none" && !record.withdrew && checks.length > 0;
+        if (payments.length > 0 || checking) yield* party.clock();
+        // On days 19 and 25 it reads the programme for the logo and slot it agreed to (FR-POPULATION-01).
+        while (checking && checks.length > 0 && checks[0] <= party.now) {
+          checks.shift();
+          yield* checkProgramme();
+        }
         payments.sort((one, other) => one.at - other.at);
         while (payments.length > 0 && payments[0].at <= party.now && !record.withdrew) {
           const due = payments.shift() as { invoice: string; amount: number };
           if ((yield* party.call("pay", { invoice: due.invoice })).outcome === "success") record.paid += due.amount;
         }
         if (party.stimuli.length > 0) continue;
-        yield* party.rest(payments.length > 0 ? payments[0].at - party.now : undefined);
+        const next = Math.min(...payments.map(({ at }) => at), ...(record.agreement !== "none" && !record.withdrew ? checks : []));
+        yield* party.rest(next === Infinity ? undefined : next - party.now);
       }
     }
     return rulesOf(script(), () => ({ ...record }));
