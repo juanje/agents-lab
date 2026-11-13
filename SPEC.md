@@ -42,10 +42,11 @@ Experiments are written outside this repository, in the experiment language (FR-
 | Milestone | Needed by | FRs | State |
 |:--|:--|:--|:--|
 | v0.1 | E13 micro vs macro (Schelling): three technical pilots, then parked | below | built enough for E13's pilots |
-| v0.2 | E1–E4 in an invented workplace (A18, A19, A20, I4) | below, in this build order | next |
-| v0.3 | E16 model monoculture and vote visibility | not written | later |
-| v0.4 | A single-agent experiment with tools and memory across runs (E15 or E7) | not written | later |
-| v0.5 | World and agent forks | not written | later |
+| v0.2 | E2–E4 in an invented workplace (A19, A20, I4); E1's pilots ran here before E1 moved to the congress | below, in this build order | built for E1's pilots; E2–E4 next |
+| v0.3 | E1 in a congress (A18, A19, A23): instructions, heuristics and character | below, in this build order | next |
+| v0.4 | E16 model monoculture and vote visibility | not written | later |
+| v0.5 | A single-agent experiment with tools and memory across runs (E15 or E7; the congress world's sequences) | not written | later |
+| v0.6 | World and agent forks | not written | later |
 
 **v0.1, built.** Each FR below is built.
 1. FR-WORLD-01
@@ -96,6 +97,19 @@ Experiments are written outside this repository, in the experiment language (FR-
 18. FR-WORKPLACE-08 (the worker sees who is there when it arrives or stops waiting), before E1
 19. FR-ANALYSIS-03 (quotes matched as text, repeated questions, retried provider errors), before E1's judging
 20. FR-WORKPLACE-06 (the depot's hours, light, closed doors, and weather as a perturbation), when an experiment needs it
+
+**v0.3 build order.** The preparation-only pilot of E1 needs items 1–9. The world and its parts are designed in `agents-lab-experiments/experiments/E1-congress/world.md`; each FR's contract is written from it, one at a time.
+1. FR-CLOCK-03 (a calendar, clock segments and hours)
+2. FR-MESSAGE-01 (structured messages between participants), not written
+3. FR-PARTICIPANT-01 (rule-based participants with an interface), not written
+4. FR-PHONE-01 (calls), not written
+5. FR-CONGRESS-01 (the congress world from materials), not written
+6. FR-MONEY-01 (ledger, invoices, approvals), not written
+7. FR-CONGRESS-02 (the actors' rules), not written
+8. FR-POPULATION-01 (attendees and the ticket page), not written
+9. FR-PARTS-01 (parts as held-out keys), not written
+10. FR-CONGRESS-03 (the day), after the pilot, not written
+11. FR-ANALYSIS-04 (success by kind of part and text length), a light version for the pilot, not written
 
 **Small known gaps** (to close when convenient): `lab summarize` prints numbers at full precision; a completed run whose log has no metric sample gives no values without saying so; a run in the index whose log is missing fails with Node's own error. The `wait` tool's description does not state `wait_max_minutes`, so the worker learns the limit only from a refusal; `wait_max_minutes` is not checked when the configuration loads.
 
@@ -271,6 +285,20 @@ A run ends when every agent has used its activation budget or when its time limi
 - no agent starts another model turn or another activation.
 *Why:* a run must end in a known state, and an effect applied after the end would change a world that was already measured.
 
+
+#### FR-CLOCK-03: A calendar, clock segments and hours
+A scenario's configuration may declare a `[calendar]`: its `start` (`"day <n> <weekday> HH:MM"`, the world's day number, weekday and time when the agents can start) and its `[[calendar.segments]]`, in order, each with its `scale` (world seconds per second of the run) and, for every segment but the last, its `until` (`"day <n> HH:MM"`, the world time at which it ends and the next begins). The world's time at any moment of the run follows from these, segment by segment: one run second in a segment is `scale` world seconds. Days follow each other at midnight and weekdays follow the week.
+
+**What the engine gives.** A sensor's read, an effector's action and a component's cycle are given the world's time with the time since the run started: its day number, weekday and time to the second. A tool's or a component action's duration may be given as world time; it then takes the run time that this world time spans from the moment it starts, segment by segment, so the same duration takes less run time in a slower segment. A duration in run time stays as it is.
+
+**Hours.** The calendar may declare named weekly hours (`[calendar.hours.<name>]`, with `days`, a list of weekdays, and `from` and `to`, `"HH:MM"`). For any world time the engine says whether it is within a named set of hours, and when they next begin.
+
+**The workplace** keeps its `[day] start` and `time_scale` (FR-WORKPLACE-05): they declare a calendar of one segment, and every result the workplace gives stays as before. A workplace configuration with both those keys and a `[calendar]` is refused.
+
+**Refusals**, before any model call, with an error that names the key: a `start` or an `until` that does not follow its format; a weekday that is not one of the seven English names; a day number below 1; a `scale` that is not a positive number; an `until` at or before the start or the previous segment's `until`; a segment without `until` that is not the last; no segment; hours whose `from` is not before their `to`, or whose `days` is empty or names an unknown weekday.
+
+**Recorded.** The inventory gives the calendar's start, each segment with its scale and the run time it takes (the last: "until the run ends"), and each named set of hours.
+*Why:* an event prepared over weeks and run in a day needs one world clock with different paces, as long waits and a busy day do not fit one scale. Thinking takes world time like any act, so each segment's scale sets how much the world moves while an agent decides. Hours are when the world's parties answer; declaring them once keeps every party's rules on the same calendar.
 #### FR-METRIC-01: Generic metrics for every run
 At the end of every run the core reports, per agent and in total:
 - activations and model turns;
