@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { Given, Then, When } from "@cucumber/cucumber";
 import { type JsonObject, getCurrentTools } from "@earendil-works/pi-ai";
+import type { WorldDuration } from "../../src/engine/calendar.ts";
 import { type Agent, run } from "../../src/engine/run.ts";
 import { type ScriptedAnswer, ScriptedModel } from "../../src/engine/scripted-model.ts";
 import { type Configuration, type LoadedScenario, type Scenario, calendarOf } from "../../src/engine/scenario.ts";
@@ -15,6 +16,12 @@ export function fixtureTool(kind: string, name: string) {
   assert.ok(tool !== undefined, `the test world declares no tool "${name}"`);
   assert.equal(tool.kind, kind);
   return tool;
+}
+
+/** A test world's tool's duration, which these steps give in run time: a duration in world time is the calendar's (FR-CLOCK-03). */
+export function inRunMs(duration: number | WorldDuration): number {
+  if (typeof duration !== "number") assert.fail(`the tool's duration is ${duration.worldSeconds} world seconds, not in run time`);
+  return duration;
 }
 
 /** Makes the test world's tool of a kind and a name take this long, for every call and in any state. */

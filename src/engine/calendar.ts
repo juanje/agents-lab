@@ -15,6 +15,11 @@ export interface WorldTime {
   seconds: number;
 }
 
+/** A duration in the world's time (FR-CLOCK-03), in world seconds: it takes the run time they span from when it starts. */
+export interface WorldDuration {
+  worldSeconds: number;
+}
+
 /**
  * A stretch of the world's time at one scale, in world seconds per second of the run, that ends where its `until` is, in
  * world seconds since day 1's midnight; the last segment has none and lasts until the run ends.
@@ -75,4 +80,24 @@ function worldTimeOf({ weekdayOfDayOne }: Calendar, since: number): WorldTime {
   const day = Math.floor(whole / DAY_SECONDS) + 1;
   const weekday = WEEKDAYS[(((weekdayOfDayOne + day - 1) % 7) + 7) % 7];
   return { day, weekday, seconds: whole % DAY_SECONDS };
+}
+
+/**
+ * The run milliseconds a duration in world time takes from a moment of the run: the run time those world seconds span from
+ * there, segment by segment.
+ */
+export function runMsFor(calendar: Calendar, fromMs: number, worldSeconds: number): number {
+  return runMsAt(calendar, worldSecondsAt(calendar, fromMs) + worldSeconds) - fromMs;
+}
+
+/** The moment of the run, in milliseconds since it started, at which the world's time reaches world seconds since day 1's midnight. */
+function runMsAt({ start, segments }: Calendar, since: number): number {
+  let segmentStartMs = 0;
+  let segmentStart = start;
+  for (const { scale, until } of segments) {
+    if (until === undefined || since < until) return segmentStartMs + ((since - segmentStart) / scale) * 1000;
+    segmentStartMs += ((until - segmentStart) / scale) * 1000;
+    segmentStart = until;
+  }
+  throw new Error("the calendar's last segment ends, which only a segment that is not the last may do");
 }

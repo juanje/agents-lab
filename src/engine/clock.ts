@@ -1,5 +1,5 @@
 import { setTimeout as sleep } from "node:timers/promises";
-import { type Calendar, type WorldTime, worldTimeAt } from "./calendar.ts";
+import { type Calendar, type WorldDuration, type WorldTime, runMsFor, worldTimeAt } from "./calendar.ts";
 
 /**
  * Waits at least `ms` by performance.now(), the clock every time in a run is read from, or until `signal` aborts. A Node
@@ -29,6 +29,16 @@ export class RunClock {
 
   constructor(calendar?: Calendar) {
     this.#calendar = calendar;
+  }
+
+  /**
+   * The run milliseconds a duration takes from now: a duration in run time as it is, one in world time the run time it
+   * spans by the run's calendar; a run without one cannot take a duration in world time.
+   */
+  runMsOf(duration: number | WorldDuration): number {
+    if (typeof duration === "number") return duration;
+    if (this.#calendar === undefined) throw new Error(`a duration of ${duration.worldSeconds} world seconds was given in a run with no calendar`);
+    return runMsFor(this.#calendar, this.sinceStartMs(), duration.worldSeconds);
   }
 
   /** The world's time now, by the run's calendar; undefined for a run without one. */

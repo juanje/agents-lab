@@ -5,7 +5,7 @@ import { onlySensing } from "../../tests/fixtures/sensing.ts";
 import { SLOT_TAKEN, type Seen, type Slots, emptySlots, holder } from "../../tests/fixtures/slots.ts";
 import type { Context } from "../support/context.ts";
 import { turnsOf } from "./adapter.steps.ts";
-import { callOf, callThenEnd, fixtureTool, script, takeTime } from "./tool.steps.ts";
+import { callOf, callThenEnd, fixtureTool, inRunMs, script, takeTime } from "./tool.steps.ts";
 
 Given(
   "the sensor {string} takes no time and returns which slots are empty and which are held",
@@ -58,7 +58,7 @@ Then(
 export function landsWhileUnderWay(context: Context, agent: string, tool: string, slot: number, other: string, otherTool: string): void {
   const declared = context.tools.find((candidate) => candidate.name === tool);
   assert.ok(declared?.kind === "effector", `the test world declares no effector "${tool}"`);
-  const durationMs = declared.durationMs(context.world.state, { agent, arguments: { slot } });
+  const durationMs = inRunMs(declared.durationMs(context.world.state, { agent, arguments: { slot } }));
   assert.ok(durationMs > 0, `"${tool}" takes no time for a call to land in`);
   script(context, agent, callThenEnd(tool, slot, 0));
   // The other agent wakes halfway through this call, so its own call, which takes as long, starts before this one

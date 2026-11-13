@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { Given, Then } from "@cucumber/cucumber";
 import { SLOT_TAKEN, type Seen } from "../../tests/fixtures/slots.ts";
 import type { Context } from "../support/context.ts";
-import { callOf, callThenEnd, fixtureTool, returned, script, takeTime } from "./tool.steps.ts";
+import { callOf, callThenEnd, fixtureTool, inRunMs, returned, script, takeTime } from "./tool.steps.ts";
 
 Given(
   "the sensor {string} takes {int} milliseconds and returns which slots are empty and which are held",
@@ -34,7 +34,7 @@ Given(
   function (this: Context, agent: string, tool: string, slot: number, other: string, sensor: string) {
     const declared = this.tools.find((candidate) => candidate.name === sensor);
     assert.ok(declared?.kind === "sensor", `the test world declares no sensor "${sensor}"`);
-    const durationMs = declared.durationMs(this.world.state, { agent: other, arguments: {} });
+    const durationMs = inRunMs(declared.durationMs(this.world.state, { agent: other, arguments: {} }));
     assert.ok(durationMs > 0, `"${sensor}" takes no time for a call to land in`);
     // Both agents wake at once, and the other agent's call starts as its first turn ends at once: this call lands halfway
     // through it. The step that checks the result checks that it did.

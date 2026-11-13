@@ -799,7 +799,7 @@ async function perform<State>(
   const sensing = sensings.last(call.agent);
   const lastBy = (sensor: string) => sensings.lastBy(call.agent, sensor);
   const targetAsSensed = tool.kind === "effector" ? tool.readTarget(sensing, call, world.state, lastBy) : undefined;
-  const durationMs = tool.durationMs(world.state, call);
+  const durationMs = clock.runMsOf(tool.durationMs(world.state, call));
   if (tool.kind === "effector" && tool.start !== undefined && (tool.start.appliesTo?.(world.state, call) ?? true)) {
     started(start(world, tool.start, call, changes));
   }

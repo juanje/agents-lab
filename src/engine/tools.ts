@@ -1,4 +1,4 @@
-import type { WorldTime } from "./calendar.ts";
+import type { WorldDuration, WorldTime } from "./calendar.ts";
 import type { Position } from "./grid.ts";
 import type { Sensing } from "./sensings.ts";
 import type { Stimulus } from "./stimuli.ts";
@@ -21,10 +21,11 @@ interface Declared<State> {
   description: string;
   parameters: object;
   /**
-   * How long a call takes, in milliseconds, before a sensor reads the world or an effector's effect is checked and
-   * applied, from the call's arguments, the agent that makes it and the state as the call starts (FR-TOOL-03, FR-TOOL-04).
+   * How long a call takes, in milliseconds of the run or as a duration in world time (FR-CLOCK-03), before a sensor reads
+   * the world or an effector's effect is checked and applied, from the call's arguments, the agent that makes it and the
+   * state as the call starts (FR-TOOL-03, FR-TOOL-04).
    */
-  durationMs(state: State, call: AgentCall): number;
+  durationMs(state: State, call: AgentCall): number | WorldDuration;
 }
 
 /** A tool that returns part of the world, as seen from where the agent is, and changes nothing. */

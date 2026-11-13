@@ -5,7 +5,7 @@ import type { Effector } from "../../src/engine/tools.ts";
 import { walkTool } from "../../tests/fixtures/grid-world.ts";
 import type { Context } from "../support/context.ts";
 import { stateAt } from "./acting.steps.ts";
-import { callOf, callWithThenEnd, script } from "./tool.steps.ts";
+import { callOf, callWithThenEnd, inRunMs, script } from "./tool.steps.ts";
 
 Given(
   "a test grid world {int} cells wide and {int} cells high, with a capacity of {int} per cell",
@@ -60,10 +60,10 @@ Given(
     const theirs = gridEffector(this, otherTool);
     // Each call's duration as it would start on the grid as set up: this agent's walk is the shorter, so it wakes as
     // much after the other's starts as it lands before the other's ends. The check below makes sure it did.
-    const mineMs = mine.durationMs(this.grid, { agent, arguments: { x, y } });
+    const mineMs = inRunMs(mine.durationMs(this.grid, { agent, arguments: { x, y } }));
     const otherCall = this.scripts.get(other)?.[0]?.toolCalls?.[0];
     assert.ok(otherCall !== undefined, `agent "${other}" calls nothing for this call to land during`);
-    const theirsMs = theirs.durationMs(this.grid, { agent: other, arguments: otherCall.arguments });
+    const theirsMs = inRunMs(theirs.durationMs(this.grid, { agent: other, arguments: otherCall.arguments }));
     assert.ok(mineMs < theirsMs, `agent "${agent}"'s "${tool}" takes ${mineMs} ms, no less than agent "${other}"'s ${theirsMs} ms`);
     script(this, agent, callWithThenEnd(tool, { x, y }, 0));
     this.rhythms.set(agent, () => (theirsMs - mineMs) / 2);
