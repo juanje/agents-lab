@@ -9,7 +9,7 @@ import { MailMedium, mailTools } from "./mail.ts";
 import { ParallelismLimit } from "./parallelism.ts";
 import { type ParticipantSettings, Participants } from "./participants.ts";
 import { PhoneExchange, phoneTools } from "./phone.ts";
-import { MONEY_TOOLS, MoneyBook, type MoneySettings, moneyTools, moneyToolsOf } from "./money.ts";
+import { INVOICE_NOTICE, MONEY_TOOLS, MoneyBook, type MoneySettings, moneyTools, moneyToolsOf } from "./money.ts";
 import { type WorldTime, hoursAt } from "./calendar.ts";
 import type { Tool } from "./tools.ts";
 import { Random } from "./random.ts";
@@ -172,7 +172,7 @@ export const PROVIDER_DEFAULTS = "the provider's defaults";
  * sampling settings the sessions use, or null.
  */
 async function runAgents<State>(
-  { world, scenario, systemPrompts, rhythms, components, calendar, mail, phone, money, participants = [], variant }: LoadedScenario<State>,
+  { world, scenario, systemPrompts, rhythms, components, calendar, mail, phone, money, participants = [], variant, channels }: LoadedScenario<State>,
   agents: readonly Agent[],
   seed: number,
   settings: RunSettings,
@@ -255,7 +255,8 @@ async function runAgents<State>(
     phone === undefined ? undefined : new PhoneExchange({ world, ...phone, clock, runEnd: runEnd.signal, changes, stimuli, record: (line) => recorder.record(line) });
   exchange?.start();
   // The money's book writes each money event as the world applies it (FR-MONEY-01).
-  const book = money === undefined ? undefined : new MoneyBook({ world, ...money, clock, record: (line) => recorder.record(line) });
+  const notices = channels.some(({ name }) => name === INVOICE_NOTICE) ? { notices: stimuli } : {};
+  const book = money === undefined ? undefined : new MoneyBook({ world, ...money, clock, record: (line) => recorder.record(line), ...notices });
   book?.start();
   // A participant's stimuli are held by its hours and reply delay, and its rule set woken by them (FR-PARTICIPANT-01).
   const parties = new Participants({

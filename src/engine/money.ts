@@ -1,5 +1,6 @@
 import type { TomlTable, TomlValue } from "smol-toml";
 import type { Calendar, WorldTime } from "./calendar.ts";
+import type { Stimuli } from "./stimuli.ts";
 import type { RunClock } from "./clock.ts";
 import type { ParticipantSettings } from "./participants.ts";
 import type { AgentCall, Effector, Refusal, Sensor, Tool } from "./tools.ts";
@@ -322,7 +323,12 @@ export interface MoneyRun<State> {
   settings: MoneySettings;
   clock: RunClock;
   record(line: MoneyLine): void;
+  /** The run's stimuli, given when its scenario declares the channel invoice_notice (FR-CONGRESS-05). */
+  notices?: Stimuli;
 }
+
+/** The channel by which an invoice's recipient learns of it, when its scenario declares it: `{from}` and `{for}` fill its text. */
+export const INVOICE_NOTICE = "invoice_notice";
 
 /** The money's book in a run (FR-MONEY-01): it writes each money event as the world applies it, and each account's summary as the run ends. */
 export class MoneyBook<State> {
@@ -334,10 +340,14 @@ export class MoneyBook<State> {
 
   /** Watches the world from now on for money events. */
   start(): void {
-    const { world, keeper, clock, record } = this.#run;
+    const { world, keeper, clock, record, notices } = this.#run;
     world.watch((before, after) => {
       const seen = keeper.of(before).events.length;
-      for (const event of keeper.of(after).events.slice(seen)) record({ type: "money", ...event, atMs: performance.now(), worldTime: clock.worldTime() as WorldTime });
+      for (const event of keeper.of(after).events.slice(seen)) {
+        record({ type: "money", ...event, atMs: performance.now(), worldTime: clock.worldTime() as WorldTime });
+        // An invoice reaches its recipient as a message does, from its issuer (FR-CONGRESS-05).
+        if (event.kind === "invoice") notices?.deliver(String(event.to), INVOICE_NOTICE, { from: String(event.from), for: String(event.for) }, { source: String(event.from) });
+      }
     });
   }
 
