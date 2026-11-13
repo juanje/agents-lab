@@ -38,7 +38,7 @@ describe("hoursAt", () => {
     segments: [{ scale: 600 }],
     hours: { office: { days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"], from: "09:00", to: "18:00" } },
   });
-  const nextMonday = { day: 4, weekday: "Monday", seconds: at(9, 0) };
+  const nextMonday = { day: 4, weekday: "Monday", seconds: at(9, 0) } as const;
 
   it("is within the hours from their start, up to and not at their end, on their days", () => {
     expect(hoursAt(office, "office", { day: 1, weekday: "Friday", seconds: at(17, 30) })).toEqual({ within: true, next: nextMonday });
