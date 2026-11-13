@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { Given, Then, When } from "@cucumber/cucumber";
 import type { TomlTable } from "smol-toml";
-import type { WorldDuration, WorldTime } from "../../src/engine/calendar.ts";
+import * as calendars from "../../src/engine/calendar.ts";
+import type { Weekday, WorldDuration, WorldTime } from "../../src/engine/calendar.ts";
 import type { Sensor } from "../../src/engine/tools.ts";
 import { World } from "../../src/engine/world.ts";
 import type { Slots } from "../../tests/fixtures/slots.ts";
@@ -153,6 +154,39 @@ Then(
     assertTook(`in the second segment, the "${tool}" call`, endedMs - firstEndsMs, secondMs, withinMs);
   },
 );
+
+/** A world time to the second as the contract writes it, "day <n> <weekday> HH:MM:SS", read or written. */
+function worldTimeOf(text: string): WorldTime {
+  const [, day, weekday, hours, minutes, seconds] = /^day (\d+) (\w+) (\d{2}):(\d{2}):(\d{2})$/.exec(text.trim()) ?? [];
+  assert.ok(day !== undefined, `the steps do not read the world time "${text}"`);
+  return { day: Number(day), weekday: weekday as Weekday, seconds: Number(hours) * 3600 + Number(minutes) * 60 + Number(seconds) };
+}
+
+function toTheSecond(time: WorldTime): string {
+  return `${toTheMinute(time)}:${two(time.seconds % 60)}`;
+}
+
+/** What the engine answered about a set of hours at a world time, for the step that checks it. */
+const answers = new WeakMap<Context, { within: boolean; next: WorldTime }>();
+
+Given(
+  "the calendar declares the hours {string} on Monday, Tuesday, Wednesday, Thursday and Friday from {string} to {string}, with the calendar starting at {string}",
+  function (this: Context, name: string, from: string, to: string, start: string) {
+    assert.equal(calendarOf(this).start, start, "the calendar starts elsewhere");
+    calendarOf(this).hours = { [name]: { days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"], from, to } };
+  },
+);
+
+When("the engine is asked about {string} at {string}", function (this: Context, name: string, time: string) {
+  // Through the module, so a missing answer fails this step rather than every step's import.
+  answers.set(this, calendars.hoursAt(calendars.readCalendar(calendarOf(this)), name, worldTimeOf(time)));
+});
+
+Then("it answers within: {word}, next beginning at {string}", function (this: Context, within: string, next: string) {
+  const answer = answers.get(this);
+  assert.ok(answer !== undefined, "the engine was not asked");
+  assert.deepEqual({ within: answer.within, next: toTheSecond(answer.next) }, { within: within === "yes", next: toTheSecond(worldTimeOf(next)) });
+});
 
 When("the run is attempted", async function (this: Context) {
   try {

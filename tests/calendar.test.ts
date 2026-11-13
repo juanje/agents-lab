@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readCalendar, runMsFor, worldTimeAt } from "../src/engine/calendar.ts";
+import { hoursAt, readCalendar, runMsFor, worldTimeAt } from "../src/engine/calendar.ts";
 
 /** A calendar from Friday 17:00, at 600 world seconds per run second until 17:10, then at 300. */
 const twoSegments = readCalendar({
@@ -29,6 +29,33 @@ describe("worldTimeAt", () => {
     const sunday = readCalendar({ start: "day 1 Sunday 23:58", segments: [{ scale: 600 }] });
 
     expect(worldTimeAt(sunday, 350)).toEqual({ day: 2, weekday: "Monday", seconds: at(0, 1, 30) });
+  });
+});
+
+describe("hoursAt", () => {
+  const office = readCalendar({
+    start: "day 1 Friday 17:00",
+    segments: [{ scale: 600 }],
+    hours: { office: { days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"], from: "09:00", to: "18:00" } },
+  });
+  const nextMonday = { day: 4, weekday: "Monday", seconds: at(9, 0) };
+
+  it("is within the hours from their start, up to and not at their end, on their days", () => {
+    expect(hoursAt(office, "office", { day: 1, weekday: "Friday", seconds: at(17, 30) })).toEqual({ within: true, next: nextMonday });
+    expect(hoursAt(office, "office", { day: 1, weekday: "Friday", seconds: at(18, 0) })).toEqual({ within: false, next: nextMonday });
+    expect(hoursAt(office, "office", { day: 4, weekday: "Monday", seconds: at(8, 59) })).toEqual({ within: false, next: nextMonday });
+  });
+
+  it("is not within them on a day they do not name", () => {
+    expect(hoursAt(office, "office", { day: 2, weekday: "Saturday", seconds: at(10, 0) })).toEqual({ within: false, next: nextMonday });
+  });
+
+  it("gives as their next beginning the first after the time, so not one that begins at it", () => {
+    expect(hoursAt(office, "office", nextMonday)).toEqual({ within: true, next: { day: 5, weekday: "Tuesday", seconds: at(9, 0) } });
+  });
+
+  it("refuses hours the calendar does not declare, naming them", () => {
+    expect(() => hoursAt(office, "night", nextMonday)).toThrow('"night"');
   });
 });
 
