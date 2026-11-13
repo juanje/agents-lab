@@ -8,6 +8,7 @@ import type { ConditionInventory } from "./inventory.ts";
 import { JsonlFile } from "./jsonl.ts";
 import type { MailLine } from "./mail.ts";
 import type { Material } from "./materials.ts";
+import type { MoneyLine } from "./money.ts";
 import type { CallLine } from "./phone.ts";
 import type { Configuration, MetricValue } from "./scenario.ts";
 import type { Stimulus } from "./stimuli.ts";
@@ -64,6 +65,7 @@ export type LogLine =
   | { type: "metric_sample"; atMs: number; version: number; metrics: Record<string, MetricValue> }
   | MailLine
   | CallLine
+  | MoneyLine
   | ({ type: "variant" } & Readonly<Record<string, unknown>>)
   | { type: "participant_outcome"; participant: string; outcome: Readonly<Record<string, string | number | boolean>> }
   | { type: "run_stopped"; error: string };

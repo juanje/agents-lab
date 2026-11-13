@@ -4,6 +4,7 @@ import { type Calendar, readCalendar } from "./calendar.ts";
 import type { Component } from "./components.ts";
 import { MAIL_NOTICE, type MailKeeper, type MailSettings, mailTools, readMail, startingMail } from "./mail.ts";
 import { type ParticipantSettings, type RuleSet, readParticipants } from "./participants.ts";
+import { type MoneyKeeper, type MoneySettings, moneyTools, readMoney, startingMoney } from "./money.ts";
 import { PHONE_CHANNEL, type PhoneKeeper, type PhoneSettings, assertAnswering, phoneTools, readPhone, startingPhone } from "./phone.ts";
 import { type Material, type MaterialReference, type Materials, materialReference } from "./materials.ts";
 import { Random } from "./random.ts";
@@ -74,6 +75,8 @@ export interface Scenario<State> {
   ruleSets?: Readonly<Record<string, RuleSet>>;
   /** Where the state keeps the phone, for a scenario whose configuration may declare a [phone] (FR-PHONE-01). */
   phone?: PhoneKeeper<State>;
+  /** Where the state keeps the money, for a scenario whose configuration may declare [money] (FR-MONEY-01). */
+  money?: MoneyKeeper<State>;
   /**
    * A replica's variant, for a scenario that draws one (FR-CONGRESS-01): from the resolved configuration and the
    * replica's sequence for `variant`, what was drawn, which the run's log gives, and the configuration completed with it.
@@ -141,8 +144,16 @@ export interface LoadedScenario<State> {
   participants?: readonly ParticipantSettings[];
   /** The phone, for a configuration that declares a [phone]: its settings, and where the state keeps it (FR-PHONE-01). */
   phone?: LoadedPhone<State>;
+  /** The money, for a configuration that declares [money]: its settings, and where the state keeps it (FR-MONEY-01). */
+  money?: LoadedMoney<State>;
   /** What the replica's variant drew, for a scenario that draws one (FR-CONGRESS-01). */
   variant?: Readonly<Record<string, unknown>>;
+}
+
+/** A scenario's money as loaded: its configuration's settings, and where the scenario's state keeps it (FR-MONEY-01). */
+export interface LoadedMoney<State> {
+  settings: MoneySettings;
+  keeper: MoneyKeeper<State>;
 }
 
 /** A scenario's phone as loaded: its configuration's settings, and where the scenario's state keeps it (FR-PHONE-01). */
@@ -218,6 +229,7 @@ export function loadScenario<State>(
   const { calendar } = calendarOf(configuration);
   const declaredParticipants = isTable(configuration.participants ?? {}) ? Object.keys(configuration.participants ?? {}) : [];
   const phone = phoneOf(scenario, configuration, calendar, [...systemPrompts.keys(), ...declaredParticipants]);
+  const money = moneyOf(scenario, configuration, calendar, [...systemPrompts.keys(), ...declaredParticipants]);
   const mail = mailOf(scenario, configuration, calendar);
   const allChannels = [...channels, ...noticeChannels(mail), ...ringChannels(phone)];
   const participants = readParticipants(configuration.participants, {
@@ -225,6 +237,7 @@ export function loadScenario<State>(
       ...scenario.tools,
       ...(mail === undefined ? [] : mailTools(mail.settings, mail.keeper)),
       ...(phone === undefined ? [] : phoneTools({ ...phone, acts: {}, inHours: () => true })),
+      ...(money === undefined ? [] : moneyTools(money.settings, money.keeper)),
     ].map(({ name }) => name),
     channels: allChannels.map(({ name }) => name),
     ...(calendar === undefined ? {} : { calendar }),
@@ -242,7 +255,7 @@ export function loadScenario<State>(
   return {
     scenario,
     configuration,
-    world: new World(withStarting(initial, mail, phone)),
+    world: new World(withStarting(initial, mail, phone, money)),
     systemPrompts,
     channels: allChannels,
     firstStimuli,
@@ -253,14 +266,24 @@ export function loadScenario<State>(
     ...(calendar === undefined ? {} : { calendar }),
     ...(mail === undefined ? {} : { mail }),
     ...(phone === undefined ? {} : { phone }),
+    ...(money === undefined ? {} : { money }),
     ...(varied === undefined ? {} : { variant: varied.drawn }),
   };
 }
 
 /** The scenario's initial state with the mail and the phone at their start in it, for a configuration that declares them. */
-function withStarting<State>(initial: State, mail: LoadedMail<State> | undefined, phone: LoadedPhone<State> | undefined): State {
+function withStarting<State>(initial: State, mail: LoadedMail<State> | undefined, phone: LoadedPhone<State> | undefined, money: LoadedMoney<State> | undefined): State {
   const withMail = mail === undefined ? initial : mail.keeper.with(initial, startingMail(mail.settings));
-  return phone === undefined ? withMail : phone.keeper.with(withMail, startingPhone());
+  const withPhone = phone === undefined ? withMail : phone.keeper.with(withMail, startingPhone());
+  return money === undefined ? withPhone : money.keeper.with(withPhone, startingMoney(money.settings));
+}
+
+/** The money a configuration declares in its [money], if it declares any, kept where the scenario's state keeps it (FR-MONEY-01). */
+function moneyOf<State>(scenario: Scenario<State>, configuration: Configuration, calendar: Calendar | undefined, names: readonly string[]): LoadedMoney<State> | undefined {
+  if (configuration.money === undefined) return undefined;
+  if (scenario.money === undefined) throw new Error(`Scenario "${scenario.name}" keeps no money in its state, but its configuration declares [money]`);
+  const durations = isTable(configuration.durations ?? {}) ? ((configuration.durations ?? {}) as Readonly<Record<string, unknown>>) : {};
+  return { settings: readMoney(configuration.money, calendar, names, durations), keeper: scenario.money };
 }
 
 /**

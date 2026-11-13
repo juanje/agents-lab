@@ -4,6 +4,7 @@ import type { Component } from "./components.ts";
 import type { Compaction, Experiment, Limits, ThinkingLevel } from "./experiment.ts";
 import { MAIL_DURATIONS, type MailInventory, mailInventory, mailTools } from "./mail.ts";
 import type { ParticipantSettings } from "./participants.ts";
+import { MONEY_DURATIONS, type MoneyInventory, moneyInventory, moneyTools } from "./money.ts";
 import { PHONE_DURATIONS, type PhoneSettings, phoneInventory, phoneTools } from "./phone.ts";
 import { type LoadedScenario, type Scenario, loadScenario } from "./scenario.ts";
 import { Stimuli, type Stimulus } from "./stimuli.ts";
@@ -61,6 +62,8 @@ export interface ConditionInventory {
   participants?: ParticipantSettings[];
   /** The phone, for a condition whose configuration declares a [phone] (FR-PHONE-01). */
   phone?: PhoneSettings;
+  /** The money, for a condition whose configuration declares [money] (FR-MONEY-01). */
+  money?: MoneyInventory;
   /** What the scenario says of its world, for a scenario that says (FR-CONGRESS-01). */
   world?: Readonly<Record<string, unknown>>;
 }
@@ -117,7 +120,7 @@ export function inventory<State>(experiment: Experiment, scenario: Partial<Scena
 function conditionInventory<State>(
   { models, thinkingLevel, compaction, limits }: Experiment,
   condition: string,
-  { scenario, configuration, systemPrompts, channels, firstStimuli, materials, components, calendar, mail, phone, participants = [] }: LoadedScenario<State>,
+  { scenario, configuration, systemPrompts, channels, firstStimuli, materials, components, calendar, mail, phone, money, participants = [] }: LoadedScenario<State>,
 ): ConditionInventory {
   // Each agent's first wake, as a run's stimuli give it, without the rhythm's stimulus, which every wake starts with.
   const stimuli = new Stimuli(channels, undefined, firstStimuli);
@@ -125,7 +128,9 @@ function conditionInventory<State>(
   const mailToolsOf = mail === undefined ? [] : mailTools(mail.settings, mail.keeper);
   // So are the phone's, which describes theirs (FR-PHONE-01).
   const phoneToolsOf = phone === undefined ? [] : phoneTools({ ...phone, acts: mail?.settings.acts ?? {}, inHours: () => true });
-  const durationOf = (tool: string) => MAIL_DURATIONS[tool] ?? PHONE_DURATIONS[tool] ?? scenario.describeDuration(configuration, tool);
+  // So are the money's (FR-MONEY-01).
+  const moneyToolsOf = money === undefined ? [] : moneyTools(money.settings, money.keeper);
+  const durationOf = (tool: string) => MAIL_DURATIONS[tool] ?? PHONE_DURATIONS[tool] ?? MONEY_DURATIONS[tool] ?? scenario.describeDuration(configuration, tool);
   return {
     condition,
     agents: [...systemPrompts].map(([name, systemPrompt]) => ({
@@ -134,7 +139,7 @@ function conditionInventory<State>(
       systemPrompt,
       firstStimuli: stimuli.wake(name).slice(1),
     })),
-    tools: [...scenario.tools, ...mailToolsOf, ...phoneToolsOf].map((tool) => ({
+    tools: [...scenario.tools, ...mailToolsOf, ...phoneToolsOf, ...moneyToolsOf].map((tool) => ({
       name: tool.name,
       kind: tool.kind,
       description: tool.description,
@@ -164,6 +169,7 @@ function conditionInventory<State>(
     ...(mail === undefined ? {} : { mail: mailInventory(mail.settings) }),
     ...(participants.length === 0 ? {} : { participants: participants.map((participant) => ({ ...participant })) }),
     ...(phone === undefined ? {} : { phone: phoneInventory(phone.settings) }),
+    ...(money === undefined ? {} : { money: moneyInventory(money.settings, participants) }),
     ...(scenario.worldInventory === undefined ? {} : { world: scenario.worldInventory(configuration) }),
   };
 }
@@ -204,6 +210,7 @@ export function inventoryMarkdown({ experiment, scenario, conditions }: Inventor
       ...(condition.mail === undefined ? [] : [mailMarkdown(condition.mail)]),
       ...(condition.participants === undefined ? [] : [participantsMarkdown(condition.participants)]),
       ...(condition.phone === undefined ? [] : [phoneMarkdown(condition.phone)]),
+      ...(condition.money === undefined ? [] : [moneyMarkdown(condition.money)]),
       ...(condition.world === undefined ? [] : [`### World\n\n${fenced(JSON.stringify(condition.world, null, 2), "json")}`]),
     ].join("\n"),
   );
@@ -343,6 +350,16 @@ function mailMarkdown({ mailboxes, acts, deliveryMinutes, durations, notice }: M
     notice === undefined ? `- Notice: ${NONE}` : `- Notice from ${notice.source}: ${notice.text}`,
     "",
   ].join("\n");
+}
+
+/** The money, in Markdown: each account with its opening or that it is unlimited and its holder's money tools, and the discretionary limit. */
+function moneyMarkdown({ accounts, discretionaryLimit, tools }: MoneyInventory): string {
+  const listed = accounts.map((account) => {
+    const held = "unlimited" in account ? "unlimited" : `opening ${account.opening}`;
+    const given = tools[account.name] ?? [];
+    return `- ${account.name}: ${held}; tools ${given.length === 0 ? NONE : given.join(", ")}`;
+  });
+  return ["### Money\n", ...listed, `- discretionary_limit ${discretionaryLimit}`, ""].join("\n");
 }
 
 /** The phone, in Markdown: its lines, its durations as a configuration writes them, and its ring. */

@@ -9,6 +9,7 @@ import { MailMedium, mailTools } from "./mail.ts";
 import { ParallelismLimit } from "./parallelism.ts";
 import { type ParticipantSettings, Participants } from "./participants.ts";
 import { PhoneExchange, phoneTools } from "./phone.ts";
+import { MONEY_TOOLS, MoneyBook, type MoneySettings, moneyTools, moneyToolsOf } from "./money.ts";
 import { type WorldTime, hoursAt } from "./calendar.ts";
 import type { Tool } from "./tools.ts";
 import { Random } from "./random.ts";
@@ -171,7 +172,7 @@ export const PROVIDER_DEFAULTS = "the provider's defaults";
  * sampling settings the sessions use, or null.
  */
 async function runAgents<State>(
-  { world, scenario, systemPrompts, rhythms, components, calendar, mail, phone, participants = [], variant }: LoadedScenario<State>,
+  { world, scenario, systemPrompts, rhythms, components, calendar, mail, phone, money, participants = [], variant }: LoadedScenario<State>,
   agents: readonly Agent[],
   seed: number,
   settings: RunSettings,
@@ -223,12 +224,13 @@ async function runAgents<State>(
   const engineTools = [
     ...(mail === undefined ? [] : mailTools(mail.settings, mail.keeper)),
     ...(phone === undefined ? [] : phoneTools({ ...phone, acts: mail?.settings.acts ?? {}, inHours })),
+    ...(money === undefined ? [] : moneyTools(money.settings, money.keeper)),
   ];
   const slowedBy = scenario.slowedBy;
   const tools = [...scenario.tools, ...(slowedBy === undefined ? engineTools : engineTools.map((tool) => slowed(tool, slowedBy)))];
   const opening = await Promise.allSettled(
     agents.map((agent) =>
-      openSession(world, toolsOf(tools, participants, agent.name), agent, runtime, { ...sessionSettings, systemPrompt: systemPromptOf(systemPrompts, agent.name) }, parallelism, records, stimuli, sensings, changes).catch((error: unknown) => {
+      openSession(world, toolsOf(tools, participants, agent.name, money?.settings), agent, runtime, { ...sessionSettings, systemPrompt: systemPromptOf(systemPrompts, agent.name) }, parallelism, records, stimuli, sensings, changes).catch((error: unknown) => {
         throw failure(`the session of agent "${agent.name}" failed to open`, error);
       }),
     ),
@@ -252,6 +254,9 @@ async function runAgents<State>(
   const exchange =
     phone === undefined ? undefined : new PhoneExchange({ world, ...phone, clock, runEnd: runEnd.signal, changes, stimuli, record: (line) => recorder.record(line) });
   exchange?.start();
+  // The money's book writes each money event as the world applies it (FR-MONEY-01).
+  const book = money === undefined ? undefined : new MoneyBook({ world, ...money, clock, record: (line) => recorder.record(line) });
+  book?.start();
   // A participant's stimuli are held by its hours and reply delay, and its rule set woken by them (FR-PARTICIPANT-01).
   const parties = new Participants({
     world,
@@ -325,6 +330,8 @@ async function runAgents<State>(
   }
   // A call the run's end cut off has its line, as one that ended does (FR-PHONE-01).
   exchange?.cutOff();
+  // Each account's summary as the run ends (FR-MONEY-01).
+  book?.summarise();
   // Each participant decided by rules gives its outcome record as the run ends (FR-PARTICIPANT-01).
   for (const { participant, outcome } of parties.outcomes()) recorder.record({ type: "participant_outcome", participant, outcome });
   sample();
@@ -364,10 +371,15 @@ function slowed<State>(tool: Tool<State>, slowedBy: (state: State, agent: string
   };
 }
 
-/** The tools an agent's session offers: a participant decided by a model is offered only those it declares (FR-PARTICIPANT-01). */
-function toolsOf<State>(tools: readonly Tool<State>[], participants: readonly ParticipantSettings[], agent: string): readonly Tool<State>[] {
+/**
+ * The tools an agent's session offers: a participant decided by a model is offered only those it declares
+ * (FR-PARTICIPANT-01); any other agent, of the money tools, only those its account gives it (FR-MONEY-01).
+ */
+function toolsOf<State>(tools: readonly Tool<State>[], participants: readonly ParticipantSettings[], agent: string, money: MoneySettings | undefined): readonly Tool<State>[] {
   const participant = participants.find(({ name }) => name === agent);
-  return participant === undefined ? tools : tools.filter(({ name }) => participant.tools.includes(name));
+  if (participant !== undefined) return tools.filter(({ name }) => participant.tools.includes(name));
+  const given = money === undefined ? [] : moneyToolsOf(money, participants, agent);
+  return tools.filter(({ name }) => !(MONEY_TOOLS as readonly string[]).includes(name) || given.includes(name));
 }
 
 /** The rhythm the loaded scenario gives an agent. */
