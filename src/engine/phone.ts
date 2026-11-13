@@ -135,6 +135,9 @@ interface Answered {
   text?: string;
 }
 
+/** How long a call to a line that is not free takes to fail as busy, in world minutes (FR-CONGRESS-07). */
+const BUSY_MINUTES = 1;
+
 /** Whether a call keeps a party's line busy: its caller's until it ends, its callee's while it rings or is connected. */
 function occupies(call: PhoneCall, party: string): boolean {
   if (call.status === "ended") return false;
@@ -357,7 +360,7 @@ export class PhoneExchange<State> {
     return moments;
   }
 
-  /** A call placed: its callee hears the ring at once, not held for a reply delay, when it rings; either way its ring_minutes start. */
+  /** A call placed: its callee hears the ring at once, not held for a reply delay, when it rings; either way its ring_minutes start, or a busy line's minute. */
   #placed(call: PhoneCall): void {
     const { settings, stimuli, clock } = this.#run;
     if (call.status === "ringing") {
@@ -365,7 +368,9 @@ export class PhoneExchange<State> {
       const values = { from: call.from, act: call.act, fields: fieldsText(call.fields).map((text) => `${text} `).join(""), text: call.text ?? "", call: call.id };
       stimuli.deliver(call.to, PHONE_CHANNEL, values, { source: call.from, held: false });
     }
-    const ringing = this.#ringOut(call.id, clock.runMsOf({ worldSeconds: settings.ringMinutes * 60 })).finally(() => this.#pending.delete(ringing));
+    // A line that is not free fails after a minute; any other call rings for its ring_minutes (FR-CONGRESS-07).
+    const minutes = call.failing === "busy" ? BUSY_MINUTES : settings.ringMinutes;
+    const ringing = this.#ringOut(call.id, clock.runMsOf({ worldSeconds: minutes * 60 })).finally(() => this.#pending.delete(ringing));
     this.#pending.add(ringing);
   }
 
