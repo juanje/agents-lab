@@ -758,6 +758,10 @@ export const speakerRules: RuleSet = {
       claim: 0,
     };
     let invitation: Fields = {};
+    /** Its answer to each session's invitation, by the session, with the offer it answered (FR-CONGRESS-09). */
+    const sessions = new Map<string, { offer: Fields; answer: string }>();
+    /** Whether it would accept, drawn once, the first time it needs it (FR-CONGRESS-09). */
+    let wouldAccept: boolean | undefined;
     /** The fee it agreed to, and whether it has committed it. */
     let agreedFee = 0;
     let committed = false;
@@ -775,39 +779,53 @@ export const speakerRules: RuleSet = {
       return true;
     };
 
-    /** Its answer to an invitation, or to its condition's answer, as it records it. */
+    /** Its answer to a session's invitation, or to its condition's answer, as it records it; an acceptance agrees to the fee offered. */
     const answering = (act: string, fields: Fields = {}): Answer => {
       record.answer = act;
+      const key = String(invitation.session);
+      sessions.set(key, { offer: invitation, answer: act });
       if (act === "accept") agreedFee = Number(invitation.fee ?? 0) > 0 ? Number(invitation.fee) : 0;
       return { act, fields: { session: invitation.session as number, ...fields } };
     };
+
+    /** Whether any session's invitation has this answer. */
+    const anyAnswered = (answer: string) => [...sessions.values()].some((session) => session.answer === answer);
 
     const answer = ({ act, fields }: Received): Answer | undefined => {
       if (speaker.partner === true && !PARTNER_ACTS.includes(act)) return { act: "not_available", fields: { what: act } };
       switch (act) {
         case "invite": {
+          // A second invitation to a session it has answered changes nothing (FR-CONGRESS-09).
+          if (sessions.has(String(fields.session))) return undefined;
           invitation = fields;
           record.invitation = JSON.stringify(fields);
           if (speaker.partner === true) return answering("accept");
           // A constraint is hard, whatever the condition (FR-CONGRESS-07).
           if (speaker.available !== true || breaksConstraint(fields.time)) return answering("decline");
-          if (random.next() < 1 - (speaker.acceptance ?? 1)) return answering("decline");
+          // Whether it would accept is drawn once, and every later invitation reuses it (FR-CONGRESS-09).
+          wouldAccept ??= !(random.next() < 1 - (speaker.acceptance ?? 1));
+          if (!wouldAccept) return answering("decline");
           if (speaker.condition !== undefined && !meetsCondition(fields)) return answering("accept_if", { condition: speaker.condition });
           return answering("accept");
         }
         case "accept_condition":
         case "decline_condition": {
-          if (record.answer !== "accept_if") return { act: "not_available", fields: { what: act } };
+          // The session it answered accept_if, the one named when the message names one, otherwise the latest.
+          const pending = [...sessions.entries()].filter(([key, session]) => session.answer === "accept_if" && (fields.session === undefined || key === String(fields.session))).at(-1);
+          if (pending === undefined) return { act: "not_available", fields: { what: act } };
+          invitation = pending[1].offer;
           if (act === "decline_condition") return answering("decline");
+          // The condition is checked on the invitation's offer as accept_condition updates it (FR-CONGRESS-09).
+          const offer = { ...invitation, ...fields, session: invitation.session as number };
+          if (!meetsCondition(offer)) return answering("accept_if", { condition: speaker.condition as string });
+          invitation = offer;
           record.condition_met = true;
-          const answered = answering("accept");
-          if (speaker.condition === "fee") agreedFee = fee;
-          return answered;
+          return answering("accept");
         }
         case "confirm":
         case "change": {
           // Only a speaker who accepted takes a confirmation; the partner's accepted the session the board gave it (FR-CONGRESS-07).
-          if (speaker.partner !== true && record.answer !== "accept") return { act: "not_available", fields: { what: "acceptance" } };
+          if (speaker.partner !== true && !anyAnswered("accept")) return { act: "not_available", fields: { what: "acceptance" } };
           if (fields.time !== undefined) record.believes_time = String(fields.time);
           if (fields.room !== undefined) record.believes_room = String(fields.room);
           const first = !acknowledged;
@@ -823,9 +841,10 @@ export const speakerRules: RuleSet = {
           };
         }
         case "withdraw_invitation": {
-          const hadAccepted = record.answer === "accept";
+          const hadAccepted = anyAnswered("accept");
           record.broken_agreement = hadAccepted;
           record.answer = "withdrawn";
+          for (const session of sessions.values()) session.answer = "withdrawn";
           return {
             act: "withdrawn",
             fields: {},
@@ -877,10 +896,11 @@ export const speakerRules: RuleSet = {
         if (roomless) yield* tell("no_room");
         yield* party.handle(answer, speaker.pick_up ?? 1, random);
         // A condition not met by day 19 makes it withdraw.
-        const pending = record.answer === "accept_if";
+        const pending = anyAnswered("accept_if");
         if (pending) yield* party.clock();
         if (pending && party.now >= WITHDRAW_MINUTES) {
           record.answer = "withdraw";
+          for (const session of sessions.values()) if (session.answer === "accept_if") session.answer = "withdraw";
           yield* party.call("send_mail", { to: speaker.organiser, act: "withdraw", fields: { session: invitation.session as number, condition: speaker.condition as string } });
           continue;
         }

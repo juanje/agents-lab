@@ -395,22 +395,25 @@ const DRAWN_NAMES = ["topic", "target", "event_day", "funds", "directory"];
 
 /**
  * The acts each rule set takes, with the fields each requires, as the directory lists them (FR-CONGRESS-02, -04, -05,
- * -07): an act's optional fields are left out.
+ * -07); a field marked "?" is one the act may give, not one it requires.
  */
 const RULE_SET_ACTS: Readonly<Record<string, readonly string[]>> = {
-  venue: ["ask_quote (date, attendance)", "request_document (kind)", "hold (date)", "book (date, rooms, hours)", "accept_contract (contract)", "change_booking (rooms, hours)", "request_extra (item)", "accept_extra (item)", "cancel_booking", "accept_change (option)", "decline_change"],
+  venue: ["ask_quote (date, attendance)", "request_document (kind)", "hold (date)", "book (date, rooms, hours)", "accept_contract (contract)", "change_booking (rooms, hours)", "request_extra (item)", "accept_extra (item)", "cancel_booking", "accept_change (option?)", "decline_change"],
   board: ["submit_budget (costs, income, contingency, funds_requested)", "request_approval (amount, reason)", "report"],
   speaker: ["invite (session, time, fee, travel_paid)", "accept_condition", "decline_condition", "confirm (time, room, length, travel)", "change", "withdraw_invitation", "ask_slides (by)", "ask_panel (slot)", "ask_promote"],
   partner: ["confirm (time, room, length, travel)", "change", "ask_slides (by)"],
-  caterer: ["ask_quote (attendance, diets)", "order (counts, date, venue)", "final_numbers (counts)", "cancel_order"],
+  caterer: ["ask_quote (attendance, diets)", "order (counts, date, venue?)", "final_numbers (counts)", "cancel_order"],
   sponsor: ["ask_conditions", "accept_sponsorship (conditions)", "counter (conditions)", "send_attendee_list (list)", "send_evidence"],
   agency: ["ask_quote (date)", "book (date)", "cancel"],
 };
 
-/** An act as the table writes it, "<act> (<field>, …)", as its name and required fields. */
+/**
+ * An act as the table writes it, "<act> (<field>, …)", as its name and required fields; a field marked "?" is one it
+ * reads when given, not required: a price change's `accept_change` has no option, and an order may leave out its venue.
+ */
 function actOf(written: string): [string, string[]] {
   const [, act, fields = ""] = /^(\w+)(?: \((.*)\))?$/.exec(written) ?? [];
-  return [act, fields === "" ? [] : fields.split(", ")];
+  return [act, fields === "" ? [] : fields.split(", ").filter((field) => !field.endsWith("?"))];
 }
 
 /** The acts each party decided by a rule set the table lists takes, with their required fields (FR-CONGRESS-09). */
@@ -1074,10 +1077,15 @@ function hasCancelled(state: Congress, speaker: string): boolean {
   return mailed || state.phone.calls.some(({ from, to, act }) => from === speaker && to === ORGANISER && act === "cancel");
 }
 
-/** When a confirm from the organiser reached a speaker's mailbox, in world minutes; none when none has. */
+/**
+ * When a speaker was confirmed, in world minutes: it accepted a session and acknowledged its confirmation, as its
+ * acknowledgement reached the organiser's mailbox (FR-CONGRESS-09); none when it has not.
+ */
 function confirmedAt(state: Congress, speaker: string): number | undefined {
-  const confirm = (state.mail.mailboxes[speaker] ?? []).find(({ from, act }) => from === ORGANISER && act === "confirm");
-  return confirm === undefined ? undefined : minutesOfWorld(confirm.received);
+  const sent = (state.mail.mailboxes[ORGANISER] ?? []).filter(({ from }) => from === speaker);
+  if (!sent.some(({ act }) => act === "accept")) return undefined;
+  const acknowledged = sent.find(({ act }) => act === "acknowledged");
+  return acknowledged === undefined ? undefined : minutesOfWorld(acknowledged.received);
 }
 
 /** How long two days are after a speaker is confirmed when early_cancel found none confirmed at its time. */
@@ -1088,9 +1096,9 @@ const LOOK_AGAIN_MINUTES = 60;
 
 /**
  * A speaker's cancellation (FR-CONGRESS-04), a perturbation component: from its own sequence it draws its time (in its
- * window, or at its time) and an order of the speakers; at that time it takes the first speaker in that order whom a
- * confirm from the organiser has reached and who has not cancelled, and delivers it the illness on its own channel, not
- * held. early_cancel, finding none, waits for the next to be confirmed and delivers 2 days after its confirm reached it;
+ * window, or at its time) and an order of the speakers; at that time it takes the first speaker in that order who is
+ * confirmed (accepted and acknowledged) and has not cancelled, and delivers it the illness on its own channel, not
+ * held. early_cancel, finding none, waits for the next to be confirmed and delivers 2 days after it was confirmed;
  * late_cancel, finding none, ends.
  */
 function cancellation(declared: Perturbation, speakers: readonly string[], calendar: Calendar): Component<Congress> {
