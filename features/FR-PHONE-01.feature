@@ -26,7 +26,7 @@ Feature: Calls
     Given "ben"'s scripted turns call "call" to "desk" with the act "ask", then end
     And "ana"'s scripted turns wait 100 milliseconds, then call "call" to "desk" with the act "ask", then end
     When the run ends
-    Then "ana"'s "call" failed with the outcome "busy" 600 milliseconds into the run, within 30
+    Then "ana"'s "call" failed with the outcome "busy" 200 milliseconds into the run, within 30, one world minute after it started
     And "desk" received one ring only
 
   Scenario: A callee outside its hours gets no ring
