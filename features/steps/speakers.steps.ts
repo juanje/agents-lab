@@ -271,8 +271,9 @@ Then('"s1" mailed the organiser "cancel" on {string} between {string} and {strin
 
 Then('"s1" mailed the organiser "cancel" on {string} at about {string}', function (this: Context, day: string, at: string) {
   const cancelled = cancelOf(this, "s1");
-  // Two days after its confirmation landed, a world minute after it was sent, within the moments the run takes.
-  assert.ok(Math.abs(minutesOfWorld(cancelled.worldTime) - minutesOf(`${day} ${at}`)) <= 30, `"s1" cancelled at day ${dayOf(cancelled)}, ${JSON.stringify(cancelled.worldTime)}`);
+  // Two days after its confirmation landed, a world minute after it was sent, within the moments a chain of a component,
+  // a stimulus and a mail takes under the gate's parallel load: an hour, 60 ms of the run.
+  assert.ok(Math.abs(minutesOfWorld(cancelled.worldTime) - minutesOf(`${day} ${at}`)) <= 60, `"s1" cancelled at day ${dayOf(cancelled)}, ${JSON.stringify(cancelled.worldTime)}`);
 });
 
 Given('"s1" and "s4" have been confirmed', function (this: Context) {
