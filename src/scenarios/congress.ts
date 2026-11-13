@@ -272,8 +272,8 @@ function templatesOf(pools: TomlTable): Record<string, TomlTable[]> {
   return kinds;
 }
 
-/** Draws n templates of a pool, each once, from the replica's sequence. */
-function chooseFrom(templates: readonly TomlTable[], count: number, random: Random): TomlTable[] {
+/** Draws n of a pool's templates, or of any items, each once, in the order drawn, from the replica's sequence. */
+function chooseFrom<Item>(templates: readonly Item[], count: number, random: Random): Item[] {
   const left = [...templates];
   return Array.from({ length: count }, () => left.splice(Math.floor(random.next() * left.length), 1)[0]);
 }
@@ -384,8 +384,9 @@ function variant(configuration: Configuration, random: Random): { configuration:
     ...(phone === undefined ? {} : { phone: { ...phone, lines: [...((phone.lines ?? []) as string[]), ...names] } }),
     ...(money === undefined ? {} : { money: { ...money, accounts: { ...((money.accounts ?? {}) as TomlTable), ...accounts } } }),
   };
-  // The texts name what the replica drew, filled in before the run (FR-CONGRESS-08).
-  const filled = withDrawnTexts(completed, drawn, calendar, chosenOf, templates);
+  // The texts name what the replica drew, filled in before the run (FR-CONGRESS-08); the directory's order is the
+  // variant's last draw, so it gives the roles away no more than the seed does (FR-CONGRESS-09).
+  const filled = withDrawnTexts(completed, drawn, calendar, chosenOf, templates, random);
   return { configuration: filled, drawn: { ...drawn, ...(drawn.reference_price === undefined ? referencePrice(configuration, drawn.topic) : {}) } };
 }
 
@@ -430,16 +431,16 @@ function actsOf(participants: Readonly<Record<string, TomlTable>>): TomlTable {
 
 /**
  * The directory of the drawn parties (FR-CONGRESS-08): a line for each, with its id, its kind, whether it has a mailbox
- * and a line, and the acts its rule set takes with their required fields.
+ * and a line, and the acts its rule set takes with their required fields; in an order drawn from the replica's sequence (FR-CONGRESS-09).
  */
-function directoryOf(configuration: Configuration, chosenOf: Readonly<Record<string, TomlTable[]>>, templates: readonly TomlTable[]): string {
+function directoryOf(configuration: Configuration, chosenOf: Readonly<Record<string, TomlTable[]>>, templates: readonly TomlTable[], random: Random): string {
   const mailboxes = ((configuration.mail as TomlTable | undefined)?.mailboxes ?? []) as string[];
   const lines = ((configuration.phone as TomlTable | undefined)?.lines ?? []) as string[];
   const settings = (configuration.kinds ?? {}) as TomlTable;
   // The in-house caterers come with their venues, beside the drawn templates.
   const inHouse = templates.filter(({ kind, in_house_for: venue }) => kind === "caterer" && venue !== undefined).map(({ id }) => ({ id: id as string, kind: "caterer" }));
   const parties = [...Object.entries(chosenOf).flatMap(([kind, chosen]) => chosen.map(({ id }) => ({ id: id as string, kind }))), ...inHouse];
-  return parties
+  return chooseFrom(parties, parties.length, random)
     .map(({ id, kind }) => {
       const has = `with ${mailboxes.includes(id) ? "a mailbox" : "no mailbox"} and ${lines.includes(id) ? "a line" : "no line"}`;
       const acts = RULE_SET_ACTS[String((settings[kind] as TomlTable | undefined)?.rules)] ?? [];
@@ -453,7 +454,7 @@ function directoryOf(configuration: Configuration, chosenOf: Readonly<Record<str
  * {funds} and {directory}, and {{ and }} as braces; a name in braces that is none of these, or {funds} with no board
  * drawn, is refused, naming it and its text.
  */
-function withDrawnTexts(configuration: Configuration, drawn: Drawn, calendar: Calendar | undefined, chosenOf: Readonly<Record<string, TomlTable[]>>, templates: readonly TomlTable[]): Configuration {
+function withDrawnTexts(configuration: Configuration, drawn: Drawn, calendar: Calendar | undefined, chosenOf: Readonly<Record<string, TomlTable[]>>, templates: readonly TomlTable[], random: Random): Configuration {
   const day = configuration.event_day as number;
   const weekday = calendar === undefined ? undefined : WEEKDAYS[(((calendar.weekdayOfDayOne + day - 1) % 7) + 7) % 7];
   const board = chosenOf.board?.[0];
@@ -462,7 +463,7 @@ function withDrawnTexts(configuration: Configuration, drawn: Drawn, calendar: Ca
     target: () => String(drawn.attendance),
     event_day: () => `day ${day}${weekday === undefined ? "" : ` ${weekday}`}`,
     funds: () => String(board?.funds),
-    directory: () => directoryOf(configuration, chosenOf, templates),
+    directory: () => directoryOf(configuration, chosenOf, templates, random),
   };
   const texts = Object.fromEntries(
     TEXTS.filter((key) => typeof configuration[key] === "string").map((key) => {
