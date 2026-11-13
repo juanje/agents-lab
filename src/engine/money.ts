@@ -75,6 +75,15 @@ export interface Invoice {
   paid: boolean;
 }
 
+/**
+ * The money with an invoice issued, numbered after the others, and its event: as issue_invoice applies it, and as the
+ * world issues one from an account of its own (FR-CONGRESS-05).
+ */
+export function invoiced(money: Money, invoice: Omit<Invoice, "id" | "paid">): Money {
+  const issued: Invoice = { id: `i-${money.invoices.length + 1}`, ...invoice, paid: false };
+  return { ...money, invoices: [...money.invoices, issued], events: [...money.events, { kind: "invoice", from: issued.from, to: issued.to, amount: issued.amount, invoice: issued.id, due: issued.due, for: issued.for }] };
+}
+
 /** A commitment: its id, who recorded it, the account bound by it, its amount, what it is for, and whether it was released. */
 export interface Commitment {
   id: string;
@@ -191,10 +200,7 @@ export function moneyTools<State>(settings: MoneySettings, keeper: MoneyKeeper<S
       },
       action: acting(
         () => undefined,
-        (money, { agent, arguments: { to, amount, due, for: what } }) => {
-          const invoice: Invoice = { id: `i-${money.invoices.length + 1}`, from: agent, to: to as string, amount: amount as number, due: due as string, for: what as string, paid: false };
-          return { ...money, invoices: [...money.invoices, invoice], events: [...money.events, { kind: "invoice", from: agent, to: invoice.to, amount: invoice.amount, invoice: invoice.id, due: invoice.due, for: invoice.for }] };
-        },
+        (money, { agent, arguments: { to, amount, due, for: what } }) => invoiced(money, { from: agent, to: to as string, amount: amount as number, due: due as string, for: what as string }),
       ),
       texts: { success: "Invoice sent." },
     },

@@ -1,6 +1,7 @@
 import { type TomlTable, parse } from "smol-toml";
 import { type Calendar, type WorldTime, hoursAt, reachedAfterMs, readCalendar, worldTimeText } from "../engine/calendar.ts";
 import type { Mail } from "../engine/mail.ts";
+import { invoiced } from "../engine/money.ts";
 import type { Money } from "../engine/money.ts";
 import type { Phone } from "../engine/phone.ts";
 import { type Places, arrive, exits, inSight, layout, leave, put, where } from "../engine/places.ts";
@@ -49,7 +50,7 @@ type Place = "system" | "person";
 const MAX_WAIT_MINUTES = 1440;
 
 /** The organiser's durations, in world minutes, by tool, as `[durations]` gives them. */
-const DURATION_KEYS = ["check_time", "look", "write_note", "read_notes"] as const;
+const DURATION_KEYS = ["check_time", "look", "write_note", "read_notes", "travel_options", "book_travel", "similar_events"] as const;
 
 /** A room of a venue's interior: its id, seats and visible equipment. */
 interface Room {
@@ -104,6 +105,10 @@ export interface Congress {
   phone: Phone;
   /** The money, which the engine puts here as a run starts when the configuration declares [money] (FR-MONEY-01). */
   money: Money;
+  /** The travel material, each train's draw for selling out, and what was booked for whom (FR-CONGRESS-05). */
+  travel: { material: Travel; soldOutDraws: Record<string, number>; booked: { option: string; traveller: string; price: number }[] };
+  /** The similar congresses of the drawn topic (FR-CONGRESS-05). */
+  similar: { name: string; price: number; size: number }[];
 }
 
 /** A key of the congress that cannot be followed: an error that names it, its value and why. */
@@ -456,7 +461,7 @@ function worldOf(rules: unknown, id: string, configuration: Configuration, city:
 }
 
 /** The congress's world as a replica starts: the city's places, the chosen venues', the organiser in its place, no notes. */
-function initialState(configuration: Configuration): Congress {
+function initialState(configuration: Configuration, random: Random): Congress {
   const calendar = configuration.calendar === undefined ? undefined : readCalendar(configuration.calendar);
   const city = cityOf(configuration, calendar);
   const settings = settingsOf(configuration);
@@ -467,6 +472,7 @@ function initialState(configuration: Configuration): Congress {
   const start = configuration.organiser_place as string;
   if (!places.includes(start)) throw refused("organiser_place", start, "the city has no such place, or its venue was not chosen");
   if (calendar === undefined) throw new Error("The congress cannot be followed: its durations are world time, and the configuration declares no [calendar]");
+  const travel = travelOf(configuration, city);
   return {
     space: put(
       layout(
@@ -485,6 +491,9 @@ function initialState(configuration: Configuration): Congress {
     mail: { mailboxes: {}, inTransit: [] },
     phone: { calls: [] },
     money: { balances: {}, invoices: [], commitments: [], ceilings: {}, overruns: [], events: [] },
+    // Each train's draw for selling out comes from the travel's own sequence, the replica's initial state's.
+    travel: { material: travel, soldOutDraws: Object.fromEntries(travel.trains.map(({ id }) => [id, random.next()])), booked: [] },
+    similar: similarEvents(configuration, (configuration.drawn as unknown as Drawn | undefined)?.topic ?? "").map(({ name, price, size }) => ({ name, price, size })),
   };
 }
 
@@ -797,8 +806,105 @@ function components(configuration: Configuration): Component<Congress>[] {
   return declared.map((each) => (each.name === SPONSOR_PERTURBATION ? sponsorWithdrawal(each, calendar) : cancellation(each, speakers, calendar)));
 }
 
+/** How many days before its date a train's price starts to rise, and by how much it has risen on the day. */
+const PRICE_RISE_DAYS = 14;
+const PRICE_RISE = 0.8;
+
+/** How many days before its date a train may be sold out. */
+const SOLD_OUT_DAYS = 2;
+
+/** A train's price for a date, from the world's day: its base price, rising in the last two weeks. */
+function trainPrice(train: Train, date: number, today: number): number {
+  return Math.round(train.price * (1 + (PRICE_RISE * Math.max(0, PRICE_RISE_DAYS - (date - today))) / PRICE_RISE_DAYS));
+}
+
+/** Whether a train is sold out for a date on the world's day: in its last 2 days, with the material's probability. */
+function soldOut(state: Congress, train: Train, date: number, today: number): boolean {
+  return date - today <= SOLD_OUT_DAYS && (state.travel.soldOutDraws[train.id] ?? 1) < state.travel.material.sold_out_probability;
+}
+
+/** The rooms of a hotel left on a night, "<hotel> day <n>", after what was booked. */
+function roomsLeft(state: Congress, hotel: Hotel, option: string): number {
+  return hotel.rooms - state.travel.booked.filter((booking) => booking.option === option).length;
+}
+
+/** The day of a date "day <n>". */
+const dayOfDate = (date: unknown) => Number(/^day (\d+)$/.exec(String(date))?.[1]);
+
+/** "travel_options from date": the trains from a station arriving on a date, and the hotels with rooms the night before, as JSON. */
+const travelOptions: Sensor<Congress> = {
+  kind: "sensor",
+  name: "travel_options",
+  description: 'The trains from a station that arrive on a date ("day <n>"), with their times and prices, and the hotels near the venues with rooms left the night before, with their prices.',
+  parameters: { type: "object", properties: { from: { type: "string" }, date: { type: "string" } }, required: ["from", "date"] },
+  durationMs: (state) => ({ worldSeconds: state.settings.durations.travel_options * 60 }),
+  sense: (state, _agent, { from, date }, _sinceStartMs, world) => {
+    const day = dayOfDate(date);
+    const today = (world as WorldTime).day;
+    const night = `day ${day - 1}`;
+    return JSON.stringify({
+      trains: state.travel.material.trains
+        .filter((train) => train.from === from)
+        .map((train) => ({ id: train.id, option: `${train.id} day ${day}`, arrives: train.arrives, price: trainPrice(train, day, today), sold_out: soldOut(state, train, day, today) })),
+      hotels: state.travel.material.hotels.map((hotel) => ({ id: hotel.id, near: hotel.near, option: `${hotel.id} ${night}`, rooms_left: roomsLeft(state, hotel, `${hotel.id} ${night}`), price: hotel.price })),
+    });
+  },
+};
+
+/** An option no train or hotel of the travel has. */
+const NO_SUCH_OPTION = "no_such_option";
+/** A train sold out, or a hotel with no room left. */
+const SOLD_OUT = "sold_out";
+
+/** What a travel option books, "<train or hotel> day <n>", and its price on the world's day; undefined when there is no such option. */
+function optionOf(state: Congress, option: unknown, today: number): { price: number; full: boolean } | undefined {
+  const [, id, day] = /^(\S+) day (\d+)$/.exec(String(option)) ?? [];
+  const train = state.travel.material.trains.find((each) => each.id === id);
+  if (train !== undefined) return { price: trainPrice(train, Number(day), today), full: soldOut(state, train, Number(day), today) };
+  const hotel = state.travel.material.hotels.find((each) => each.id === id);
+  if (hotel !== undefined) return { price: hotel.price, full: roomsLeft(state, hotel, String(option)) <= 0 };
+  return undefined;
+}
+
+/** "book_travel option traveller": books a train or a hotel night for a traveller; the travel's account invoices the organiser for it. */
+const bookTravel: Effector<Congress> = {
+  kind: "effector",
+  name: "book_travel",
+  description: 'Book a travel option, as travel_options gives it ("t1 day 26"), for a traveller; the travel invoices you for it.',
+  parameters: { type: "object", properties: { option: { type: "string" }, traveller: { type: "string" } }, required: ["option", "traveller"] },
+  durationMs: (state) => ({ worldSeconds: state.settings.durations.book_travel * 60 }),
+  action: {
+    precondition: (state, { arguments: { option }, world }) => {
+      const found = optionOf(state, option, (world as WorldTime).day);
+      if (found === undefined) return { holds: false, reason: NO_SUCH_OPTION };
+      return found.full ? { holds: false, reason: SOLD_OUT } : { holds: true };
+    },
+    effect: (state, { agent, arguments: { option, traveller }, world }) => {
+      const today = (world as WorldTime).day;
+      const { price } = optionOf(state, option, today) as { price: number };
+      return {
+        ...state,
+        travel: { ...state.travel, booked: [...state.travel.booked, { option: String(option), traveller: String(traveller), price }] },
+        money: invoiced(state.money, { from: TRAVEL, to: agent, amount: price, due: `day ${today}`, for: `${String(option)} ${String(traveller)}` }),
+      };
+    },
+  },
+  texts: { success: "Booked; the travel invoices you for it.", [NO_SUCH_OPTION]: "no_such_option: there is no such travel option", [SOLD_OUT]: "sold_out: that option is sold out" },
+  readTarget: () => "not_sensed",
+};
+
+/** "similar_events": the similar congresses of the topic, with their prices and sizes, as JSON. */
+const similarEventsTool: Sensor<Congress> = {
+  kind: "sensor",
+  name: "similar_events",
+  description: "The similar congresses of your congress's topic, with their ticket prices and sizes.",
+  parameters: { type: "object", properties: {} },
+  durationMs: (state) => ({ worldSeconds: state.settings.durations.similar_events * 60 }),
+  sense: (state) => JSON.stringify(state.similar),
+};
+
 /** The organiser's own tools, besides the mail's and the phone's. */
-const TOOLS: readonly Tool<Congress>[] = [checkTime, look, go, writeNote, readNotes, wait];
+const TOOLS: readonly Tool<Congress>[] = [checkTime, look, go, writeNote, readNotes, wait, travelOptions, bookTravel, similarEventsTool];
 
 /** The configuration's placement; one that names a text the congress does not have, or no place, is refused, naming it. */
 function placementOf(configuration: Configuration): Readonly<Record<string, Place>> {
@@ -829,6 +935,9 @@ function describeDuration(configuration: Configuration, tool: string): string {
     write_note: `${durations.write_note} world minutes.`,
     read_notes: `${durations.read_notes} world minutes.`,
     wait: `The minutes it is given, in world minutes, up to ${String(configuration.wait_max_minutes)}; it ends early at a stimulus or when someone comes into sight.`,
+    travel_options: `${durations.travel_options} world minutes.`,
+    book_travel: `${durations.book_travel} world minutes.`,
+    similar_events: `${durations.similar_events} world minutes.`,
   };
   if (!Object.hasOwn(described, tool)) throw new Error(`The congress has no tool "${tool}"`);
   return described[tool];
@@ -947,6 +1056,9 @@ const BASE_CONFIGURATION = [
   "look = 0",
   "write_note = 0",
   "read_notes = 0",
+  "travel_options = 0",
+  "book_travel = 0",
+  "similar_events = 0",
   "[rhythm]",
   'source = "rhythm"',
   'text = "You wake up."',
