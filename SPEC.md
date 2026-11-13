@@ -103,7 +103,7 @@ Experiments are written outside this repository, in the experiment language (FR-
 2. FR-MESSAGE-01 (structured messages between participants); its contract also checks that an effector's action is given the world's time (FR-CLOCK-03)
 3. FR-PARTICIPANT-01 (participants that perceive and act only through their tools)
 4. FR-PHONE-01 (calls)
-5. FR-CONGRESS-01 (the congress world from materials), not written
+5. FR-CONGRESS-01 (the congress world from materials)
 6. FR-MONEY-01 (ledger, invoices, approvals), not written
 7. FR-CONGRESS-02 (the actors' rules), not written
 8. FR-POPULATION-01 (attendees and the ticket page), not written
@@ -343,6 +343,31 @@ A scenario may declare, from its configuration, a phone (`[phone]`) and which ag
 
 **Refusals**, before any model call, with an error that names the key: `[phone]` without a `[calendar]`; a line for a name that is no agent or participant; `ring_minutes` or `call_minutes` that is not a positive number; a negative `call_words_per_minute`; a `ring` text that names a placeholder other than those above; a participant with a line that takes calls (`phone` among its channels) without `answer_call` among its tools.
 *Why:* some things are settled at once and some news comes by voice: a speaker who falls ill phones, an organiser who needs an answer today calls. A call is fast but needs the other side free, in its hours and able to pick up, and it ties both parties up while it lasts; mail is slower and always gets through. Both carry the same acts, so a party's rules answer either.
+
+#### FR-CONGRESS-01: The congress world from materials
+The congress scenario is in the scenario library. It has one agent, `organiser`, and builds its world from TOML texts its configuration gives, usually as materials (FR-EXPERIMENT-04):
+- **`city`:** the places and passages (FR-SPACE-03) of the city and of each venue's interior. A passage's length is in world minutes and it has a `step_free` attribute: `true`, or a text that says what is in the way (`"3 steps"`). A room has its `seats` and its visible `equipment`. Each venue names its entrance, its interior places and the calendar hours (FR-CLOCK-03) during which its interior is open; the organiser starts in `office`.
+- **`pools`:** templates for the parties a replica can have (venues, speakers, caterers, sponsors and any other kind), each with an id and its parameters, and the topics.
+- **`draw`:** how a replica's variant is drawn: the topic, the target attendance (two numbers) and, for each kind, how many templates are chosen from its pool.
+
+**The variant.** Each replica draws its variant from a sequence derived from its seed and `variant`, so every condition of a replica meets the same congress, and a condition's texts change nothing in it. The run's log gets a `variant` line with the topic, the target attendance and each kind's chosen ids. Each chosen template becomes a participant (FR-PARTICIPANT-01) named by its id, with a mailbox and a line when the configuration has mail and a phone, and with the rule set, tools, channels, hours and `reply_minutes` the configuration gives for its kind (`[kinds.<kind>]`); the rule sets of the congress's parties come with FR-CONGRESS-02. A venue's places exist only when that venue is chosen.
+
+**The organiser's tools**, besides mail and the phone, each with its duration in world minutes from `[durations]`:
+- **`check_time`** (sensor): the world's time as `day <n> <weekday> HH:MM`.
+- **`look`** (sensor): as JSON, the organiser's place; its exits, each with its passage's length and `step_free`; each room's seats and visible equipment; the people in it and in sight (FR-SPACE-03). In a venue whose interior is closed, it says so and lists no interior exit.
+- **`go`** `place` (effector): FR-SPACE-03, the passage's length in world minutes; followed by who is in sight (FR-WORKPLACE-08). Into a venue's interior while it is closed it fails as `closed`, takes no time and changes nothing; `invalid_target` and `already_there` as in the workplace.
+- **`write_note`** `title`, `text` (effector): keeps a note in the organiser's notes, replacing one with the same title.
+- **`read_notes`** `title?` (sensor): every note's title, or one note's text; an unknown title fails as `no_such_note`.
+- **`wait`** `minutes` (effector, FR-WORKPLACE-07): that many world minutes, from 1 to `wait_max_minutes` (1440 at most), interrupted by any stimulus or by a person who comes into sight.
+
+Away from `office`, the mail tools and the ticket page's tools (when they exist) take `away_factor` times their duration.
+
+**The prompt.** The configuration's texts `task`, `limits`, `restrictions`, `knowledge` and `guidance` (the condition's text: instructions, heuristics, character or none), each usually a material, are joined in that order, skipping empty ones, with a blank line between them; `[placement]` puts each in the system prompt or the person's first message, as in the workplace (FR-WORKPLACE-03).
+
+**Recorded.** The inventory gives the places and passages with their lengths and `step_free`, each venue's rooms and hours, the variant's draw ranges, each kind's participants' settings, the tools' durations, `away_factor` and the prompt's texts and placement.
+
+**Refusals**, before any model call, with an error that names it: a text that is not valid TOML; a passage between places the city does not declare; a `step_free` that is neither `true` nor a text; a venue whose entrance or hours do not exist; a draw that asks for more templates than a pool has, or for a kind with no pool; a target attendance whose first number is above its second; a `[kinds.<kind>]` for a kind with no pool; a `wait_max_minutes` above 1440; a negative duration or an `away_factor` below 1; two templates or places with the same id.
+*Why:* E1's problem is a congress, and its world is read from materials so that an experiment changes the city, the pools and the draw, not code. Drawing the variant from the replica's seed alone gives every condition the same congress, which is what lets conditions be compared, and lets later experiments run sequences of congresses.
 #### FR-METRIC-01: Generic metrics for every run
 At the end of every run the core reports, per agent and in total:
 - activations and model turns;
