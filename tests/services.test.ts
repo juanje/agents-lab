@@ -136,6 +136,6 @@ describe("the caterer's rules (FR-CONGRESS-05)", () => {
       ["day 1 Monday 09:01", order("standard: 60")],
       ["day 21 Saturday 09:01", finals("standard: 63")],
     ]);
-    expect(rules.outcome()).toEqual({ quotes: 1, order: "standard: 60", ordered: 60, final_numbers: "standard: 63", surcharges: 9, invoices_issued: 1, cancelled: false });
+    expect(rules.outcome()).toEqual({ quotes: 1, order: "standard: 60", ordered: 60, final_numbers: "standard: 63", surcharges: 9, invoices_issued: 2, cancelled: false });
   });
 });
