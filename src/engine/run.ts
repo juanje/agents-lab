@@ -223,8 +223,8 @@ async function runAgents<State>(
           provided: scenario.parts,
           ...(parts.level === undefined ? {} : { level: parts.level }),
           agents: agents.map(({ name }) => name),
-          ...(money === undefined ? {} : { moneyOf: (state: State) => money.keeper.of(state) as never }),
-          record: (line) => recorder.record(line as never),
+          ...(money === undefined ? {} : { moneyOf: (state: State) => money.keeper.of(state) }),
+          record: (line) => recorder.record(line),
         });
   const changes = new ChangesSinceSensing();
   const messages = new Map<string, AgentSession["messages"]>();
@@ -277,6 +277,7 @@ async function runAgents<State>(
   // The lines the scenario gives for each change of the world, as the world applies it (FR-POPULATION-01).
   const logLines = scenario.logLines;
   if (logLines !== undefined) world.watch((before, after) => {
+    // Cast: a scenario's line has any `type` string, and a `type: string` member in LogLine would stop `line.type === …` narrowing it.
     for (const line of logLines(before, after)) recorder.record({ ...line, atMs: performance.now() } as never);
   });
   // A participant's stimuli are held by its hours and reply delay, and its rule set woken by them (FR-PARTICIPANT-01).

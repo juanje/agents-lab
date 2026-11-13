@@ -179,8 +179,37 @@ export interface PartsBookSettings<State> {
   level?: string;
   agents: readonly string[];
   moneyOf?: (state: State) => { events: readonly Readonly<Record<string, unknown>>[] } | undefined;
-  record(line: Record<string, unknown>): void;
+  record(line: PartsLine): void;
 }
+
+/** An act a part line gives as a misapplication: its tool, its arguments and the world time it landed, "day <n> HH:MM". */
+export interface MisappliedAct {
+  tool: string;
+  arguments: Readonly<Record<string, unknown>>;
+  at: string;
+}
+
+/**
+ * A line of the run's log the parts write (FR-PARTS-01): a part's result as it is evaluated, which gives its group, when
+ * it has one, whether or not it was active; and, as the run ends, the parts not evaluated.
+ */
+export type PartsLine =
+  | { type: "part"; part: string; evaluated_at: string; active: false; group?: string }
+  | {
+      type: "part";
+      part: string;
+      evaluated_at: string;
+      active: true;
+      held: boolean;
+      reached_at?: string;
+      effort: { calls: number; money: number };
+      misapplications: MisappliedAct[];
+      traps?: string[];
+      values?: Readonly<Record<string, unknown>>;
+      group?: string;
+      kind?: string;
+    }
+  | { type: "parts_not_evaluated"; parts: string[] };
 
 /** A part's state in a run: when it became active, the intervals in which it held, and whether it was evaluated. */
 interface Tracked {
@@ -295,7 +324,7 @@ export class PartsBook<State> {
     tracked.evaluated = true;
     const { part } = tracked;
     const when = { day: Math.floor(at / 1440) + 1, weekday: "Monday" as const, seconds: Math.round((at % 1440) * 60) };
-    const line = { type: "part", part: part.id, evaluated_at: timeText(when) };
+    const line = { type: "part" as const, part: part.id, evaluated_at: timeText(when) };
     // The group is in the line whether or not the part was active (FR-PARTS-01's addition).
     const grouped = part.group === undefined ? {} : { group: part.group };
     if (tracked.activeAt === undefined || tracked.activeAt > at) {
