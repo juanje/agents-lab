@@ -235,3 +235,10 @@ describe("the away factor on the web tools (FR-CONGRESS-07)", () => {
     expect([duration(at("station"), "travel_options"), duration(at("station"), "similar_events")]).toEqual([{ worldSeconds: 180 }, { worldSeconds: 360 }]);
   });
 });
+
+describe("the parties' phones (FR-CONGRESS-07)", () => {
+  it("gives every party's kind the tool call, to call a missed ring back", () => {
+    const kinds = parse(congressScenario.baseConfiguration).kinds as Record<string, { tools: string[] }>;
+    for (const [kind, { tools: declared }] of Object.entries(kinds)) expect(declared, kind).toContain("call");
+  });
+});
