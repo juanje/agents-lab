@@ -119,6 +119,15 @@ export function readCalendar(value: TomlValue): Calendar {
   return { start, weekdayOfDayOne, segments, hours };
 }
 
+/**
+ * A moment of the world's time a key writes "day <n> <weekday> HH:MM", by a calendar, and its world seconds since day 1's
+ * midnight; refused, naming the key, when it does not follow that format. Its weekday is the calendar's for that day.
+ */
+export function readWorldTime(calendar: Calendar, value: unknown, key: string): { time: WorldTime; since: number } {
+  const { since } = dayTime(value, key, true);
+  return { time: worldTimeOf(calendar, since), since };
+}
+
 /** A named set of weekly hours, refused, naming its key, when its days are empty or unknown, or its from is not before its to. */
 function hoursOf(value: TomlValue, key: string): Hours {
   const { days, from, to } = isTable(value) ? value : {};

@@ -1,5 +1,5 @@
 import type { TomlTable, TomlValue } from "smol-toml";
-import type { Calendar, WorldTime } from "./calendar.ts";
+import { type Calendar, type WorldTime, readWorldTime } from "./calendar.ts";
 import { type ChangesSinceSensing, applyCounted } from "./changes.ts";
 import { type RunClock, waitAtLeast } from "./clock.ts";
 import { Random } from "./random.ts";
@@ -71,28 +71,109 @@ export const MAIL_NOTICE = "mail_notice";
 /** The name the medium's deliveries are counted by among the changes since sensing. */
 const MAIL = "mail";
 
-/** Reads a configuration's [mail] (FR-MESSAGE-01). */
-export function readMail(value: TomlValue, _calendar?: Calendar): MailSettings {
-  const table = value as TomlTable;
-  const optional = (key: string, name: string) => (table[key] === undefined ? {} : { [name]: table[key] as number });
+/** A key of the mail that cannot be followed: an error that names it, its value and why. */
+function refused(key: string, value: unknown, why: string): Error {
+  return new Error(`The configuration's ${key} ${JSON.stringify(value) ?? "(none)"} cannot be followed: ${why}`);
+}
+
+/** Whether a TOML value is a table. */
+function isTable(value: TomlValue | undefined): value is TomlTable {
+  return typeof value === "object" && !Array.isArray(value) && !(value instanceof Date);
+}
+
+/** A duration of the mail in world minutes, refused, naming its key, when it is not a number of at least 0. */
+function minutesOf(table: TomlTable, key: string): number {
+  const value = table[key];
+  if (typeof value !== "number" || !(value >= 0)) throw refused(`mail.${key}`, value, "it is not a number of minutes of at least 0");
+  return value;
+}
+
+/** A number of words per minute, if the mail gives it, refused, naming its key, when it is not a positive number. */
+function wordsPerMinute(table: TomlTable, key: string, name: string): Record<string, number> {
+  const value = table[key];
+  if (value === undefined) return {};
+  if (typeof value !== "number" || !(value > 0)) throw refused(`mail.${key}`, value, "it is not a positive number of words per minute");
+  return { [name]: value };
+}
+
+/** The delivery delay's two numbers of world minutes, refused unless the first is at least 0 and not above the second. */
+function deliveryMinutesOf(value: TomlValue | undefined): [number, number] {
+  const [fewest, most] = Array.isArray(value) && value.length === 2 && value.every((each) => typeof each === "number") ? (value as [number, number]) : [];
+  if (fewest === undefined || most === undefined) throw refused("mail.delivery_minutes", value, "it is not two numbers of minutes");
+  if (!(fewest >= 0 && fewest <= most)) throw refused("mail.delivery_minutes", value, "its first number is below 0 or above its second");
+  return [fewest, most];
+}
+
+/** Each recipient's acts with the fields each requires, refused for a participant with no mailbox or a field list that is not a list of words. */
+function actsOf(value: TomlValue | undefined, mailboxes: readonly string[]): MailSettings["acts"] {
+  return Object.fromEntries(
+    Object.entries(isTable(value) ? value : {}).map(([recipient, acts]) => {
+      if (!mailboxes.includes(recipient)) throw refused(`mail.acts.${recipient}`, acts, `"${recipient}" has no mailbox`);
+      const fieldsByAct = Object.entries(isTable(acts) ? acts : {}).map(([act, fields]) => {
+        const words = Array.isArray(fields) && fields.every((field) => typeof field === "string" && /^\S+$/.test(field));
+        if (!words) throw refused(`mail.acts.${recipient}.${act}`, fields, "it is not a list of words");
+        return [act, fields as string[]];
+      });
+      return [recipient, Object.fromEntries(fieldsByAct)];
+    }),
+  );
+}
+
+/** The key of a message at the start that a refusal of its sending names. */
+const REFUSED_KEYS: Readonly<Record<string, keyof Outgoing>> = { unknown_recipient: "to", act_not_taken: "act", missing_field: "fields" };
+
+/**
+ * The messages at the start, in their mailboxes before the run, numbered from 1: each refused, naming its key, when its
+ * recipient could not take it as sent, or when it was received after the calendar's start.
+ */
+function initialOf(value: TomlValue | undefined, settings: Pick<MailSettings, "mailboxes" | "acts">, calendar: Calendar): Received[] {
+  const written = Array.isArray(value) ? value : [];
+  return written.map((message, index) => {
+    const key = `mail.initial[${index}]`;
+    const { to, from, act, fields = {}, subject, text, received } = (isTable(message) ? message : {}) as TomlTable;
+    const outgoing = { to, act, fields, subject, text } as Outgoing;
+    const refusal = refusalOf(settings, outgoing);
+    if (refusal !== undefined) {
+      const refusedKey = REFUSED_KEYS[refusal.outcome];
+      throw refused(`${key}.${refusedKey}`, outgoing[refusedKey], refusal.reason);
+    }
+    const { time, since } = readWorldTime(calendar, received, `${key}.received`);
+    if (since > calendar.start) throw refused(`${key}.received`, received, "it is after the calendar's start");
+    return { ...messageOf(`m-${index + 1}`, from as string, outgoing), received: time, read: false };
+  });
+}
+
+/**
+ * Reads a configuration's [mail] (FR-MESSAGE-01); one that cannot be followed is refused, with an error that names the
+ * key: no [calendar], delivery_minutes that are not two numbers from 0 with the first not above the second, a negative
+ * duration, acts for a participant with no mailbox, a field list that is not a list of words, a message at the start its
+ * recipient could not take or received after the calendar's start, and a notice without a notice source.
+ */
+export function readMail(value: TomlValue, calendar: Calendar | undefined): MailSettings {
+  if (calendar === undefined) throw new Error("The configuration's mail cannot be followed: its durations are world time, and the configuration declares no [calendar]");
+  const table = isTable(value) ? value : {};
+  const mailboxes = (table.mailboxes ?? []) as string[];
+  const acts = actsOf(table.acts, mailboxes);
+  if (table.notice !== undefined && table.notice_source === undefined) throw refused("mail.notice_source", undefined, "the mail has a notice");
   return {
-    mailboxes: table.mailboxes as string[],
-    acts: (table.acts ?? {}) as MailSettings["acts"],
-    deliveryMinutes: table.delivery_minutes as [number, number],
-    sendMinutes: table.send_minutes as number,
-    sendMinutesPerField: (table.send_minutes_per_field ?? 0) as number,
-    ...optional("send_words_per_minute", "sendWordsPerMinute"),
-    checkMinutes: table.check_minutes as number,
-    readMinutes: table.read_minutes as number,
-    ...optional("read_words_per_minute", "readWordsPerMinute"),
+    mailboxes,
+    acts,
+    deliveryMinutes: deliveryMinutesOf(table.delivery_minutes),
+    sendMinutes: minutesOf(table, "send_minutes"),
+    sendMinutesPerField: table.send_minutes_per_field === undefined ? 0 : minutesOf(table, "send_minutes_per_field"),
+    ...wordsPerMinute(table, "send_words_per_minute", "sendWordsPerMinute"),
+    checkMinutes: minutesOf(table, "check_minutes"),
+    readMinutes: minutesOf(table, "read_minutes"),
+    ...wordsPerMinute(table, "read_words_per_minute", "readWordsPerMinute"),
     ...(table.notice === undefined ? {} : { notice: { source: table.notice_source as string, text: table.notice as string } }),
-    initial: [],
+    initial: initialOf(table.initial, { mailboxes, acts }, calendar),
   };
 }
 
-/** The mail as a run starts: every mailbox empty, and nothing in transit. */
+/** The mail as a run starts: every mailbox holding its messages at the start, unread, and nothing in transit. */
 export function startingMail(settings: MailSettings): Mail {
-  return { mailboxes: Object.fromEntries(settings.mailboxes.map((name) => [name, []])), inTransit: [] };
+  const mailboxes = Object.fromEntries(settings.mailboxes.map((name) => [name, settings.initial.filter(({ to }) => to === name)]));
+  return { mailboxes, inTransit: [] };
 }
 
 /** A message as a sender writes it: its recipient, act, fields, subject and text, as given. */
@@ -119,18 +200,22 @@ function sendingMinutes(settings: MailSettings, { fields = {}, subject, text }: 
 }
 
 /** The mail with a message sent: numbered after every message sent or received before it, and in transit from now on. */
-function withSent(mail: Mail, from: string, { to, act, fields = {}, subject, text }: Outgoing, sent: WorldTime | undefined): Mail {
+function withSent(mail: Mail, from: string, outgoing: Outgoing, sent: WorldTime | undefined): Mail {
   if (sent === undefined) throw new Error("a message was sent without the world's time; the mail needs a [calendar]");
   const count = Object.values(mail.mailboxes).reduce((sum, mailbox) => sum + mailbox.length, mail.inTransit.length);
-  const message: Sent = { id: `m-${count + 1}`, from, to, act, fields, subject: subject ?? act, ...(text === undefined ? {} : { text }), sent };
-  return { ...mail, inTransit: [...mail.inTransit, message] };
+  return { ...mail, inTransit: [...mail.inTransit, { ...messageOf(`m-${count + 1}`, from, outgoing), sent }] };
+}
+
+/** A message as a sender wrote it, with its id and sender: no fields when it gives none, and its act as its subject when it gives none. */
+function messageOf(id: string, from: string, { to, act, fields = {}, subject, text }: Outgoing): Message {
+  return { id, from, to, act, fields, subject: subject ?? act, ...(text === undefined ? {} : { text }) };
 }
 
 /**
  * Why a message cannot be sent, as it starts: its recipient has no mailbox, does not take its act, or its act requires a
  * field it lacks; undefined when it can. A recipient that declares no acts takes every act.
  */
-function refusalOf(settings: MailSettings, { to, act, fields = {} }: Outgoing): Refusal | undefined {
+function refusalOf(settings: Pick<MailSettings, "mailboxes" | "acts">, { to, act, fields = {} }: Outgoing): Refusal | undefined {
   if (!settings.mailboxes.includes(to)) return { outcome: "unknown_recipient", reason: `"${to}" has no mailbox` };
   const acts = settings.acts[to];
   if (acts === undefined) return undefined;
