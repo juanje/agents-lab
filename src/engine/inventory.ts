@@ -1,3 +1,4 @@
+import { type CalendarInventory, calendarInventory } from "./calendar.ts";
 import { type SummaryInstructions, summaryInstructions } from "./compaction.ts";
 import type { Component } from "./components.ts";
 import type { Compaction, Experiment, Limits, ThinkingLevel } from "./experiment.ts";
@@ -49,6 +50,8 @@ export interface ConditionInventory {
   components?: { name: string; kind: Component<unknown>["kind"]; cycle: string }[];
   /** The world's clock as the condition sets it, for a scenario that has one (FR-WORKPLACE-05). */
   clock?: { start: string; timeScale: number };
+  /** The world's calendar, for a condition whose configuration declares one (FR-CLOCK-03). */
+  calendar?: CalendarInventory;
 }
 
 /** A tool as its agents see it, with its duration as the scenario describes it and the text for each of its outcomes. */
@@ -103,7 +106,7 @@ export function inventory<State>(experiment: Experiment, scenario: Partial<Scena
 function conditionInventory<State>(
   { models, thinkingLevel, compaction, limits }: Experiment,
   condition: string,
-  { scenario, configuration, systemPrompts, channels, firstStimuli, materials, components }: LoadedScenario<State>,
+  { scenario, configuration, systemPrompts, channels, firstStimuli, materials, components, calendar }: LoadedScenario<State>,
 ): ConditionInventory {
   // Each agent's first wake, as a run's stimuli give it, without the rhythm's stimulus, which every wake starts with.
   const stimuli = new Stimuli(channels, undefined, firstStimuli);
@@ -138,6 +141,7 @@ function conditionInventory<State>(
     ...(scenario.situations === undefined ? {} : { situations: [...scenario.situations(configuration)] }),
     ...(scenario.components === undefined ? {} : { components: components.map(({ name, kind, description }) => ({ name, kind, cycle: description })) }),
     ...(scenario.clock === undefined ? {} : { clock: scenario.clock(configuration) }),
+    ...(calendar === undefined ? {} : { calendar: calendarInventory(calendar) }),
   };
 }
 
@@ -171,6 +175,7 @@ export function inventoryMarkdown({ experiment, scenario, conditions }: Inventor
       ...(condition.situations === undefined ? [] : [situationsMarkdown(condition.situations)]),
       ...(condition.components === undefined ? [] : [componentsMarkdown(condition.components)]),
       ...(condition.clock === undefined ? [] : [clockMarkdown(condition.clock)]),
+      ...(condition.calendar === undefined ? [] : [calendarMarkdown(condition.calendar)]),
     ].join("\n"),
   );
   return [`# Environment inventory of experiment "${experiment}", scenario "${scenario}"\n`, ...sections].join("\n");
@@ -272,6 +277,16 @@ function componentsMarkdown(components: NonNullable<ConditionInventory["componen
 /** The world's clock, in Markdown: the time it shows when the run starts, and how fast it goes. */
 function clockMarkdown({ start, timeScale }: NonNullable<ConditionInventory["clock"]>): string {
   return `### Clock\n\n- Start: ${start}\n- Time scale: ${timeScale} world seconds for each second of the run\n`;
+}
+
+/** The world's calendar, in Markdown: its start, each segment with its scale and run time, and each set of hours. */
+function calendarMarkdown({ start, segments, hours }: CalendarInventory): string {
+  const listed = segments.map(({ scale, until, runTime }, index) => {
+    const lasts = until === undefined ? runTime : `until ${until}, taking ${runTime} of the run`;
+    return `- Segment ${index + 1}: ${scale} world seconds for each second of the run, ${lasts}`;
+  });
+  const named = Object.entries(hours).map(([name, { days, from, to }]) => `- Hours "${name}": ${days.join(", ")}, from ${from} to ${to}`);
+  return ["### Calendar\n", `- Start: ${start}`, ...listed, ...named, ""].join("\n");
 }
 
 /** A text as a fenced block, with a fence longer than any run of backticks in it, so the text is given whole. */

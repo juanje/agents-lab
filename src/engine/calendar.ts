@@ -139,3 +139,37 @@ function runMsAt({ start, segments }: Calendar, since: number): number {
   }
   throw new Error("the calendar's last segment ends, which only a segment that is not the last may do");
 }
+
+/** A calendar as the inventory gives it (FR-CLOCK-03): its start, each segment with its scale and run time, and its hours. */
+export interface CalendarInventory {
+  start: string;
+  /** Each segment, in order, with the run time it takes ("<n> ms"), or "until the run ends" for the last. */
+  segments: { scale: number; until?: string; runTime: string }[];
+  hours: Record<string, { days: Weekday[]; from: string; to: string }>;
+}
+
+/** A calendar as the inventory gives it, in the formats a configuration writes it. */
+export function calendarInventory(calendar: Calendar): CalendarInventory {
+  let segmentStart = calendar.start;
+  const segments = calendar.segments.map(({ scale, until }) => {
+    if (until === undefined) return { scale, runTime: "until the run ends" };
+    const runMs = ((until - segmentStart) / scale) * 1000;
+    segmentStart = until;
+    return { scale, until: `day ${dayOf(until)} ${clockOf(until)}`, runTime: `${runMs} ms` };
+  });
+  const start = worldTimeOf(calendar, calendar.start);
+  const hours = Object.fromEntries(Object.entries(calendar.hours).map(([name, { days, from, to }]) => [name, { days: [...days], from: clockOf(from), to: clockOf(to) }]));
+  return { start: `day ${start.day} ${start.weekday} ${clockOf(calendar.start)}`, segments, hours };
+}
+
+/** The day number of world seconds since day 1's midnight. */
+function dayOf(since: number): number {
+  return Math.floor(since / DAY_SECONDS) + 1;
+}
+
+/** The time of day "HH:MM" of world seconds since a midnight. */
+function clockOf(since: number): string {
+  const minutes = Math.floor((since % DAY_SECONDS) / 60);
+  const two = (value: number) => String(value).padStart(2, "0");
+  return `${two(Math.floor(minutes / 60))}:${two(minutes % 60)}`;
+}
