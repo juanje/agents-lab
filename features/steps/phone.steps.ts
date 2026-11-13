@@ -176,6 +176,19 @@ Then(
   },
 );
 
+Then(
+  /^"(\w+)"'s "(\w+)" failed with the outcome "(\w+)" (\d+) milliseconds into the run, within (\d+), one world minute after it started$/,
+  function (this: Context, party: string, tool: string, outcome: string, expectedMs: string, withinMs: string) {
+    ranLines(this);
+    const call = onlyCall(this, party, tool);
+    assert.equal(call.outcome, outcome);
+    assertIntoRun(this, `"${party}"'s "${tool}" ended`, call.endedAtMs, Number(expectedMs), Number(withinMs));
+    // A busy line fails one world minute after the call is placed (FR-CONGRESS-07).
+    const tookMs = (call.endedAtMs as number) - (call.startedAtMs as number);
+    assert.ok(Math.abs(tookMs - MINUTE_MS) <= Number(withinMs), `"${party}"'s "${tool}" took ${Math.round(tookMs)} ms, not ${MINUTE_MS} within ${withinMs}`);
+  },
+);
+
 Then(/^"(\w+)"'s "(\w+)" failed with the outcome "(\w+)"$/, function (this: Context, party: string, tool: string, outcome: string) {
   ranLines(this);
   assert.equal(onlyCall(this, party, tool).outcome, outcome);
