@@ -32,7 +32,7 @@ function experimentFile(lines: { scenario?: string; models?: string } = {}): str
 }
 
 /** How the command is used, as an error for other arguments says. */
-const USAGE = "Usage: lab run <experiment.toml> [--resume] [--progress-interval-ms <ms>], lab inventory <experiment.toml>, lab summarize <runs-dir> [--json] or lab judge <runs-dir> <judge.toml>";
+const USAGE = "Usage: lab run <experiment.toml> [--resume] [--progress-interval-ms <ms>], lab inventory <experiment.toml>, lab summarize <runs-dir> [--json], lab parts <runs-dir> [--json] or lab judge <runs-dir> <judge.toml>";
 
 /** A directory to run "lab" in, holding the experiment file, and the environment it runs with. */
 function setUp(file: string) {
