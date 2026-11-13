@@ -88,7 +88,7 @@ Feature: Corrections to venues, speakers and the phone
     Then the organiser's "call" failed with the outcome "busy" after 1 world minute, within 30 world minutes
 
   Scenario: Away from the office, the web tools take longer too
-    Given the organiser starts in "v1-entrance" and "[durations] ledger" is 3
+    Given the organiser starts in "v1-entrance", "[durations] ledger" is 3 and the configuration's "away_factor" is 1.5
     And the organiser's scripted turns call "ledger", then end
     When the run ends
     Then the "ledger" call took 4.5 world minutes, within 30 world minutes

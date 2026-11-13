@@ -506,6 +506,8 @@ After an agreement, a sponsor pays any invoice from the organiser for at most it
 
 **Venues.** `change_booking` (rooms, hours) → `contract_changed` with the new price when the rooms are free that day, committing the difference or releasing it; else `unavailable`. `request_extra` `room` (seats) → `extra_quote` for a free room with at least those seats, or `not_available`. After `room_lost`, `accept_change` names an `option`: `smaller_room` (the offered room replaces the lost one at the same price) or `price_cut` (the lost room is gone and the commitment falls by the offered cut).
 
+**Room prices (reading settled during the build, 2026-11-13).** The day price covers the rooms booked with the contract. A room added, by `change_booking` or as an extra, costs the day price × its seats ÷ the seats of all the venue's rooms, rounded; a room dropped by `change_booking` takes off the same. After `room_lost`, the venue offers its largest free smaller room and a cut equal to the lost room's price.
+
 **The board** answers `request_approval` while no budget is approved with `refused`, reason `no_budget`.
 
 **Speakers.** A constraint is hard: an invitation at a time that breaks it is declined, whatever the speaker's condition; `accept_if` comes only from the condition. The cancellation perturbations never choose the partner's speaker. A `confirm` to a speaker who has not accepted, or whose condition is unmet, is answered `not_available` with what `acceptance` and changes nothing. The fee committed is the invitation's fee, or the template's when the condition was `fee` and was accepted. A withdrawn invitation claims the fee only.
