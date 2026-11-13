@@ -101,7 +101,7 @@ Experiments are written outside this repository, in the experiment language (FR-
 **v0.3 build order.** The preparation-only pilot of E1 needs items 1–9. The world and its parts are designed in `agents-lab-experiments/experiments/E1-congress/world.md`; each FR's contract is written from it, one at a time.
 1. FR-CLOCK-03 (a calendar, clock segments and hours)
 2. FR-MESSAGE-01 (structured messages between participants); its contract also checks that an effector's action is given the world's time (FR-CLOCK-03)
-3. FR-PARTICIPANT-01 (rule-based participants with an interface), not written
+3. FR-PARTICIPANT-01 (participants that perceive and act only through their tools)
 4. FR-PHONE-01 (calls), not written
 5. FR-CONGRESS-01 (the congress world from materials), not written
 6. FR-MONEY-01 (ledger, invoices, approvals), not written
@@ -315,6 +315,20 @@ A scenario may declare, from its configuration, a mail medium (`[mail]`) and whi
 
 **Refusals**, before any model call, with an error that names the key: `[mail]` without a `[calendar]`; `delivery_minutes` that is not two numbers, the first at least 0 and not above the second; a negative duration; acts for a participant with no mailbox; a field list that is not a list of words; a message at the start for a participant with no mailbox, whose act its recipient does not take or that lacks a required field, or received after the calendar's start; a `notice` without `notice_source`.
 *Why:* in a world of many parties, most of what an agent learns and does goes by mail, and mail takes time. Acts and fields make what a message asks for something a rule-based participant can answer, while its free text stays for an agent; the same message works whether its recipient is a component now or an agent later. A notice says that something came, not what it says: the agent still has to read it.
+
+#### FR-PARTICIPANT-01: Participants that perceive and act only through their tools
+A scenario may declare, from its configuration, participants (`[participants.<name>]`): parties of the world that perceive and act only through tools and channels, exactly as an agent does, so that one can be decided by rules now and by a model later, by configuration alone. A participant declares its `tools` (names of the scenario's tools), the `channels` its stimuli come through, optionally its `hours` (a named set of the calendar's hours, FR-CLOCK-03) and `reply_minutes` (two numbers), and who decides: `decides = "rules"`, with `rules` (the name of a rule set the scenario provides) and its parameters (`[participants.<name>.params]`), or `decides = "model"`, with what an agent needs (model, sampling, system prompt, rhythm).
+
+**Rules perceive only what the participant perceives.** A rule set is given only the participant's stimuli and the results of the participant's own tool calls, never the world's state, and answers with the participant's next step: a call of one of its tools, a wait (in world minutes), or the end. Its calls go through the same tools as an agent's: the same durations, arbiter, outcomes and log lines, under the participant's name, with no model turn. A call of a tool the participant does not declare is a defect of the rule set: the run stops, with an error that names the participant and the tool.
+
+**Hours and reply delays.** A stimulus reaches a participant at the first moment within its hours that is at least a reply delay after the stimulus arrived; the delay is drawn, in world minutes, between the two numbers of `reply_minutes`, from a sequence derived from the replica's seed and `replies of <name>`, so adding a participant leaves the others' delays as they were. A participant without hours is always within them; one without `reply_minutes` has no delay. A rule set is woken by each stimulus that reaches it and at the end of each wait it asked for; a call already running when its hours end runs to its end. A participant waiting for its next stimulus does not keep the run going: the run ends once its agents and components have ended and no participant's call, wait it asked for, held stimulus or message in transit remains; a participant decided by a model counts as an agent. The same holds for a participant decided by a model: its stimuli reach its session by the same rule.
+
+**Outcome.** When the run ends, each participant's rule set, or for a participant decided by a model the scenario, gives its outcome record (named values), written as a `participant_outcome` line with the participant's name.
+
+**The inventory** gives each participant: who decides, its rule set and parameters or its model, its tools, channels, hours and `reply_minutes`.
+
+**Refusals**, before any model call, with an error that names the key: a tool or channel the scenario does not declare; hours the calendar does not declare, or hours without a calendar; `reply_minutes` that is not two numbers, the first at least 0 and not above the second; `decides` that is neither `rules` nor `model`; a rule set the scenario does not provide; a participant decided by a model without a model or a system prompt; a participant whose name an agent or a component already has.
+*Why:* the parties an agent deals with must meet the lab's requirements as the agent does: they perceive from where they are, through their tools, and act in time. If a rule could read the whole world, a party would know what no party could know, and replacing it later with an agent would change what it knows as well as who decides. Declaring tools, channels and hours once lets an experiment swap rules for a model and compare like with like.
 #### FR-METRIC-01: Generic metrics for every run
 At the end of every run the core reports, per agent and in total:
 - activations and model turns;
