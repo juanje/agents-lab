@@ -471,7 +471,9 @@ Then("the {string} call's result is {string}", function (this: Context, tool: st
 });
 
 Then("the {string} call succeeded", function (this: Context, tool: string) {
-  assert.deepEqual(workerCalls(this, tool).map((call) => call.outcome), ["success"]);
+  // The run's one call of that tool, whichever agent made it: the worker's, or a test scenario's agent's (FR-MONEY-01).
+  assert.ok(this.toolCalls !== undefined, "the agents did not run");
+  assert.deepEqual(this.toolCalls.filter((call) => call.tool === tool).map((call) => call.outcome), ["success"]);
 });
 
 Then("the look's result gives no time", function (this: Context) {

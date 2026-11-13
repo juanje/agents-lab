@@ -19,6 +19,7 @@ import { modelOf, runScenario, script } from "./tool.steps.ts";
 interface Post {
   mail: Mail;
   phone: unknown;
+  money: unknown;
 }
 
 /** What a rule set perceives at each step: the stimuli that reached its participant since its last step, and its last call's result. */
@@ -50,6 +51,9 @@ export interface ParticipantSetup {
   mail?: TomlTable;
   /** The configuration's [phone]; none when it declares none (FR-PHONE-01). */
   phone?: TomlTable;
+  /** The configuration's [money] and [durations]; none when it declares none (FR-MONEY-01). */
+  money?: TomlTable;
+  durations?: TomlTable;
   /** The rule sets the scenario provides besides "echo", by name. */
   ruleSets?: Record<string, unknown>;
   participants: Record<string, TomlTable>;
@@ -164,7 +168,7 @@ function participantScenario(context: Context): Scenario<Post> {
     name: "participants",
     agents: () => setup.agents,
     // The engine puts the mail in the world as it loads the scenario; the scenario starts it with none.
-    initialState: () => ({ mail: { mailboxes: {}, inTransit: [] }, phone: { calls: [] } }),
+    initialState: () => ({ mail: { mailboxes: {}, inTransit: [] }, phone: { calls: [] }, money: undefined }),
     tools: [],
     channels: () => [rhythmChannel],
     metrics: {},
@@ -174,12 +178,15 @@ function participantScenario(context: Context): Scenario<Post> {
     describeRhythm: () => "No wait before any activation.",
     mail: { of: (state) => (failing === undefined ? state.mail : failingMail(state.mail, failing)), with: (state, mail) => ({ ...state, mail }) },
     phone: { of: (state: Post) => state.phone, with: (state: Post, phone: unknown) => ({ ...state, phone }) },
+    money: { of: (state: Post) => state.money, with: (state: Post, money: unknown) => ({ ...state, money }) },
     ruleSets: { echo: echo(setup), ...setup.ruleSets },
     baseConfiguration: stringify({
       agents: setup.agents,
       ...(context.calendar === undefined ? {} : { calendar: context.calendar }),
       ...(setup.mail === undefined ? {} : { mail: setup.mail }),
       ...(setup.phone === undefined ? {} : { phone: setup.phone }),
+      ...(setup.money === undefined ? {} : { money: setup.money }),
+      ...(setup.durations === undefined ? {} : { durations: setup.durations }),
       participants: setup.participants,
     }),
   } as Scenario<Post>;

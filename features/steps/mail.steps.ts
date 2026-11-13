@@ -157,6 +157,8 @@ function sendArguments(written: string): JsonObject {
 function argumentsOf(tool: string, written: string): JsonObject {
   // A call is written as a message is (FR-PHONE-01).
   if (tool === "send_mail" || tool === "call") return sendArguments(written);
+  // A payment names its invoice (FR-MONEY-01).
+  if (tool === "pay") return { invoice: /^"([^"]+)"$/.exec(written)?.[1] ?? written };
   const answer = /^for "([^"]+)" with the act "([^"]+)"$/.exec(written);
   if (tool === "answer_call" && answer !== null) return { call: answer[1], act: answer[2] };
   if (written === "") return {};
