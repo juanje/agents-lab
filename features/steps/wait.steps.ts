@@ -16,6 +16,9 @@ const WORKER = "worker";
  */
 const NOTICED_WITHIN_MS = 20;
 
+/** How late a timer may deliver a stimulus the scenario places at a moment, on a busy machine. */
+const DELIVERED_LATE_BY_MS = 100;
+
 /** The worker's only call of a tool, as the run recorded it, which "it" names in the steps that follow. */
 function onlyCall(context: Context, tool: string): ToolCall {
   assert.ok(context.toolCalls !== undefined, "the worker did not run");
@@ -81,7 +84,10 @@ Then("it ended within {int} milliseconds after {string} appeared in {string}", f
 Given("a stimulus on the channel {string} reaches the worker {int} milliseconds into the run", function (this: Context, channel: string, afterMs: number) {
   // The run's time starts right after its stimuli are handed over.
   this.atRunStart.push((stimuli) => {
-    setTimeout(() => stimuli.deliver(WORKER, channel), afterMs);
+    setTimeout(() => {
+      this.stimulusDeliveredAtMs = performance.now();
+      stimuli.deliver(WORKER, channel);
+    }, afterMs);
   });
 });
 
@@ -91,8 +97,20 @@ Then(
     const call = onlyCall(this, tool);
     assert.equal(call.outcome, outcome);
     assert.ok(this.runStartedAtMs !== undefined, "the run gave no start");
-    const endedAtMs = call.endedAtMs - this.runStartedAtMs;
-    assert.ok(endedAtMs >= atMs && endedAtMs <= atMs + NOTICED_WITHIN_MS, `the call ended ${intoRun(this, call.endedAtMs)}`);
+    assert.ok(this.stimulusDeliveredAtMs !== undefined, "the stimulus was never delivered");
+    const deliveredAtMs = this.stimulusDeliveredAtMs;
+    // "About": a timer may fire up to 1 ms before the run's clock reads it (the run starts just after the timer is set),
+    // and may be late by up to 100 ms, still well short of the wait's 300 ms.
+    const deliveredInto = deliveredAtMs - this.runStartedAtMs;
+    assert.ok(
+      deliveredInto >= atMs - 1 && deliveredInto <= atMs + DELIVERED_LATE_BY_MS,
+      `the stimulus was delivered ${intoRun(this, deliveredAtMs)}, not about ${atMs} ms`,
+    );
+    const noticed = call.endedAtMs - deliveredAtMs;
+    assert.ok(
+      noticed >= 0 && noticed <= NOTICED_WITHIN_MS,
+      `the stimulus was delivered ${intoRun(this, deliveredAtMs)}, and the call ended ${intoRun(this, call.endedAtMs)}`,
+    );
   },
 );
 

@@ -70,6 +70,8 @@ export class Context extends CucumberWorld {
   toolCalls?: RunResult["toolCalls"];
   /** What the engine kept of each agent's sensing, as the run gave it. */
   sensings?: RunResult["sensings"];
+  /** When a step's own stimulus was delivered to the worker, by performance.now(), as the scenario's timer fired. */
+  stimulusDeliveredAtMs?: number;
   /** The tool call the scenario checked last, for a step that says "the call". */
   lastToolCall?: RunResult["toolCalls"][number];
   /** The agent and the tool whose call's result the scenario checked last, for a step that says "the result it received". */

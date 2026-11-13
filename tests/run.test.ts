@@ -723,15 +723,25 @@ describe("run", () => {
       { text: "Done.", delayMs: 0 },
     ]);
 
-    const { toolCalls, startedAtMs } = await run(loaded, [{ name: "a", model, activations: 1 }], seed, {
+    // The call ends when the stimulus reaches the agent, so it is measured from that moment, not from the timer's
+    // nominal 50 ms, which a timer may miss by a few milliseconds either way.
+    let deliveredAtMs = Number.NaN;
+    const { toolCalls } = await run(loaded, [{ name: "a", model, activations: 1 }], seed, {
       ...settings,
-      onStart: (stimuli) => setTimeout(() => stimuli.deliver("a", "bell"), 50),
+      onStart: (stimuli) =>
+        setTimeout(() => {
+          deliveredAtMs = performance.now();
+          stimuli.deliver("a", "bell");
+        }, 50),
     });
 
     const [call] = toolCalls;
     expect(call).toMatchObject({ outcome: "interrupted" });
-    expect(call.endedAtMs - startedAtMs).toBeGreaterThanOrEqual(50);
-    expect(call.endedAtMs - startedAtMs).toBeLessThan(70);
+    expect(deliveredAtMs).not.toBeNaN();
+    expect(call.endedAtMs).toBeGreaterThanOrEqual(deliveredAtMs);
+    expect(call.endedAtMs - deliveredAtMs).toBeLessThan(30);
+    // Ended at the stimulus, not after its whole 300 ms.
+    expect(call.endedAtMs - call.startedAtMs).toBeLessThan(200);
     expect(loaded.world.state).toEqual(["a", null, null]);
     const text = (value: string) => ({ role: "user", content: [{ type: "text", text: value }] });
     expect(model.received[1]?.at(-1)).toMatchObject(text("town bell: The bell rings."));
