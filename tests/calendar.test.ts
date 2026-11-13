@@ -123,12 +123,12 @@ describe("reachedAfterMs (FR-PARTICIPANT-01)", () => {
   });
 
   it("gives the run time from a moment until a duration in world time has passed, without hours", () => {
-    // At 17:04, ten world minutes later is 17:14: 600 ms of the run at 100 ms a world minute.
-    expect(reachedAfterMs(office, 400, 600)).toBeCloseTo(600, 6);
+    // At 17:04, ten world minutes (600 world seconds) later is 17:14: 1000 ms of the run at 100 ms a world minute.
+    expect(reachedAfterMs(office, 400, 600)).toBeCloseTo(1000, 6);
   });
 
   it("gives the same within the hours, when the duration ends within them", () => {
-    expect(reachedAfterMs(office, 400, 600, "office")).toBeCloseTo(600, 6);
+    expect(reachedAfterMs(office, 400, 600, "office")).toBeCloseTo(1000, 6);
   });
 
   it("gives the run time until the hours next begin, when the duration ends outside them", () => {
