@@ -184,7 +184,7 @@ describe("the congress's base configuration and its parties (FR-CONGRESS-02)", (
           { between: ["foyer", "room-b"], length: 1, step_free: "3 steps" },
         ],
       }),
-      pools: stringify({ topics: ["soil"], venue: [V1 as unknown as TomlTable], board: [{ id: "board", funds: 6000, reserve: 1000 }], speaker: [], partner: [] }),
+      pools: stringify({ topics: ["soil"], venue: [V1 as unknown as TomlTable], board: [{ id: "board", funds: 6000, reserve: 1000 }], speaker: [], partner: [], caterer: [], sponsor: [], agency: [] }),
       draw: stringify({ attendance: [50, 80], venue: 1, board: 1 }),
     });
     (configuration.calendar as TomlTable).hours = { always: { days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], from: "00:00", to: "23:59" } };
@@ -201,6 +201,8 @@ describe("the congress's base configuration and its parties (FR-CONGRESS-02)", (
     expect(v1).toMatchObject({ decides: "rules", rules: "venue", replyMinutes: [10, 20] });
     expect(v1?.decides === "rules" && v1.params).toMatchObject({ price: 2000, event_day: 26, floor_plan: [{ between: ["v1-entrance", "foyer"], step_free: true }, { between: ["foyer", "room-b"], step_free: "3 steps" }] });
     expect(loaded.money?.settings.accounts).toEqual([
+      // The world's travel account (FR-CONGRESS-05).
+      { name: "travel", unlimited: true },
       { name: "organiser", opening: 0, tools: ["ledger", "pay", "issue_invoice"] },
       { name: "v1", unlimited: true },
       { name: "board", opening: 6000 },

@@ -105,7 +105,7 @@ describe("the congress's speakers and partner (FR-CONGRESS-04)", () => {
   /** The congress with one speaker, "s1", a partner, "p1", and a board, changed as given. */
   function congress(changes: (configuration: TomlTable, pools: TomlTable) => void = () => {}): Scenario<unknown> {
     const configuration = parse(congressScenario.baseConfiguration);
-    const pools: TomlTable = { topics: ["soil"], venue: [], speaker: [structuredClone(S1)], partner: [structuredClone(P1)], board: [{ id: "board", funds: 6000 }] };
+    const pools: TomlTable = { topics: ["soil"], venue: [], speaker: [structuredClone(S1)], partner: [structuredClone(P1)], board: [{ id: "board", funds: 6000 }], caterer: [], sponsor: [], agency: [] };
     configuration.draw = stringify({ attendance: [50, 80], speaker: 1, partner: 1, board: 1 });
     changes(configuration, pools);
     configuration.pools = stringify(pools);
@@ -304,7 +304,7 @@ describe("the cancellations, perturbations that find their speaker in the world'
   /** The early and late cancellations of a congress with the speakers "s1" and "s4", as loading gives them. */
   function cancellations(perturbations: TomlTable) {
     const configuration = parse(congressScenario.baseConfiguration);
-    configuration.pools = stringify({ topics: ["soil"], venue: [], board: [], speaker: speakers, partner: [] });
+    configuration.pools = stringify({ topics: ["soil"], venue: [], board: [], speaker: speakers, partner: [], caterer: [], sponsor: [], agency: [] });
     configuration.draw = stringify({ attendance: [50, 80], speaker: 2 });
     configuration.perturbations = perturbations;
     return loadScenario({ ...(congressScenario as Scenario<unknown>), baseConfiguration: stringify(configuration) }, 1).components;
