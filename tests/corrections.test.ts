@@ -161,6 +161,22 @@ describe("a venue's bookings and lost rooms (FR-CONGRESS-09)", () => {
   });
 });
 
+describe("a party's own mail within its hours (FR-CONGRESS-09)", () => {
+  it("sends its own mail, such as a perturbation's notice, at the first moment within its hours", () => {
+    const OFFICE = { days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"], from: "09:00", to: "17:00" };
+    const rules = venueRules.start(venue({ keeps: OFFICE, perturbations: [{ name: "change", kind: "price_change", at: "day 3 23:00" }] }), new Random(1));
+    const first = conversation(rules, [book("main-hall"), accept]);
+    first.clock.time = "day 3 Wednesday 23:00";
+    const night = drive(rules, tools(() => "", () => first.clock.time), [[]], true);
+    expect(calls(night, "send_mail")).toEqual([]);
+    expect(night.at(-1)).toEqual({ kind: "wait", minutes: 600 });
+
+    first.clock.time = "day 4 Thursday 09:00";
+    const morning = drive(rules, tools(() => "", () => first.clock.time), [[]], true);
+    expect(calls(morning, "send_mail").map(({ act }) => act)).toEqual(["price_change"]);
+  });
+});
+
 describe("the board before a budget (FR-CONGRESS-07)", () => {
   it("refuses a request for approval while no budget is approved, with the reason no_budget", () => {
     const { steps } = conversation(boardRules.start({ id: "board", funds: 6000, reserve: 1000, organiser: "organiser" }, new Random(1)), [[DAY, "From: organiser. Act: request_approval. amount: 400. reason: interpreter."]]);

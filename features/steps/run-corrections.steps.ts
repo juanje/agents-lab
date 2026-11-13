@@ -362,3 +362,17 @@ Then(/^with the slot published, "sp1" pays on "day 23 \w+" within its hours$/, {
   assert.equal(at.day, 23);
   assert.ok(at.seconds >= 9 * 3600 && at.seconds <= 17 * 3600, `"sp1" paid at ${at.seconds / 3600} h`);
 });
+
+// The venue's own mail that falls due at night is its perturbation's notice: the price change at that time.
+Given('"v1" keeps the hours "office", and its hold-lapse reminder falls due at "day 3 Wednesday 23:00"', function (this: Context) {
+  changePools(this, (pool) => Object.assign(pool.venue[0], { hours: "office" }));
+  before(this, bookingTurns(this, "hall-a"));
+  change(this, (configuration) => ((configuration.perturbations as TomlTable).change = { at: "day 3 23:00", kind: "price_change" }));
+});
+
+Then('"v1" sent it at "day 4 Thursday 09:00", within one world hour', function (this: Context) {
+  const sent = sentWith(this, "v1", "price_change");
+  const at = sent.worldTime as { day: number; weekday: string; seconds: number };
+  assert.deepEqual({ day: at.day, weekday: at.weekday }, { day: 4, weekday: "Thursday" });
+  assert.ok(at.seconds >= 9 * 3600 && at.seconds <= 10 * 3600, `"v1" sent it at ${at.seconds / 3600} h`);
+});
