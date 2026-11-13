@@ -83,3 +83,35 @@ Feature: Participants that perceive and act only through their tools
       | it decides by the rule set "mirror", not provided   | participants.desk.rules      |
       | it decides by a model and gives no model            | participants.desk.model      |
       | its name is "ana", an agent's                       | participants.ana             |
+
+  # Approved addition (2026-11-13), settled after the build.
+
+  Scenario: A rule set's wait wakes it at its end
+    Given "echo" is changed to wait 30 world minutes after it has answered
+    And "ana"'s scripted turns call "send_mail" to "desk" with the act "ask", then end
+    When the run ends
+    Then "echo" was woken again by the end of its wait at "day 1 Friday 17:50", within one world minute, 30 world minutes after its answer was sent at 17:20
+
+  Scenario: A stimulus that reaches a participant during its wait wakes it early
+    Given "echo" is changed to wait 30 world minutes after it has answered, and "desk"'s "reply_minutes" is [0, 0]
+    And "ana"'s scripted turns call "send_mail" to "desk" with the act "ask", then wait 1300 milliseconds, then call "send_mail" to "desk" with the act "ask" again, then end
+    When the run ends
+    Then "echo" was woken by the second message's notice at "day 1 Friday 17:20", within one world minute, before its wait ended
+
+  Scenario: A stimulus reaches a participant only through a channel it declares
+    Given "desk" declares no channel
+    And "ana"'s scripted turns call "send_mail" to "desk" with the act "ask", then end
+    When the run ends
+    Then the message landed in "desk"'s mailbox
+    And "echo" was never woken
+
+  Scenario: An error from a tool during a participant's call names the participant
+    Given the tool "check_mail" is changed to throw "disk full" when "desk" calls it
+    And "ana"'s scripted turns call "send_mail" to "desk" with the act "ask", then end
+    When the run ends
+    Then the run stopped with an error that names the participant "desk" and gives "disk full"
+
+  Scenario: Reply delays need a calendar
+    Given the configuration has no calendar and no mail, and "desk" has "reply_minutes" [1, 2]
+    When the run is attempted
+    Then it is refused before any model call, with an error that names "participants.desk.reply_minutes"
