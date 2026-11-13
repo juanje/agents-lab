@@ -426,11 +426,14 @@ describe("inventory", () => {
     expect(condition.tools.map(({ name, kind }) => [name, kind])).toEqual([
       ["send_mail", "effector"],
       ["check_mail", "sensor"],
+      ["read_mail", "effector"],
     ]);
     expect(condition.tools.map(({ duration }) => duration)).toEqual([
       "send_minutes, plus send_minutes_per_field for each field and one minute per send_words_per_minute words of the subject and text, in world minutes",
       "check_minutes, in world minutes",
+      "read_minutes, plus one minute per read_words_per_minute words of the message's text, in world minutes",
     ]);
+    expect(condition.tools[2].texts).toEqual({ success: "the message it reads: its sender, act, fields and text", no_such_mail: "no_such_mail: the id is not in your mailbox" });
     expect(condition.channels.map(({ name }) => name)).toEqual(["rhythm", "mail_notice"]);
     expect(condition.informationSpeed).toBe("Every sensor and channel is instant, but mail, which takes from 1 to 1 world minutes to arrive.");
   });

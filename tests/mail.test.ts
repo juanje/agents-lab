@@ -212,6 +212,34 @@ describe("check_mail", () => {
   });
 });
 
+describe("read_mail", () => {
+  const settings = readMail(mailTable({ read_words_per_minute: 2, initial: [atStart(), atStart({ to: "ben", text: undefined, fields: { date: "day 5", price: 900 } })] }), calendar);
+  const read = () => toolNamed(mailTools(settings, keeper), "read_mail") as Effector<Post>;
+  const start: Post = { mail: startingMail(settings) };
+  const call = (agent: string, id: string) => ({ agent, arguments: { id }, atMs: 0 });
+
+  it("is an effector that lasts read_minutes, plus one minute per read_words_per_minute words of the message's text, in world time", () => {
+    expect(read().kind).toBe("effector");
+    // "A partner society runs session 3." is six words, three minutes at two words per minute.
+    expect(read().durationMs(start, call("ana", "m-1"))).toEqual({ worldSeconds: 4 * 60 });
+    expect(read().durationMs(start, call("ben", "m-2"))).toEqual({ worldSeconds: 60 });
+  });
+
+  it("fails as no_such_mail for an id not in the reader's mailbox", () => {
+    expect(read().action?.precondition(start, call("ana", "m-2"))).toEqual({ holds: false, reason: "no_such_mail" });
+    expect(read().action?.precondition(start, call("ana", "m-9"))).toEqual({ holds: false, reason: "no_such_mail" });
+  });
+
+  it("marks the message read, and gives its sender, its act, each field and its text", () => {
+    const after = read().action?.effect(start, call("ana", "m-1")) as Post;
+
+    expect(after.mail.mailboxes.ana[0].read).toBe(true);
+    expect(after.mail.mailboxes.ben[0].read).toBe(false);
+    expect(read().reply?.text(after, call("ana", "m-1"))).toBe("From: the board. Act: inform. session: 3. A partner society runs session 3.");
+    expect(read().reply?.text(after, call("ben", "m-2"))).toBe("From: the board. Act: inform. date: day 5. price: 900.");
+  });
+});
+
 describe("MailMedium", () => {
   /** A medium over a world with the Background's mail, started now, and what it recorded and delivered as stimuli. */
   function started(table = mailTable(), seed = 1) {

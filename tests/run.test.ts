@@ -792,6 +792,22 @@ describe("run", () => {
     expect(loaded.world.version).toBe(0);
   });
 
+  it("gives the agent, for an effector's success, the reply it declares from the state after its effect and the call, in place of a text (FR-MESSAGE-01)", async () => {
+    const replying: Effector<Slots> = { ...(slotTools[1] as Effector<Slots>), texts: { slot_taken: "Someone holds it." }, reply: { of: "the slots held", text: (slots, call) => `${call.agent} holds ${slots.filter((holder) => holder !== null).join(", ")}.` } };
+    const model = new ScriptedModel([
+      { toolCalls: [{ name: "take", arguments: { slot: 2 } }], delayMs: 0 },
+      { toolCalls: [{ name: "take", arguments: { slot: 2 } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+
+    const { toolCalls } = await run(slots({ tools: [replying] }), [{ name: "a", model, activations: 1 }], seed, settings);
+
+    expect(toolCalls.map(({ outcome, text }) => [outcome, text])).toEqual([
+      ["success", "a holds a."],
+      ["slot_taken", "Someone holds it."],
+    ]);
+  });
+
   /** A take whose success is followed by how many slots the agent sees held as its call ends, keeping the slots it saw. */
   const seeingTake: Effector<Slots> = {
     ...(slotTools[1] as Effector<Slots>),

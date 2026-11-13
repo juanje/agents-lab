@@ -521,3 +521,13 @@ Then(
     }
   },
 );
+
+Then("the {string} result is {string}", function (this: Context, tool: string, text: string) {
+  const call = onlyCall(this, tool);
+  assert.equal(call.outcome, "success", `the "${tool}" call failed with ${call.outcome}`);
+  assert.equal(returned(this, call.agent, tool), text);
+});
+
+Then("the message's subject was {string}", function (this: Context, subject: string) {
+  assert.equal(sentLine(this).subject, subject);
+});
