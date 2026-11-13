@@ -464,7 +464,7 @@ interface Listed {
 }
 
 /** The messages a "check_mail" result lists, one per line, or none. */
-function listed(result: string): Listed[] {
+export function listed(result: string): Listed[] {
   if (result === "No messages.") return [];
   return result.split("\n").map((line) => {
     const [, id, from, subject, received] = /^(\S+): from (.+), subject "(.*)", received (day \d+ \w+ \d{2}:\d{2})$/.exec(line) ?? [];
