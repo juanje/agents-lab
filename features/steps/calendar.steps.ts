@@ -75,6 +75,10 @@ Given("the configuration's calendar starts at {string}", function (this: Context
   calendarOf(this).start = start;
 });
 
+Given("the configuration's calendar starts at {string} with one segment of scale {int}", function (this: Context, start: string, scale: number) {
+  this.calendar = { start, segments: [{ scale }] };
+});
+
 Given(
   "its first segment has the scale {int} until {string}, so one world minute is {int} milliseconds of the run and the segment takes {int}",
   function (this: Context, scale: number, until: string, minuteMs: number, takesMs: number) {
