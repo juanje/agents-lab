@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { Given, Then } from "@cucumber/cucumber";
+import { Given, Then, When } from "@cucumber/cucumber";
 import type { JsonObject } from "@earendil-works/pi-ai";
 import { type TomlTable, stringify } from "smol-toml";
 import type { WorldTime } from "../../src/engine/calendar.ts";
@@ -10,9 +10,9 @@ import type { ScriptedAnswer } from "../../src/engine/scripted-model.ts";
 import { rhythmChannel } from "../../tests/fixtures/slots.ts";
 import type { Context } from "../support/context.ts";
 import { toTheMinute } from "./calendar.steps.ts";
-import { logLines } from "./record.steps.ts";
+import { linesOf, logLines } from "./record.steps.ts";
 import { asRead } from "./stimulus.steps.ts";
-import { script } from "./tool.steps.ts";
+import { runTheScenario, script } from "./tool.steps.ts";
 
 /** The test scenario's world: the mail the engine keeps in it, and nothing else. */
 interface Post {
@@ -240,4 +240,137 @@ Then("{string} received {string} through the channel {string}", function (this: 
     stimuli.map((line) => asRead(line.source as string, line.content as string)),
     [text],
   );
+});
+
+Given("the mail's {string} is [{int}, {int}]", function (this: Context, key: string, from: number, to: number) {
+  setupOf(this).mail[key] = [from, to];
+});
+
+Given("the mail's {string} is {float} and its {string} is {int}", function (this: Context, key: string, value: number, other: string, otherValue: number) {
+  Object.assign(setupOf(this).mail, { [key]: value, [other]: otherValue });
+});
+
+Given("the mail declares no notice", function (this: Context) {
+  delete setupOf(this).mail.notice;
+  delete setupOf(this).mail.notice_source;
+});
+
+/** The lines of the log the scenario's last run wrote, by its run id, parsed. */
+function lastRunLines(context: Context): Line[] {
+  assert.ok(context.runId !== undefined, "no run gave its id");
+  return linesOf(context, `${context.runId}.jsonl`).map((line) => JSON.parse(line) as Line);
+}
+
+/** The milliseconds of the run from each message's "message_sent" line to its "message_delivered" line, in the log's order. */
+function delaysMs(lines: readonly Line[]): number[] {
+  return lines
+    .filter((line) => line.type === "message_sent")
+    .map((sent) => {
+      const landed = lines.find((line) => line.type === "message_delivered" && line.id === sent.id);
+      assert.ok(landed !== undefined, `${String(sent.id)} did not land`);
+      return (landed.atMs as number) - (sent.atMs as number);
+    });
+}
+
+/** The delays of the message each replica's run sent, in run milliseconds, for the step that compares them. */
+const replicaDelays = new WeakMap<Context, number[][]>();
+
+When(
+  "two replicas run with the seed {int}, the second with another agent {string} who has a mailbox",
+  async function (this: Context, seed: number, other: string) {
+    const setup = setupOf(this);
+    this.seed = seed;
+    const delays: number[][] = [];
+    await runTheScenario(this);
+    delays.push(delaysMs(lastRunLines(this)));
+    (setup.mail.mailboxes as string[]).push(other);
+    script(this, other, [{ text: "Nothing to do.", delayMs: 0 }]);
+    // Each replica's scripted models start again from their first answer.
+    for (const [agent, answers] of this.scripts) script(this, agent, answers);
+    await runTheScenario(this);
+    delays.push(delaysMs(lastRunLines(this)));
+    replicaDelays.set(this, delays);
+  },
+);
+
+/** The run milliseconds one world minute takes in the Background's calendar. */
+const MINUTE_MS = 100;
+
+Then("the message's delay was the same in both, between {int} and {int} world minutes", function (this: Context, fewest: number, most: number) {
+  const [[first], [second]] = replicaDelays.get(this) ?? [[], []];
+  assert.ok(first !== undefined && second !== undefined, "a replica sent no message");
+  // Within the few milliseconds the engine's own work adds to a delivery.
+  assert.ok(Math.abs(first - second) <= 10, `the delays were ${Math.round(first)} and ${Math.round(second)} ms of the run`);
+  assert.ok(first >= fewest * MINUTE_MS && first <= most * MINUTE_MS + 10, `the delay was ${Math.round(first)} ms of the run, not between ${fewest} and ${most} world minutes`);
+});
+
+Then("the run's log has the message's {string} line and no {string} line for it", function (this: Context, sent: string, delivered: string) {
+  const { id } = sentLine(this);
+  assert.equal(sent, "message_sent");
+  assert.deepEqual(
+    logLines(this).filter((line) => line.type === delivered && line.id === id),
+    [],
+  );
+});
+
+Then("{string} received no stimulus through the channel {string}", function (this: Context, agent: string, channel: string) {
+  assert.deepEqual(
+    logLines(this).filter((line) => line.type === "stimulus" && line.agent === agent && line.channel === channel),
+    [],
+  );
+});
+
+Then("the message landed in {string}'s mailbox", function (this: Context, recipient: string) {
+  const { id } = sentLine(this);
+  deliveredLine(this, id);
+  assert.ok((setupOf(this).loaded?.world.state.mail.mailboxes[recipient] ?? []).some((message) => message.id === id), `"${recipient}"'s mailbox does not hold ${String(id)}`);
+});
+
+Then("no channel {string} is declared, and {string} received no stimulus from the mail", function (this: Context, channel: string, agent: string) {
+  assert.deepEqual(
+    setupOf(this).loaded?.channels.filter(({ name }) => name === channel),
+    [],
+  );
+  // The rhythm's stimulus wakes every agent; nothing else reaches one in these scenarios but the mail's.
+  assert.deepEqual(
+    logLines(this).filter((line) => line.type === "stimulus" && line.agent === agent && line.channel !== rhythmChannel.name),
+    [],
+  );
+});
+
+Then(
+  "the {string} call took {int} world minutes: {int}, plus {float} for each of {int} fields, plus {int} for {int} words, which is {int} milliseconds of the run, within {int}",
+  function (this: Context, tool: string, minutes: number, base: number, perField: number, fields: number, forWords: number, words: number, runMs: number, withinMs: number) {
+    const { mail } = setupOf(this);
+    assert.equal(base + perField * fields + forWords, minutes, "the contract's sum");
+    assert.deepEqual([mail.send_minutes, mail.send_minutes_per_field, words / (mail.send_words_per_minute as number)], [base, perField, forWords], "the configuration's durations");
+    assert.equal(minutes * MINUTE_MS, runMs, "a world minute's run time");
+    const calls = (this.toolCalls ?? []).filter((call) => call.tool === tool);
+    assert.equal(calls.length, 1, `${calls.length} "${tool}" calls were made`);
+    const tookMs = calls[0].endedAtMs - calls[0].startedAtMs;
+    assert.ok(Math.abs(tookMs - runMs) <= withinMs, `the call took ${Math.round(tookMs)} ms of the run, not ${runMs} within ${withinMs}`);
+  },
+);
+
+Then(
+  "the run's log has a {string} line with the message's id, {string}, {string}, {string}, its fields, {string}, {string}, and the run time and world time it was sent",
+  function (this: Context, type: string, from: string, to: string, act: string, subject: string, text: string) {
+    const line = sentLine(this);
+    assert.equal(type, line.type);
+    assert.match(String(line.id), /^m-\d+$/);
+    assert.deepEqual(
+      { from: line.from, to: line.to, act: line.act, fields: line.fields, subject: line.subject, text: line.text },
+      { from, to, act, fields: {}, subject, text },
+    );
+    assert.equal(typeof line.atMs, "number");
+    assert.deepEqual(Object.keys(line.worldTime as WorldTime).sort(), ["day", "seconds", "weekday"]);
+  },
+);
+
+Then("a {string} line with the same id and the run time and world time it landed", function (this: Context, type: string) {
+  const { id, atMs, worldTime } = sentLine(this);
+  assert.equal(type, "message_delivered");
+  const line = deliveredLine(this, id);
+  assert.ok((line.atMs as number) > (atMs as number), "it landed before it was sent");
+  assert.ok((line.worldTime as WorldTime).seconds > (worldTime as WorldTime).seconds, "it landed at a world time before it was sent");
 });
