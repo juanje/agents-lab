@@ -166,15 +166,15 @@ describe("loadScenario", () => {
   });
 
   it("lets a condition add entries to a table the scenario declares open, and keeps refusing keys elsewhere (FR-CONGRESS-08)", () => {
-    const open = { ...withBase("[slots]\ncount = 2\nheld = 0\n[calendar]\nstart = 'x'\n[calendar.hours]\n[events]\n"), openTables: ["calendar.hours", "events"] };
+    const open = { ...withBase("[slots]\ncount = 2\nheld = 0\n[agenda]\nstart = 'x'\n[agenda.hours]\n[events]\n"), openTables: ["agenda.hours", "events"] };
     const loaded = loadScenario(open, seed, {
       name: "adding",
-      common: "[calendar.hours.office]\nfrom = '09:00'\n[events.fire]\nat = 'day 2 10:00'\n",
+      common: "[agenda.hours.office]\nfrom = '09:00'\n[events.fire]\nat = 'day 2 10:00'\n",
       change: "[events.flood]\nat = 'day 3 10:00'\n",
     });
 
-    expect(loaded.configuration).toMatchObject({ calendar: { start: "x", hours: { office: { from: "09:00" } } }, events: { fire: { at: "day 2 10:00" }, flood: { at: "day 3 10:00" } } });
-    expect(() => loadScenario(open, seed, { name: "typo", change: "[calendar]\nend = 'y'\n" })).toThrow('Condition "typo" sets calendar.end, which the base configuration of scenario "slots" does not have');
+    expect(loaded.configuration).toMatchObject({ agenda: { start: "x", hours: { office: { from: "09:00" } } }, events: { fire: { at: "day 2 10:00" }, flood: { at: "day 3 10:00" } } });
+    expect(() => loadScenario(open, seed, { name: "typo", change: "[agenda]\nend = 'y'\n" })).toThrow('Condition "typo" sets agenda.end, which the base configuration of scenario "slots" does not have');
   });
 
   it.each([

@@ -20,6 +20,8 @@ export interface PhoneSettings {
   callWordsPerMinute?: number;
   /** The ring's text, with its placeholders. */
   ring: string;
+  /** Whether a ring reaches a resting callee at once and starts an activation (FR-CONGRESS-08). */
+  wakes?: boolean;
 }
 
 /** The placeholders a ring's text may name. */
@@ -51,7 +53,7 @@ function positiveMinutes(table: TomlTable, key: string): number {
 export function readPhone(value: TomlValue, calendar: Calendar | undefined, names: readonly string[]): PhoneSettings {
   if (calendar === undefined) throw new Error("The configuration's phone cannot be followed: its durations are world time, and the configuration declares no [calendar]");
   const table = isTable(value) ? value : {};
-  const { lines = [], ring, call_words_per_minute: words } = table;
+  const { lines = [], ring, call_words_per_minute: words, wakes } = table;
   if (!Array.isArray(lines) || !lines.every((line) => typeof line === "string")) throw refused("phone.lines", lines, "it is not a list of names");
   const stranger = (lines as string[]).find((line) => !names.includes(line));
   if (stranger !== undefined) throw refused("phone.lines", lines, `"${stranger}" is no agent or participant`);
@@ -59,6 +61,7 @@ export function readPhone(value: TomlValue, calendar: Calendar | undefined, name
   const unknown = [...ring.matchAll(/\{(\w+)\}/g)].find(([, name]) => !RING_PLACEHOLDERS.includes(name));
   if (unknown !== undefined) throw refused("phone.ring", ring, `it names ${unknown[0]}, which is none of {${RING_PLACEHOLDERS.join("}, {")}}`);
   if (words !== undefined && (typeof words !== "number" || !(words >= 0))) throw refused("phone.call_words_per_minute", words, "it is not a number of words of at least 0");
+  if (wakes !== undefined && typeof wakes !== "boolean") throw refused("phone.wakes", wakes, "it is not true or false");
   return {
     lines: lines as string[],
     ringMinutes: positiveMinutes(table, "ring_minutes"),
@@ -66,6 +69,7 @@ export function readPhone(value: TomlValue, calendar: Calendar | undefined, name
     // No time per word at 0, as when it is not given.
     ...(typeof words === "number" && words > 0 ? { callWordsPerMinute: words } : {}),
     ring,
+    ...(wakes === true ? { wakes: true } : {}),
   };
 }
 

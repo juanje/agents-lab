@@ -6,6 +6,8 @@ export interface Channel {
   name: string;
   source: string;
   stimulus: string;
+  /** Whether a stimulus on it reaches a resting agent at once and starts an activation, as its rhythm does (FR-CONGRESS-08). */
+  wakes?: boolean;
 }
 
 /** A message delivered into an agent's session through a channel, with the channel's source. */
@@ -37,6 +39,8 @@ export class Stimuli {
   readonly #holds = new Map<string, (stimulus: Stimulus) => Promise<boolean>>();
   /** The channels each recipient that declares its channels takes stimuli through. */
   readonly #declared = new Map<string, readonly string[]>();
+  /** What ends each resting agent's rest. */
+  readonly #resting = new Map<string, AbortController>();
 
   /**
    * Takes the scenario's channels, what to do with each stimulus as it is delivered (the run records it), and the
@@ -88,11 +92,33 @@ export class Stimuli {
     this.#declared.set(agent, channels);
   }
 
-  /** A stimulus reaching its recipient: recorded, waiting for it, and told to its watchers. */
+  /** A stimulus reaching its recipient: recorded, waiting for it, and told to its watchers; one on a waking channel ends its rest. */
   #reach(agent: string, stimulus: Stimulus): void {
     this.#delivered(agent, stimulus);
     this.#waiting.set(agent, [...(this.#waiting.get(agent) ?? []), stimulus]);
     for (const watcher of this.#watchers.get(agent) ?? []) watcher(stimulus);
+    if (this.#wakes(stimulus)) this.#resting.get(agent)?.abort();
+  }
+
+  /** Whether a stimulus's channel wakes a resting agent (FR-CONGRESS-08). */
+  #wakes({ channel }: Stimulus): boolean {
+    return this.#channels.some(({ name, wakes }) => name === channel && wakes === true);
+  }
+
+  /**
+   * An agent's rest between activations (FR-CONGRESS-08): its signal is aborted when a stimulus on a waking channel
+   * reaches the agent, at once when one is already waiting for it, until the rest ends.
+   */
+  rest(agent: string): { signal: AbortSignal; end: () => void } {
+    const controller = new AbortController();
+    this.#resting.set(agent, controller);
+    if ((this.#waiting.get(agent) ?? []).some((stimulus) => this.#wakes(stimulus))) controller.abort();
+    return {
+      signal: controller.signal,
+      end: () => {
+        if (this.#resting.get(agent) === controller) this.#resting.delete(agent);
+      },
+    };
   }
 
   /**
@@ -116,11 +142,11 @@ export class Stimuli {
   }
 
   /**
-   * What an agent receives when its rhythm wakes it: the rhythm's stimulus, then, the first time only, its first
-   * stimuli, then the stimuli waiting for it.
+   * What an agent receives when it wakes: the rhythm's stimulus when its rhythm wakes it, then, the first time only, its
+   * first stimuli, then the stimuli waiting for it, among them the one that woke it, when a stimulus did (FR-CONGRESS-08).
    */
-  wake(agent: string): Stimulus[] {
-    const now = [RHYTHM_CHANNEL, ...(this.#first.get(agent) ?? [])].map((channel) => this.#stimulusOf(channel));
+  wake(agent: string, byRhythm = true): Stimulus[] {
+    const now = [...(byRhythm ? [RHYTHM_CHANNEL] : []), ...(this.#first.get(agent) ?? [])].map((channel) => this.#stimulusOf(channel));
     this.#first.delete(agent);
     for (const stimulus of now) this.#delivered(agent, stimulus);
     return [...now, ...this.take(agent)];

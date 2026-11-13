@@ -96,6 +96,13 @@ export interface Scenario<State> {
   slowedBy?: (state: State, agent: string, tool: string) => number;
   /** What the inventory gives of the scenario's world, from the resolved configuration, for a scenario that says (FR-CONGRESS-01). */
   worldInventory?: (configuration: Configuration) => Readonly<Record<string, unknown>>;
+  /** The tables of its base configuration, by dotted path, to which a condition may add keys the base lacks (FR-CONGRESS-08). */
+  openTables?: readonly string[];
+  /**
+   * The parties a part's actors may name by group, for a scenario whose variant draws them (FR-CONGRESS-08): each group's
+   * parties by its name, `role:<role>` or `kind:<kind>`, from the resolved configuration.
+   */
+  partyGroups?: (configuration: Configuration) => Readonly<Record<string, readonly string[]>>;
 }
 
 /**
@@ -209,7 +216,7 @@ export function loadScenario<State>(
   const base = parse(scenario.baseConfiguration);
   // A text part that holds nothing gives the agents nothing, so it counts as missing.
   if (Object.keys(base).length === 0) throw lacks("base configuration");
-  const { configuration: resolved, materials } = condition === undefined ? { configuration: base, materials: [] } : applyCondition(base, condition, scenario.name);
+  const { configuration: resolved, materials } = condition === undefined ? { configuration: base, materials: [] } : applyCondition(base, condition, scenario.name, scenario.openTables ?? []);
   // From the seed alone, so every condition of a replica meets the same variant (FR-CONGRESS-01).
   const varied = scenario.variant?.(resolved, Random.derive(seed, "variant"));
   const configuration = varied?.configuration ?? resolved;
@@ -299,7 +306,8 @@ function partsOf<State>(scenario: Scenario<State>, configuration: Configuration,
     throw new Error(`The configuration's parts are not valid TOML: ${error instanceof Error ? error.message : String(error)}`);
   }
   const kindFactor = condition?.kindFactor;
-  const parts = readParts((written.parts ?? []) as Record<string, unknown>[], scenario.parts, { participants, ...(kindFactor === undefined ? {} : { kindFactor }) });
+  const groups = scenario.partyGroups?.(configuration);
+  const parts = readParts((written.parts ?? []) as Record<string, unknown>[], scenario.parts, { participants, ...(kindFactor === undefined ? {} : { kindFactor }), ...(groups === undefined ? {} : { groups }) });
   const level = kindFactor === undefined ? undefined : condition?.levels?.[kindFactor.name];
   return { parts, ...(level === undefined ? {} : { level }) };
 }
@@ -331,7 +339,7 @@ function phoneOf<State>(scenario: Scenario<State>, configuration: Configuration,
 
 /** The ring's channel, for a configuration that declares a [phone]; its source is each ring's caller (FR-PHONE-01). */
 function ringChannels<State>(phone: LoadedPhone<State> | undefined): Channel[] {
-  return phone === undefined ? [] : [{ name: PHONE_CHANNEL, source: "the caller", stimulus: phone.settings.ring }];
+  return phone === undefined ? [] : [{ name: PHONE_CHANNEL, source: "the caller", stimulus: phone.settings.ring, ...(phone.settings.wakes === true ? { wakes: true } : {}) }];
 }
 
 /** The mail a configuration declares in its [mail], if it declares one, kept where the scenario's state keeps it (FR-MESSAGE-01). */
@@ -356,8 +364,8 @@ export function calendarOf(configuration: Configuration): { calendar?: Calendar 
  * A condition applied over a base configuration: the change common to every condition first, when it has one, then its
  * own, whose values win; and each material whose text reached the configuration, the common change's first.
  */
-function applyCondition(base: TomlTable, condition: Condition, scenario: string): { configuration: Configuration; materials: Material[] } {
-  const applying = (materials: Material[]): Applying => ({ condition: condition.name, scenario, read: condition.materials, materials });
+function applyCondition(base: TomlTable, condition: Condition, scenario: string, open: readonly string[]): { configuration: Configuration; materials: Material[] } {
+  const applying = (materials: Material[]): Applying => ({ condition: condition.name, scenario, read: condition.materials, materials, open });
   const common: Material[] = [];
   const own: Material[] = [];
   const change = parse(condition.change);
@@ -383,6 +391,8 @@ interface Applying {
   scenario: string;
   read?: Materials;
   materials: Material[];
+  /** The tables, by dotted path, to which a condition may add keys (FR-CONGRESS-08). */
+  open: readonly string[];
 }
 
 /** Whether a TOML value is a table: an object that is neither an array nor a date and time. */
@@ -393,13 +403,20 @@ export function isTable(value: TomlValue): value is TomlTable {
 /**
  * Applies a condition's change over a configuration: a value replaces the one under the same key, and a table is
  * applied the same way inside the configuration's table, so the keys it does not name keep their values. A key the
- * configuration lacks is refused: a misspelled key would otherwise leave the condition the same as the baseline. Where
+ * configuration lacks is refused, but inside a table the scenario declares open: a misspelled key would otherwise leave
+ * the condition the same as the baseline. Where
  * the configuration has no table, a table that refers to a material gives the material's text instead.
  */
 function applyChange(configuration: TomlTable, change: TomlTable, path: readonly string[], applying: Applying): TomlTable {
   const changed: TomlTable = { ...configuration };
   for (const [key, given] of Object.entries(change)) {
     const keyPath = [...path, key];
+    // A key a table the scenario declares open lacks is added, as given (FR-CONGRESS-08).
+    if (!Object.hasOwn(configuration, key) && applying.open.includes(path.join("."))) {
+      const reference = materialReference(given);
+      changed[key] = reference === undefined ? given : materialText(reference, keyPath, applying);
+      continue;
+    }
     if (!Object.hasOwn(configuration, key)) {
       throw new Error(
         `Condition "${applying.condition}" sets ${keyPath.join(".")}, which the base configuration of scenario "${applying.scenario}" does not have`,

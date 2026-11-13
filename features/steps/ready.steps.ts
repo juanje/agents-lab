@@ -98,7 +98,7 @@ Given(
 const experiments = new WeakMap<Context, { toml: string; directory: string; inventory?: Inventory }>();
 
 /** Writes an experiment over the congress, with these parts of it, and these materials in its directory. */
-function writeExperiment(context: Context, parts: { common?: TomlTable; conditions?: Record<string, TomlTable>; baseline?: boolean }, materials: Record<string, string> = {}): void {
+function writeExperiment(context: Context, parts: { common?: TomlTable; conditions?: Record<string, TomlTable> }, materials: Record<string, string> = {}): void {
   const directory = mkdtempSync(join(tmpdir(), "congress-ready-"));
   mkdirSync(join(directory, "materials"));
   for (const [path, text] of Object.entries(materials)) writeFileSync(join(directory, path), text);
@@ -109,7 +109,6 @@ function writeExperiment(context: Context, parts: { common?: TomlTable; conditio
     'thinking_level = "off"',
     "replicas = 1",
     "seed = 1",
-    ...(parts.baseline === true ? ["baseline = true"] : []),
     "[limits]",
     "time_limit_ms = 1000",
     "activations_per_agent = 1",
@@ -151,13 +150,13 @@ Given(
 Given(
   'an experiment whose common part adds "[calendar.hours.office]" and "[perturbations.change]", and a condition that adds "[perturbations.late_cancel]"',
   function (this: Context) {
+    // Beside the condition that adds one, another that adds none.
     writeExperiment(this, {
-      baseline: true,
       common: {
         calendar: { hours: { office: { days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"], from: "09:00", to: "17:00" } } },
         perturbations: { change: { between: ["day 6 09:00", "day 6 10:00"], kind: "room_lost" } },
       },
-      conditions: { cancelling: { perturbations: { late_cancel: { at: "day 24 10:00" } } } },
+      conditions: { base: {}, cancelling: { perturbations: { late_cancel: { at: "day 24 10:00" } } } },
     });
   },
 );

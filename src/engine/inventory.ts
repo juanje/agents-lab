@@ -4,7 +4,8 @@ import type { Component } from "./components.ts";
 import type { Compaction, Experiment, Limits, ThinkingLevel } from "./experiment.ts";
 import { MAIL_DURATIONS, type MailInventory, mailInventory, mailTools } from "./mail.ts";
 import type { ParticipantSettings } from "./participants.ts";
-import { MONEY_DURATIONS, type MoneyInventory, moneyInventory, moneyTools } from "./money.ts";
+import { MONEY_DURATIONS, type MoneyInventory, type MoneySettings, moneyInventory, moneyTools } from "./money.ts";
+import { toolsOf } from "./run.ts";
 import { PHONE_DURATIONS, type PhoneSettings, phoneInventory, phoneTools } from "./phone.ts";
 import { type LoadedScenario, type Scenario, loadScenario } from "./scenario.ts";
 import { Stimuli, type Stimulus } from "./stimuli.ts";
@@ -139,7 +140,8 @@ function conditionInventory<State>(
       systemPrompt,
       firstStimuli: stimuli.wake(name).slice(1),
     })),
-    tools: [...scenario.tools, ...mailToolsOf, ...phoneToolsOf, ...moneyToolsOf].map((tool) => ({
+    // Only the tools the agents' sessions are offered: of the money's, those their accounts give them (FR-CONGRESS-08).
+    tools: offered([...scenario.tools, ...mailToolsOf, ...phoneToolsOf, ...moneyToolsOf], [...systemPrompts.keys()], participants, money?.settings).map((tool) => ({
       name: tool.name,
       kind: tool.kind,
       description: tool.description,
@@ -172,6 +174,12 @@ function conditionInventory<State>(
     ...(money === undefined ? {} : { money: moneyInventory(money.settings, participants) }),
     ...(scenario.worldInventory === undefined ? {} : { world: scenario.worldInventory(configuration) }),
   };
+}
+
+/** The tools any of the agents' sessions is offered, in the order given (FR-CONGRESS-08). */
+function offered<State>(tools: readonly Tool<State>[], agents: readonly string[], participants: readonly ParticipantSettings[], money: MoneySettings | undefined): Tool<State>[] {
+  const names = new Set(agents.flatMap((agent) => toolsOf(tools, participants, agent, money).map(({ name }) => name)));
+  return tools.filter(({ name }) => names.has(name));
 }
 
 /**

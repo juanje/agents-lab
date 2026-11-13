@@ -91,8 +91,9 @@ function minutesOf(table: TomlTable, key: string): number {
 /** A number of words per minute, if the mail gives it, refused, naming its key, when it is not a positive number. */
 function wordsPerMinute(table: TomlTable, key: string, name: string): Record<string, number> {
   const value = table[key];
-  if (value === undefined) return {};
-  if (typeof value !== "number" || !(value > 0)) throw refused(`mail.${key}`, value, "it is not a positive number of words per minute");
+  // No time per word at 0, as when it is not given (FR-CONGRESS-08).
+  if (value === undefined || value === 0) return {};
+  if (typeof value !== "number" || !(value > 0)) throw refused(`mail.${key}`, value, "it is not a number of words per minute of at least 0");
   return { [name]: value };
 }
 

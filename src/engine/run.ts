@@ -406,7 +406,7 @@ function slowed<State>(tool: Tool<State>, slowedBy: (state: State, agent: string
  * The tools an agent's session offers: a participant decided by a model is offered only those it declares
  * (FR-PARTICIPANT-01); any other agent, of the money tools, only those its account gives it (FR-MONEY-01).
  */
-function toolsOf<State>(tools: readonly Tool<State>[], participants: readonly ParticipantSettings[], agent: string, money: MoneySettings | undefined): readonly Tool<State>[] {
+export function toolsOf<State>(tools: readonly Tool<State>[], participants: readonly ParticipantSettings[], agent: string, money: MoneySettings | undefined): readonly Tool<State>[] {
   const participant = participants.find(({ name }) => name === agent);
   if (participant !== undefined) return tools.filter(({ name }) => participant.tools.includes(name));
   const given = money === undefined ? [] : moneyToolsOf(money, participants, agent);
@@ -428,8 +428,8 @@ function systemPromptOf(systemPrompts: ReadonlyMap<string, string>, agent: strin
 }
 
 /**
- * One agent's loop: it repeats its cycle of waiting an interval from its rhythm, then an activation, which its rhythm's
- * stimulus starts and in which the agent's session runs model turns and tool calls until a turn makes no tool call. It
+ * One agent's loop: it repeats its cycle of waiting an interval from its rhythm, or until a stimulus on a waking
+ * channel reaches it (FR-CONGRESS-08), then an activation, which that stimulus or its rhythm's and in which the agent's session runs model turns and tool calls until a turn makes no tool call. It
  * ends when the agent has used its activation budget or the run ends first, even while it rests: its time limit passes
  * (FR-CLOCK-02) or it stops on an error (FR-RECORD-01).
  */
@@ -442,10 +442,13 @@ async function loop(
   recorder: Recorder,
 ): Promise<void> {
   for (let count = 0; count < agent.activations; count += 1) {
-    await waitAtLeast(rhythm.draw(rhythm.random), runEnd);
+    // A stimulus on a waking channel ends the rest early, as the rhythm would (FR-CONGRESS-08).
+    const rest = stimuli.rest(agent.name);
+    await waitAtLeast(rhythm.draw(rhythm.random), AbortSignal.any([runEnd, rest.signal]));
+    rest.end();
     if (runEnd.aborted) return;
     const wokeAtMs = performance.now();
-    await wake(session, stimuli.wake(agent.name));
+    await wake(session, stimuli.wake(agent.name, !rest.signal.aborted));
     recorder.record({ type: "activation", agent: agent.name, wokeAtMs, endedAtMs: performance.now() });
   }
 }

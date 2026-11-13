@@ -280,12 +280,13 @@ describe("the congress ready for an experiment (FR-CONGRESS-08)", () => {
   });
 
   it("gives in {directory} one line per drawn party with its id, kind, mailbox, line and the acts its rule set takes", () => {
+    const withVenues = (scenario: Scenario<unknown>): Scenario<unknown> => ({ ...scenario, ruleSets: { ...congressScenario.ruleSets, ...scenario.ruleSets } });
     const loaded = loadScenario(
-      congress((configuration) => {
+      withVenues(congress((configuration) => {
         configuration.knowledge = "Who is who:\n{directory}";
         (configuration.kinds as TomlTable).venue = { rules: "venue", tools: ["send_mail"], channels: ["mail_notice"] };
         changingText("pools", (pools) => (pools.venue = (pools.venue as TomlTable[]).map((venue) => ({ ...venue, rooms: [{ id: "main-hall", seats: 120 }], price: 1000, access_claim: "step-free", deposit_share: 0.2, cancellation: [{ share: 0.5 }] }))))(configuration);
-      }),
+      })),
       1,
     );
     const lines = (loaded.systemPrompts.get("organiser") as string).split("\n").slice(1);
@@ -299,7 +300,8 @@ describe("the congress ready for an experiment (FR-CONGRESS-08)", () => {
   });
 
   it("names each drawn party's role and kind for parts' actors, and the phone wakes a resting organiser while the mail's notice does not", () => {
-    const scenario = congress();
+    // The base's phone, which wakes.
+    const scenario = congress((configuration) => (configuration.phone = { ...(parse(congressScenario.baseConfiguration).phone as TomlTable), lines: ["organiser"] }));
     const loaded = loadScenario(scenario, 1);
     const { chosen } = loaded.variant as { chosen: Record<string, string[]> };
 

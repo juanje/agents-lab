@@ -57,6 +57,8 @@ export interface Part {
 export interface PartsContext {
   participants: readonly string[];
   kindFactor?: { name: string; levels?: readonly string[] };
+  /** The parties an actor may name by group, `role:<role>` or `kind:<kind>`, by the group's name (FR-CONGRESS-08). */
+  groups?: Readonly<Record<string, readonly string[]>>;
 }
 
 /** A part's key that cannot be followed: an error that names the part, the key and why. */
@@ -117,7 +119,14 @@ export function readParts<State>(written: readonly Record<string, unknown>[], pr
       const stranger = Object.keys(kinds).find((level) => !factor.levels?.includes(level));
       if (stranger !== undefined) throw refused(id, "kinds", kinds, `${factor.name} has no level "${stranger}"`);
     }
-    const actors = (part.actors ?? []) as string[];
+    // An actor given as role:<role> or kind:<kind> is the parties the replica's draw gave that group (FR-CONGRESS-08).
+    const actors = ((part.actors ?? []) as string[]).flatMap((actor) => {
+      const [, group] = /^(role|kind):/.exec(actor) ?? [];
+      if (group === undefined) return [actor];
+      const filled = context.groups?.[actor] ?? [];
+      if (filled.length === 0) throw refused(id, "actors", part.actors, `"${actor}" is a ${group} no draw fills`);
+      return [...filled];
+    });
     const outsider = actors.find((actor) => !context.participants.includes(actor));
     if (outsider !== undefined) throw refused(id, "actors", actors, `"${outsider}" is no participant`);
     const misapplications = ((part.misapplications ?? []) as Record<string, unknown>[]).map((written) => {

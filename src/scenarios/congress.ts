@@ -372,7 +372,96 @@ function variant(configuration: Configuration, random: Random): { configuration:
     ...(phone === undefined ? {} : { phone: { ...phone, lines: [...((phone.lines ?? []) as string[]), ...names] } }),
     ...(money === undefined ? {} : { money: { ...money, accounts: { ...((money.accounts ?? {}) as TomlTable), ...accounts } } }),
   };
-  return { configuration: completed, drawn: { ...drawn, ...(drawn.reference_price === undefined ? referencePrice(configuration, drawn.topic) : {}) } };
+  // The texts name what the replica drew, filled in before the run (FR-CONGRESS-08).
+  const filled = withDrawnTexts(completed, drawn, calendar, chosenOf, templates);
+  return { configuration: filled, drawn: { ...drawn, ...(drawn.reference_price === undefined ? referencePrice(configuration, drawn.topic) : {}) } };
+}
+
+/** The weekdays, in order from Monday. */
+const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+
+/** What the texts may name of the replica's draw, in braces (FR-CONGRESS-08). */
+const DRAWN_NAMES = ["topic", "target", "event_day", "funds", "directory"];
+
+/**
+ * The acts each rule set takes, with the fields each requires, as the directory lists them (FR-CONGRESS-02, -04, -05,
+ * -07): an act's optional fields are left out.
+ */
+const RULE_SET_ACTS: Readonly<Record<string, readonly string[]>> = {
+  venue: ["ask_quote (date, attendance)", "request_document (kind)", "hold (date)", "book (date, rooms, hours)", "accept_contract (contract)", "change_booking (rooms, hours)", "request_extra (item)", "accept_extra (item)", "cancel_booking", "accept_change (option)", "decline_change"],
+  board: ["submit_budget (costs, income, contingency, funds_requested)", "request_approval (amount, reason)", "report"],
+  speaker: ["invite (session, time, fee, travel_paid)", "accept_condition", "decline_condition", "confirm (time, room, length, travel)", "change", "withdraw_invitation", "ask_slides (by)", "ask_panel (slot)", "ask_promote"],
+  partner: ["confirm (time, room, length, travel)", "change", "ask_slides (by)"],
+  caterer: ["ask_quote (attendance, diets)", "order (counts, date, venue)", "final_numbers (counts)", "cancel_order"],
+  sponsor: ["ask_conditions", "accept_sponsorship (conditions)", "counter (conditions)", "send_attendee_list (list)", "send_evidence"],
+  agency: ["ask_quote (date)", "book (date)", "cancel"],
+};
+
+/**
+ * The directory of the drawn parties (FR-CONGRESS-08): a line for each, with its id, its kind, whether it has a mailbox
+ * and a line, and the acts its rule set takes with their required fields.
+ */
+function directoryOf(configuration: Configuration, chosenOf: Readonly<Record<string, TomlTable[]>>, templates: readonly TomlTable[]): string {
+  const mailboxes = ((configuration.mail as TomlTable | undefined)?.mailboxes ?? []) as string[];
+  const lines = ((configuration.phone as TomlTable | undefined)?.lines ?? []) as string[];
+  const settings = (configuration.kinds ?? {}) as TomlTable;
+  // The in-house caterers come with their venues, beside the drawn templates.
+  const inHouse = templates.filter(({ kind, in_house_for: venue }) => kind === "caterer" && venue !== undefined).map(({ id }) => ({ id: id as string, kind: "caterer" }));
+  const parties = [...Object.entries(chosenOf).flatMap(([kind, chosen]) => chosen.map(({ id }) => ({ id: id as string, kind }))), ...inHouse];
+  return parties
+    .map(({ id, kind }) => {
+      const has = `with ${mailboxes.includes(id) ? "a mailbox" : "no mailbox"} and ${lines.includes(id) ? "a line" : "no line"}`;
+      const acts = RULE_SET_ACTS[String((settings[kind] as TomlTable | undefined)?.rules)] ?? [];
+      return `- ${id}: ${kind}, ${has}; ${acts.length === 0 ? "takes no act the congress lists" : `takes ${acts.join(", ")}`}`;
+    })
+    .join("\n");
+}
+
+/**
+ * The configuration with its texts filled with what the replica drew (FR-CONGRESS-08): {topic}, {target}, {event_day},
+ * {funds} and {directory}, and {{ and }} as braces; a name in braces that is none of these, or {funds} with no board
+ * drawn, is refused, naming it and its text.
+ */
+function withDrawnTexts(configuration: Configuration, drawn: Drawn, calendar: Calendar | undefined, chosenOf: Readonly<Record<string, TomlTable[]>>, templates: readonly TomlTable[]): Configuration {
+  const day = configuration.event_day as number;
+  const weekday = calendar === undefined ? undefined : WEEKDAYS[(((calendar.weekdayOfDayOne + day - 1) % 7) + 7) % 7];
+  const board = chosenOf.board?.[0];
+  const values: Record<string, () => string> = {
+    topic: () => drawn.topic,
+    target: () => String(drawn.attendance),
+    event_day: () => `day ${day}${weekday === undefined ? "" : ` ${weekday}`}`,
+    funds: () => String(board?.funds),
+    directory: () => directoryOf(configuration, chosenOf, templates),
+  };
+  const texts = Object.fromEntries(
+    TEXTS.filter((key) => typeof configuration[key] === "string").map((key) => {
+      const text = configuration[key] as string;
+      const result = text.replace(/\{\{|\}\}|\{(\w+)\}/g, (written, name: string | undefined) => {
+        if (name === undefined) return written[0];
+        if (!DRAWN_NAMES.includes(name)) throw refused(key, text, `it names {${name}}, which is none of {${DRAWN_NAMES.join("}, {")}}`);
+        if (name === "funds" && board === undefined) throw refused(key, text, "it names {funds}, and the variant drew no board");
+        return values[name]();
+      });
+      return [key, result];
+    }),
+  );
+  return { ...configuration, ...texts };
+}
+
+/**
+ * The parties a part's actors may name by group (FR-CONGRESS-08): `role:<role>`, the templates that filled the role, and
+ * `kind:<kind>`, every drawn party of that kind, the venues' in-house caterers among the caterers.
+ */
+function partyGroups(configuration: Configuration): Readonly<Record<string, readonly string[]>> {
+  const drawn = configuration.drawn as unknown as Drawn | undefined;
+  const groups: Record<string, string[]> = {};
+  for (const [kind, ids] of Object.entries(drawn?.chosen ?? {})) groups[`kind:${kind}`] = [...ids];
+  const inHouse = Object.entries((configuration.participants ?? {}) as TomlTable)
+    .filter(([, participant]) => (participant as TomlTable).rules === "caterer" && ((participant as TomlTable).params as TomlTable | undefined)?.in_house_for !== undefined)
+    .map(([name]) => name);
+  if (inHouse.length > 0) groups["kind:caterer"] = [...(groups["kind:caterer"] ?? []), ...inHouse.filter((name) => !(groups["kind:caterer"] ?? []).includes(name))];
+  for (const byRole of Object.values(drawn?.roles ?? {})) for (const [role, ids] of Object.entries(byRole)) groups[`role:${role}`] = [...(groups[`role:${role}`] ?? []), ...ids];
+  return groups;
 }
 
 /** The sixth: the six lowest fees of the available speakers count toward the cost-covering price. */
@@ -1318,6 +1407,7 @@ function worldInventory(configuration: Configuration): Readonly<Record<string, u
     durations: configuration.durations,
     wait_max_minutes: configuration.wait_max_minutes,
     away_factor: configuration.away_factor,
+    perturbations: configuration.perturbations ?? {},
     prompt: Object.fromEntries(TEXTS.map((key) => [key, configuration[key]])),
     placement: configuration.placement,
   };
@@ -1331,6 +1421,9 @@ const BASE_CONFIGURATION = [
   // The engine refuses an empty system prompt: the base gives the organiser one text there.
   'knowledge = "You organise a congress."',
   'guidance = ""',
+  // The population and the parts an experiment may give, as materials; empty, none (FR-CONGRESS-08).
+  'attendees = ""',
+  'parts = ""',
   'task_giver = "The board"',
   'organiser_place = "office"',
   "city = '''",
@@ -1369,12 +1462,17 @@ const BASE_CONFIGURATION = [
   'start = "day 1 Monday 09:00"',
   "[[calendar.segments]]",
   "scale = 60",
+  // An open table: an experiment adds the hours its venues and parties keep (FR-CONGRESS-08).
+  "[calendar.hours]",
   "[mail]",
   'mailboxes = ["organiser"]',
   "delivery_minutes = [1, 1]",
   "send_minutes = 0",
   "check_minutes = 0",
   "read_minutes = 0",
+  "send_minutes_per_field = 0",
+  "send_words_per_minute = 0",
+  "read_words_per_minute = 0",
   'notice_source = "mail client"',
   'notice = "New mail from {from}: {subject}"',
   "[phone]",
@@ -1382,6 +1480,8 @@ const BASE_CONFIGURATION = [
   "ring_minutes = 5",
   "call_minutes = 4",
   'ring = "{from} calls ({call}): {act}. {fields}{text}"',
+  // A ring reaches a resting organiser at once; a mail's notice waits for its next activation (FR-CONGRESS-08).
+  "wakes = true",
   "[money]",
   "discretionary_limit = 300",
   // The world's travel, which invoices the organiser for what it books (FR-CONGRESS-05).
@@ -1432,6 +1532,9 @@ const BASE_CONFIGURATION = [
   "publish_programme = 0",
   "announce = 0",
   "read_programme = 0",
+  "ledger = 0",
+  "pay = 0",
+  "issue_invoice = 0",
   "[rhythm]",
   'source = "rhythm"',
   'text = "You wake up."',
@@ -1487,4 +1590,7 @@ export const congressScenario: Scenario<Congress> = {
   slowedBy: awayFactorOf,
   worldInventory,
   baseConfiguration: BASE_CONFIGURATION,
+  // An experiment adds hours and perturbations the base does not have (FR-CONGRESS-08).
+  openTables: ["calendar.hours", "perturbations"],
+  partyGroups,
 };
