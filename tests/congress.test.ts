@@ -273,6 +273,27 @@ describe("the congress's corrections to the world (FR-CONGRESS-09)", () => {
 
     expect(loaded.mail?.settings.acts.chair).toEqual({ submit_budget: ["costs", "income", "contingency", "funds_requested"], request_approval: ["amount", "reason"], report: [] });
   });
+
+  it("orders the directory by a draw from the replica's seed, not by the pools' kinds", () => {
+    const orderOf = (seed: number) => {
+      const loaded = loadScenario(
+        ((scenario: Scenario<unknown>) => ({ ...scenario, ruleSets: { ...congressScenario.ruleSets, ...scenario.ruleSets } }))(
+          congress((configuration) => {
+            configuration.knowledge = "{directory}";
+            changingText("pools", (pools) => (pools.speaker = ["s1", "s2", "s3", "s4", "s5", "s6"].map((id) => ({ id }))))(configuration);
+            changingText("draw", (draw) => (draw.speaker = 6))(configuration);
+          }),
+        ),
+        seed,
+      );
+      return [...(loaded.systemPrompts.get("organiser") ?? "").matchAll(/^- ([\w-]+):/gm)].map(([, id]) => id);
+    };
+    const orders = [1, 2, 3].map(orderOf);
+
+    for (const order of orders) expect([...order].sort()).toEqual(["s1", "s2", "s3", "s4", "s5", "s6", "v1", "v2"]);
+    expect(new Set(orders.map((order) => order.join())).size).toBeGreaterThan(1);
+    expect(orders.some((order) => order.slice(0, 2).sort().join() !== "v1,v2")).toBe(true);
+  });
 });
 
 describe("the congress ready for an experiment (FR-CONGRESS-08)", () => {

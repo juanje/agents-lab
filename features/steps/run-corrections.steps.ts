@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
-import { Given, Then } from "@cucumber/cucumber";
+import { Given, Then, When } from "@cucumber/cucumber";
 import { type TomlTable, stringify } from "smol-toml";
+import { loadScenario } from "../../src/engine/scenario.ts";
 import type { Context } from "../support/context.ts";
 import { change, hourMsOf, organiserTurns, setUpCongress } from "./congress.steps.ts";
 import { before, changePools, fieldsOf, moneyLines, ranLines, sentBy, sentWith } from "./congress-parties.steps.ts";
@@ -230,4 +231,31 @@ Then('the call failed with the outcome "invalid_value", naming "Rosa Ferreira"',
 
 Given('"s1" answered "accept_if" with the condition "fee" to an invitation with fee 0', function (this: Context) {
   before(this, inviteTurns(this, "s1", 3, "11:00", 0));
+});
+
+/** Each replica's directory, by its seed, as its organiser's system prompt gives it. */
+const directories = new WeakMap<Context, string[][]>();
+
+When("two replicas run with the seeds 1 and 2", function (this: Context) {
+  change(this, (configuration) => (configuration.knowledge = "{directory}"));
+  const scenario = this.inventoryScenario?.();
+  assert.ok(scenario !== undefined, "the scenario set up no congress");
+  directories.set(
+    this,
+    [1, 2].map((seed) => {
+      const prompt = loadScenario(scenario, seed).systemPrompts.get(ORGANISER) ?? "";
+      return [...prompt.matchAll(/^- ([\w-]+):/gm)].map(([, id]) => id);
+    }),
+  );
+});
+
+Then("each directory lists the same parties, in an order drawn from its seed, not grouped by role", function (this: Context) {
+  const [first, second] = directories.get(this) ?? [];
+  // The draw's parties, by kind as the pools give them.
+  const grouped = ["chair", "v1", "s1", "s2", "sp1"];
+  assert.deepEqual([...first].sort(), [...grouped].sort());
+  assert.deepEqual([...second].sort(), [...grouped].sort());
+  assert.notDeepEqual(first, second, `both seeds list ${first.join(", ")}`);
+  const byKind = (order: string[]) => ["chair", "v1", "s", "sp1"].map((kind) => order.filter((id) => id === kind || (kind === "s" && /^s\d$/.test(id)))).flat();
+  assert.ok(first.join() !== byKind(first).join() || second.join() !== byKind(second).join(), `the directories are grouped by kind: ${first.join(", ")}; ${second.join(", ")}`);
 });
