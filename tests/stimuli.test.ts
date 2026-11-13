@@ -100,3 +100,45 @@ describe("Stimuli", () => {
     expect(stimuli.take("a")).toHaveLength(2);
   });
 });
+
+describe("Stimuli, holding a recipient's stimuli (FR-PARTICIPANT-01)", () => {
+  it("delivers a held stimulus, recording it, queueing it and telling its watchers, only once its hold lets it reach", async () => {
+    const delivered: string[] = [];
+    const stimuli = new Stimuli([bell, rhythmChannel], (agent, stimulus) => delivered.push(`${agent}: ${stimulus.content}`));
+    const seen: Stimulus[] = [];
+    stimuli.watch("desk", (stimulus) => seen.push(stimulus));
+    let reach: (reached: boolean) => void = () => {};
+    stimuli.hold("desk", () => new Promise((resolve) => (reach = resolve)));
+
+    stimuli.deliver("desk", "bell");
+
+    expect([delivered, seen, stimuli.take("desk")]).toEqual([[], [], []]);
+    reach(true);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(delivered).toEqual(["desk: The bell rings."]);
+    expect(seen).toHaveLength(1);
+    expect(stimuli.take("desk")).toEqual([{ channel: "bell", source: "town bell", content: "The bell rings." }]);
+  });
+
+  it("drops a held stimulus whose hold does not let it reach, as when the run ends first", async () => {
+    const delivered: string[] = [];
+    const stimuli = new Stimuli([bell, rhythmChannel], (agent) => delivered.push(agent));
+    stimuli.hold("desk", async () => false);
+
+    stimuli.deliver("desk", "bell");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(delivered).toEqual([]);
+    expect(stimuli.take("desk")).toEqual([]);
+  });
+
+  it("holds no other recipient's stimuli", () => {
+    const stimuli = new Stimuli([bell, rhythmChannel]);
+    stimuli.hold("desk", async () => true);
+
+    stimuli.deliver("a", "bell");
+
+    expect(stimuli.take("a")).toHaveLength(1);
+  });
+});

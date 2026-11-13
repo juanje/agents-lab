@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hoursAt, readCalendar, runMsFor, worldTimeAt } from "../src/engine/calendar.ts";
+import { hoursAt, reachedAfterMs, readCalendar, runMsFor, worldTimeAt } from "../src/engine/calendar.ts";
 
 /** A calendar from Friday 17:00, at 600 world seconds per run second until 17:10, then at 300. */
 const twoSegments = readCalendar({
@@ -112,5 +112,28 @@ describe("runMsFor", () => {
   it("gives less run time for the same world duration in a faster segment", () => {
     expect(runMsFor(twoSegments, 0, 60)).toBeCloseTo(100, 6);
     expect(runMsFor(twoSegments, 1000, 60)).toBeCloseTo(200, 6);
+  });
+});
+
+describe("reachedAfterMs (FR-PARTICIPANT-01)", () => {
+  const office = readCalendar({
+    start: "day 1 Friday 17:00",
+    segments: [{ scale: 600 }],
+    hours: { office: { days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"], from: "09:00", to: "18:00" } },
+  });
+
+  it("gives the run time from a moment until a duration in world time has passed, without hours", () => {
+    // At 17:04, ten world minutes later is 17:14: 600 ms of the run at 100 ms a world minute.
+    expect(reachedAfterMs(office, 400, 600)).toBeCloseTo(600, 6);
+  });
+
+  it("gives the same within the hours, when the duration ends within them", () => {
+    expect(reachedAfterMs(office, 400, 600, "office")).toBeCloseTo(600, 6);
+  });
+
+  it("gives the run time until the hours next begin, when the duration ends outside them", () => {
+    // At 17:54, ten world minutes later is 18:04, after the office closes: the first moment within it is Monday 09:00.
+    const mondayMs = ((3 * 24 * 60 - 8 * 60) * 60 * 1000) / 600;
+    expect(reachedAfterMs(office, 5400, 600, "office")).toBeCloseTo(mondayMs - 5400, 6);
   });
 });
