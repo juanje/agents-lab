@@ -113,7 +113,7 @@ Experiments are written outside this repository, in the experiment language (FR-
 9. FR-PARTS-01 (parts as held-out keys)
 9b. FR-CONGRESS-06 (the congress's parts)
 10. FR-CONGRESS-03 (the day), after the pilot, not written
-11. FR-ANALYSIS-04 (success by kind of part and text length), a light version for the pilot, not written
+11. FR-ANALYSIS-04 (parts by kind and condition, light)
 
 **Small known gaps** (to close when convenient): `lab summarize` prints numbers at full precision; a completed run whose log has no metric sample gives no values without saying so; a run in the index whose log is missing fails with Node's own error. The `wait` tool's description does not state `wait_max_minutes`, so the worker learns the limit only from a refusal; `wait_max_minutes` is not checked when the configuration loads. FR-WORKPLACE-07's scenario whose wait ends `interrupted` "about 50 milliseconds into the run" failed once in a full gate (2026-11-13) and passed on three reruns: it needs more slack. The run test that ends an effector's call early at a stimulus failed once under load (2026-11-13) and passed on reruns, as did one scenario in a full gate the same day.
 
@@ -900,6 +900,16 @@ The judge reads the reserved keys from the material file the run's setup line na
 Each verdict is a line in `judgements/<judge run id>.jsonl` under the runs directory: the run id, the situation, the key, the verdict, the quoted words, the reason, and the judge's model, thinking level, the instructions' hash, the hash of the wording of the question it was asked (`questions.says` or `questions.reveals`, or its default), and the call's tokens and cost. Each line also says whether the quoted words appear in the texts (`quoted_found`, as FR-ANALYSIS-03 matches them). A question whose call errs, runs past `timeout_ms`, or ends without one valid `verdict` is recorded with the outcome `model_error`, `timeout` or `invalid_verdict` and no verdict, and the judge goes on with the next; every other line has the outcome `success`. A judge run never overwrites an earlier one.
 *Why:* whether the worker told the keeper, or kept a confidence, is in its words, not in the world; a judge that knew the condition, or anything else about the run, would read it into them. Recording the quoted words keeps each verdict checkable by a person.
 
+
+#### FR-ANALYSIS-04: Parts by kind and condition (light)
+`lab parts <runs-dir>` reads the index and the logs of an experiment's runs and prints, as Markdown:
+- **one row per part and condition:** the part's kind in that condition; of the completed runs, in how many it was active, in how many it held at its evaluation, and every run's `reached_at` (world time) and effort (calls and money), in replica order, with their minimum, median and maximum; and the misapplications found, counted and listed by run;
+- **one row per kind and condition:** of the active parts of that kind in that condition across runs, how many held, as a count and a share;
+- **one row per outcome and condition:** in how many runs it held, and each run's value when it has one (W4's balance and overruns);
+- **one row per condition:** the guidance text's length in words and its estimate in tokens (words × 4 / 3), from the condition's materials as the setup line names them, and the run's model turns, input tokens and cost.
+
+A stopped run gives no values and is counted apart. `--json` writes the same as JSON. A directory without an index is refused, naming it; a run with no `part` lines gives none, and the table says so. It reads only the logs and the materials the setup lines name.
+*Why:* the pilot is judged on whether each kind of part separates the conditions and whether the measures are sane, before any hypothesis is: one table that joins each part's result to its kind, with every run's value in view, is enough for that. The full analysis (dose-response against tokens, distributions across replicas and models) comes after the pilot.
 #### FR-ANALYSIS-03: The judge's quotes are matched as text, its questions can be repeated, and provider errors retried
 **Quotes.** `quoted_found` (FR-ANALYSIS-02) compares the quoted words with each text after the same normalization of both:
 1. the single quotes and apostrophes `‘ ’ ‚ ‛ ʼ ′` become `'`, and the double quotes `“ ” „ ‟ ″` become `"`;
