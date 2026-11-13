@@ -4,6 +4,7 @@ import { readExperiment } from "../src/engine/experiment.ts";
 import { inventory, inventoryMarkdown } from "../src/engine/inventory.ts";
 import type { Scenario } from "../src/engine/scenario.ts";
 import { postScenario } from "./fixtures/post.ts";
+import { switchboardScenario } from "./fixtures/switchboard.ts";
 import { type Slots, filler, slotsScenario } from "./fixtures/slots.ts";
 
 /** An experiment file over the slots test scenario, in TOML, with these conditions after its other fields. */
@@ -506,5 +507,31 @@ describe("inventory, participants (FR-PARTICIPANT-01)", () => {
     const made = inventory(experimentOf(["[conditions.base]"]), postScenario);
     expect(made.conditions[0]).not.toHaveProperty("participants");
     expect(inventoryMarkdown(made)).not.toContain("Participants");
+  });
+});
+
+describe("inventory, the phone (FR-PHONE-01)", () => {
+  const desk = ["[participants.desk]", 'decides = "rules"', 'rules = "operator"', 'tools = ["answer_call", "call"]', 'channels = ["phone"]'].join("\n");
+  const withPhone = { ...switchboardScenario(desk), ruleSets: { operator: { start: () => ({ next: () => ({ kind: "end" as const }), outcome: () => ({}) }) } } };
+
+  it("gives the lines, ring_minutes, call_minutes, the time per word and the ring's text, and lists the phone's tools and its channel", () => {
+    const made = inventory(experimentOf(["[conditions.base]"]), withPhone);
+    const [condition] = made.conditions;
+
+    expect((condition as { phone?: unknown }).phone).toEqual({ lines: ["ana", "ben", "desk"], ringMinutes: 5, callMinutes: 4, ring: "{from} calls ({call}): {act}. {fields}{text}" });
+    expect(condition.tools.map(({ name }) => name)).toEqual(["send_mail", "check_mail", "read_mail", "call", "answer_call"]);
+    expect(condition.tools.find(({ name }) => name === "answer_call")?.duration).toBe(
+      "call_minutes, plus one minute per call_words_per_minute words of the call's text and the answer's, in world minutes",
+    );
+    expect(condition.channels.map(({ name }) => name)).toEqual(["rhythm", "mail_notice", "phone"]);
+    expect(inventoryMarkdown(made)).toContain(
+      [
+        "### Phone\n",
+        "- Lines: ana, ben, desk",
+        "- Durations: ring_minutes 5, call_minutes 4, call_words_per_minute: none",
+        "- Ring: {from} calls ({call}): {act}. {fields}{text}",
+        "",
+      ].join("\n"),
+    );
   });
 });
