@@ -351,6 +351,50 @@ describe("inventory", () => {
     expect(printed(experiment, slotsWith())).not.toContain("Clock");
   });
 
+  it("gives the calendar a condition's configuration declares: its start, each segment's scale and run time, and its hours (FR-CLOCK-03)", () => {
+    const experiment = experimentOf(["[conditions.baseline]"]);
+    const calendar = [
+      "[calendar]",
+      'start = "day 2 Saturday 23:00"',
+      "[[calendar.segments]]",
+      "scale = 3600",
+      'until = "day 3 01:00"',
+      "[[calendar.segments]]",
+      "scale = 60",
+      "[calendar.hours.office]",
+      'days = ["Monday", "Friday"]',
+      'from = "09:00"',
+      'to = "18:00"',
+    ].join("\n");
+    const scenario = slotsWith({ baseConfiguration: `${slotsWith().baseConfiguration}\n${calendar}\n` });
+
+    expect(inventory(experiment, scenario).conditions[0].calendar).toEqual({
+      start: "day 2 Saturday 23:00",
+      segments: [
+        { scale: 3600, until: "day 3 01:00", runTime: "2000 ms" },
+        { scale: 60, runTime: "until the run ends" },
+      ],
+      hours: { office: { days: ["Monday", "Friday"], from: "09:00", to: "18:00" } },
+    });
+    expect(printed(experiment, scenario)).toContain(
+      [
+        "### Calendar\n",
+        "- Start: day 2 Saturday 23:00",
+        "- Segment 1: 3600 world seconds for each second of the run, until day 3 01:00, taking 2000 ms of the run",
+        "- Segment 2: 60 world seconds for each second of the run, until the run ends",
+        '- Hours "office": Monday, Friday, from 09:00 to 18:00',
+        "",
+      ].join("\n"),
+    );
+  });
+
+  it("has no calendar for a configuration that declares none", () => {
+    const experiment = experimentOf(["[conditions.baseline]"]);
+
+    expect(inventory(experiment, slotsWith()).conditions[0]).not.toHaveProperty("calendar");
+    expect(printed(experiment, slotsWith())).not.toContain("Calendar");
+  });
+
   it("fences a system prompt that holds a fence with a longer one, so the prompt is given whole", () => {
     const experiment = experimentOf(["[conditions.baseline]"]);
     const scenario = slotsWith({ systemPrompt: () => "Answer like this:\n```\ndone\n```" });

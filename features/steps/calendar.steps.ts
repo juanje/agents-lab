@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import { Given, Then, When } from "@cucumber/cucumber";
-import type { TomlTable } from "smol-toml";
+import { type TomlTable, stringify } from "smol-toml";
+import { readExperiment } from "../../src/engine/experiment.ts";
+import { type Inventory, inventory, inventoryMarkdown } from "../../src/engine/inventory.ts";
 import * as calendars from "../../src/engine/calendar.ts";
 import type { Weekday, WorldDuration, WorldTime } from "../../src/engine/calendar.ts";
 import type { Component } from "../../src/engine/components.ts";
 import type { Sensor } from "../../src/engine/tools.ts";
 import { World } from "../../src/engine/world.ts";
-import type { Slots } from "../../tests/fixtures/slots.ts";
+import { type Slots, slotsScenario } from "../../tests/fixtures/slots.ts";
 import type { Context } from "../support/context.ts";
 import { editWorld, setClock, workplaceDay } from "./day.steps.ts";
 import { scriptWorker } from "./measures.steps.ts";
@@ -236,6 +238,53 @@ Given(
     });
     this.libraryScenario = withBase(this.libraryScenario, { durations: { check_time_ms: 10 } });
     scriptWorker(this, 'call "look", then wait 130 milliseconds, then call "check_time"');
+  },
+);
+
+/** The inventory the scenario made, of an experiment over the slots test scenario with the configuration's [calendar]. */
+const inventories = new WeakMap<Context, Inventory>();
+
+When("the inventory is made", function (this: Context) {
+  const experiment = readExperiment(
+    [
+      'id = "calendar"',
+      'scenario = "slots"',
+      'models = ["scripted/one"]',
+      'thinking_level = "off"',
+      "replicas = 1",
+      "seed = 1",
+      "[limits]",
+      "time_limit_ms = 1000",
+      "activations_per_agent = 1",
+      "parallelism_limit = 1",
+      "model_turn_timeout_ms = 500",
+      "[compaction]",
+      "enabled = false",
+      "[conditions.base]",
+      "",
+    ].join("\n"),
+  );
+  const scenario = { ...slotsScenario, baseConfiguration: `${slotsScenario.baseConfiguration}\n${stringify({ calendar: calendarOf(this) })}\n` };
+  inventories.set(this, inventory(experiment, scenario));
+});
+
+Then(
+  "it gives the start {string}, the first segment with scale {int} until {string} taking {int} milliseconds of the run, and the second with scale {int} {string}",
+  function (this: Context, start: string, firstScale: number, until: string, takesMs: number, secondScale: number, lasts: string) {
+    const made = inventories.get(this);
+    assert.ok(made !== undefined, "no inventory was made");
+    const [condition] = made.conditions;
+    assert.deepEqual(condition.calendar, {
+      start,
+      segments: [
+        { scale: firstScale, until, runTime: `${takesMs} ms` },
+        { scale: secondScale, runTime: lasts },
+      ],
+      hours: {},
+    });
+    // "lab inventory" prints what the inventory gives.
+    const printed = inventoryMarkdown(made);
+    for (const text of [start, `${firstScale}`, until, `${takesMs} ms`, `${secondScale}`, lasts]) assert.ok(printed.includes(text), `the printed inventory does not give ${text}`);
   },
 );
 
