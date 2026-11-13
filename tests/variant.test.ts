@@ -75,7 +75,11 @@ describe("run, an effector that refuses by the world's time (FR-CONGRESS-01)", (
     const { calls } = await runPost({ ...postScenario, tools: [knock] }, [{ name: "knock", arguments: {} }]);
 
     expect(calls.map(({ outcome }) => outcome)).toEqual(["closed"]);
-    expect(given).toEqual([{ day: 1, weekday: "Monday", seconds: 9 * 3600 }]);
+    // The run's start, within the moment the engine takes to start the call.
+    // The run's start, within the 10 ms of the run (6 world seconds) the engine takes to start the call.
+    expect(given).toHaveLength(1);
+    expect(given[0]).toMatchObject({ day: 1, weekday: "Monday" });
+    expect((given[0] as { seconds: number }).seconds - 9 * 3600).toBeLessThanOrEqual(6);
   });
 });
 
