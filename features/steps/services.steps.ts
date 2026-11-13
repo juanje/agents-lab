@@ -11,7 +11,7 @@ import { script } from "./tool.steps.ts";
 const ORGANISER = "organiser";
 
 /** The caterer of the Background. */
-const C1: TomlTable = {
+export const C1: TomlTable = {
   id: "c1",
   price_per_head: 30,
   diets: { vegan: {}, gluten_free: { limit: 5 } },
@@ -34,15 +34,20 @@ const A1: TomlTable = { id: "a1", price: 400, notice_days: 7 };
 Given(
   "the congress scenario of FR-CONGRESS-04, whose calendar starts at {string} with one segment of scale {int}, so one world hour is {int} milliseconds of the run",
   function (this: Context, start: string, scale: number, hourMs: number) {
-    setUpSpeakersCongress(this, start, scale, hourMs);
-    changePools(this, (pool) => {
-      pool.caterer = [structuredClone(C1)];
-      pool.sponsor = structuredClone(SPONSORS);
-      pool.agency = [structuredClone(A1)];
-    });
-    drawing(this, { caterer: 1, sponsor: 2, agency: 1 });
+    setUpServicesCongress(this, start, scale, hourMs);
   },
 );
+
+/** FR-CONGRESS-05's congress: FR-CONGRESS-04's, with the caterer "c1", the sponsors "sp1" and "sp2" and the agency "a1". */
+export function setUpServicesCongress(context: Context, start: string, scale: number, hourMs: number): void {
+  setUpSpeakersCongress(context, start, scale, hourMs);
+  changePools(context, (pool) => {
+    pool.caterer = [structuredClone(C1)];
+    pool.sponsor = structuredClone(SPONSORS);
+    pool.agency = [structuredClone(A1)];
+  });
+  drawing(context, { caterer: 1, sponsor: 2, agency: 1 });
+}
 
 Given('the mail delivers in 1 world minute and every party has no hours, no reply delay and "pick_up" 1', function (this: Context) {
   change(this, (configuration) => {
@@ -107,7 +112,7 @@ Then(/^"(c\d+|a\d+|sp\d+)" answered "(\w+)"$/, function (this: Context, party: s
 });
 
 /** The organiser's last result of a tool: a sensor's result, or an effector's text. */
-function resultOf(context: Context, tool: string): { outcome: string; text: string } {
+export function resultOf(context: Context, tool: string): { outcome: string; text: string } {
   const calls = ranLines(context).filter((line) => line.type === "tool_call" && line.agent === ORGANISER && line.tool === tool);
   assert.ok(calls.length > 0, `the organiser made no "${tool}" call`);
   const last = calls.at(-1) as Record<string, unknown>;
@@ -139,7 +144,7 @@ Given("it is {string}", function (this: Context, day: string) {
 });
 
 /** The organiser's money summary as the run ended. */
-function organiserSummary(context: Context): Record<string, unknown> {
+export function organiserSummary(context: Context): Record<string, unknown> {
   const summary = ranLines(context).find((line) => line.type === "money_summary" && line.account === ORGANISER);
   assert.ok(summary !== undefined, "the log has no money summary for the organiser");
   return summary;
