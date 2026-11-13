@@ -9,8 +9,9 @@ import { MailMedium, mailTools } from "./mail.ts";
 import { ParallelismLimit } from "./parallelism.ts";
 import { type ParticipantSettings, Participants } from "./participants.ts";
 import { PhoneExchange, phoneTools } from "./phone.ts";
+import { PartsBook } from "./parts.ts";
 import { INVOICE_NOTICE, MONEY_TOOLS, MoneyBook, type MoneySettings, moneyTools, moneyToolsOf } from "./money.ts";
-import { type WorldTime, hoursAt } from "./calendar.ts";
+import { type Calendar, type WorldTime, hoursAt, reachedAfterMs } from "./calendar.ts";
 import type { Tool } from "./tools.ts";
 import { Random } from "./random.ts";
 import { type LogLine, Recorder, type RunSetup, type Sampling } from "./recorder.ts";
@@ -172,7 +173,7 @@ export const PROVIDER_DEFAULTS = "the provider's defaults";
  * sampling settings the sessions use, or null.
  */
 async function runAgents<State>(
-  { world, scenario, systemPrompts, rhythms, components, calendar, mail, phone, money, participants = [], variant, channels }: LoadedScenario<State>,
+  { world, scenario, systemPrompts, rhythms, components, calendar, mail, phone, money, participants = [], variant, channels, parts }: LoadedScenario<State>,
   agents: readonly Agent[],
   seed: number,
   settings: RunSettings,
@@ -204,12 +205,27 @@ async function runAgents<State>(
     toolCall: (call) => {
       recorder.record({ type: "tool_call", ...call });
       toolCalls.push(call);
+      // An act, as it lands, for the parts' effort and misapplications (FR-PARTS-01).
+      const now = clock.worldTime();
+      if (now !== undefined) partsBook?.acted({ agent: call.agent, tool: call.tool, arguments: call.arguments as Record<string, unknown>, world: now });
     },
     retry: (retry) => recorder.record({ type: "rate_limit_retry", ...retry }),
     start: (start) => recorder.record({ type: "effector_start", ...start }),
     compaction: (compaction) => recorder.record({ type: "compaction", ...compaction }),
   };
   const sensings = new Sensings();
+  // The parts, held-out keys evaluated from the world's changes and the agents' acts (FR-PARTS-01).
+  const partsBook =
+    parts === undefined || scenario.parts === undefined
+      ? undefined
+      : new PartsBook<State>({
+          parts: parts.parts,
+          provided: scenario.parts,
+          ...(parts.level === undefined ? {} : { level: parts.level }),
+          agents: agents.map(({ name }) => name),
+          ...(money === undefined ? {} : { moneyOf: (state: State) => money.keeper.of(state) as never }),
+          record: (line) => recorder.record(line as never),
+        });
   const changes = new ChangesSinceSensing();
   const messages = new Map<string, AgentSession["messages"]>();
   // Every session is open before any agent starts, so opening them uses none of the time limit (FR-CLOCK-02). One that
@@ -285,6 +301,7 @@ async function runAgents<State>(
   medium?.start(startedAtMs);
   // Participants start once the mail and the phone watch the world, so a rule set's first step reaches them (FR-PARTICIPANT-01).
   parties.start();
+  const evaluating = partsBook === undefined || calendar === undefined ? undefined : evaluateParts(partsBook, { world, clock, calendar, runEnd: runEnd.signal });
   const sample = () => sampleMetrics(world, toolCalls, scenario.metrics, recorder, performance.now());
   sampleMetrics(world, toolCalls, scenario.metrics, recorder, startedAtMs);
   const timer = setTimeout(() => runEnd.abort(), settings.timeLimitMs);
@@ -323,11 +340,13 @@ async function runAgents<State>(
     await Promise.all([...cycles, ...agentLoops]);
     // A message in transit, a participant's held stimulus or its rule set at work keeps the run going, until none
     // remains or the run's time limit passes (FR-MESSAGE-01, FR-PARTICIPANT-01).
+    // So does a part still to be evaluated at a world time (FR-PARTS-01).
     do {
       await medium?.delivered();
       await exchange?.settled();
       await parties.settled();
-    } while (medium?.busy === true || exchange?.busy === true || parties.busy);
+      await evaluating?.settled();
+    } while (medium?.busy === true || exchange?.busy === true || parties.busy || (partsBook?.busy === true && !runEnd.signal.aborted));
   } finally {
     // A run that ends at its budget must not leave its time limit pending, nor a sample to write once its log is closed.
     clearTimeout(timer);
@@ -338,6 +357,10 @@ async function runAgents<State>(
   exchange?.cutOff();
   // Each account's summary as the run ends (FR-MONEY-01).
   book?.summarise();
+  // The parts due by the run's end, those evaluated at it, and the list of those not evaluated (FR-PARTS-01).
+  evaluating?.stop();
+  const endedAt = clock.worldTime();
+  if (endedAt !== undefined) partsBook?.finish(world.state, endedAt);
   // Each participant decided by rules gives its outcome record as the run ends (FR-PARTICIPANT-01).
   for (const { participant, outcome } of parties.outcomes()) recorder.record({ type: "participant_outcome", participant, outcome });
   // So does each component that keeps one, from the world's state (FR-POPULATION-01).
@@ -425,4 +448,42 @@ async function loop(
     await wake(session, stimuli.wake(agent.name));
     recorder.record({ type: "activation", agent: agent.name, wokeAtMs, endedAtMs: performance.now() });
   }
+}
+
+/**
+ * Evaluates a run's parts at their world times (FR-PARTS-01): it waits until the next evaluation its book knows of, or a
+ * change of the world, which may set one, and evaluates what is due with the world as it is then. Settled once no
+ * evaluation at a world time is left, or the run has ended.
+ */
+function evaluateParts<State>(book: PartsBook<State>, { world, clock, calendar, runEnd }: { world: World<State>; clock: RunClock; calendar: Calendar; runEnd: AbortSignal }) {
+  const stopped = new AbortController();
+  const ending = AbortSignal.any([runEnd, stopped.signal]);
+  let changed = new AbortController();
+  const unwatch = world.watch((_before, after) => {
+    const now = clock.worldTime();
+    if (now !== undefined) book.changed(after, now);
+    changed.abort();
+  });
+  const start = clock.worldTime();
+  if (start !== undefined) book.start(world.state, start);
+  const done = (async () => {
+    while (!ending.aborted) {
+      const next = book.nextAt();
+      const now = clock.worldTime() as WorldTime;
+      const seconds = next === undefined ? Infinity : Math.max(0, (next.day - now.day) * 86_400 + next.seconds - now.seconds);
+      await waitAtLeast(seconds === Infinity ? Infinity : reachedAfterMs(calendar, clock.sinceStartMs(), seconds), AbortSignal.any([ending, changed.signal]));
+      if (changed.signal.aborted) changed = new AbortController();
+      const at = clock.worldTime();
+      if (!ending.aborted && at !== undefined) book.due(world.state, at);
+    }
+    unwatch();
+  })();
+  return {
+    /** Resolves once no evaluation at a world time is left, or the run has ended. */
+    settled: async () => {
+      while (book.busy && !ending.aborted) await waitAtLeast(5, ending);
+    },
+    stop: () => stopped.abort(),
+    done,
+  };
 }
