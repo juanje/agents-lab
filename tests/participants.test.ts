@@ -159,6 +159,11 @@ describe("readParticipants, refusing what cannot be followed (FR-PARTICIPANT-01)
     expect(refusing({ desk: desk({ hours: "office" }) }, withoutCalendar)).toThrow(/participants\.desk\.hours/);
   });
 
+  it("refuses reply_minutes without a calendar, whose world minutes they are", () => {
+    const { calendar: _calendar, ...withoutCalendar } = declared;
+    expect(refusing({ desk: desk({ reply_minutes: [1, 2] }) }, withoutCalendar)).toThrow(/participants\.desk\.reply_minutes.*\[calendar\]/);
+  });
+
   it("refuses reply_minutes that are not two numbers, the first at least 0 and not above the second", () => {
     for (const replyMinutes of [[30, 10], [-1, 10], [10], ["ten", 20]]) {
       expect(refusing({ desk: desk({ reply_minutes: replyMinutes }) })).toThrow(/participants\.desk\.reply_minutes/);
