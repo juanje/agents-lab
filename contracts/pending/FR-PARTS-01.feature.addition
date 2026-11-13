@@ -1,0 +1,23 @@
+  # Approved addition (2026-11-13): a group beside the kind. Appended to FR-PARTS-01.feature when the FR is reopened.
+
+  Scenario: A part's group and kind are both in its line
+    Given the part "p1" also has the group "covered", and its kinds give "none" new and "rules" covered
+    And the condition's "guidance" is "none"
+    When the run's time limit passes at "day 1 Monday 19:00"
+    Then the "part" line for "p1" gives the group "covered" and the kind "new"
+
+  Scenario: An inactive part keeps its group
+    Given the part "p2" has the group "variant", activation the event "flag_raised" with flag "alarm", evaluated at "end"
+    When the run's time limit passes at "day 1 Monday 19:00"
+    Then the "part" line for "p2" says it was not active and gives the group "variant"
+
+  Scenario: Kinds may name levels the experiment does not run
+    Given "p1"'s kinds also give the level "character" covered, which the experiment does not run
+    When the experiment's inventory is made
+    Then it is not refused
+
+  Scenario: A group stands for a level's missing kind
+    Given "p1" has the group "changed" and kinds only for "rules"
+    And the condition's "guidance" is "none"
+    When the run's time limit passes at "day 1 Monday 19:00"
+    Then the "part" line for "p1" gives the group "changed" and the kind "changed"

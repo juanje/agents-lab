@@ -532,6 +532,8 @@ After an agreement, a sponsor pays any invoice from the organiser for at most it
 **The inventory** lists, for the organiser, only the tools its session is offered.
 *Why:* E1's first technical run could not start: an experiment could not set the population, the parts, the venues' hours or the perturbations, its texts would have to be rewritten for every replica's draw, effort could not be measured per part, and a call to an organiser between activations was lost.
 
+
+**Addition: a fuller, shorter directory (approved 2026-11-13; scenarios in `contracts/pending/FR-CONGRESS-08.feature.addition` until the FR is reopened).** `{directory}` gives, first, each kind's acts with their required fields, once per kind; then one line per drawn party with its id, its kind, whether it has a mailbox and a line, and what its template says of it that anyone could know: a speaker's title and home (`local` or its station), a caterer's venue when it is a venue's in-house caterer. The partner's speaker is not listed: the organiser learns of it from the board's mail.
 #### FR-POPULATION-01: Attendees, the ticket page, the programme and announcements
 The congress's attendees are a population: a component (FR-PROCESS-01) with its own sequence (`cycle of attendees`), from an `attendees` material and the variant.
 
@@ -581,6 +583,8 @@ A scenario may provide named part predicates and misapplication patterns, and an
 **Refusals**, before any model call, with an error that names the part and the key: a predicate, pattern or event the scenario does not provide; a kind other than the four; a `kinds` table that lacks a level of `kind_factor` or names a level it does not have; a `kind_factor` that is no factor of the experiment while a part has kinds; an `evaluate_at` that does not follow its format; an actor that is no participant; two parts with the same id.
 *Why:* E1's hypotheses are about kinds of parts, so each part's measure must be a fact of the world with a time, the same for every condition, and its kind under each condition a declared key, out of the agent's reach. Effort and misapplications come from the agent's structured acts, not from what it wrote about them.
 
+
+**Addition: a group beside the kind (approved 2026-11-13; scenarios in `contracts/pending/FR-PARTS-01.feature.addition` until the FR is reopened).** A part may give a `group` (`covered`, `variant`, `changed` or `new`), the same for every condition, besides its `kinds`, which stay the kind for each level. The part line gives both, the group even when the part was not active. `kinds` may name levels of `kind_factor` the experiment does not run; they are ignored, so one parts material serves every experiment over the same levels. A level the experiment runs still needs its kind, unless the part gives a group, which then stands for it. A part with neither kinds nor a group is an outcome.
 #### FR-CONGRESS-06: The congress's parts
 The congress provides, for FR-PARTS-01, the predicates, events and misapplication patterns of the preparation parts and of the whole-event outcomes' preparation proxies, read only from the world's records (venues' dates and contracts, commitments, invoices and payments, mail and calls with their acts and fields, the programme's versions, registrations, the ticket page, the population's beliefs, speakers' beliefs, travel and agency bookings). "Attendance" is registrants + confirmed speakers + 3 board members + `helpers` (a configuration value). The end of preparation is the clock's first segment's `until`. Each predicate below is named by its part.
 
@@ -931,6 +935,8 @@ Each verdict is a line in `judgements/<judge run id>.jsonl` under the runs direc
 
 A stopped run gives no values and is counted apart. `--json` writes the same as JSON. A directory without an index is refused, naming it; a run with no `part` lines gives none, and the table says so. It reads only the logs and the materials the setup lines name.
 *Why:* the pilot is judged on whether each kind of part separates the conditions and whether the measures are sane, before any hypothesis is: one table that joins each part's result to its kind, with every run's value in view, is enough for that. The full analysis (dose-response against tokens, distributions across replicas and models) comes after the pilot.
+
+**Addition: fixes found by E1's smoke run (approved 2026-11-13; scenarios in `contracts/pending/FR-ANALYSIS-04.feature.addition` until the FR is reopened).** A part line with a group or a kind is a part, never an outcome, whether or not it was active; the Kinds table uses the group when the line gives one. Materials are found from the experiment file's directory, which the setup line gives, not from where `lab` runs.
 #### FR-ANALYSIS-03: The judge's quotes are matched as text, its questions can be repeated, and provider errors retried
 **Quotes.** `quoted_found` (FR-ANALYSIS-02) compares the quoted words with each text after the same normalization of both:
 1. the single quotes and apostrophes `‘ ’ ‚ ‛ ʼ ′` become `'`, and the double quotes `“ ” „ ‟ ″` become `"`;
