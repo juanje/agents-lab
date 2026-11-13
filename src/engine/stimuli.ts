@@ -26,6 +26,8 @@ export class Stimuli {
   readonly #watchers = new Map<string, Set<(stimulus: Stimulus) => void>>();
   /** What holds each recipient's stimuli until they reach it, for a recipient whose stimuli are held. */
   readonly #holds = new Map<string, (stimulus: Stimulus) => Promise<boolean>>();
+  /** The channels each recipient that declares its channels takes stimuli through. */
+  readonly #declared = new Map<string, readonly string[]>();
 
   /**
    * Takes the scenario's channels, what to do with each stimulus as it is delivered (the run records it), and the
@@ -49,6 +51,7 @@ export class Stimuli {
     const declared = this.#stimulusOf(channel);
     const content = declared.content.replace(/\{(\w+)\}/g, (written, name: string) => (Object.hasOwn(values, name) ? values[name] : written));
     const stimulus = { ...declared, content };
+    if (!(this.#declared.get(agent)?.includes(channel) ?? true)) return;
     const hold = this.#holds.get(agent);
     if (hold === undefined) {
       this.#reach(agent, stimulus);
@@ -66,6 +69,14 @@ export class Stimuli {
    */
   hold(agent: string, until: (stimulus: Stimulus) => Promise<boolean>): void {
     this.#holds.set(agent, until);
+  }
+
+  /**
+   * Lets stimuli reach a recipient from now on only through the channels given, as a participant's declared channels do
+   * (FR-PARTICIPANT-01): a stimulus on another channel never reaches it, is not recorded and is not held.
+   */
+  only(agent: string, channels: readonly string[]): void {
+    this.#declared.set(agent, channels);
   }
 
   /** A stimulus reaching its recipient: recorded, waiting for it, and told to its watchers. */

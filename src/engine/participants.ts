@@ -147,10 +147,14 @@ export class Participants<State> {
     this.#run = run;
   }
 
-  /** Holds each participant's stimuli by its hours and reply delay, and wakes each rule set by the stimuli that reach it. */
+  /**
+   * Lets each participant's stimuli reach it only through the channels it declares, holds them by its hours and reply
+   * delay, and wakes each rule set by the stimuli that reach it.
+   */
   start(): void {
     const { participants, ruleSets, stimuli } = this.#run;
     for (const participant of participants) {
+      stimuli.only(participant.name, participant.channels);
       if (participant.hours !== undefined || participant.replyMinutes !== undefined) {
         const delays = Random.derive(this.#run.seed, `replies of ${participant.name}`);
         stimuli.hold(participant.name, () => this.#track(this.#held(participant, delays)));
