@@ -539,6 +539,27 @@ describe("run", () => {
     expect(Math.abs(given - (call.endedAtMs - startedAtMs))).toBeLessThan(5);
   });
 
+  it("gives a sensor, as it reads the world, the world's time its configuration's calendar gives then (FR-CLOCK-03)", async () => {
+    const clock: Sensor<Slots> = {
+      kind: "sensor",
+      name: "clock",
+      description: "The time.",
+      parameters: { type: "object", properties: {} },
+      durationMs: () => 0,
+      sense: (_state, _agent, _args, _sinceStartMs, world) => JSON.stringify(world),
+    };
+    const model = new ScriptedModel([
+      { toolCalls: [{ name: "clock", arguments: {} }], delayMs: 120 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+    const calendar = ["[calendar]", 'start = "day 3 Sunday 23:59"', "[[calendar.segments]]", "scale = 600", ""].join("\n");
+
+    const { toolCalls } = await run(slots({ tools: [clock], baseConfiguration: `${slotsScenario.baseConfiguration}\n${calendar}` }), [{ name: "a", model, activations: 1 }], seed, settings);
+
+    // 120 ms of the run is 72 world seconds at the scale 600: past midnight, into day 4.
+    expect(JSON.parse(toolCalls[0].result ?? "null")).toEqual({ day: 4, weekday: "Monday", seconds: 12 });
+  });
+
   it("applies an effector the model calls through the arbiter, with the agent and the call's arguments", async () => {
     const loaded = slots();
     const { world } = loaded;
