@@ -70,7 +70,7 @@ Feature: Corrections to venues, speakers and the phone
     Then "s1" answered "not_available" with what "acceptance", believes nothing about its session and committed nothing
 
   Scenario: The fee committed is the one agreed
-    Given "s5" answered "accept_if" with the condition "fee" to an invitation with fee 100, and the organiser sent "accept_condition"
+    Given "s5" answered "accept_if" with the condition "fee" to an invitation with fee 100, and the organiser sent "accept_condition" with fee 300
     And the organiser's scripted turns call "send_mail" to "s5" with the act "confirm", time "10:00", room "main-hall", length 45 and travel "none", then end
     When the run ends
     Then "s5" committed 300, its template's fee

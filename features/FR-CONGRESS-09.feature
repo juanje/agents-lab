@@ -40,8 +40,8 @@ Feature: Corrections to the world from E1's first technical run
     Then "s2" answered session 2 once and session 5 once, both "accept" or both "decline", as its one draw gave
 
   Scenario Outline: Accepting a condition turns it into an acceptance only when it is met
-    Given "s1" answered "accept_if" with the condition "fee" to an invitation with fee <offered>
-    And the organiser's scripted turns call "send_mail" to "s1" with the act "accept_condition", then end
+    Given "s1" answered "accept_if" with the condition "fee" to an invitation with fee 0
+    And the organiser's scripted turns call "send_mail" to "s1" with the act "accept_condition" and fee <offered>, then end
     When the run ends
     Then "s1" answered "<answer>"
 
