@@ -210,6 +210,11 @@ describe("what the congress gives its parties for FR-CONGRESS-07", () => {
     return participant?.decides === "rules" ? participant.params : {};
   };
 
+  it("gives every party its own id, by which it names what it commits and invoices", () => {
+    expect(paramsOf("c1").id).toBe("c1");
+    expect(paramsOf("v1").id).toBe("v1");
+  });
+
   it("gives a caterer each chosen venue's catering rule", () => {
     expect(paramsOf("c1").venues).toEqual({ v1: { catering: "in_house" }, v2: { catering: "outside_fee" } });
   });

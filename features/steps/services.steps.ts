@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import { Given, Then } from "@cucumber/cucumber";
+import { Given, Then, When } from "@cucumber/cucumber";
 import { type TomlTable, stringify } from "smol-toml";
 import type { Context } from "../support/context.ts";
 import { change, congressChanges, hourMsOf, organiserTurns, setupOf, turnsBefore } from "./congress.steps.ts";
-import { assertBetween, before, changePools, dayOf, fieldsOf, minutesOfWorld, moneyLines, outcomeOf, ranLines, sentBy, sentWith, untilTime } from "./congress-parties.steps.ts";
+import { assertBetween, before, changePools, dayOf, fieldsOf, minutesOf, minutesOfWorld, moneyLines, outcomeOf, ranLines, sentBy, sentWith, untilTime } from "./congress-parties.steps.ts";
 import { drawing, setUpSpeakersCongress } from "./speakers.steps.ts";
-import { script } from "./tool.steps.ts";
+import { runTheScenario, script } from "./tool.steps.ts";
 
 /** The congress's one agent. */
 const ORGANISER = "organiser";
@@ -186,8 +186,8 @@ Then('"sp1" answered "conditions" with 1200, "logo" and "morning_slot", then "ag
   assert.ok((agreement.atMs as number) > (conditions.atMs as number));
 });
 
-Then('"sp2" answered "agreement" on "logo" and "table"', function (this: Context) {
-  assert.equal(fieldsOf(sentWith(this, "sp2", "agreement")).conditions, "logo, table");
+Then('"sp2" answered "agreement" on {string} and {string}', function (this: Context, first: string, second: string) {
+  assert.equal(fieldsOf(sentWith(this, "sp2", "agreement")).conditions, `${first}, ${second}`);
 });
 
 /** The organiser's turns that agree with a sponsor on its own conditions, then wait for its answer. */
@@ -337,3 +337,90 @@ congressChanges.push(
   ],
   [/^"sponsor_withdraws" is for "c1"$/, (setup) => change(setup.context, (configuration) => ((configuration.perturbations as TomlTable).sponsor_withdraws = { between: ["day 10 09:00", "day 10 12:00"], for: "c1" }))],
 );
+
+// FR-CONGRESS-05's addition: charges, hotels, P19 and sponsors' payments.
+
+/** The travel material with the train "t1" (40) from "north" and the hotel "h1" near "v1" with these rooms. */
+function travelWith(context: Context, rooms: number): void {
+  change(context, (configuration) => (configuration.travel = stringify({ stations: ["north"], trains: [{ id: "t1", from: "north", arrives: "08:10", price: 40 }], hotels: [{ id: "h1", near: "v1", rooms, price: 90 }], sold_out_probability: 0 })));
+}
+
+Given('the organiser\'s ceiling is 30 and the train "t1" from "north" costs 40', function (this: Context) {
+  travelWith(this, 5);
+  // The board approves a budget of costs 20 and contingency 10.
+  before(this, organiserTurns('call "send_mail" to "board" with the act "submit_budget", costs 20, income 0, contingency 10 and funds_requested 1, then wait 1 world hour, then "check_time"', hourMsOf(this)));
+});
+
+Then('"travel" committed 40 with the organiser, then issued an invoice of 40', function (this: Context) {
+  const lines = ranLines(this).filter((line) => line.type === "money");
+  const commitment = lines.findIndex((line) => line.kind === "commitment" && line.to === "travel");
+  const invoice = lines.findIndex((line) => line.kind === "invoice" && line.from === "travel");
+  assert.deepEqual({ from: lines[commitment]?.from, amount: lines[commitment]?.amount }, { from: ORGANISER, amount: 40 });
+  assert.equal(lines[invoice]?.amount, 40);
+  assert.ok(commitment < invoice, "the invoice came before the commitment");
+});
+
+Then('the world recorded an "unapproved_overrun" for that commitment', function (this: Context) {
+  const [commitment] = moneyLines(this, "commitment").filter((line) => line.to === "travel");
+  assert.ok(moneyLines(this, "unapproved_overrun").some((line) => line.commitment === commitment.commitment && line.limit === 30), `the overruns are ${JSON.stringify(moneyLines(this, "unapproved_overrun"))}`);
+});
+
+Given('"c1" has confirmed an order and its cancellation schedule charges 0.3', function (this: Context) {
+  // C1's schedule charges 0.3 at any time.
+  assert.deepEqual(C1.cancellation, [{ share: 0.3 }]);
+  before(this, ordering(this));
+});
+
+Then('"c1" released its order\'s commitment, committed the charge and invoiced it', function (this: Context) {
+  const [order] = moneyLines(this, "commitment").filter((line) => line.to === "c1" && line.for === "order c1");
+  assert.ok(order !== undefined, `"c1" committed no order; it sent ${sentBy(this, "c1").map((line) => line.act).join(", ")}; its commitments: ${JSON.stringify(moneyLines(this, "commitment"))}`);
+  assert.ok(moneyLines(this, "release").some((line) => line.commitment === order.commitment), "the order's commitment was not released");
+  assert.ok(moneyLines(this, "commitment").some((line) => line.to === "c1" && line.amount === 540 && line.for === "cancellation order c1"), '"c1" committed no charge of 540');
+  assert.ok(moneyLines(this, "invoice").some((line) => line.from === "c1" && line.amount === 540), '"c1" invoiced no charge of 540');
+});
+
+Given('the travel material has the hotel "h1" near "v1" with {int} rooms', function (this: Context, rooms: number) {
+  travelWith(this, rooms);
+});
+
+When('the organiser reads "travel_options" for the night of "day 25"', { timeout: 60_000 }, async function (this: Context) {
+  script(this, ORGANISER, [...(turnsBefore.get(this) ?? []), ...organiserTurns('call "travel_options" from "north" for "day 26"', hourMsOf(this)), { text: "Done.", delayMs: 0 }]);
+  await runTheScenario(this);
+});
+
+Then('"h1" has {int} rooms left', function (this: Context, rooms: number) {
+  const options = JSON.parse(resultOf(this, "travel_options").text) as { hotels: { id: string; option: string; rooms_left: number }[] };
+  const h1 = options.hotels.find(({ id }) => id === "h1");
+  assert.deepEqual({ option: h1?.option, rooms: h1?.rooms_left }, { option: "h1 day 25", rooms });
+});
+
+Given('the configuration declares "hotel_overbooks" at {string}, and the organiser booked "h1" for "s2" for the night of "day 25"', function (this: Context, at: string) {
+  travelWith(this, 5);
+  change(this, (configuration) => ((configuration.perturbations as TomlTable).hotel_overbooks = { at }));
+  before(this, organiserTurns('call "book_travel" "h1 day 25" for "s2"', hourMsOf(this)));
+});
+
+Then('"h1"\'s room for "s2" was cancelled and its commitment released', function (this: Context) {
+  const [commitment] = moneyLines(this, "commitment").filter((line) => line.to === "travel" && line.for === "h1 day 25 s2");
+  assert.ok(commitment !== undefined, "the room was not committed");
+  assert.ok(moneyLines(this, "release").some((line) => line.commitment === commitment.commitment), "its commitment was not released");
+  assert.ok(ranLines(this).some((line) => line.type === "component_action" && line.component === "hotel_overbooks" && line.outcome === "success"), "hotel_overbooks cancelled nothing");
+});
+
+Then('"s2" called the organiser at {string}, within one world hour, with the act "no_room"', function (this: Context, at: string) {
+  const calls = ranLines(this).filter((line) => line.type === "call" && line.from === "s2" && line.to === ORGANISER);
+  assert.equal(calls.length, 1, `"s2" called the organiser ${calls.length} times`);
+  assert.equal(calls[0].act, "no_room");
+  const rang = minutesOfWorld((calls[0].rang as { worldTime: unknown }).worldTime);
+  assert.ok(Math.abs(rang - minutesOf(at)) <= 60, `it rang at ${JSON.stringify((calls[0].rang as { worldTime: unknown }).worldTime)}`);
+});
+
+Given('"sp1" agreed to 1200', function (this: Context) {
+  assert.equal(SPONSORS[0].amount, 1200);
+  before(this, agreeing(this, "sp1"));
+});
+
+Then('"sp1" mailed "invoice_disputed" with 1200 and paid nothing', function (this: Context) {
+  assert.equal(fieldsOf(sentWith(this, "sp1", "invoice_disputed")).amount, 1200);
+  assert.deepEqual(moneyLines(this, "payment").filter((line) => line.from === "sp1"), []);
+});
