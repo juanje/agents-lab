@@ -14,8 +14,10 @@ export interface PartsProvided<State> {
   predicates: Readonly<Record<string, (state: State, params: Readonly<Record<string, unknown>>) => boolean>>;
   /** The world time of an event's first record in a state, with its params; none when it has none. */
   events: Readonly<Record<string, (state: State, params: Readonly<Record<string, unknown>>) => WorldTime | undefined>>;
-  /** Whether an act is a misapplication, with its params. */
-  misapplications: Readonly<Record<string, (act: Act, params: Readonly<Record<string, unknown>>) => boolean>>;
+  /** Whether an act is a misapplication, with its params and the world's state at the act's time (FR-CONGRESS-06). */
+  misapplications: Readonly<Record<string, (act: Act, params: Readonly<Record<string, unknown>>, state: State) => boolean>>;
+  /** Whether a trap holds, read from the world's records at evaluation, with its params (FR-CONGRESS-06). */
+  traps?: Readonly<Record<string, (state: State, params: Readonly<Record<string, unknown>>) => boolean>>;
 }
 
 /** The kinds a part may be under a level of the kind factor. */
@@ -47,6 +49,8 @@ export interface Part {
   kinds?: Readonly<Record<string, string>>;
   actors: readonly string[];
   misapplications: readonly Misapplication[];
+  /** The traps to read at evaluation, each with its params (FR-CONGRESS-06). */
+  traps: readonly { trap: string; params: Readonly<Record<string, unknown>> }[];
 }
 
 /** What parts are read against: the participants, and the experiment's kind_factor with its levels when it is a factor. */
@@ -126,7 +130,12 @@ export function readParts<State>(written: readonly Record<string, unknown>[], pr
         ...(written.after === undefined ? {} : { after: eventOf(written.after, id, "misapplications", provided) }),
       };
     });
-    return { id, predicate, params: (part.params ?? {}) as Record<string, unknown>, activation, evaluateAt, ...(kinds === undefined ? {} : { kinds }), actors, misapplications };
+    const traps = ((part.traps ?? []) as Record<string, unknown>[]).map((written) => {
+      const trap = String(written.trap);
+      if (!Object.hasOwn(provided.traps ?? {}, trap)) throw refused(id, "traps", written, `the scenario provides no trap "${trap}"`);
+      return { trap, params: (written.params ?? {}) as Record<string, unknown> };
+    });
+    return { id, predicate, params: (part.params ?? {}) as Record<string, unknown>, activation, evaluateAt, ...(kinds === undefined ? {} : { kinds }), actors, misapplications, traps };
   });
 }
 
@@ -157,7 +166,8 @@ interface Tracked {
 export class PartsBook<State> {
   readonly #settings: PartsBookSettings<State>;
   readonly #tracked: Tracked[];
-  readonly #acts: Act[] = [];
+  /** The agents' acts, each with the world's state at its time. */
+  readonly #acts: (Act & { state: State })[] = [];
   readonly #money: { event: Readonly<Record<string, unknown>>; at: number }[] = [];
   /** Each event's first time, by its name and params, once it happened. */
   readonly #events = new Map<string, number>();
@@ -194,7 +204,7 @@ export class PartsBook<State> {
 
   /** One of an agent's acts, at the world time it landed; another party's is not the agent's. */
   acted(act: Act): void {
-    if (this.#settings.agents.includes(act.agent)) this.#acts.push(act);
+    if (this.#settings.agents.includes(act.agent) && this.#state !== undefined) this.#acts.push({ ...act, state: this.#state });
   }
 
   /** The world time of an event's first record, from the world as it is, kept once it happened. */
@@ -270,11 +280,13 @@ export class PartsBook<State> {
       const beforeAt = before === undefined ? undefined : (this.#eventAt(before) ?? Infinity);
       const afterAt = after === undefined ? undefined : this.#eventAt(after);
       return this.#acts
-        .filter((act) => minutesOf(act.world) <= at && this.#settings.provided.misapplications[pattern](act, params))
+        .filter((act) => minutesOf(act.world) <= at && this.#settings.provided.misapplications[pattern](act, params, act.state))
         .filter((act) => (beforeAt === undefined || minutesOf(act.world) < beforeAt) && (after === undefined || (afterAt !== undefined && minutesOf(act.world) >= afterAt)))
         .map((act) => ({ tool: act.tool, arguments: act.arguments, at: timeText(act.world) }));
     });
     const kind = part.kinds === undefined || this.#settings.level === undefined ? {} : { kind: part.kinds[this.#settings.level] };
-    this.#settings.record({ ...line, active: true, held, ...(reachedAt === undefined ? {} : { reached_at: timeText({ day: Math.floor(reachedAt / 1440) + 1, weekday: "Monday", seconds: Math.round((reachedAt % 1440) * 60) }) }), effort: { calls, money }, misapplications, ...kind });
+    const state = this.#state as State;
+    const traps = part.traps.filter(({ trap, params }) => this.#settings.provided.traps?.[trap](state, params) === true).map(({ trap }) => trap);
+    this.#settings.record({ ...line, active: true, held, ...(reachedAt === undefined ? {} : { reached_at: timeText({ day: Math.floor(reachedAt / 1440) + 1, weekday: "Monday", seconds: Math.round((reachedAt % 1440) * 60) }) }), effort: { calls, money }, misapplications, ...(part.traps.length === 0 ? {} : { traps }), ...kind });
   }
 }

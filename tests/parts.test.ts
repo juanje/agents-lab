@@ -29,7 +29,7 @@ const read = (parts: Record<string, unknown>[], changes: Partial<Parameters<type
 
 describe("readParts (FR-PARTS-01)", () => {
   it("reads each part: its predicate and params, activation, evaluation time, kinds, actors and misapplications", () => {
-    expect(read([P1])).toEqual([{ id: "p1", predicate: "flag_set", params: { flag: "door" }, activation: "always", evaluateAt: { at: 18 * 60 }, kinds: { none: "new", rules: "covered" }, actors: ["shop"], misapplications: [] }]);
+    expect(read([P1])).toEqual([{ id: "p1", predicate: "flag_set", params: { flag: "door" }, activation: "always", evaluateAt: { at: 18 * 60 }, kinds: { none: "new", rules: "covered" }, actors: ["shop"], misapplications: [], traps: [] }]);
     const evented = read([{ ...P1, activation: { event: "flag_raised", params: { flag: "alarm" } }, evaluate_at: { event: "flag_raised", params: { flag: "alarm" }, after_minutes: 60 } }])[0];
     expect(evented).toMatchObject({ activation: { event: "flag_raised", params: { flag: "alarm" } }, evaluateAt: { event: "flag_raised", params: { flag: "alarm" }, afterMinutes: 60 } });
     expect(read([{ ...P1, evaluate_at: "end" }])[0].evaluateAt).toEqual("end");
