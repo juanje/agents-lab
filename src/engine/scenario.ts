@@ -2,6 +2,7 @@ import { type TomlTable, type TomlValue, parse } from "smol-toml";
 import type { ToolCall } from "./adapter.ts";
 import { type Calendar, readCalendar } from "./calendar.ts";
 import type { Component } from "./components.ts";
+import { MAIL_NOTICE, type MailKeeper, type MailSettings, readMail, startingMail } from "./mail.ts";
 import { type Material, type MaterialReference, type Materials, materialReference } from "./materials.ts";
 import { Random } from "./random.ts";
 import { type Channel, RHYTHM_CHANNEL } from "./stimuli.ts";
@@ -65,6 +66,8 @@ export interface Scenario<State> {
    * calls, in the order they ended; none when the scenario declares nothing to judge (FR-ANALYSIS-02).
    */
   judged?: (configuration: Configuration, toolCalls: readonly ToolCall[]) => Judgeable[];
+  /** Where the state keeps the mail, for a scenario whose configuration may declare a [mail] (FR-MESSAGE-01). */
+  mail?: MailKeeper<State>;
 }
 
 /**
@@ -114,6 +117,14 @@ export interface LoadedScenario<State> {
   components: readonly Component<State>[];
   /** The world's calendar, for a configuration that declares a [calendar] (FR-CLOCK-03). */
   calendar?: Calendar;
+  /** The mail, for a configuration that declares a [mail]: its settings, and where the state keeps it (FR-MESSAGE-01). */
+  mail?: LoadedMail<State>;
+}
+
+/** A scenario's mail as loaded: its configuration's settings, and where the scenario's state keeps it (FR-MESSAGE-01). */
+export interface LoadedMail<State> {
+  settings: MailSettings;
+  keeper: MailKeeper<State>;
 }
 
 /** Each part a scenario must provide, and how an error names it. */
@@ -171,7 +182,34 @@ export function loadScenario<State>(
   }
   const initial = scenario.initialState(configuration, Random.derive(seed, "initial state"));
   const components = scenario.components?.(configuration) ?? [];
-  return { scenario, configuration, world: new World(initial), systemPrompts, channels, firstStimuli, rhythms, materials, components, ...calendarOf(configuration) };
+  const { calendar } = calendarOf(configuration);
+  const mail = mailOf(scenario, configuration, calendar);
+  return {
+    scenario,
+    configuration,
+    world: new World(mail === undefined ? initial : mail.keeper.with(initial, startingMail(mail.settings))),
+    systemPrompts,
+    channels: [...channels, ...noticeChannels(mail)],
+    firstStimuli,
+    rhythms,
+    materials,
+    components,
+    ...(calendar === undefined ? {} : { calendar }),
+    ...(mail === undefined ? {} : { mail }),
+  };
+}
+
+/** The mail a configuration declares in its [mail], if it declares one, kept where the scenario's state keeps it (FR-MESSAGE-01). */
+function mailOf<State>(scenario: Scenario<State>, configuration: Configuration, calendar: Calendar | undefined): LoadedMail<State> | undefined {
+  if (configuration.mail === undefined) return undefined;
+  if (scenario.mail === undefined) throw new Error(`Scenario "${scenario.name}" keeps no mail in its state, but its configuration declares a [mail]`);
+  return { settings: readMail(configuration.mail, calendar), keeper: scenario.mail };
+}
+
+/** The mail notice's channel, for mail that declares a notice; none otherwise (FR-MESSAGE-01). */
+function noticeChannels<State>(mail: LoadedMail<State> | undefined): Channel[] {
+  const notice = mail?.settings.notice;
+  return notice === undefined ? [] : [{ name: MAIL_NOTICE, source: notice.source, stimulus: notice.text }];
 }
 
 /** The calendar a configuration declares in its [calendar], if it declares one (FR-CLOCK-03). */

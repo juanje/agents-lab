@@ -5,6 +5,7 @@ import { runComponent } from "./components.ts";
 import { RunClock, waitAtLeast } from "./clock.ts";
 import type { Compaction, RateLimitRetry, ThinkingLevel } from "./experiment.ts";
 import { failure } from "./failure.ts";
+import { MailMedium, mailTools } from "./mail.ts";
 import { ParallelismLimit } from "./parallelism.ts";
 import { Random } from "./random.ts";
 import { type LogLine, Recorder, type RunSetup, type Sampling } from "./recorder.ts";
@@ -166,7 +167,7 @@ export const PROVIDER_DEFAULTS = "the provider's defaults";
  * sampling settings the sessions use, or null.
  */
 async function runAgents<State>(
-  { world, scenario, systemPrompts, rhythms, components, calendar }: LoadedScenario<State>,
+  { world, scenario, systemPrompts, rhythms, components, calendar, mail }: LoadedScenario<State>,
   agents: readonly Agent[],
   seed: number,
   settings: RunSettings,
@@ -208,9 +209,11 @@ async function runAgents<State>(
   const messages = new Map<string, AgentSession["messages"]>();
   // Every session is open before any agent starts, so opening them uses none of the time limit (FR-CLOCK-02). One that
   // fails to open stops the run, once the others have opened, and those are closed.
+  // The mail's tools are every agent's, beside the scenario's own (FR-MESSAGE-01).
+  const tools = mail === undefined ? scenario.tools : [...scenario.tools, ...mailTools(mail.settings, mail.keeper)];
   const opening = await Promise.allSettled(
     agents.map((agent) =>
-      openSession(world, scenario.tools, agent, runtime, { ...sessionSettings, systemPrompt: systemPromptOf(systemPrompts, agent.name) }, parallelism, records, stimuli, sensings, changes).catch((error: unknown) => {
+      openSession(world, tools, agent, runtime, { ...sessionSettings, systemPrompt: systemPromptOf(systemPrompts, agent.name) }, parallelism, records, stimuli, sensings, changes).catch((error: unknown) => {
         throw failure(`the session of agent "${agent.name}" failed to open`, error);
       }),
     ),
@@ -228,6 +231,12 @@ async function runAgents<State>(
   });
   settings.onStart?.(stimuli);
   const startedAtMs = clock.start();
+  // The mail watches the world for messages sent before any agent or component can send one (FR-MESSAGE-01).
+  const medium =
+    mail === undefined
+      ? undefined
+      : new MailMedium({ world, ...mail, clock, runEnd: runEnd.signal, changes, stimuli, seed, agents: agents.map(({ name }) => name), record: (line) => recorder.record(line) });
+  medium?.start();
   const sample = () => sampleMetrics(world, toolCalls, scenario.metrics, recorder, performance.now());
   sampleMetrics(world, toolCalls, scenario.metrics, recorder, startedAtMs);
   const timer = setTimeout(() => runEnd.abort(), settings.timeLimitMs);
@@ -235,7 +244,7 @@ async function runAgents<State>(
   const sampling = settings.metricIntervalMs === undefined ? Promise.resolve() : sampleEvery(settings.metricIntervalMs, sample, samplingEnd.signal);
   try {
     // Components run alongside the agents from the moment they can start, without turns; the run ends once every agent
-    // and every component has ended, or at its time limit (FR-PROCESS-01).
+    // and every component has ended and every message sent has landed, or at its time limit (FR-PROCESS-01, FR-MESSAGE-01).
     const cycles = components.map((component) =>
       runComponent(component, {
         world,
@@ -263,6 +272,8 @@ async function runAgents<State>(
       }
     });
     await Promise.all([...cycles, ...agentLoops]);
+    // A message in transit keeps the run going until it lands, or the run's time limit passes (FR-MESSAGE-01).
+    await medium?.delivered();
   } finally {
     // A run that ends at its budget must not leave its time limit pending, nor a sample to write once its log is closed.
     clearTimeout(timer);

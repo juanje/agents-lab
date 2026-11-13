@@ -6,6 +6,7 @@ import type { ComponentAction } from "./components.ts";
 import type { Compaction } from "./experiment.ts";
 import type { ConditionInventory } from "./inventory.ts";
 import { JsonlFile } from "./jsonl.ts";
+import type { MailLine } from "./mail.ts";
 import type { Material } from "./materials.ts";
 import type { Configuration, MetricValue } from "./scenario.ts";
 import type { Stimulus } from "./stimuli.ts";
@@ -60,6 +61,7 @@ export type LogLine =
   | ({ type: "component_action" } & ComponentAction)
   | ({ type: "compaction" } & ContextCompaction)
   | { type: "metric_sample"; atMs: number; version: number; metrics: Record<string, MetricValue> }
+  | MailLine
   | { type: "run_stopped"; error: string };
 
 /** Writes a run's log: one new JSONL file, named with the run's id, with a line for each event (FR-RECORD-01). */
