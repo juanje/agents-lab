@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { Given, Then, When } from "@cucumber/cucumber";
-import { type TomlTable, stringify } from "smol-toml";
+import { type TomlTable, parse, stringify } from "smol-toml";
 import { loadScenario } from "../../src/engine/scenario.ts";
 import type { Context } from "../support/context.ts";
 import { change, hourMsOf, organiserTurns, setUpCongress, turnsBefore } from "./congress.steps.ts";
 import { before, changePools, fieldsOf, moneyLines, ranLines, sentBy, sentWith, untilTime } from "./congress-parties.steps.ts";
-import { organiserSummary } from "./services.steps.ts";
+import { C1, organiserSummary } from "./services.steps.ts";
 import { modelOf, runTheScenario, script } from "./tool.steps.ts";
 
 /** A step's text as a regular expression that matches it alone, so its parentheses are text. */
@@ -375,4 +375,23 @@ Then('"v1" sent it at "day 4 Thursday 09:00", within one world hour', function (
   const at = sent.worldTime as { day: number; weekday: string; seconds: number };
   assert.deepEqual({ day: at.day, weekday: at.weekday }, { day: 4, weekday: "Thursday" });
   assert.ok(at.seconds >= 9 * 3600 && at.seconds <= 10 * 3600, `"v1" sent it at ${at.seconds / 3600} h`);
+});
+
+Given('"c1" confirmed an order, and the organiser mails "c1" "final_numbers" and then "cancel_order", and then "cancel_order" again', function (this: Context) {
+  changePools(this, (pool) => (pool.caterer = [{ ...structuredClone(C1), pick_up: 1 }]));
+  change(this, (configuration) => (configuration.draw = stringify({ ...parse(configuration.draw as string), caterer: 1 })));
+  before(
+    this,
+    organiserTurns(
+      'call "send_mail" to "c1" with the act "order", counts "standard" 60, date "day 26" and venue "v1", then wait 1 world hour, then "send_mail" to "c1" with the act "final_numbers" and counts "standard" 50, then "send_mail" to "c1" with the act "cancel_order", then "send_mail" to "c1" with the act "cancel_order", then wait 1 world hour, then "check_time"',
+      hourMsOf(this),
+    ),
+  );
+});
+
+Then('"c1" handled "final_numbers" before "cancel_order", and answered "cancelled" once', function (this: Context) {
+  const acts = sentBy(this, "c1").map((line) => String(line.act));
+  assert.equal(acts[0], "order_confirmed", `"c1" sent ${acts.join(", ")}`);
+  assert.ok(["numbers_accepted", "numbers_refused"].includes(acts[1]), `"c1" sent ${acts.join(", ")}`);
+  assert.deepEqual(acts.slice(2), ["cancelled"], `"c1" sent ${acts.join(", ")}`);
 });

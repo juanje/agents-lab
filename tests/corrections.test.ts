@@ -177,6 +177,19 @@ describe("a party's own mail within its hours (FR-CONGRESS-09)", () => {
   });
 });
 
+describe("a party's answers to repeated mail (FR-CONGRESS-09)", () => {
+  it("gives no second answer to a message that repeats one it answered, with the same act and fields", () => {
+    const board = () => boardRules.start({ id: "board", funds: 6000, reserve: 1000, organiser: "organiser" }, new Random(1));
+    const report = (text: string): [string, string] => [DAY, `From: organiser. Act: report. note: ${text}.`];
+
+    expect(mailed(conversation(board(), [report("a"), report("a")]).steps)).toEqual([{ act: "acknowledged", fields: {} }]);
+    expect(mailed(conversation(board(), [report("a"), report("b")]).steps)).toEqual([
+      { act: "acknowledged", fields: {} },
+      { act: "acknowledged", fields: {} },
+    ]);
+  });
+});
+
 describe("the board before a budget (FR-CONGRESS-07)", () => {
   it("refuses a request for approval while no budget is approved, with the reason no_budget", () => {
     const { steps } = conversation(boardRules.start({ id: "board", funds: 6000, reserve: 1000, organiser: "organiser" }, new Random(1)), [[DAY, "From: organiser. Act: request_approval. amount: 400. reason: interpreter."]]);
