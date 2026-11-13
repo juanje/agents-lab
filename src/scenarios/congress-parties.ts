@@ -181,7 +181,9 @@ interface VenueParams {
   id: string;
   rooms: Room[];
   access_claim: string;
+  /** Its catering rule: in_house, outside_fee (with outside_fee_per_head) or outside_free (FR-CONGRESS-07). */
   catering?: string;
+  outside_fee_per_head?: number;
   opening?: string;
   price: number;
   extras?: Record<string, number>;
@@ -222,7 +224,7 @@ interface Contract {
   extras: Record<string, number>;
   confirmed: boolean;
   /** A change the venue announced and awaits an answer on. */
-  change?: { kind: "price_change"; price: number } | { kind: "room_lost"; room: string; smaller?: string; price?: number };
+  change?: { kind: "price_change"; price: number } | { kind: "room_lost"; room: string; smaller?: string; cut: number };
 }
 
 /** Something a venue does at a world time of its own. */
@@ -273,6 +275,24 @@ export const venueRules: RuleSet = {
     const notAvailable = (what: unknown): Answer => ({ act: "not_available", fields: { what: String(what) } });
     const unavailable = (date: string): Answer => ({ act: "unavailable", fields: { date } });
     const free = (date: string) => statusOf(date) === "free" || statusOf(date) === "held";
+    const totalSeats = venue.rooms.reduce((sum, { seats }) => sum + seats, 0);
+    /** A room's price: its share of the day price by seats, rounded (FR-CONGRESS-07). */
+    const roomPrice = (room: string) => Math.round((venue.price * (venue.rooms.find(({ id }) => id === room)?.seats ?? 0)) / totalSeats);
+    /** The extras it quoted, by item, with their price and, for a room, which room. */
+    const quoted = new Map<string, { price: number; room?: string }>();
+    let permits = 0;
+    /** A contract's new price, the difference committed, or its commitments released and the new price committed. */
+    function repriced(contract: Contract, to: string, price: number): () => Script {
+      const difference = price - contract.price;
+      contract.price = price;
+      return function* () {
+        if (difference > 0) yield* party.call("commit", { with: to, amount: difference, for: `${contract.id} change` });
+        if (difference < 0) {
+          yield* releaseAll(contract);
+          yield* party.call("commit", { with: to, amount: contract.price, for: contract.id });
+        }
+      } as () => Script;
+    }
 
     const answer = ({ from, act, fields }: Received): Answer => {
       const date = String(fields.date ?? eventDate);
@@ -340,17 +360,47 @@ export const venueRules: RuleSet = {
           };
         }
         case "request_extra": {
-          const price = venue.extras?.[String(fields.item)];
-          return price === undefined ? notAvailable(fields.item) : { act: "extra_quote", fields: { item: String(fields.item), price } };
+          const item = String(fields.item);
+          if (item === "outside_catering") {
+            if (venue.catering !== "outside_fee") return notAvailable(item);
+            const price = (venue.outside_fee_per_head ?? 0) * Number(fields.attendance ?? 0);
+            quoted.set(item, { price });
+            return { act: "extra_quote", fields: { item, price } };
+          }
+          if (item === "room") {
+            const booked = live()?.rooms ?? [];
+            const room = venue.rooms.filter(({ id, seats }) => !booked.includes(id) && seats >= Number(fields.seats ?? 0)).sort((one, other) => one.seats - other.seats)[0];
+            if (room === undefined) return notAvailable(item);
+            quoted.set(item, { price: roomPrice(room.id), room: room.id });
+            return { act: "extra_quote", fields: { item, room: room.id, price: roomPrice(room.id) } };
+          }
+          const price = venue.extras?.[item];
+          return price === undefined ? notAvailable(item) : { act: "extra_quote", fields: { item, price } };
         }
         case "accept_extra": {
           const item = String(fields.item);
-          const price = venue.extras?.[item];
+          const offer = quoted.get(item);
+          const price = offer?.price ?? venue.extras?.[item];
           const contract = live();
           if (price === undefined || contract === undefined) return notAvailable(price === undefined ? item : "contract");
           contract.extras[item] = price;
+          if (offer?.room !== undefined) contract.rooms = [...contract.rooms, offer.room];
           record("extra", { contract: contract.id, item });
-          return { act: "extra_confirmed", fields: { item, price }, then: function* () { yield* party.call("commit", { with: from, amount: price, for: `${contract.id} extra ${item}` }); } as () => Script };
+          const permit: Fields = item === "outside_catering" ? { permit: `${venue.id}-permit-${(permits += 1)}` } : {};
+          return { act: "extra_confirmed", fields: { item, price, ...permit, ...(offer?.room === undefined ? {} : { room: offer.room }) }, then: function* () { yield* party.call("commit", { with: from, amount: price, for: `${contract.id} extra ${item}` }); } as () => Script };
+        }
+        case "change_booking": {
+          const contract = contracts.find((each) => each.to === from && ["contracted", "confirmed"].includes(statusOf(each.date)));
+          if (contract === undefined) return notAvailable("booking");
+          const rooms = String(fields.rooms ?? "").split(/,\s*/).filter((room) => room !== "");
+          if (rooms.length === 0 || rooms.some((room) => !venue.rooms.some(({ id }) => id === room))) return unavailable(contract.date);
+          const added = rooms.filter((room) => !contract.rooms.includes(room)).reduce((sum, room) => sum + roomPrice(room), 0);
+          const dropped = contract.rooms.filter((room) => !rooms.includes(room)).reduce((sum, room) => sum + roomPrice(room), 0);
+          contract.rooms = rooms;
+          contract.hours = String(fields.hours ?? contract.hours);
+          const then = repriced(contract, from, contract.price + added - dropped);
+          record("booking_changed", { contract: contract.id, price: contract.price });
+          return { act: "contract_changed", fields: { contract: contract.id, rooms: rooms.join(", "), hours: contract.hours, price: contract.price }, then };
         }
         case "cancel_booking": {
           const contract = contracts.find((each) => each.to === from && ["contracted", "confirmed"].includes(statusOf(each.date)));
@@ -366,22 +416,17 @@ export const venueRules: RuleSet = {
           const change = contract.change;
           contract.change = undefined;
           if (act === "decline_change") return cancelling(contract, 0);
-          const newPrice = change.kind === "price_change" ? change.price : (change.price ?? contract.price);
-          if (change.kind === "room_lost") contract.rooms = contract.rooms.flatMap((room) => (room !== change.room ? [room] : change.smaller === undefined ? [] : [change.smaller]));
-          const difference = newPrice - contract.price;
-          contract.price = newPrice;
+          let newPrice = contract.price;
+          if (change.kind === "price_change") newPrice = change.price;
+          if (change.kind === "room_lost") {
+            // The smaller room in place of the lost one at the same price, or the lost room gone and its price cut (FR-CONGRESS-07).
+            const smaller = change.smaller !== undefined && fields.option !== "price_cut" ? change.smaller : undefined;
+            contract.rooms = contract.rooms.flatMap((room) => (room !== change.room ? [room] : smaller === undefined ? [] : [smaller]));
+            if (smaller === undefined) newPrice = contract.price - change.cut;
+          }
+          const then = repriced(contract, from, newPrice);
           record("change_accepted", { contract: contract.id, price: newPrice });
-          return {
-            act: "confirmed",
-            fields: { contract: contract.id, price: newPrice, rooms: contract.rooms.join(", ") },
-            then: function* () {
-              if (difference > 0) yield* party.call("commit", { with: from, amount: difference, for: `${contract.id} change` });
-              if (difference < 0) {
-                yield* releaseAll(contract);
-                yield* party.call("commit", { with: from, amount: contract.price, for: contract.id });
-              }
-            } as () => Script,
-          };
+          return { act: "confirmed", fields: { contract: contract.id, price: newPrice, rooms: contract.rooms.join(", ") }, then };
         }
         default:
           return notAvailable(act);
@@ -477,10 +522,12 @@ export const venueRules: RuleSet = {
           const lost = booked.rooms.at(-1) as string;
           const seats = venue.rooms.find(({ id }) => id === lost)?.seats ?? 0;
           const smaller = venue.rooms.filter(({ id, seats: other }) => other < seats && !booked.rooms.includes(id)).sort((one, other) => other.seats - one.seats)[0];
-          booked.change = smaller === undefined ? { kind: "room_lost", room: lost, price: Math.round(booked.price * 0.9) } : { kind: "room_lost", room: lost, smaller: smaller.id };
+          // It offers its largest free smaller room, and a cut of the lost room's price (FR-CONGRESS-07).
+          const cut = roomPrice(lost);
+          booked.change = { kind: "room_lost", room: lost, cut, ...(smaller === undefined ? {} : { smaller: smaller.id }) };
           record("room_lost", { contract: booked.id, room: lost });
-          const offer = smaller === undefined ? { offer: "price_cut", price: booked.change.price as number } : { offer: "smaller_room", smaller: smaller.id };
-          yield* party.call("send_mail", { to: booked.to, act: "room_lost", fields: { contract: booked.id, room: lost, ...offer } });
+          const offer = smaller === undefined ? { offer: "price_cut" } : { offer: "smaller_room", smaller: smaller.id };
+          yield* party.call("send_mail", { to: booked.to, act: "room_lost", fields: { contract: booked.id, room: lost, ...offer, cut } });
           return;
         }
         case "room_allocation": {
@@ -576,6 +623,11 @@ export const boardRules: RuleSet = {
       }
       if (act === "request_approval") {
         const amount = Number(fields.amount);
+        // It approves more only over a budget it approved (FR-CONGRESS-07).
+        if (!ceilings.has(from)) {
+          counts.refusals += 1;
+          return { act: "refused", fields: { amount, reason: "no_budget" } };
+        }
         if (!(amount <= (board.reserve ?? 0) - counts.reserve_used)) {
           counts.refusals += 1;
           return { act: "refused", fields: { amount } };
@@ -667,7 +719,6 @@ export const speakerRules: RuleSet = {
 
     /** Whether an invitation meets its condition. */
     const meetsCondition = (fields: Fields) => {
-      if (breaksConstraint(fields.time)) return false;
       if (speaker.condition === "fee") return Number(fields.fee ?? 0) >= fee;
       if (speaker.condition === "travel_paid") return speaker.home === "local" || fields.travel_paid === true;
       if (speaker.condition === "morning_slot") return inMorning(fields.time);
@@ -688,7 +739,8 @@ export const speakerRules: RuleSet = {
           invitation = fields;
           record.invitation = JSON.stringify(fields);
           if (speaker.partner === true) return answering("accept");
-          if (speaker.available !== true || (breaksConstraint(fields.time) && speaker.condition === undefined)) return answering("decline");
+          // A constraint is hard, whatever the condition (FR-CONGRESS-07).
+          if (speaker.available !== true || breaksConstraint(fields.time)) return answering("decline");
           if (random.next() < 1 - (speaker.acceptance ?? 1)) return answering("decline");
           if (speaker.condition !== undefined && !meetsCondition(fields)) return answering("accept_if", { condition: speaker.condition });
           return answering("accept");
@@ -704,6 +756,8 @@ export const speakerRules: RuleSet = {
         }
         case "confirm":
         case "change": {
+          // Only a speaker who accepted takes a confirmation; the partner's accepted the session the board gave it (FR-CONGRESS-07).
+          if (speaker.partner !== true && record.answer !== "accept") return { act: "not_available", fields: { what: "acceptance" } };
           if (fields.time !== undefined) record.believes_time = String(fields.time);
           if (fields.room !== undefined) record.believes_room = String(fields.room);
           const first = !acknowledged;
@@ -794,6 +848,10 @@ interface CatererParams {
   pick_up?: number;
   organiser: string;
   event_day: number;
+  /** The venue whose in-house caterer it is, if one. */
+  in_house_for?: string;
+  /** Each chosen venue's catering rule, by its id (FR-CONGRESS-07). */
+  venues?: Record<string, { catering?: string }>;
 }
 
 /** Counts by diet as a text gives them: "standard: 50; vegan: 6". */
@@ -865,6 +923,11 @@ export const catererRules: RuleSet = {
             },
           };
         case "order": {
+          // A venue that keeps its catering or charges for outside catering asks for a permit, unless it is the venue's own (FR-CONGRESS-07).
+          const rule = caterer.venues?.[String(fields.venue)]?.catering;
+          if (fields.venue !== undefined && (rule === "in_house" || rule === "outside_fee") && caterer.in_house_for !== fields.venue && fields.permit === undefined) {
+            return { act: "order_refused", fields: { reason: "venue_requires_permit" } };
+          }
           const counts = countsIn(fields.counts);
           const over = overLimit(counts);
           if (over !== undefined) return { act: "order_refused", fields: { diet: over } };
