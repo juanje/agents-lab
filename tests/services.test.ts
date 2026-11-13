@@ -1,8 +1,11 @@
+import { type TomlTable, parse, stringify } from "smol-toml";
 import { describe, expect, it } from "vitest";
 import type { Perceived, RuleStep, Rules } from "../src/engine/participants.ts";
 import { Random } from "../src/engine/random.ts";
+import { type Scenario, loadScenario } from "../src/engine/scenario.ts";
 import type { Stimulus } from "../src/engine/stimuli.ts";
 import { agencyRules, catererRules, sponsorRules } from "../src/scenarios/congress-parties.ts";
+import { congressScenario } from "../src/scenarios/congress.ts";
 
 /** The mail notice of a message from the organiser. */
 const notice: Stimulus = { channel: "mail_notice", source: "mail client", content: "New mail from organiser: x" };
@@ -213,5 +216,78 @@ describe("the sponsor's answers (FR-CONGRESS-05)", () => {
     const steps = drive(rules, tools(() => ""), [[{ channel: "sponsor_withdraws", source: "board meeting", content: "Your board withdraws the sponsorship." }]], true);
     expect(calls(steps, "send_mail")).toEqual([{ to: "organiser", act: "withdraw", fields: {} }]);
     expect(rules.outcome()).toMatchObject({ withdrew: true });
+  });
+});
+
+describe("the congress's caterers, sponsors, agency and their perturbation (FR-CONGRESS-05)", () => {
+  const C1 = { id: "c1", price_per_head: 30, diets: { gluten_free: { limit: 5 } }, minimum: 20, final_days: 7, deposit_share: 0.2, deposit_due_days: 3, cancellation: [{ share: 0.3 }] };
+  const SP2 = { id: "sp2", amount: 1000, conditions: ["logo"], insists: [], counter_acceptance: 1, pay_days: [2, 2] };
+  const V1 = { id: "v1", rooms: [{ id: "main-hall", seats: 120 }], access_claim: "step-free", price: 2000, hold_days: 2, deposit_share: 0.25, deposit_due_days: 3, cancellation: [{ share: 0.5 }] };
+
+  /** The congress with "v1", the caterer "c1", the sponsor "sp2" and the agency "a1", changed as given. */
+  function congress(changes: (configuration: TomlTable, pools: Record<string, TomlTable[]>) => void = () => {}): Scenario<unknown> {
+    const configuration = parse(congressScenario.baseConfiguration);
+    configuration.city = stringify({ places: [{ id: "office" }], venues: [{ id: "v1", entrance: "v1-entrance", hours: "always", rooms: [{ id: "main-hall", seats: 120 }] }], passages: [{ between: ["office", "v1-entrance"], length: 40, step_free: true }] });
+    (configuration.calendar as TomlTable).hours = { always: { days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], from: "00:00", to: "23:59" } };
+    const pools: Record<string, TomlTable[]> = { venue: [structuredClone(V1)], board: [], speaker: [], partner: [], caterer: [structuredClone(C1)], sponsor: [structuredClone(SP2)], agency: [{ id: "a1", price: 400, notice_days: 7 }] };
+    configuration.draw = stringify({ attendance: [50, 80], venue: 1, caterer: 1, sponsor: 1, agency: 1 });
+    changes(configuration, pools);
+    configuration.pools = stringify({ topics: ["soil"], ...pools });
+    return { ...(congressScenario as Scenario<unknown>), baseConfiguration: stringify(configuration) };
+  }
+  const participant = (scenario: Scenario<unknown>, name: string) => loadScenario(scenario, 1).participants?.find((each) => each.name === name);
+
+  it("makes each chosen caterer, sponsor and agency a participant; a sponsor's account opens at its amount", () => {
+    const loaded = loadScenario(congress(), 1);
+    expect(participant(congress(), "c1")).toMatchObject({ decides: "rules", rules: "caterer" });
+    expect(participant(congress(), "sp2")).toMatchObject({ decides: "rules", rules: "sponsor", channels: expect.arrayContaining(["sponsor_withdraws"]) });
+    expect(participant(congress(), "a1")).toMatchObject({ decides: "rules", rules: "agency" });
+    expect(loaded.money?.settings.accounts).toEqual(expect.arrayContaining([{ name: "c1", unlimited: true }, { name: "sp2", opening: 1000 }, { name: "a1", unlimited: true }, { name: "travel", unlimited: true }]));
+  });
+
+  it("adds the in-house caterer of each chosen venue, which the draw does not choose", () => {
+    const scenario = congress((_configuration, pools) => pools.caterer.unshift({ ...structuredClone(C1), id: "c9", in_house_for: "v1" }));
+    for (let seed = 1; seed <= 5; seed += 1) {
+      const loaded = loadScenario(scenario, seed);
+      expect((loaded.variant?.chosen as Record<string, string[]>).caterer).toEqual(["c1"]);
+      expect(loaded.participants?.map(({ name }) => name)).toEqual(expect.arrayContaining(["c1", "c9"]));
+    }
+  });
+
+  it("gives the reference price, the median of the similar events of the drawn topic, in the variant", () => {
+    const scenario = congress((configuration) => {
+      configuration.similar_events = stringify({ events: [60, 120, 80].map((price, index) => ({ topic: "soil", name: `e${index}`, price, size: 100 })) });
+    });
+    expect(loadScenario(scenario, 1).variant?.reference_price).toBe(80);
+  });
+
+  it("makes sponsor_withdraws a perturbation component that delivers to its sponsor, not held, at a time drawn in its window", () => {
+    const scenario = congress((configuration) => ((configuration.perturbations as TomlTable).sponsor_withdraws = { between: ["day 10 09:00", "day 10 12:00"], for: "sp2" }));
+    const [component] = loadScenario(scenario, 1).components;
+    expect([component.name, component.kind]).toEqual(["sponsor_withdraws", "perturbation"]);
+    const cycle = component.cycle(new Random(2));
+    const waiting = cycle.next({} as never, undefined, 0, { day: 1, weekday: "Monday", seconds: 9 * 3600 });
+    const ms = (waiting as { ms: number }).ms;
+    expect(ms).toBeGreaterThanOrEqual(9 * 1440 * 1000);
+    expect(ms).toBeLessThanOrEqual((9 * 1440 + 180) * 1000);
+    expect(cycle.next({} as never, undefined, ms, { day: 10, weekday: "Wednesday", seconds: 12 * 3600 })).toEqual({ kind: "deliver", agent: "sp2", channel: "sponsor_withdraws", held: false });
+    expect(cycle.next({} as never, undefined, ms, { day: 10, weekday: "Wednesday", seconds: 12 * 3600 })).toEqual({ kind: "end" });
+  });
+
+  it("refuses, naming it, a caterer, sponsor, in-house caterer, travel or sponsor_withdraws it cannot follow", () => {
+    const refusing = (changing: (configuration: TomlTable, pools: Record<string, TomlTable[]>) => void) => () => loadScenario(congress(changing), 1);
+    expect(refusing((_c, pools) => (pools.caterer[0].price_per_head = -1))).toThrow(/"c1".*price_per_head/);
+    expect(refusing((_c, pools) => (pools.caterer[0].diets = { gluten_free: { limit: -1 } }))).toThrow(/"c1".*diets/);
+    expect(refusing((_c, pools) => (pools.caterer[0].minimum = -1))).toThrow(/"c1".*minimum/);
+    expect(refusing((_c, pools) => (pools.caterer[0].final_days = 0))).toThrow(/"c1".*final_days/);
+    expect(refusing((_c, pools) => (pools.sponsor[0].amount = -1))).toThrow(/"sp2".*amount/);
+    expect(refusing((_c, pools) => (pools.sponsor[0].conditions = ["free_coffee"]))).toThrow(/"sp2".*conditions/);
+    expect(refusing((_c, pools) => (pools.sponsor[0].insists = ["passes"]))).toThrow(/"sp2".*insists/);
+    expect(refusing((_c, pools) => (pools.sponsor[0].counter_acceptance = 2))).toThrow(/"sp2".*counter_acceptance/);
+    expect(refusing((_c, pools) => (pools.sponsor[0].pay_days = [5, 2]))).toThrow(/"sp2".*pay_days/);
+    expect(refusing((_c, pools) => pools.caterer.push({ ...structuredClone(C1), id: "c9", in_house_for: "v9" }))).toThrow(/"c9".*in_house_for/);
+    expect(refusing((configuration) => (configuration.travel = stringify({ stations: ["north"], trains: [{ id: "t9", from: "moon", arrives: "08:10", price: 40 }], hotels: [] })))).toThrow(/travel/);
+    expect(refusing((configuration) => (configuration.travel = stringify({ stations: ["north"], trains: [], hotels: [{ id: "h1", near: "v9", rooms: 2, price: 90 }] })))).toThrow(/travel/);
+    expect(refusing((configuration) => ((configuration.perturbations as TomlTable).sponsor_withdraws = { between: ["day 10 09:00", "day 10 12:00"], for: "c1" }))).toThrow(/perturbations\.sponsor_withdraws/);
   });
 });
