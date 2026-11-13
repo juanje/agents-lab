@@ -70,6 +70,15 @@ function sense(state: PopulationWorld, name: string, args: Record<string, unknow
   return JSON.parse(tool.sense(state, "organiser", args, 0, at(1)));
 }
 
+describe("the page's edits, as the parts read them (FR-CONGRESS-10)", () => {
+  it("records each edit of the page with its world time: the price, whether it is open and the fields it requires, as given", () => {
+    const { state } = apply(world(), "edit_ticket_page", { open: true, required_fields: ["diet", "access"] }, at(5, "10:00"));
+    expect(pop(state).edits).toEqual([{ at: minutesOf(at(5, "10:00")), open: true, required_fields: ["diet", "access"] }]);
+    const priced = apply(state, "edit_ticket_page", { price: 40 }, at(6)).state;
+    expect(pop(priced).edits?.at(-1)).toEqual({ at: minutesOf(at(6)), price: 40 });
+  });
+});
+
 describe("the programme takes ids (FR-CONGRESS-09)", () => {
   const ids = { speakers: ["s1", "s4"], sponsors: ["sp1"] };
   const tool = () => populationTools<PopulationWorld>({ organiser: "organiser", idsOf: (_state, kind) => ids[kind] }).find((each) => each.name === "publish_programme") as Tool<PopulationWorld> & { kind: "effector" };

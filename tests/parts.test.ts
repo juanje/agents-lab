@@ -1,7 +1,7 @@
 import { stringify } from "smol-toml";
 import { describe, expect, it } from "vitest";
 import type { WorldTime } from "../src/engine/calendar.ts";
-import { type PartsProvided, PartsBook, readParts } from "../src/engine/parts.ts";
+import { type PartsProvided, PartsBook, effortMoney, readParts } from "../src/engine/parts.ts";
 import { loadScenario } from "../src/engine/scenario.ts";
 import { slotsScenario } from "./fixtures/slots.ts";
 
@@ -213,5 +213,31 @@ describe("parts' actors by role and kind (FR-CONGRESS-08)", () => {
   it("refuses a role or kind no draw fills, naming the part", () => {
     expect(() => read([{ ...P1, actors: ["role:ghost"] }], { groups })).toThrow(/p1\.actors .*"role:ghost" is a role no draw fills/);
     expect(() => read([{ ...P1, actors: ["kind:caterer"] }], { groups })).toThrow(/p1\.actors .*"kind:caterer" is a kind no draw fills/);
+  });
+});
+
+describe("a part's effort money and reached_at (FR-CONGRESS-10)", () => {
+  it("counts commitments net of releases, and payments only to a party with no commitment counted", () => {
+    const entry = (event: Record<string, unknown>, at: number) => ({ event, at });
+    const money = [
+      entry({ kind: "commitment", from: "ana", to: "v1", amount: 2889 }, 10),
+      entry({ kind: "payment", from: "ana", to: "v1", amount: 867 }, 20),
+      entry({ kind: "release", from: "ana", to: "v1", amount: 2889 }, 30),
+      entry({ kind: "commitment", from: "ana", to: "v2", amount: 3000 }, 40),
+      entry({ kind: "payment", from: "ana", to: "c1", amount: 50 }, 50),
+    ];
+    expect(effortMoney(money, ["ana"], ["v1", "v2"], 0, 100)).toBe(3000);
+    expect(effortMoney(money, ["ana"], ["v1", "v2", "c1"], 0, 100)).toBe(3050);
+  });
+
+  it("gives as reached_at the time a predicate gives, in place of the start of the interval in which it held", () => {
+    const lines: Record<string, unknown>[] = [];
+    const reaching: PartsProvided<Flags> = { ...provided, predicates: { flag_set: (current) => ({ holds: current.flags.door === true, values: {}, reachedAt: 9 * 60 + 30 }) } };
+    const parts = readParts([P1], reaching, { participants: ["shop"], kindFactor: { name: "guidance", levels: ["none", "rules"] } });
+    const kept = new PartsBook<Flags>({ parts, provided: reaching, level: "rules", agents: ["ana"], record: (line) => lines.push(line) });
+    kept.start(state(), at(1, "09:00"));
+    kept.changed(state({ door: true }), at(1, "12:00"));
+    kept.due(state({ door: true }), at(1, "18:00"));
+    expect(lines[0]).toMatchObject({ part: "p1", held: true, reached_at: "day 1 09:30" });
   });
 });
