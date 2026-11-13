@@ -105,7 +105,9 @@ Experiments are written outside this repository, in the experiment language (FR-
 4. FR-PHONE-01 (calls)
 5. FR-CONGRESS-01 (the congress world from materials)
 6. FR-MONEY-01 (accounts, invoices, commitments and approvals)
-7. FR-CONGRESS-02 (the actors' rules), not written
+7. FR-CONGRESS-02 (venues and the board)
+7b. FR-CONGRESS-04 (speakers and the partner's session), not written
+7c. FR-CONGRESS-05 (caterers, sponsors and services), not written
 8. FR-POPULATION-01 (attendees and the ticket page), not written
 9. FR-PARTS-01 (parts as held-out keys), not written
 10. FR-CONGRESS-03 (the day), after the pilot, not written
@@ -386,7 +388,44 @@ An amount that is not a positive number, an account that does not exist or a `du
 **Recorded.** Each money event (invoice issued, payment, transfer, commitment, release, approval, overrun) adds a `money` line with its kind, the parties, the amount, the ids and the run time and world time. When the run ends, each account's balance, committed total, ceiling and unpaid invoices are written as a `money_summary` line. The inventory gives the accounts, their openings, the `discretionary_limit` and which tools each party has.
 
 **Refusals**, before any model call, with an error that names the key: `[money]` without a `[calendar]` or without accounts; an account for a name that is no agent or participant; an `opening` that is negative, or an account with both an `opening` and `unlimited`; a `discretionary_limit` that is negative.
+**Readings settled after the build (2026-11-13).** An agent's money tools come from its account's `tools`; a participant's from its own `tools`. Durations come from `[durations]`, 0 when not given. `issue_invoice`, `pay` and `transfer` need the caller to hold an account; `commit` and `approve` do not. `pay`, `transfer` and `release` fail as their call lands, after their duration. An overrun is recorded for every commitment that leaves the committed total above the limit. `ledger` answers in JSON, an unlimited balance as `unlimited`, without released commitments.
 *Why:* a congress is made and lost in its money: deposits, invoices, what the board approved and what was spent beyond it. Whether an organiser asked before committing is read from the world's records, not from what it says it did, and the world lets it overspend, as a real one does, so that asking first is a choice.
+
+#### FR-CONGRESS-02: Venues and the board
+The congress provides the rule sets `venue` and `board` (FR-PARTICIPANT-01). Each answers an act that reaches it by mail with a mail to its sender, and one that reaches it by a call it picks up with `answer_call`; it picks up with the probability its template gives (`pick_up`), drawn from its own sequence. Each answer's act and fields are the structured content below; components ignore the free text of what they receive. An act that names something the party does not have (a contract, a room, an extra) is answered with the act `not_available` and the field `what`.
+
+**The base configuration** declares `[mail]`, `[phone]`, `[money]` and a `[kinds.<kind>]` for `venue` and `board`, so a condition can change them. A venue in the pools that the city does not declare is refused before any model call, naming it.
+
+**A venue** (`venue`), from its template: its rooms (seats, equipment), the access it claims (`access_claim`, a text), its catering rule, its day price, its extras with prices (`early_access` per hour, `ramp`, `spare_projector`), `hold_days`, `deposit_share`, `deposit_due_days`, its cancellation schedule (days before the event, share charged), its opening rule, whether its rooms are indicative, and `enquiries_per_day` from other customers.
+
+| Act it takes (fields) | Its answer |
+|---|---|
+| `ask_quote` (date, attendance) | `quote`: rooms with seats and equipment, `access` (its claim), catering rule, price, hold days, deposit share and due days, cancellation schedule, opening rule, and whether rooms are indicative; or `unavailable` when the date is booked by someone else |
+| `request_document` (kind: `floor_plan`, `photos`, `terms`) | `document` with the kind and its content: the floor plan and the photos give every interior passage with its true `step_free`; the terms give the contract's terms in full |
+| `hold` (date) | `held` with `until` (a world time `hold_days` later) when the date is free; else `unavailable` |
+| `book` (date, rooms, hours) | `contract` with an id, the rooms, hours, price and terms; `unavailable` as above |
+| `accept_contract` (contract) | `confirmed`; the venue `commit`s the price with the organiser's account and `issue_invoice`s the deposit (`deposit_share` of the price, due `deposit_due_days` later) |
+| `request_extra` (item) | `extra_quote` with the item and its price |
+| `accept_extra` (item) | `extra_confirmed`; the venue `commit`s the extra's price |
+| `cancel_booking` | `cancelled` with the charge its schedule gives for that day; it `release`s its commitment and `issue_invoice`s the charge when it is above 0 |
+| `accept_change` / `decline_change` | after a change it announced (below): `confirmed` with the new terms, committing the difference; or `cancelled` with no charge |
+
+**A venue's own cycle.** Other customers' enquiries for the event's date come at `enquiries_per_day`, drawn from its sequence. An enquiry for a free date books it for that customer with probability 0.5; for a date the organiser holds, the venue mails the organiser `hold_challenged` with `confirm_by` 48 world hours later, and the hold lapses at that time unless the organiser has accepted a contract. A hold also lapses at its `until`. A deposit unpaid 5 days after its due date brings one `reminder`; unpaid 2 days after that, the venue cancels the booking (`cancelled`, charge 0) and releases its commitment. Its perturbations, declared in the configuration (NFR-13): `change` at a world time drawn between two times, for the venue the organiser has booked or holds: either it loses a room (`room_lost`, naming the room and offering a smaller one or a price cut) or it raises its price (`price_change`, 15–25% from its sequence); and `room_allocation` at a world time, for a booked venue whose rooms are indicative: `rooms_allocated`, which renames or moves at least one booked room to another with at least as many seats and as step-free. A held, booked or confirmed date is unavailable to everyone else.
+
+**The board** (`board`), from its template: the association's funds `funds`, a `reserve` for extra approvals.
+
+| Act it takes (fields) | Its answer |
+|---|---|
+| `submit_budget` (costs, income, contingency, funds_requested) | `budget_approved` when `funds_requested` is at most its funds left: it `approve`s the organiser's account with the ceiling `costs + contingency`, and `transfer`s `funds_requested`; else `budget_countered` with the funds it can give |
+| `request_approval` (amount, reason) | `approved` when `amount` fits its reserve left: it raises the organiser's ceiling by `amount`; else `refused` |
+| `report` (any fields) | `acknowledged` |
+
+**Outcome.** A venue's record gives its holds, contracts, confirmations, cancellations, invoices issued and paid, and what it lost to other customers; the board's gives its approvals, its refusals, the funds it transferred and the organiser's overruns (FR-MONEY-01).
+
+**The inventory** gives each venue's and the board's parameters, the declared perturbations and their times.
+
+**Refusals**, before any model call, with an error that names it: a venue template without rooms, price or `access_claim`; a `deposit_share` outside 0–1; a cancellation schedule whose shares are outside 0–1; a `pick_up` outside 0–1; a perturbation for a party that is no venue, or whose times do not follow the calendar's format; a board without `funds`.
+*Why:* the venues and the board are where the congress's first decisions land: which room, for how much, held or booked, asked or not. Their rules answer only what reaches them, in their hours and at their pace, and they change on their own (other customers, a lost room, a new price), so an organiser meets a market, not a menu.
 #### FR-METRIC-01: Generic metrics for every run
 At the end of every run the core reports, per agent and in total:
 - activations and model turns;
