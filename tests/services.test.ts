@@ -271,7 +271,7 @@ describe("the congress's caterers, sponsors, agency and their perturbation (FR-C
     const ms = (waiting as { ms: number }).ms;
     expect(ms).toBeGreaterThanOrEqual(9 * 1440 * 1000);
     expect(ms).toBeLessThanOrEqual((9 * 1440 + 180) * 1000);
-    expect(cycle.next({} as never, undefined, ms, { day: 10, weekday: "Wednesday", seconds: 12 * 3600 })).toEqual({ kind: "deliver", agent: "sp2", channel: "sponsor_withdraws", held: false });
+    expect(fired(cycle, {} as never, undefined, ms, { day: 10, weekday: "Wednesday", seconds: 12 * 3600 })).toEqual({ kind: "deliver", agent: "sp2", channel: "sponsor_withdraws", held: false });
     expect(cycle.next({} as never, undefined, ms, { day: 10, weekday: "Wednesday", seconds: 12 * 3600 })).toEqual({ kind: "end" });
   });
 
@@ -329,7 +329,7 @@ describe("travel and similar events, services the organiser uses as tools (FR-CO
     expect(book.action.precondition(initial, call("t1 day 26"))).toEqual({ holds: true });
     const after = book.action.effect(initial, call("t1 day 26")) as { money: { invoices: unknown[] }; travel: { booked: unknown[] } };
     expect(after.money.invoices).toEqual([{ id: "i-1", from: "travel", to: "organiser", amount: 40, due: "day 1", for: "t1 day 26 s2", paid: false }]);
-    expect(after.travel.booked).toEqual([{ option: "t1 day 26", traveller: "s2", price: 40 }]);
+    expect(after.travel.booked).toEqual([{ option: "t1 day 26", traveller: "s2", price: 40, at: 9 * 60 }]);
     expect(book.action.precondition(initial, call("t9 day 26"))).toEqual({ holds: false, reason: "no_such_option" });
     const hotelBooked = book.action.effect(initial, call("h1 day 25"));
     expect(book.action.precondition(hotelBooked, call("h1 day 25"))).toEqual({ holds: false, reason: "sold_out" });
@@ -394,3 +394,11 @@ describe("the sponsor's payments (FR-CONGRESS-05)", () => {
     expect(calls(drive(withdrawn.rules, withdrawn.answer(""), [[]], true), "pay")).toEqual([]);
   });
 });
+
+/** A perturbation's next steps as it fires: it records itself, then delivers (FR-CONGRESS-06). */
+function fired(cycle: { next: (...args: never[]) => unknown }, ...args: unknown[]): unknown {
+  const recorded = (cycle.next as (...given: unknown[]) => { kind: string })(...args);
+  if (recorded.kind !== "action") return recorded;
+  const [state, , ...rest] = args;
+  return (cycle.next as (...given: unknown[]) => unknown)(state, "success", ...rest);
+}

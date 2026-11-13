@@ -339,7 +339,7 @@ describe("the cancellations, perturbations that find their speaker in the world'
     expect(ms).toBeLessThanOrEqual((8 * 1440 + 180) * 1000);
 
     const confirmed = world({ s1: [], s4: [confirmTo("s4", at(2, "10:01"))] });
-    expect(cycle.next(confirmed, undefined, ms, at(9, "12:00"))).toEqual({ kind: "deliver", agent: "s4", channel: "early_cancel", held: false });
+    expect(fired(cycle, confirmed, undefined, ms, at(9, "12:00"))).toEqual({ kind: "deliver", agent: "s4", channel: "early_cancel", held: false });
     expect(cycle.next(confirmed, undefined, ms, at(9, "12:00"))).toEqual({ kind: "end" });
   });
 
@@ -353,7 +353,7 @@ describe("the cancellations, perturbations that find their speaker in the world'
     const waiting = cycle.next(confirmed, undefined, 0, at(11, "11:00"));
     // From 11:00 on day 11 to 10:01 on day 13.
     expect(waiting).toEqual({ kind: "wait", ms: (2 * 1440 - 59) * 1000 });
-    expect(cycle.next(confirmed, undefined, 0, at(13, "10:01"))).toEqual({ kind: "deliver", agent: "s1", channel: "early_cancel", held: false });
+    expect(fired(cycle, confirmed, undefined, 0, at(13, "10:01"))).toEqual({ kind: "deliver", agent: "s1", channel: "early_cancel", held: false });
   });
 
   it("late_cancel hits a confirmed speaker who has not cancelled, and nobody when none is left", () => {
@@ -362,10 +362,18 @@ describe("the cancellations, perturbations that find their speaker in the world'
     const both = { s1: [confirmTo("s1", at(2, "10:01"))], s4: [confirmTo("s4", at(2, "10:01"))] };
 
     const cycle = late.cycle(new Random(3));
-    expect(cycle.next(world({ ...both, organiser: [s1Cancelled] }), undefined, 0, at(23, "10:00"))).toEqual({ kind: "deliver", agent: "s4", channel: "late_cancel", held: false });
+    expect(fired(cycle, world({ ...both, organiser: [s1Cancelled] }), undefined, 0, at(23, "10:00"))).toEqual({ kind: "deliver", agent: "s4", channel: "late_cancel", held: false });
 
     const called = late.cycle(new Random(3));
     const s4Called = { id: "c-1", from: "s4", to: "organiser", act: "cancel", fields: {}, status: "ended" };
     expect(called.next(world({ ...both, organiser: [s1Cancelled] }, [s4Called]), undefined, 0, at(23, "10:00"))).toEqual({ kind: "end" });
   });
 });
+
+/** A perturbation's next steps as it fires: it records itself, then delivers (FR-CONGRESS-06). */
+function fired(cycle: { next: (...args: never[]) => unknown }, ...args: unknown[]): unknown {
+  const recorded = (cycle.next as (...given: unknown[]) => { kind: string })(...args);
+  if (recorded.kind !== "action") return recorded;
+  const [state, , ...rest] = args;
+  return (cycle.next as (...given: unknown[]) => unknown)(state, "success", ...rest);
+}

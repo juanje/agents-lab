@@ -65,7 +65,7 @@ describe("draws by role (FR-CONGRESS-01's addition)", () => {
     const [component] = loaded.components;
     const cycle = component.cycle(new Random(1));
     const at = { day: 1, weekday: "Monday" as const, seconds: 10 * 3600 };
-    expect(cycle.next({} as never, undefined, 0, at)).toEqual({ kind: "deliver", agent: "sp3", channel: "sponsor_withdraws", held: false });
+    expect(fired(cycle, {} as never, undefined, 0, at)).toEqual({ kind: "deliver", agent: "sp3", channel: "sponsor_withdraws", held: false });
   });
 });
 
@@ -103,3 +103,11 @@ describe("refusals of draws by role (FR-CONGRESS-01's addition)", () => {
     expect(refusing({ venue: VENUES }, { venue: 1 }, (configuration) => ((configuration.perturbations as TomlTable).change = { at: "day 2 10:00", for_role: "ghost" }))).toThrow(/for_role.*"ghost".*no draw fills/);
   });
 });
+
+/** A perturbation's next steps as it fires: it records itself, then delivers (FR-CONGRESS-06). */
+function fired(cycle: { next: (...args: never[]) => unknown }, ...args: unknown[]): unknown {
+  const recorded = (cycle.next as (...given: unknown[]) => { kind: string })(...args);
+  if (recorded.kind !== "action") return recorded;
+  const [state, , ...rest] = args;
+  return (cycle.next as (...given: unknown[]) => unknown)(state, "success", ...rest);
+}

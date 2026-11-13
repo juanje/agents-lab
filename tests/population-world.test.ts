@@ -94,7 +94,7 @@ describe("the organiser's ticket page, programme and announcements (FR-POPULATIO
     const session = (start: string, room: string, speaker = "s1") => ({ start, end: `${start.slice(0, 2)}:45`, title: "t", speakers: [speaker], room });
     const { state, outcome } = apply(world(), "publish_programme", { sessions: [session("10:00", "main-hall"), session("11:00", "room-b", "s4")], sponsor_slots: [{ sponsor: "sp1", start: "09:30" }], logos: ["sp2"] });
     expect(outcome).toBe("success");
-    expect(pop(state).programme).toEqual([{ version: 1, sessions: [session("10:00", "main-hall"), session("11:00", "room-b", "s4")], breaks: [], sponsor_slots: [{ sponsor: "sp1", start: "09:30" }], logos: ["sp2"] }]);
+    expect(pop(state).programme).toEqual([{ version: 1, sessions: [session("10:00", "main-hall"), session("11:00", "room-b", "s4")], breaks: [], sponsor_slots: [{ sponsor: "sp1", start: "09:30" }], logos: ["sp2"], published: 9 * 60 }]);
     expect(apply(state, "publish_programme", { sessions: [session("10:00", "main-hall"), session("10:30", "main-hall", "s4")] }).outcome).toBe("invalid_value");
     expect(apply(state, "publish_programme", { sessions: [session("10:00", "ballroom")] }).outcome).toBe("invalid_value");
   });
