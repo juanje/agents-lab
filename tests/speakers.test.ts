@@ -86,8 +86,8 @@ describe("a speaker's answer to an invitation (FR-CONGRESS-04)", () => {
     expect(answerTo(invite("10:00", 100), { fee: 300, condition: "fee" })).toEqual([{ to: "organiser", act: "accept_if", fields: { session: 2, condition: "fee" } }]);
     expect(answerTo(invite("10:00", 300), { fee: 300, condition: "fee" })).toEqual([{ to: "organiser", act: "accept", fields: { session: 2 } }]);
     expect(answerTo(invite("12:00"), { condition: "morning_slot" })).toEqual([{ to: "organiser", act: "accept_if", fields: { session: 2, condition: "morning_slot" } }]);
-    // A time that breaks its constraint, from a speaker with a condition, is met by its condition.
-    expect(answerTo(invite("14:00", 100), { constraint: "morning", condition: "fee", fee: 100 })).toEqual([{ to: "organiser", act: "accept_if", fields: { session: 2, condition: "fee" } }]);
+    // A constraint is hard, whatever the condition (FR-CONGRESS-07).
+    expect(answerTo(invite("14:00", 100), { constraint: "morning", condition: "fee", fee: 100 })).toEqual([{ to: "organiser", act: "decline", fields: { session: 2 } }]);
   });
 
   it("declines with the probability its acceptance leaves, from the first draw of its own sequence", () => {

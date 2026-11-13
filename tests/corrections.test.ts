@@ -1,0 +1,179 @@
+import { describe, expect, it } from "vitest";
+import { Random } from "../src/engine/random.ts";
+import type { Stimulus } from "../src/engine/stimuli.ts";
+import { boardRules, catererRules, speakerRules, venueRules } from "../src/scenarios/congress-parties.ts";
+import { calls, conversation, drive, notice, tools } from "./fixtures/rules.ts";
+
+/** "v1"'s parameters: main-hall (120 seats) and room-b (40), the day price 2000, and what the world adds. */
+const venue = (changes: Record<string, unknown> = {}) => ({
+  id: "v1",
+  rooms: [
+    { id: "main-hall", seats: 120, equipment: ["projector"] },
+    { id: "room-b", seats: 40, equipment: [] },
+  ],
+  access_claim: "step-free",
+  catering: "outside_fee",
+  outside_fee_per_head: 5,
+  price: 2000,
+  hold_days: 2,
+  deposit_share: 0.25,
+  deposit_due_days: 3,
+  cancellation: [{ share: 0.5 }],
+  pick_up: 1,
+  organiser: "organiser",
+  event_day: 26,
+  floor_plan: [],
+  perturbations: [],
+  ...changes,
+});
+
+const DAY = "day 1 Monday 09:01";
+const book = (rooms: string) => [DAY, `From: organiser. Act: book. date: day 26. rooms: ${rooms}. hours: 08:00-18:00.`] as [string, string];
+const accept: [string, string] = [DAY, "From: organiser. Act: accept_contract. contract: v1-contract-1."];
+const mailed = (steps: ReturnType<typeof conversation>["steps"]) => calls(steps, "send_mail").map(({ act, fields }) => ({ act, fields }));
+const committed = (k: string, amount: number, what: string) => () => ({ commitments_recorded: [{ id: k, with: "organiser", amount, for: what }] });
+
+describe("a venue's catering rule, rooms and lost rooms (FR-CONGRESS-07)", () => {
+  it("quotes outside catering at its fee per head and gives a permit as an extra, committing the fee; an in-house venue gives none", () => {
+    const { steps } = conversation(venueRules.start(venue(), new Random(1)), [
+      book("main-hall"),
+      accept,
+      [DAY, "From: organiser. Act: request_extra. item: outside_catering. attendance: 40."],
+      [DAY, "From: organiser. Act: accept_extra. item: outside_catering."],
+    ]);
+    expect(mailed(steps).slice(2)).toEqual([
+      { act: "extra_quote", fields: { item: "outside_catering", price: 200 } },
+      { act: "extra_confirmed", fields: { item: "outside_catering", price: 200, permit: "v1-permit-1" } },
+    ]);
+    expect(calls(steps, "commit").at(-1)).toEqual({ with: "organiser", amount: 200, for: "v1-contract-1 extra outside_catering" });
+
+    const inHouse = conversation(venueRules.start(venue({ catering: "in_house" }), new Random(1)), [book("main-hall"), accept, [DAY, "From: organiser. Act: request_extra. item: outside_catering. attendance: 40."]]);
+    expect(mailed(inHouse.steps).at(-1)).toEqual({ act: "not_available", fields: { what: "outside_catering" } });
+  });
+
+  it("changes a booking's rooms, its price following each room's share of the day price by seats, committing the difference", () => {
+    const { steps } = conversation(venueRules.start(venue(), new Random(1)), [book("main-hall"), accept, [DAY, "From: organiser. Act: change_booking. rooms: main-hall, room-b. hours: 08:00-18:00."]]);
+    expect(mailed(steps).at(-1)).toEqual({ act: "contract_changed", fields: { contract: "v1-contract-1", rooms: "main-hall, room-b", hours: "08:00-18:00", price: 2500 } });
+    expect(calls(steps, "commit").at(-1)).toEqual({ with: "organiser", amount: 500, for: "v1-contract-1 change" });
+
+    const dropped = conversation(venueRules.start(venue(), new Random(1)), [book("main-hall, room-b"), accept, [DAY, "From: organiser. Act: change_booking. rooms: main-hall. hours: 08:00-18:00."]], committed("k-1", 2000, "v1-contract-1"));
+    expect(mailed(dropped.steps).at(-1)?.fields).toMatchObject({ price: 1500 });
+    expect(calls(dropped.steps, "release")).toEqual([{ commitment: "k-1" }]);
+    expect(calls(dropped.steps, "commit").at(-1)).toEqual({ with: "organiser", amount: 1500, for: "v1-contract-1" });
+
+    const unknown = conversation(venueRules.start(venue(), new Random(1)), [book("main-hall"), accept, [DAY, "From: organiser. Act: change_booking. rooms: ballroom. hours: 08:00-18:00."]]);
+    expect(mailed(unknown.steps).at(-1)).toEqual({ act: "unavailable", fields: { date: "day 26" } });
+  });
+
+  it("quotes an extra room, the smallest free one with the seats asked, or none", () => {
+    const { steps } = conversation(venueRules.start(venue(), new Random(1)), [book("main-hall"), accept, [DAY, "From: organiser. Act: request_extra. item: room. seats: 30."], [DAY, "From: organiser. Act: request_extra. item: room. seats: 200."]]);
+    expect(mailed(steps).slice(2)).toEqual([
+      { act: "extra_quote", fields: { item: "room", room: "room-b", price: 500 } },
+      { act: "not_available", fields: { what: "room" } },
+    ]);
+  });
+
+  it("after a lost room offers its largest free smaller room and a cut of the lost room's price, and takes the option chosen", () => {
+    const rooms = [
+      { id: "main-hall", seats: 150, equipment: [] },
+      { id: "room-b", seats: 30, equipment: [] },
+      { id: "room-c", seats: 20, equipment: [] },
+    ];
+    const lost = (option: string) => {
+      const rules = venueRules.start(venue({ rooms, perturbations: [{ name: "change", kind: "room_lost", at: "day 1 12:00" }] }), new Random(1));
+      const first = conversation(rules, [book("main-hall, room-b"), accept]);
+      first.clock.time = "day 1 Monday 12:00";
+      const changed = drive(rules, tools(() => "", () => first.clock.time), [[]], true);
+      const chosen = drive(rules, tools(() => `From: organiser. Act: accept_change. option: ${option}.`, () => first.clock.time, committed("k-1", 2000, "v1-contract-1")), [[notice]], true);
+      return { changed: calls(changed, "send_mail"), chosen };
+    };
+    const smaller = lost("smaller_room");
+    expect(smaller.changed).toEqual([{ to: "organiser", act: "room_lost", fields: { contract: "v1-contract-1", room: "room-b", offer: "smaller_room", smaller: "room-c", cut: 300 } }]);
+    expect(calls(smaller.chosen, "send_mail")).toEqual([{ to: "organiser", act: "confirmed", fields: { contract: "v1-contract-1", price: 2000, rooms: "main-hall, room-c" } }]);
+    const cut = lost("price_cut");
+    expect(calls(cut.chosen, "send_mail")).toEqual([{ to: "organiser", act: "confirmed", fields: { contract: "v1-contract-1", price: 1700, rooms: "main-hall" } }]);
+    expect(calls(cut.chosen, "release")).toEqual([{ commitment: "k-1" }]);
+    expect(calls(cut.chosen, "commit")).toEqual([{ with: "organiser", amount: 1700, for: "v1-contract-1" }]);
+  });
+});
+
+describe("a caterer at a venue with a catering rule (FR-CONGRESS-07)", () => {
+  const caterer = (changes: Record<string, unknown> = {}) =>
+    catererRules.start(
+      {
+        id: "c1",
+        price_per_head: 30,
+        minimum: 20,
+        final_days: 7,
+        deposit_share: 0.2,
+        deposit_due_days: 3,
+        cancellation: [{ share: 0.3 }],
+        organiser: "organiser",
+        event_day: 26,
+        venues: { v1: { catering: "in_house" }, v2: { catering: "outside_fee" }, v3: { catering: "outside_free" } },
+        ...changes,
+      },
+      new Random(1),
+    );
+  const order = (venueId: string, permit = "") => `From: organiser. Act: order. counts: standard: 40. date: day 26. venue: ${venueId}.${permit}`;
+  const answer = (rules: ReturnType<typeof caterer>, message: string) => mailed(conversation(rules, [[DAY, message]]).steps)[0];
+
+  it("refuses an order for a venue that asks for a permit unless it gives one, or it is the venue's in-house caterer", () => {
+    expect(answer(caterer(), order("v1"))).toEqual({ act: "order_refused", fields: { reason: "venue_requires_permit" } });
+    expect(answer(caterer(), order("v2"))).toEqual({ act: "order_refused", fields: { reason: "venue_requires_permit" } });
+    expect(answer(caterer(), order("v2", " permit: v2-permit-1.")).act).toBe("order_confirmed");
+    expect(answer(caterer(), order("v3")).act).toBe("order_confirmed");
+    expect(answer(caterer({ id: "c9", in_house_for: "v1" }), order("v1")).act).toBe("order_confirmed");
+  });
+});
+
+describe("the board before a budget (FR-CONGRESS-07)", () => {
+  it("refuses a request for approval while no budget is approved, with the reason no_budget", () => {
+    const { steps } = conversation(boardRules.start({ id: "board", funds: 6000, reserve: 1000, organiser: "organiser" }, new Random(1)), [[DAY, "From: organiser. Act: request_approval. amount: 400. reason: interpreter."]]);
+    expect(mailed(steps)).toEqual([{ act: "refused", fields: { amount: 400, reason: "no_budget" } }]);
+  });
+});
+
+describe("a speaker's hard constraint and its confirmations (FR-CONGRESS-07)", () => {
+  const speaker = (changes: Record<string, unknown> = {}) => speakerRules.start({ id: "s6", title: "Soil law", fee: 300, home: "local", available: true, acceptance: 1, organiser: "organiser", event_day: 26, ...changes }, new Random(1));
+  const invite = (time: string, fee: number) => `From: organiser. Act: invite. session: 4. time: ${time}. fee: ${fee}. travel_paid: false.`;
+  const confirm = "From: organiser. Act: confirm. time: 10:00. room: main-hall. length: 45. travel: none.";
+
+  it("declines an invitation that breaks its constraint, whatever its condition", () => {
+    expect(mailed(conversation(speaker({ constraint: "morning", condition: "fee" }), [[DAY, invite("14:00", 300)]]).steps)).toEqual([{ act: "decline", fields: { session: 4 } }]);
+  });
+
+  it("answers a confirmation before it has accepted, or while its condition is unmet, with not_available acceptance, and believes nothing", () => {
+    const before = speaker();
+    expect(mailed(conversation(before, [[DAY, confirm]]).steps)).toEqual([{ act: "not_available", fields: { what: "acceptance" } }]);
+    expect(before.outcome()).toMatchObject({ believes_time: "none", believes_room: "none" });
+    const unmet = speaker({ condition: "fee" });
+    expect(mailed(conversation(unmet, [[DAY, invite("10:00", 100)], [DAY, confirm]]).steps).map(({ act }) => act)).toEqual(["accept_if", "not_available"]);
+  });
+});
+
+describe("a missed call returned (FR-CONGRESS-07)", () => {
+  const ring: Stimulus = { channel: "phone", source: "organiser", content: "organiser calls (c-1): ask_quote. date: day 26. attendance: 60. " };
+
+  it("a party that does not pick up calls back with probability 0.5, from its own sequence, within its reply delay, with missed_call; answered, it answers the original act by mail", () => {
+    for (let seed = 1; seed <= 20; seed += 1) {
+      const draws = new Random(seed);
+      const picksUp = draws.next() < 0.5;
+      const callsBack = !picksUp && draws.next() < 0.5;
+      const after = 5 + draws.next() * 60;
+      const rules = venueRules.start(venue({ pick_up: 0.5, call_back_minutes: [5, 65] }), new Random(seed));
+      const clock = { time: DAY };
+      drive(rules, tools(() => "", () => clock.time));
+      const missed = drive(rules, tools(() => "", () => clock.time), [[ring]], true);
+      if (picksUp || !callsBack) {
+        expect(missed.some((step) => step.kind === "wait")).toBe(false);
+        continue;
+      }
+      expect(missed.at(-1)).toEqual({ kind: "wait", minutes: after });
+      clock.time = "day 1 Monday 11:00";
+      const back = drive(rules, (tool, args) => (tool === "call" ? { text: "Answer from organiser. Act: noted." } : tools(() => "", () => clock.time)(tool, args)), [[]], true);
+      expect(calls(back, "call")).toEqual([{ to: "organiser", act: "missed_call" }]);
+      expect(calls(back, "send_mail")[0]).toMatchObject({ to: "organiser", act: "quote" });
+    }
+  });
+});

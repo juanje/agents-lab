@@ -123,7 +123,7 @@ describe("run, with a phone (FR-PHONE-01)", () => {
     expect(lines.filter(({ type }) => type === "call")).toMatchObject([{ id: "c-1", outcome: "no_answer" }]);
   });
 
-  it("gives a callee already on a call no ring, and fails the call as busy when ring_minutes end", async () => {
+  it("gives a callee already on a call no ring, and fails the call as busy after 1 world minute (FR-CONGRESS-07)", async () => {
     const { lines, callsOf, into } = await runSwitchboard(operator(true), {
       ben: calls({ name: "call", arguments: { to: "desk", act: "ask" } }),
       ana: calls({ name: "call", arguments: { to: "desk", act: "ask" }, delayMs: 100 }),
@@ -131,7 +131,10 @@ describe("run, with a phone (FR-PHONE-01)", () => {
 
     const [call] = callsOf("ana", "call");
     expect(call.outcome).toBe("busy");
-    expect(into(call.endedAtMs)).toBeGreaterThanOrEqual(600);
+    // One world minute is 100 milliseconds of the run; ring_minutes would be 500.
+    expect((call.endedAtMs as number) - (call.startedAtMs as number)).toBeGreaterThanOrEqual(100);
+    expect((call.endedAtMs as number) - (call.startedAtMs as number)).toBeLessThan(300);
+    expect(into(call.endedAtMs)).toBeLessThan(400);
     expect(lines.filter((line) => line.type === "stimulus" && line.agent === "desk")).toHaveLength(1);
   });
 
