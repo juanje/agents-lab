@@ -110,6 +110,20 @@ describe("run, with a participant decided by rules (FR-PARTICIPANT-01)", () => {
   });
 });
 
+describe("run, with a participant that declares no channel (FR-PARTICIPANT-01)", () => {
+  it("lands its mail but never gives it the notice, nor wakes its rule set", async () => {
+    const perceived: Perceived[] = [];
+    const logDirectory = mkdtempSync(join(tmpdir(), "agents-lab-logs-"));
+
+    const { runId } = await run(loadScenario(withDesk(checking(perceived), { channels: [] }), 1), [{ name: "ana", model: anaAsks(), activations: 1 }], 1, { ...settings, logDirectory });
+
+    const lines = logOf(logDirectory, runId);
+    expect(lines.filter((line) => line.type === "message_delivered")).toHaveLength(1);
+    expect(lines.filter((line) => line.type === "stimulus" && line.agent === "desk")).toEqual([]);
+    expect(perceived).toEqual([]);
+  });
+});
+
 describe("run, with a rule set that calls a tool its participant does not declare (FR-PARTICIPANT-01)", () => {
   it("stops, with an error that names the participant and the tool, as the log's last line", async () => {
     const looking: RuleSet = { start: () => ({ next: () => ({ kind: "call", tool: "look", arguments: {} }), outcome: () => ({}) }) };

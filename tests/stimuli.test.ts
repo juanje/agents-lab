@@ -142,3 +142,33 @@ describe("Stimuli, holding a recipient's stimuli (FR-PARTICIPANT-01)", () => {
     expect(stimuli.take("a")).toHaveLength(1);
   });
 });
+
+describe("Stimuli, a recipient's declared channels (FR-PARTICIPANT-01)", () => {
+  it("drops a stimulus on a channel its recipient does not declare, unrecorded and untold, before any hold", () => {
+    const delivered: string[] = [];
+    const notice = { name: "mail_notice", source: "mail client", stimulus: "New mail." };
+    const stimuli = new Stimuli([bell, notice, rhythmChannel], (agent, stimulus) => delivered.push(`${agent}: ${stimulus.channel}`));
+    const seen: Stimulus[] = [];
+    stimuli.watch("desk", (stimulus) => seen.push(stimulus));
+    let held = 0;
+    stimuli.hold("desk", async () => {
+      held += 1;
+      return true;
+    });
+    stimuli.only("desk", ["bell"]);
+
+    stimuli.deliver("desk", "mail_notice");
+
+    expect([delivered, seen, held, stimuli.take("desk")]).toEqual([[], [], 0, []]);
+  });
+
+  it("lets through a stimulus on a channel its recipient declares, and every channel to a recipient that declares none", () => {
+    const stimuli = new Stimuli([bell, rhythmChannel]);
+    stimuli.only("desk", ["bell"]);
+
+    stimuli.deliver("desk", "bell");
+    stimuli.deliver("a", "bell");
+
+    expect([stimuli.take("desk"), stimuli.take("a")].map((taken) => taken.length)).toEqual([1, 1]);
+  });
+});
