@@ -49,10 +49,10 @@ Read a file when its trigger matches, not before.
 1. **Contract.** Read the FR and its scenarios. If a scenario cannot be built as written, or the FR looks wrong, stop and propose the change with its reason.
 2. **Steps, Red.** Write the step definitions for the next scenario. Run `npx cucumber-js --tags @FR-…`. Go on only when it fails on an assertion about the missing behaviour, not on an undefined step or an import error.
 3. **Unit test, Red.** Write a vitest test for the next piece of logic the scenario needs. Run it and see it fail for the right reason. Commit it alone as `test(FR-…)`. The commit is the proof that the test came before its code.
-4. **Code, Green.** Write the least code that makes the test pass. Run the test, the FR's scenarios and the full test suite, then commit `feat(FR-…)`.
+4. **Code, Green.** Write the least code that makes the test pass. Run the test, the FR's scenarios (`npx cucumber-js --tags @FR-…`) and `npx vitest run`, then commit `feat(FR-…)`. The full cucumber suite waits on world clocks for many minutes; leave it to step 7.
 5. **Repeat** 3–4 until the scenario passes, then 2 for the next scenario.
 6. **Refactor**, with everything green, when the FR duplicated logic. Extract the shared rule, not only the copied block, and keep the public API and the tests unchanged. Commit `refactor(FR-…)`. Anything that looks wrong in the contract you report; you do not fix it.
-7. **Gate.** Run `npm run gate` and fix what it names.
+7. **Gate.** Run `npm run gate` once, in the background. If it names failures, fix them, rerun only the failing feature files and `npx vitest run`, then run the gate once more before you report.
 8. **Report:** what was built, the gate's output, and what is open.
 
 When no Red is possible (a guard, or behaviour an earlier scenario already built), use a mutant: break the lines the test covers, show that the test fails, restore them, and name the mutant in the commit message.
