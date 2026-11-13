@@ -172,3 +172,43 @@ describe("Stimuli, a recipient's declared channels (FR-PARTICIPANT-01)", () => {
     expect([stimuli.take("desk"), stimuli.take("a")].map((taken) => taken.length)).toEqual([1, 1]);
   });
 });
+
+describe("Stimuli, a channel that wakes a resting agent (FR-CONGRESS-08)", () => {
+  const ring = { name: "phone", source: "the caller", stimulus: "A call.", wakes: true };
+
+  it("ends an agent's rest when a stimulus on a waking channel reaches it, and not for another channel's", () => {
+    const stimuli = new Stimuli([bell, ring, rhythmChannel]);
+    const rest = stimuli.rest("a");
+
+    stimuli.deliver("a", "bell");
+    expect(rest.signal.aborted).toBe(false);
+    stimuli.deliver("a", "phone");
+    expect(rest.signal.aborted).toBe(true);
+    rest.end();
+  });
+
+  it("ends a rest at once when a waking stimulus is already waiting for the agent", () => {
+    const stimuli = new Stimuli([ring, rhythmChannel]);
+    stimuli.deliver("a", "phone");
+
+    expect(stimuli.rest("a").signal.aborted).toBe(true);
+  });
+
+  it("does not end a rest that has ended, nor another agent's", () => {
+    const stimuli = new Stimuli([ring, rhythmChannel]);
+    const rest = stimuli.rest("a");
+    const other = stimuli.rest("b");
+    rest.end();
+
+    stimuli.deliver("a", "phone");
+
+    expect([rest.signal.aborted, other.signal.aborted]).toEqual([false, false]);
+  });
+
+  it("wakes an agent woken by a stimulus with the stimuli waiting for it, without the rhythm's", () => {
+    const stimuli = new Stimuli([ring, rhythmChannel]);
+    stimuli.deliver("a", "phone");
+
+    expect(stimuli.wake("a", false)).toEqual([{ channel: "phone", source: "the caller", content: "A call." }]);
+  });
+});

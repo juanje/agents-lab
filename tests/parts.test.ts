@@ -201,3 +201,17 @@ describe("what the congress's parts need besides (FR-CONGRESS-06)", () => {
     expect(seen).toEqual([18 * 60]);
   });
 });
+
+describe("parts' actors by role and kind (FR-CONGRESS-08)", () => {
+  const groups = { "role:false_claim": ["mill-house"], "kind:board": ["chair", "trust"] };
+
+  it("resolves an actor given as role:<role> or kind:<kind> into the parties the replica's draw gave it", () => {
+    const [part] = read([{ ...P1, actors: ["role:false_claim", "kind:board", "shop"] }], { participants: ["shop", "mill-house", "chair", "trust"], groups });
+    expect(part.actors).toEqual(["mill-house", "chair", "trust", "shop"]);
+  });
+
+  it("refuses a role or kind no draw fills, naming the part", () => {
+    expect(() => read([{ ...P1, actors: ["role:ghost"] }], { groups })).toThrow(/p1\.actors .*"role:ghost" is a role no draw fills/);
+    expect(() => read([{ ...P1, actors: ["kind:caterer"] }], { groups })).toThrow(/p1\.actors .*"kind:caterer" is a kind no draw fills/);
+  });
+});

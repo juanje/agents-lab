@@ -257,3 +257,54 @@ describe("the congress's world in the inventory (FR-CONGRESS-01)", () => {
     expect(world.placement).toMatchObject({ task: "person", guidance: "system" });
   });
 });
+
+describe("the congress ready for an experiment (FR-CONGRESS-08)", () => {
+  it("fills the texts' {topic}, {target}, {event_day} and {funds} with what the replica drew, and {{ and }} with braces", () => {
+    const loaded = loadScenario(
+      congress((configuration) => {
+        Object.assign(configuration, { task: "On {topic} for {target} on {event_day}, with {funds}; in {{euros}}.", limits: "Budget: {funds}." });
+        changingText("pools", (pools) => (pools.board = [{ id: "chair", funds: 1200 }]))(configuration);
+        changingText("draw", (draw) => (draw.board = 1))(configuration);
+      }),
+      1,
+    );
+    const { topic, attendance } = loaded.variant as { topic: string; attendance: number };
+
+    expect(loaded.channels.find(({ name }) => name === "person")?.stimulus).toBe(`On ${topic} for ${attendance} on day 26 Friday, with 1200; in {euros}.`);
+    expect(loaded.systemPrompts.get("organiser")).toContain("Budget: 1200.");
+  });
+
+  it("refuses, before any model call, a name in braces that is none of the drawn values, naming it and its text, and {funds} without a board", () => {
+    expect(() => loadScenario(congress((configuration) => (configuration.limits = "Spend at most {budget}.")), 1)).toThrow(/limits.*\{budget\}|budget.*limits/);
+    expect(() => loadScenario(congress((configuration) => (configuration.task = "Use {funds}.")), 1)).toThrow(/task.*\{funds\}.*no board/);
+  });
+
+  it("gives in {directory} one line per drawn party with its id, kind, mailbox, line and the acts its rule set takes", () => {
+    const loaded = loadScenario(
+      congress((configuration) => {
+        configuration.knowledge = "Who is who:\n{directory}";
+        (configuration.kinds as TomlTable).venue = { rules: "venue", tools: ["send_mail"], channels: ["mail_notice"] };
+        changingText("pools", (pools) => (pools.venue = (pools.venue as TomlTable[]).map((venue) => ({ ...venue, rooms: [{ id: "main-hall", seats: 120 }], price: 1000, access_claim: "step-free", deposit_share: 0.2, cancellation: [{ share: 0.5 }] }))))(configuration);
+      }),
+      1,
+    );
+    const lines = (loaded.systemPrompts.get("organiser") as string).split("\n").slice(1);
+    const { chosen } = loaded.variant as { chosen: Record<string, string[]> };
+
+    expect(lines).toHaveLength(chosen.venue.length + chosen.speaker.length);
+    expect(lines.find((line) => line.includes("v1"))).toBe(
+      "- v1: venue, with a mailbox and a line; takes ask_quote (date, attendance), request_document (kind), hold (date), book (date, rooms, hours), accept_contract (contract), change_booking (rooms, hours), request_extra (item), accept_extra (item), cancel_booking, accept_change (option), decline_change",
+    );
+    expect(lines.find((line) => line.includes(chosen.speaker[0]))).toBe(`- ${chosen.speaker[0]}: speaker, with a mailbox and a line; takes no act the congress lists`);
+  });
+
+  it("names each drawn party's role and kind for parts' actors, and the phone wakes a resting organiser while the mail's notice does not", () => {
+    const scenario = congress();
+    const loaded = loadScenario(scenario, 1);
+    const { chosen } = loaded.variant as { chosen: Record<string, string[]> };
+
+    expect(scenario.partyGroups?.(loaded.configuration)).toEqual({ "kind:venue": chosen.venue, "kind:speaker": chosen.speaker });
+    expect(loaded.channels.find(({ name }) => name === "phone")?.wakes).toBe(true);
+    expect(loaded.channels.find(({ name }) => name === "mail_notice")?.wakes).toBeUndefined();
+  });
+});
