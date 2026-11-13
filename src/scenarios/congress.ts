@@ -329,7 +329,8 @@ function variant(configuration: Configuration, random: Random): { configuration:
       const [, slowest = 0] = ((replyMinutes ?? kept.reply_minutes ?? []) as number[]);
       const callBack: TomlTable = ring === undefined ? {} : { call_back_minutes: [ring, ring + slowest] };
       const world = worldOf(kept.rules, id as string, configuration, city, perturbations, chosenVenues);
-      return [id as string, { decides: "rules", ...kept, ...own, params: { ...params, ...callBack, ...world } }];
+      // Every party knows its own id, by which it names what it commits and invoices.
+      return [id as string, { decides: "rules", ...kept, ...own, params: { id: id as string, ...params, ...callBack, ...world } }];
     }),
   );
   const names = Object.keys(participants);
