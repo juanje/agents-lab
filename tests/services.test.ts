@@ -240,7 +240,8 @@ describe("the congress's caterers, sponsors, agency and their perturbation (FR-C
   it("makes each chosen caterer, sponsor and agency a participant; a sponsor's account opens at its amount", () => {
     const loaded = loadScenario(congress(), 1);
     expect(participant(congress(), "c1")).toMatchObject({ decides: "rules", rules: "caterer" });
-    expect(participant(congress(), "sp2")).toMatchObject({ decides: "rules", rules: "sponsor", channels: expect.arrayContaining(["sponsor_withdraws"]) });
+    expect(participant(congress(), "sp2")).toMatchObject({ decides: "rules", rules: "sponsor", channels: expect.arrayContaining(["sponsor_withdraws", "invoice_notice"]) });
+    expect(loaded.channels).toContainEqual({ name: "invoice_notice", source: "money", stimulus: "New invoice from {from}: {for}" });
     expect(participant(congress(), "a1")).toMatchObject({ decides: "rules", rules: "agency" });
     expect(loaded.money?.settings.accounts).toEqual(expect.arrayContaining([{ name: "c1", unlimited: true }, { name: "sp2", opening: 1000 }, { name: "a1", unlimited: true }, { name: "travel", unlimited: true }]));
   });
