@@ -327,10 +327,10 @@ function variant(configuration: Configuration, random: Random): { configuration:
       else if (typeof account === "string") accounts[id as string] = { opening: params[account] as number };
       // A template's reply delay and hours are its participant's, in place of its kind's.
       const own = { ...(replyMinutes === undefined ? {} : { reply_minutes: replyMinutes }), ...(hours === undefined ? {} : { hours }) };
-      // A missed ring is called back from the ring's end to the party's reply delay after it (FR-CONGRESS-07).
+      // A missed ring is called back from a world minute after the ring ends to the party's reply delay after that (FR-CONGRESS-07).
       const ring = (configuration.phone as TomlTable | undefined)?.ring_minutes as number | undefined;
       const [, slowest = 0] = ((replyMinutes ?? kept.reply_minutes ?? []) as number[]);
-      const callBack: TomlTable = ring === undefined ? {} : { call_back_minutes: [ring, ring + slowest] };
+      const callBack: TomlTable = ring === undefined ? {} : { call_back_minutes: [ring + 1, ring + 1 + slowest] };
       const world = worldOf(kept.rules, id as string, configuration, city, perturbations, chosenVenues);
       // Every party knows its own id, by which it names what it commits and invoices.
       return [id as string, { decides: "rules", ...kept, ...own, params: { id: id as string, ...params, ...callBack, ...world } }];
