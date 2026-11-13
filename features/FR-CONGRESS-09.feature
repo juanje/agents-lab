@@ -80,10 +80,10 @@ Feature: Corrections to the world from E1's first technical run
 
   Scenario: A sponsor pays only when its conditions stand, within its hours
     Given "sp1" keeps the hours "office", agreed to "logo" and "morning_slot", and the latest programme has its logo but no morning slot after day 19
-    And the organiser issued "sp1" an invoice of 1200 on "day 20 Friday 17:30"
-    When the run's time limit passes at "day 24 Tuesday 09:00"
+    And the organiser issued "sp1" an invoice of 1200 on "day 20 Saturday 17:30"
+    When the run's time limit passes at "day 24 Wednesday 09:00"
     Then "sp1" paid nothing
-    And with the slot published, "sp1" pays on "day 23 Monday" within its hours
+    And with the slot published, "sp1" pays on "day 23 Tuesday" within its hours
 
   Scenario: A party's own mail goes out within its hours
     Given "v1" keeps the hours "office", and its hold-lapse reminder falls due at "day 3 Wednesday 23:00"
