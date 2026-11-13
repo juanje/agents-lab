@@ -240,6 +240,7 @@ function variant(configuration: Configuration, random: Random): { configuration:
   assertParties(kinds, settings, city);
   travelOf(configuration, city);
   const perturbations = perturbationsOf(configuration, kinds);
+  const chosenVenues = templates.filter(({ kind }) => kind === "venue");
   const accounts: Record<string, TomlTable> = {};
   const participants = Object.fromEntries(
     templates.map(({ id, kind, reply_minutes: replyMinutes, hours, ...params }) => {
@@ -248,7 +249,12 @@ function variant(configuration: Configuration, random: Random): { configuration:
       else if (typeof account === "string") accounts[id as string] = { opening: params[account] as number };
       // A template's reply delay and hours are its participant's, in place of its kind's.
       const own = { ...(replyMinutes === undefined ? {} : { reply_minutes: replyMinutes }), ...(hours === undefined ? {} : { hours }) };
-      return [id as string, { decides: "rules", ...kept, ...own, params: { ...params, ...worldOf(kept.rules, id as string, configuration, city, perturbations) } }];
+      // A missed ring is called back from the ring's end to the party's reply delay after it (FR-CONGRESS-07).
+      const ring = (configuration.phone as TomlTable | undefined)?.ring_minutes as number | undefined;
+      const [, slowest = 0] = ((replyMinutes ?? kept.reply_minutes ?? []) as number[]);
+      const callBack: TomlTable = ring === undefined ? {} : { call_back_minutes: [ring, ring + slowest] };
+      const world = worldOf(kept.rules, id as string, configuration, city, perturbations, chosenVenues);
+      return [id as string, { decides: "rules", ...kept, ...own, params: { ...params, ...callBack, ...world } }];
     }),
   );
   const names = Object.keys(participants);
@@ -444,9 +450,11 @@ const NOT_A_VENUES = [...SPEAKER_PERTURBATIONS, SPONSOR_PERTURBATION];
  * What the world adds to a party's parameters, by its rule set: a venue gets the organiser it answers, the event's day,
  * its interior's true floor plan from the city and the perturbations for it; a board gets the organiser.
  */
-function worldOf(rules: unknown, id: string, configuration: Configuration, city: City, perturbations: readonly Perturbation[]): TomlTable {
+function worldOf(rules: unknown, id: string, configuration: Configuration, city: City, perturbations: readonly Perturbation[], venues: readonly TomlTable[]): TomlTable {
   if (rules === "board") return { organiser: ORGANISER_NAME };
-  if (rules === "speaker" || rules === "partner" || rules === "caterer" || rules === "agency") return { organiser: ORGANISER_NAME, event_day: configuration.event_day as number };
+  // A caterer knows each chosen venue's catering rule (FR-CONGRESS-07).
+  if (rules === "caterer") return { organiser: ORGANISER_NAME, event_day: configuration.event_day as number, venues: Object.fromEntries(venues.map(({ id: venue, catering }): [string, TomlTable] => [venue as string, catering === undefined ? {} : { catering }])) };
+  if (rules === "speaker" || rules === "partner" || rules === "agency") return { organiser: ORGANISER_NAME, event_day: configuration.event_day as number };
   if (rules === "sponsor") return { organiser: ORGANISER_NAME };
   if (rules !== "venue") return {};
   const venue = city.venues.find((each) => each.id === id) as Venue;
