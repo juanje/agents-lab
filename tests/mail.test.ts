@@ -78,10 +78,10 @@ const atStart = (changes: Record<string, unknown> = {}) => ({
 });
 
 describe("readMail, refusing what cannot be followed", () => {
-  const refused = (table: unknown, withCalendar = calendar) => () => readMail(table as never, withCalendar);
+  const refused = (table: unknown) => () => readMail(table as never, calendar);
 
   it("refuses a [mail] without a [calendar], naming mail", () => {
-    expect(refused(mailTable(), undefined)).toThrow("The configuration's mail cannot be followed: its durations are world time, and the configuration declares no [calendar]");
+    expect(() => readMail(mailTable(), undefined)).toThrow("The configuration's mail cannot be followed: its durations are world time, and the configuration declares no [calendar]");
   });
 
   it("refuses delivery_minutes that are not two numbers, the first at least 0 and not above the second", () => {
