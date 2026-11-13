@@ -223,6 +223,7 @@ function callOf(written: string): { name: string; arguments: Record<string, unkn
   // A message or a call to a party, with its act and fields (FR-CONGRESS-02).
   if (tool === "send_mail" || tool === "call") return { name: tool, arguments: messageOf(rest) };
   if (tool === "read_mail" && rest === "the first message") return { name: tool, arguments: { id: FIRST_RECEIVED } };
+  if (tool === "pay") return { name: tool, arguments: { invoice: quoted[0] } };
   if (tool === "go") return { name: tool, arguments: { place: /^to "([^"]+)"$/.exec(rest)?.[1] } };
   if (tool === "write_note") return { name: tool, arguments: { title: quoted[0], text: quoted[1] } };
   if (tool === "read_notes") return { name: tool, arguments: quoted.length === 0 ? {} : { title: quoted[0] } };
