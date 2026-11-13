@@ -76,6 +76,8 @@ class Party {
   readonly #callBacks: { at: number; ring: Received }[] = [];
   /** How it answers what reaches it, as it last handled something. */
   #answer?: (received: Received) => Answer | undefined;
+  /** The messages it answered, by sender, act and fields, so a repeat gets no second answer (FR-CONGRESS-09). */
+  readonly #answered = new Set<string>();
   /** The hours it keeps: its days, and from and to "HH:MM" on each (FR-CONGRESS-09); none, always. */
   readonly #keeps?: { days: readonly string[]; from: string; to: string };
 
@@ -210,9 +212,13 @@ class Party {
       if (given.then !== undefined) yield* given.then();
     }
     if (!mail) return;
+    // Its mail in the order it landed, as check_mail lists it.
     for (const message of yield* this.mail()) {
+      const key = JSON.stringify([message.from, message.act, message.fields]);
+      if (this.#answered.has(key)) continue;
       const given = answer(message);
       if (given === undefined) continue;
+      this.#answered.add(key);
       yield* this.call("send_mail", { to: message.from, act: given.act, fields: given.fields });
       if (given.then !== undefined) yield* given.then();
     }

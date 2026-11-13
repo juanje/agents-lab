@@ -227,7 +227,7 @@ describe("a speaker's answers after its invitation, and its outcome (FR-CONGRESS
   });
 
   it("commits its agreed fee when it first acknowledges, and claims it when its invitation is withdrawn, recording a broken agreement", () => {
-    const { rules, steps } = conversation({ fee: 300, condition: "fee" }, [invite("10:00", 300), confirm, confirm, "From: organiser. Act: withdraw_invitation."]);
+    const { rules, steps } = conversation({ fee: 300, condition: "fee" }, [invite("10:00", 300), confirm, confirm.replace("main-hall", "room-b"), "From: organiser. Act: withdraw_invitation."]);
     expect(mails(steps).map(({ act }) => act)).toEqual(["accept", "acknowledged", "acknowledged", "withdrawn"]);
     expect(calls(steps, "commit")).toEqual([{ with: "organiser", amount: 300, for: "fee s1" }]);
     expect(calls(steps, "issue_invoice")).toEqual([{ to: "organiser", amount: 300, due: "day 1", for: "claim s1" }]);
