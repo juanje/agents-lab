@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Perceived, RuleStep, Rules } from "../src/engine/participants.ts";
 import { Random } from "../src/engine/random.ts";
 import type { Stimulus } from "../src/engine/stimuli.ts";
-import { agencyRules, catererRules } from "../src/scenarios/congress-parties.ts";
+import { agencyRules, catererRules, sponsorRules } from "../src/scenarios/congress-parties.ts";
 
 /** The mail notice of a message from the organiser. */
 const notice: Stimulus = { channel: "mail_notice", source: "mail client", content: "New mail from organiser: x" };
@@ -169,5 +169,49 @@ describe("the interpreter agency's rules (FR-CONGRESS-05)", () => {
     expect(calls(cancelled, "send_mail")).toEqual([{ to: "organiser", act: "cancelled", fields: { date: "day 26" } }]);
     expect(calls(cancelled, "release")).toEqual([{ commitment: "k-1" }]);
     expect(rules.outcome()).toEqual({ booked: "none", cancelled: true });
+  });
+});
+
+describe("the sponsor's answers (FR-CONGRESS-05)", () => {
+  const sp1 = { id: "sp1", amount: 1200, conditions: ["logo", "morning_slot"], insists: ["morning_slot"], counter_acceptance: 0.5, pay_days: [2, 2], pick_up: 1, organiser: "organiser" };
+  const answering = (messages: string[], changes: Record<string, unknown> = {}, seed = 1) => {
+    const rules = sponsorRules.start({ ...sp1, ...changes }, new Random(seed));
+    const steps: RuleStep[] = [...drive(rules, tools(() => ""))];
+    for (const message of messages) steps.push(...drive(rules, tools(() => message), [[notice]], true));
+    return { rules, mails: calls(steps, "send_mail") };
+  };
+
+  it("states its amount, its conditions and its payment terms, and agrees to its own conditions", () => {
+    const { mails, rules } = answering(["From: organiser. Act: ask_conditions.", "From: organiser. Act: accept_sponsorship. conditions: logo, morning_slot."]);
+    expect(mails).toEqual([
+      { to: "organiser", act: "conditions", fields: { amount: 1200, conditions: "logo, morning_slot", pay_days: "2 to 2" } },
+      { to: "organiser", act: "agreement", fields: { amount: 1200, conditions: "logo, morning_slot" } },
+    ]);
+    expect(rules.outcome()).toEqual({ conditions: "logo, morning_slot", agreement: "logo, morning_slot", paid: 0, withdrew: false });
+  });
+
+  it("refuses a counter that drops what it insists on, and takes one that keeps it with its counter_acceptance, from its own sequence, or withdraws", () => {
+    expect(answering(["From: organiser. Act: counter. conditions: logo."]).mails).toEqual([{ to: "organiser", act: "refused", fields: { missing: "morning_slot" } }]);
+    // An acceptance of conditions not its own is a counter.
+    expect(answering(["From: organiser. Act: accept_sponsorship. conditions: logo."]).mails[0].act).toBe("refused");
+    for (let seed = 1; seed <= 20; seed += 1) {
+      const takes = new Random(seed).next() < 0.5;
+      const { mails, rules } = answering(["From: organiser. Act: counter. conditions: morning_slot, table."], {}, seed);
+      expect(mails).toEqual([takes ? { to: "organiser", act: "agreement", fields: { amount: 1200, conditions: "morning_slot, table" } } : { to: "organiser", act: "withdraw", fields: {} }]);
+      expect(rules.outcome()).toMatchObject({ agreement: takes ? "morning_slot, table" : "none", withdrew: !takes });
+    }
+  });
+
+  it("acknowledges an attendee list and evidence", () => {
+    expect(answering(["From: organiser. Act: send_attendee_list. list: a1, a2.", "From: organiser. Act: send_evidence."]).mails.map(({ act }) => act)).toEqual(["received", "acknowledged"]);
+  });
+
+  it("withdraws when sponsor_withdraws reaches it", () => {
+    const rules = sponsorRules.start(sp1, new Random(1));
+    drive(rules, tools(() => ""));
+    drive(rules, tools(() => "From: organiser. Act: accept_sponsorship. conditions: logo, morning_slot."), [[notice]], true);
+    const steps = drive(rules, tools(() => ""), [[{ channel: "sponsor_withdraws", source: "board meeting", content: "Your board withdraws the sponsorship." }]], true);
+    expect(calls(steps, "send_mail")).toEqual([{ to: "organiser", act: "withdraw", fields: {} }]);
+    expect(rules.outcome()).toMatchObject({ withdrew: true });
   });
 });
