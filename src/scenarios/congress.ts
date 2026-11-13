@@ -1,10 +1,11 @@
 import { type TomlTable, parse } from "smol-toml";
-import { type Calendar, type WorldTime, hoursAt, readCalendar, worldTimeText } from "../engine/calendar.ts";
+import { type Calendar, type WorldTime, hoursAt, reachedAfterMs, readCalendar, worldTimeText } from "../engine/calendar.ts";
 import type { Mail } from "../engine/mail.ts";
 import type { Money } from "../engine/money.ts";
 import type { Phone } from "../engine/phone.ts";
 import { type Places, arrive, exits, inSight, layout, leave, put, where } from "../engine/places.ts";
 import type { Random } from "../engine/random.ts";
+import type { Component, Step } from "../engine/components.ts";
 import type { Configuration, Scenario } from "../engine/scenario.ts";
 import type { Channel } from "../engine/stimuli.ts";
 import type { AgentCall, Effector, Sensor, Sight, Tool } from "../engine/tools.ts";
@@ -569,6 +570,86 @@ const wait: Effector<Congress> = {
   readTarget: () => "not_sensed",
 };
 
+/** World minutes since day 1's midnight of a world time. */
+const minutesOfWorld = ({ day, seconds }: WorldTime) => (day - 1) * 1440 + seconds / 60;
+
+/** Whether a speaker has cancelled, by mail or by a call to the organiser, as the world's mail and phone hold it. */
+function hasCancelled(state: Congress, speaker: string): boolean {
+  const mailed = [...(state.mail.mailboxes[ORGANISER] ?? []), ...state.mail.inTransit].some(({ from, act }) => from === speaker && act === "cancel");
+  return mailed || state.phone.calls.some(({ from, to, act }) => from === speaker && to === ORGANISER && act === "cancel");
+}
+
+/** When a confirm from the organiser reached a speaker's mailbox, in world minutes; none when none has. */
+function confirmedAt(state: Congress, speaker: string): number | undefined {
+  const confirm = (state.mail.mailboxes[speaker] ?? []).find(({ from, act }) => from === ORGANISER && act === "confirm");
+  return confirm === undefined ? undefined : minutesOfWorld(confirm.received);
+}
+
+/** How long two days are after a speaker is confirmed when early_cancel found none confirmed at its time. */
+const NEXT_CONFIRMED_DELAY_MINUTES = 2 * 1440;
+
+/** How often a cancellation that waits for the next speaker to be confirmed looks again at the world's mail, in world minutes. */
+const LOOK_AGAIN_MINUTES = 60;
+
+/**
+ * A speaker's cancellation (FR-CONGRESS-04), a perturbation component: from its own sequence it draws its time (in its
+ * window, or at its time) and an order of the speakers; at that time it takes the first speaker in that order whom a
+ * confirm from the organiser has reached and who has not cancelled, and delivers it the illness on its own channel, not
+ * held. early_cancel, finding none, waits for the next to be confirmed and delivers 2 days after its confirm reached it;
+ * late_cancel, finding none, ends.
+ */
+function cancellation(declared: Perturbation, speakers: readonly string[], calendar: Calendar): Component<Congress> {
+  return {
+    name: declared.name,
+    kind: "perturbation",
+    description:
+      declared.name === "early_cancel"
+        ? `At a time drawn between ${String(declared.between?.join(" and "))}, makes the first confirmed speaker, in an order it draws, cancel by mail; with none confirmed, the next to be confirmed, 2 days after.`
+        : `At ${String(declared.at)}, makes a confirmed speaker who has not cancelled, in an order it draws, cancel by a call, and by mail if the call is not answered.`,
+    cycle: (random) => {
+      const [from, to] = (declared.between ?? [declared.at, declared.at]).map((time) => perturbationMinutes(time) as number);
+      const time = from + random.next() * (to - from);
+      const left = [...speakers];
+      const order = speakers.map(() => left.splice(Math.floor(random.next() * left.length), 1)[0]);
+      let done = false;
+      const waitUntil = (minutes: number, now: number, sinceStartMs: number): Step<Congress> => ({ kind: "wait", ms: reachedAfterMs(calendar, sinceStartMs, (minutes - now) * 60) });
+      return {
+        next: (state, _outcome, sinceStartMs, world) => {
+          const now = minutesOfWorld(world as WorldTime);
+          if (done) return { kind: "end" };
+          if (now < time) return waitUntil(time, now, sinceStartMs);
+          const standing = order.filter((speaker) => !hasCancelled(state, speaker));
+          const confirmed = standing.filter((speaker) => (confirmedAt(state, speaker) ?? Infinity) <= time);
+          const hit = (speaker: string): Step<Congress> => {
+            done = true;
+            return { kind: "deliver", agent: speaker, channel: declared.name, held: false };
+          };
+          if (confirmed.length > 0) return hit(confirmed[0]);
+          if (declared.name !== "early_cancel") return { kind: "end" };
+          // The next to be confirmed after its time, the first in its order on a tie.
+          const next = standing.filter((speaker) => confirmedAt(state, speaker) !== undefined).sort((one, other) => (confirmedAt(state, one) as number) - (confirmedAt(state, other) as number))[0];
+          if (next === undefined) return waitUntil(now + LOOK_AGAIN_MINUTES, now, sinceStartMs);
+          const fires = (confirmedAt(state, next) as number) + NEXT_CONFIRMED_DELAY_MINUTES;
+          return now < fires ? waitUntil(fires, now, sinceStartMs) : hit(next);
+        },
+      };
+    },
+  };
+}
+
+/** The speakers' cancellations the configuration declares, among its participants decided by the rule set "speaker". */
+function components(configuration: Configuration): Component<Congress>[] {
+  const declared = Object.entries((configuration.perturbations ?? {}) as TomlTable)
+    .filter(([name]) => SPEAKER_PERTURBATIONS.includes(name))
+    .map(([name, written]) => ({ name, ...(written as TomlTable) }) as unknown as Perturbation);
+  if (declared.length === 0) return [];
+  const calendar = readCalendar(configuration.calendar);
+  const speakers = Object.entries((configuration.participants ?? {}) as TomlTable)
+    .filter(([, participant]) => (participant as TomlTable).rules === "speaker")
+    .map(([name]) => name);
+  return declared.map((each) => cancellation(each, speakers, calendar));
+}
+
 /** The organiser's own tools, besides the mail's and the phone's. */
 const TOOLS: readonly Tool<Congress>[] = [checkTime, look, go, writeNote, readNotes, wait];
 
@@ -737,6 +818,7 @@ export const congressScenario: Scenario<Congress> = {
   mail: { of: (state) => state.mail, with: (state, mail) => ({ ...state, mail }) },
   phone: { of: (state) => state.phone, with: (state, phone) => ({ ...state, phone }) },
   money: { of: (state) => state.money, with: (state, money) => ({ ...state, money }) },
+  components,
   ruleSets: { venue: venueRules, board: boardRules, speaker: speakerRules, partner: partnerRules },
   variant,
   slowedBy: (state, agent) => (agent === ORGANISER && hereOf(state, agent) !== OFFICE ? state.settings.awayFactor : 1),
