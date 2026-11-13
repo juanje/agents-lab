@@ -3,7 +3,7 @@ import { Given, Then, When } from "@cucumber/cucumber";
 import { type JsonObject, getCurrentTools } from "@earendil-works/pi-ai";
 import { type Agent, run } from "../../src/engine/run.ts";
 import { type ScriptedAnswer, ScriptedModel } from "../../src/engine/scripted-model.ts";
-import type { LoadedScenario, Scenario } from "../../src/engine/scenario.ts";
+import { type Configuration, type LoadedScenario, type Scenario, calendarOf } from "../../src/engine/scenario.ts";
 import { type Action, World } from "../../src/engine/world.ts";
 import { gridScenario } from "../../tests/fixtures/grid-world.ts";
 import { SLOT_TAKEN, type Seen, type Slots, slotTools, slotsScenario } from "../../tests/fixtures/slots.ts";
@@ -103,7 +103,7 @@ export async function runTheScenario(context: Context): Promise<void> {
     rhythm: rhythmsOf(context),
     components: () => context.components,
   };
-  await runScenario(context, context.loaded ?? assembled(scenario, context.world));
+  await runScenario(context, context.loaded ?? assembled(scenario, context.world, context.calendar === undefined ? {} : { calendar: context.calendar }));
 }
 
 /**
@@ -114,13 +114,27 @@ function rhythmsOf(context: Context): Scenario<unknown>["rhythm"] {
   return (_configuration, agent) => context.rhythms.get(agent) ?? (() => context.waitBeforeActivationMs);
 }
 
-/** A scenario assembled around a world as loading would give it, with no configuration. */
-export function assembled<State>(scenario: Scenario<State>, world: World<State>): LoadedScenario<State> {
+/**
+ * A scenario assembled around a world as loading would give it, with no configuration but the one the engine reads
+ * itself: the [calendar] the scenario declares, if it declares one (FR-CLOCK-03).
+ */
+export function assembled<State>(scenario: Scenario<State>, world: World<State>, configuration: Configuration = {}): LoadedScenario<State> {
   const agents = scenario.agents({});
   const systemPrompts = new Map(agents.map((agent) => [agent, scenario.systemPrompt({}, agent)]));
   const rhythms = new Map(agents.map((agent) => [agent, scenario.rhythm({}, agent)]));
   const firstStimuli = new Map(agents.map((agent) => [agent, scenario.firstStimuli?.({}, agent) ?? []]));
-  return { scenario, configuration: {}, world, systemPrompts, channels: scenario.channels({}), firstStimuli, rhythms, materials: [], components: scenario.components?.({}) ?? [] };
+  return {
+    scenario,
+    configuration,
+    world,
+    systemPrompts,
+    channels: scenario.channels({}),
+    firstStimuli,
+    rhythms,
+    materials: [],
+    components: scenario.components?.({}) ?? [],
+    ...calendarOf(configuration),
+  };
 }
 
 /**

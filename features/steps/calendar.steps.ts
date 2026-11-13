@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { Given, Then, When } from "@cucumber/cucumber";
+import { Given, When } from "@cucumber/cucumber";
 import type { TomlTable } from "smol-toml";
-import type { WorldDuration, WorldTime } from "../../src/engine/calendar.ts";
+import type { WorldTime } from "../../src/engine/calendar.ts";
 import type { Sensor } from "../../src/engine/tools.ts";
 import { World } from "../../src/engine/world.ts";
 import type { Slots } from "../../tests/fixtures/slots.ts";
@@ -23,7 +23,7 @@ function toTheMinute({ day, weekday, seconds }: WorldTime): string {
  * A sensor of the test scenario that gives the world's time when it reads the world, to the minute, and takes this
  * duration; without the world's time it says so, which no scenario expects.
  */
-function clockSensor(name: string, duration: number | WorldDuration): Sensor<Slots> {
+function clockSensor(name: string, duration: number): Sensor<Slots> {
   return {
     kind: "sensor",
     name,
@@ -35,7 +35,7 @@ function clockSensor(name: string, duration: number | WorldDuration): Sensor<Slo
 }
 
 /** Declares a clock sensor in the test scenario, in place of one of the same name. */
-function declareClockSensor(context: Context, name: string, duration: number | WorldDuration): void {
+function declareClockSensor(context: Context, name: string, duration: number): void {
   context.tools = [...context.tools.filter((tool) => tool.name !== name), clockSensor(name, duration)];
 }
 

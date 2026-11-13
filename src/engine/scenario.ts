@@ -1,5 +1,6 @@
 import { type TomlTable, type TomlValue, parse } from "smol-toml";
 import type { ToolCall } from "./adapter.ts";
+import { type Calendar, readCalendar } from "./calendar.ts";
 import type { Component } from "./components.ts";
 import { type Material, type MaterialReference, type Materials, materialReference } from "./materials.ts";
 import { Random } from "./random.ts";
@@ -111,6 +112,8 @@ export interface LoadedScenario<State> {
   materials: readonly Material[];
   /** The scenario's components besides its agents, as its configuration declares them (FR-PROCESS-01). */
   components: readonly Component<State>[];
+  /** The world's calendar, for a configuration that declares a [calendar] (FR-CLOCK-03). */
+  calendar?: Calendar;
 }
 
 /** Each part a scenario must provide, and how an error names it. */
@@ -168,7 +171,12 @@ export function loadScenario<State>(
   }
   const initial = scenario.initialState(configuration, Random.derive(seed, "initial state"));
   const components = scenario.components?.(configuration) ?? [];
-  return { scenario, configuration, world: new World(initial), systemPrompts, channels, firstStimuli, rhythms, materials, components };
+  return { scenario, configuration, world: new World(initial), systemPrompts, channels, firstStimuli, rhythms, materials, components, ...calendarOf(configuration) };
+}
+
+/** The calendar a configuration declares in its [calendar], if it declares one (FR-CLOCK-03). */
+export function calendarOf(configuration: Configuration): { calendar?: Calendar } {
+  return configuration.calendar === undefined ? {} : { calendar: readCalendar(configuration.calendar) };
 }
 
 /**

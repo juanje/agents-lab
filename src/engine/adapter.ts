@@ -812,7 +812,7 @@ async function perform<State>(
   const result = runEnd.aborted
     ? { outcome: CUT_OFF, text: CUT_OFF }
     : tool.kind === "sensor"
-      ? sense(world, tool, call, clock.sinceStartMs())
+      ? sense(world, tool, call, clock)
       : effect(world, tool, call, changes, early?.ended.aborted ? early.outcome : undefined);
   return targetAsSensed === undefined ? result : { ...result, targetAsSensed };
 }
@@ -852,10 +852,10 @@ function start<State>(world: World<State>, action: Start<State>, call: AgentCall
   return change;
 }
 
-/** Reads the world for a sensor's call, at a time since the run started, which then always succeeds. */
-function sense<State>(world: World<State>, sensor: Sensor<State>, call: AgentCall, sinceStartMs: number): CallResult {
+/** Reads the world for a sensor's call, at the run's time and the world's time now, which then always succeeds. */
+function sense<State>(world: World<State>, sensor: Sensor<State>, call: AgentCall, clock: RunClock): CallResult {
   const { state } = world;
-  const text = sensor.sense(state, call.agent, call.arguments, sinceStartMs);
+  const text = sensor.sense(state, call.agent, call.arguments, clock.sinceStartMs(), clock.worldTime());
   return sensor.takenFrom === undefined ? { outcome: "success", text } : { outcome: "success", text, takenFrom: sensor.takenFrom(state, call.agent) };
 }
 

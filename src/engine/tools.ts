@@ -1,3 +1,4 @@
+import type { WorldTime } from "./calendar.ts";
 import type { Position } from "./grid.ts";
 import type { Sensing } from "./sensings.ts";
 import type { Stimulus } from "./stimuli.ts";
@@ -30,10 +31,10 @@ interface Declared<State> {
 export interface Sensor<State> extends Declared<State> {
   kind: "sensor";
   /**
-   * The text the agent receives, from the state, the agent that calls it, the call's arguments and the time since the run
-   * started, as the sensor reads the world.
+   * The text the agent receives, from the state, the agent that calls it, the call's arguments, the time since the run
+   * started and the world's time then, for a run with a calendar (FR-CLOCK-03), as the sensor reads the world.
    */
-  sense(state: State, agent: string, args: Readonly<Record<string, unknown>>, sinceStartMs: number): string;
+  sense(state: State, agent: string, args: Readonly<Record<string, unknown>>, sinceStartMs: number, world?: WorldTime): string;
   /**
    * Where the agent senses from, read against the same state as what it receives, for a sensor whose result is relative
    * to it; the engine keeps it with the sensing, so an effector can find its target in it later.

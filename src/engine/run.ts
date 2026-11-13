@@ -166,7 +166,7 @@ export const PROVIDER_DEFAULTS = "the provider's defaults";
  * sampling settings the sessions use, or null.
  */
 async function runAgents<State>(
-  { world, scenario, systemPrompts, rhythms, components }: LoadedScenario<State>,
+  { world, scenario, systemPrompts, rhythms, components, calendar }: LoadedScenario<State>,
   agents: readonly Agent[],
   seed: number,
   settings: RunSettings,
@@ -176,7 +176,7 @@ async function runAgents<State>(
   stop: (error: Error) => void,
   opened: (sampling: Sampling | null) => void,
 ): Promise<Omit<RunResult, "runId">> {
-  const clock = new RunClock();
+  const clock = new RunClock(calendar);
   const sessionSettings = {
     clock,
     modelTurnTimeoutMs: settings.modelTurnTimeoutMs,
