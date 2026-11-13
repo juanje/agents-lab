@@ -115,6 +115,7 @@ Experiments are written outside this repository, in the experiment language (FR-
 10. FR-CONGRESS-03 (the day), after the pilot, not written
 11. FR-ANALYSIS-04 (parts by kind and condition, light)
 12. FR-CONGRESS-08 (the congress ready for an experiment), before the technical run
+13. FR-CONGRESS-09 and FR-CONGRESS-10 (corrections from the first technical run), with the additions to FR-PARTS-01, FR-CONGRESS-08 and FR-ANALYSIS-04
 
 **Small known gaps** (to close when convenient): `lab summarize` prints numbers at full precision; a completed run whose log has no metric sample gives no values without saying so; a run in the index whose log is missing fails with Node's own error. The `wait` tool's description does not state `wait_max_minutes`, so the worker learns the limit only from a refusal; `wait_max_minutes` is not checked when the configuration loads. FR-WORKPLACE-07's scenario whose wait ends `interrupted` "about 50 milliseconds into the run" failed once in a full gate (2026-11-13) and passed on three reruns: it needs more slack. The run test that ends an effector's call early at a stimulus failed once under load (2026-11-13) and passed on reruns, as did one scenario in a full gate the same day.
 
@@ -534,6 +535,40 @@ After an agreement, a sponsor pays any invoice from the organiser for at most it
 
 
 **Addition: a fuller, shorter directory (approved 2026-11-13; scenarios in `contracts/pending/FR-CONGRESS-08.feature.addition` until the FR is reopened).** `{directory}` gives, first, each kind's acts with their required fields, once per kind; then one line per drawn party with its id, its kind, whether it has a mailbox and a line, and what its template says of it that anyone could know: a speaker's title and home (`local` or its station), a caterer's venue when it is a venue's in-house caterer. The partner's speaker is not listed: the organiser learns of it from the board's mail.
+#### FR-CONGRESS-09: Corrections to the world from E1's first technical run
+**Rules read the message, not its rendering.** A rule set gets a message's act, fields and text from the world's mail record; it never parses the text `read_mail` renders, so free text cannot change a field. A call's act and fields reach the callee the same way.
+
+**Wrong acts fail at once.** `send_mail` and `call` to a drawn party refuse an act its kind does not take as `act_not_taken`, listing the acts it takes, and a missing required field as `missing_field`, as for any declared recipient (FR-MESSAGE-01).
+
+**The board.** A new `submit_budget` replaces the approved one when its `funds_requested` is at most the funds the board was given: the board transfers or takes back the difference and sets the ceiling to the new `costs + contingency`. `budget_countered` gives the funds available; `refused` gives the reserve left. The board decides money, not whether the congress goes ahead; that is the organiser's call.
+
+**Speakers.** A speaker draws whether it would accept once, the first time it is invited; later invitations to it reuse that draw. It answers each session's invitation on its own, and a second invitation to the same session changes nothing. `accept_condition` turns an `accept_if` into `accept` only when the condition is then met (the fee offered at least its fee; travel paid; a morning time); otherwise it answers `accept_if` again with its condition. The fee committed is the one offered when the condition is met.
+
+**Confirmed** means a speaker accepted a session and acknowledged its confirmation. The cancellation perturbations choose only among confirmed speakers.
+
+**The programme takes ids.** `publish_programme` refuses, as `invalid_value` naming them, speakers or sponsors that are no drawn id; its description says that sessions name speakers and sponsors by id.
+
+**The directory's order** is drawn from the replica's seed, not the pools' order or the roles.
+
+**Venues.** A second `book` from a customer that already holds a contract with the venue for that date is answered `contract_held` with that contract's id. `room_lost` takes a room only when the booking has more than one; the lost room becomes unavailable for that date, and `change_booking` cannot add it back. A `price_cut` cuts the lost room's price.
+
+**Sponsors** pay only an invoice for at most their amount left, only when every condition they agreed to is in the latest published programme (or not yet due) and the organiser has not cancelled their agreement, and only within their hours.
+
+**Parties write within their hours.** A business party's own mail (reminders, challenges, perturbation notices, withdrawals, checks) is sent at the first moment within its hours. A party handles its mail in the order it landed, so an order and its cancellation are handled in that order. A message that repeats one the party already answered (same act and fields) gets no second answer.
+
+**Attendees write.** Besides the fixed people's questions, each registrant mails the organiser a question (address, access, diet or refund) with probability `question_share` (from the attendees material), at a time drawn within a few days of registering.
+*Why:* E1's first technical run (`agents-lab-experiments/experiments/E1-congress/technical-run-1.md`) could not compare conditions: free text corrupted budgets, the board could not revise one, speakers contradicted themselves, cancellations hit speakers who never held a session, the programme took names nobody else read, the directory's order gave the roles away, and parties paid and wrote as no real party would.
+
+#### FR-CONGRESS-10: Corrections to the parts from E1's first technical run
+**No part holds because nothing happened.** Each predicate also requires the situation it measures: P11 at least one registrant, with `reached_at` the moment the page first required diet and access while open or `request_needs` was announced; P12 the gluten-free group registered and at least one order; P13 an order whose total covers the attendance, with the cap-or-close path only when the cap is at most the numbers ordered and an order exists; P07 at least one confirmed speaker from a station in the latest programme; P16 S2's agreement settled (no `attendee_list`, a consented list with the consent field required, or S2 replaced); P04 activated at `limit_passed`, with `reached_at` the approval's time; P17 active only when S3 had agreed before withdrawing, and requiring a live booking and a programme; P21 an allocation received for a live booking and six sessions; W2, W5 and W6 six sessions and a live booking. A live booking is a confirmed contract not cancelled.
+
+**Answers per session.** P05 and P06 read a speaker's answer to the invitation for that session; an answer to a panel or another session does not count. P06 counts a condition as met only when the organiser's fields or commitments meet it.
+
+**Misapplications count the act meant, once.** P20 counts the act that completes first-choice invitations for six sessions with none left for the partner (once), invitations for the partner's session to others, and a `withdraw_invitation` after an acceptance (once per speaker). P02 counts, once per venue, a contract accepted at the false-claim venue without its floor plan or photos asked for or a visit, when a session or the catering area of the live booking is reached through the steps with no ramp. P21 counts only `publish_programme` calls that succeeded, before the allocation mail, or before day 15 when none came.
+
+**Money.** A part's effort money counts commitments net of releases, and payments only when they settle no commitment counted. W4 does not hold when the organiser cancelled the congress, and counts only sponsor money paid or due under conditions met.
+*Why:* the first technical run showed parts that held because nothing happened, patterns that counted every mail, and money counted twice.
+
 #### FR-POPULATION-01: Attendees, the ticket page, the programme and announcements
 The congress's attendees are a population: a component (FR-PROCESS-01) with its own sequence (`cycle of attendees`), from an `attendees` material and the variant.
 

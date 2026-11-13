@@ -55,3 +55,13 @@ Feature: The congress ready for an experiment
   Scenario: The inventory lists only the tools the organiser is offered
     When the experiment's inventory is made
     Then the organiser's tools in the inventory are exactly those its session is offered, and do not include "transfer", "commit", "release" or "approve"
+
+  # Approved addition (2026-11-13): a fuller, shorter directory. Appended to FR-CONGRESS-08.feature when the FR is reopened.
+
+  Scenario: The directory gives each kind's acts once, then each party with what anyone could know of it
+    Given the variant draws the speakers "ana-ruiz" (title "Soil and water", home "north") and "ben-ott" (title "Village shops", home "local"), the caterer "library-cafe", in-house for "old-library", and the partner "lena-ford"
+    And the "knowledge" text is "{directory}"
+    When the run ends
+    Then the organiser's system prompt gives the speakers' acts once
+    And the lines "ana-ruiz", a speaker, "Soil and water", from "north"; "ben-ott", a speaker, "Village shops", local; and "library-cafe", a caterer, in-house for "old-library"
+    And no line for "lena-ford"
