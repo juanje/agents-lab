@@ -184,7 +184,7 @@ describe("the congress's base configuration and its parties (FR-CONGRESS-02)", (
           { between: ["foyer", "room-b"], length: 1, step_free: "3 steps" },
         ],
       }),
-      pools: stringify({ topics: ["soil"], venue: [V1 as unknown as TomlTable], board: [{ id: "board", funds: 6000, reserve: 1000 }] }),
+      pools: stringify({ topics: ["soil"], venue: [V1 as unknown as TomlTable], board: [{ id: "board", funds: 6000, reserve: 1000 }], speaker: [], partner: [] }),
       draw: stringify({ attendance: [50, 80], venue: 1, board: 1 }),
     });
     (configuration.calendar as TomlTable).hours = { always: { days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], from: "00:00", to: "23:59" } };

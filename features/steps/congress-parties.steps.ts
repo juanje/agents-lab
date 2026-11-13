@@ -66,7 +66,8 @@ const V2 = { ...V1, id: "v2", rooms: [{ id: "hall-2", seats: 90, equipment: [] }
 
 /** The pools of FR-CONGRESS-02's Background. */
 function pools(changes: (pool: { venue: TomlTable[]; board: TomlTable[] }) => void = () => {}): string {
-  const pool = { venue: [structuredClone(V1), structuredClone(V2)] as TomlTable[], board: [{ id: "board", funds: 6000, reserve: 1000 }] as TomlTable[] };
+  // The base configuration's kinds speaker and partner need their pools, here empty (FR-CONGRESS-04).
+  const pool = { venue: [structuredClone(V1), structuredClone(V2)] as TomlTable[], board: [{ id: "board", funds: 6000, reserve: 1000 }] as TomlTable[], speaker: [] as TomlTable[], partner: [] as TomlTable[] };
   changes(pool);
   return stringify({ topics: ["soil"], ...pool });
 }
