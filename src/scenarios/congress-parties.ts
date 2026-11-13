@@ -435,6 +435,8 @@ export const venueRules: RuleSet = {
           if (statusOf(eventDate) === "free") otherCustomer(eventDate);
           else if (statusOf(eventDate) === "held" && !timers.some(({ kind }) => kind === "challenge_lapse")) {
             const confirmBy = party.now + 48 * 60;
+            // A challenged hold ends when the organiser must confirm by, in place of its own end.
+            timers.splice(0, timers.length, ...timers.filter(({ kind, date }) => !(kind === "lapse" && date === eventDate)));
             timers.push({ at: confirmBy, kind: "challenge_lapse", date: eventDate });
             yield* party.call("send_mail", { to: venue.organiser, act: "hold_challenged", fields: { date: eventDate, confirm_by: party.text(confirmBy) } });
           }
@@ -513,12 +515,16 @@ export const venueRules: RuleSet = {
         }
       }
       for (;;) {
+        // What reaches it is answered at the time it is answered.
+        if (party.stimuli.length > 0) yield* party.clock();
         yield* party.handle(answer, venue.pick_up ?? 1, random);
         yield* party.clock();
-        timers.sort((one, other) => one.at - other.at);
-        while (timers.length > 0 && timers[0].at <= party.now) yield* fire(timers.shift() as Timer);
+        // Firing a timer may set others, so the next is found again each time.
+        const next = () => timers.sort((one, other) => one.at - other.at)[0] as Timer | undefined;
+        for (let due = next(); due !== undefined && due.at <= party.now; due = next()) yield* fire(timers.shift() as Timer);
         if (party.stimuli.length > 0) continue;
-        yield* party.rest(timers.length === 0 ? undefined : timers[0].at - party.now);
+        const coming = next();
+        yield* party.rest(coming === undefined ? undefined : coming.at - party.now);
       }
     }
 

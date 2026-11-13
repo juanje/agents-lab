@@ -295,6 +295,7 @@ function worldOf(rules: unknown, id: string, configuration: Configuration, city:
   const venue = city.venues.find((each) => each.id === id) as Venue;
   const inside = [venue.entrance, ...venue.rooms.map((room) => room.id)];
   return {
+    id,
     organiser: ORGANISER_NAME,
     event_day: configuration.event_day as number,
     floor_plan: city.passages.filter(({ between }) => between.every((place) => inside.includes(place))).map(({ between, step_free: stepFree }) => ({ between, step_free: stepFree })),
