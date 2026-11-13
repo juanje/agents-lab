@@ -51,7 +51,7 @@ describe("a person's probability of registering in a world hour (FR-POPULATION-0
     const programme = (speakers: string[], version: number) => ({ version, sessions: speakers.map((speaker) => ({ start: "10:00", end: "10:45", title: "t", speakers: [speaker], room: "main-hall" })), breaks: [], sponsor_slots: [], logos: [] });
     expect(registrationProbability(population({ programme: [programme(["s1"], 1), programme(["s1", "s2"], 2)] }), at(2))).toBeCloseTo(0.14);
     // r: by days left before the event.
-    expect([at(11), at(12), at(16), at(19), at(22)].map((minutes) => registrationProbability(population(), minutes))).toEqual([0.1, 0.1, expect.closeTo(0.1 * (1 + (2 * 4) / 7), 6), expect.closeTo(0.3, 6), expect.closeTo(0.3, 6)]);
+    expect([at(11), at(12), at(16), at(19), at(22)].map((minutes) => registrationProbability(population(), minutes))).toEqual([expect.closeTo(0.1, 6), expect.closeTo(0.1, 6), expect.closeTo(0.1 * (1 + (2 * 4) / 7), 6), expect.closeTo(0.3, 6), expect.closeTo(0.3, 6)]);
     // m: each promotion running, for 2 world days after it starts.
     expect(registrationProbability(population({ promotions: [{ start: at(2, "09:00"), factor: 2 }, { start: at(1, "09:00"), factor: 3 }] }), at(2))).toBeCloseTo(0.6);
     expect(registrationProbability(population({ promotions: [{ start: at(2, "09:00"), factor: 2 }] }), at(4, "09:00"))).toBeCloseTo(0.1);
