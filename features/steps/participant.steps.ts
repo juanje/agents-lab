@@ -367,6 +367,8 @@ function replyDelayMs(context: Context, participant: string): number {
 
 When(
   "two replicas run with the seed {int}, the second with another participant {string} that decides by {string}",
+  // A reply delay of up to 60 world minutes is 6 s of the run, in each replica.
+  { timeout: 20_000 },
   async function (this: Context, seed: number, other: string, rules: string) {
     const setup = setupOf(this);
     this.seed = seed;
