@@ -384,9 +384,16 @@ function initialState(configuration: Configuration, random: Random): Workplace {
   return state;
 }
 
-/** The depot's clock as the configuration sets it: the world's day's start, midnight when it has none, and the time scale. */
+/**
+ * The depot's clock as the configuration sets it: the world's day's start, midnight when it has none, and the time scale.
+ * They declare a calendar of one segment, so a configuration that sets them and declares a [calendar] too is refused
+ * (FR-CLOCK-03).
+ */
 function clockOf(configuration: Configuration): { start: string; timeScale: number } {
   const world = textOf(configuration, "world") as unknown as WorldText;
+  if (configuration.calendar !== undefined && (configuration.time_scale !== undefined || world.day?.start !== undefined)) {
+    throw new Error('The workplace\'s configuration declares a [calendar] and also its clock\'s "time_scale" or the world\'s "[day] start", which declare a calendar of their own; it takes one or the other');
+  }
   return { start: world.day?.start ?? "00:00", timeScale: configuration.time_scale as number };
 }
 

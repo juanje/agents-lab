@@ -46,35 +46,92 @@ interface Hours {
   to: number;
 }
 
-/** The seconds since midnight of a time "HH:MM". */
-function secondsOfDay(time: string): number {
-  const [, hours, minutes] = /^(\d{2}):(\d{2})$/.exec(time) ?? [];
-  return Number(hours) * 3600 + Number(minutes) * 60;
+/** A time of day as a calendar writes it, "HH:MM". */
+const TIME = "(\\d{2}):(\\d{2})";
+
+/** The seconds since midnight of a time of day, from its hours and minutes, or undefined when it is no time of day. */
+function secondsOfDay(hours: string, minutes: string): number | undefined {
+  const [h, m] = [Number(hours), Number(minutes)];
+  return h < 24 && m < 60 ? h * 3600 + m * 60 : undefined;
 }
 
-/** The world seconds since day 1's midnight of a day number and a time "HH:MM". */
-function worldSeconds(day: number, time: string): number {
-  return (day - 1) * DAY_SECONDS + secondsOfDay(time);
+/** A calendar's key that cannot be followed: an error that names it, its value and why. */
+function refused(key: string, value: unknown, why: string): Error {
+  return new Error(`The configuration's ${key} ${JSON.stringify(value) ?? "(none)"} cannot be followed: ${why}`);
 }
 
-/** Reads a configuration's [calendar]. */
+/** The seconds since midnight of a key's "HH:MM", refused, naming the key, when it does not follow that format. */
+function timeOfDay(value: unknown, key: string): number {
+  const [, hours, minutes] = typeof value === "string" ? (new RegExp(`^${TIME}$`).exec(value) ?? []) : [];
+  const seconds = hours === undefined ? undefined : secondsOfDay(hours, minutes);
+  if (seconds === undefined) throw refused(key, value, 'it is not a time "HH:MM"');
+  return seconds;
+}
+
+/** A weekday as a calendar names it, refused, naming the key, when it is not one of the seven English names. */
+function weekdayOf(value: unknown, key: string): Weekday {
+  if (!WEEKDAYS.includes(value as Weekday)) throw refused(key, value, `its weekday is not one of ${WEEKDAYS.join(", ")}`);
+  return value as Weekday;
+}
+
+/**
+ * The world seconds since day 1's midnight of a key written "day <n> HH:MM", or "day <n> <weekday> HH:MM" when it gives a
+ * weekday, with that weekday; refused, naming the key, when it does not follow that format or its day is below 1.
+ */
+function dayTime(value: unknown, key: string, withWeekday: boolean): { since: number; weekday?: Weekday } {
+  const format = withWeekday ? '"day <n> <weekday> HH:MM"' : '"day <n> HH:MM"';
+  const pattern = new RegExp(`^day (\\d+) ${withWeekday ? "(\\S+) " : "()"}${TIME}$`);
+  const [, day, weekday, hours, minutes] = typeof value === "string" ? (pattern.exec(value) ?? []) : [];
+  const seconds = day === undefined ? undefined : secondsOfDay(hours, minutes);
+  if (seconds === undefined) throw refused(key, value, `it does not follow ${format}`);
+  if (Number(day) < 1) throw refused(key, value, "its day is below 1");
+  const since = (Number(day) - 1) * DAY_SECONDS + seconds;
+  return withWeekday ? { since, weekday: weekdayOf(weekday, key) } : { since };
+}
+
+/**
+ * Reads a configuration's [calendar]; one that cannot be followed is refused, with an error that names the key: a start
+ * or an until that does not follow its format, a weekday that is not one of the seven, a day below 1, a scale that is
+ * not a positive number, an until at or before the start or the previous until, a segment without until that is not the
+ * last, no segment, and hours whose from is not before their to, or whose days are empty or name an unknown weekday.
+ */
 export function readCalendar(value: TomlValue): Calendar {
-  const table = value as TomlTable;
-  const [, day, weekday, time] = /^day (\d+) (\w+) (\d{2}:\d{2})$/.exec(table.start as string) ?? [];
-  const start = worldSeconds(Number(day), time);
-  const weekdayOfDayOne = WEEKDAYS.indexOf(weekday as Weekday) - (Number(day) - 1);
-  const segments = (table.segments as TomlTable[]).map((segment) => {
-    if (segment.until === undefined) return { scale: segment.scale as number };
-    const [, untilDay, untilTime] = /^day (\d+) (\d{2}:\d{2})$/.exec(segment.until as string) ?? [];
-    return { scale: segment.scale as number, until: worldSeconds(Number(untilDay), untilTime) };
+  if (!isTable(value)) throw refused("calendar", value, "it is not a table");
+  const { since: start, weekday } = dayTime(value.start, "calendar.start", true);
+  const weekdayOfDayOne = WEEKDAYS.indexOf(weekday as Weekday) - Math.floor(start / DAY_SECONDS);
+  const written = value.segments;
+  if (!Array.isArray(written) || written.length === 0) throw refused("calendar.segments", written, "it declares no segment");
+  let previous = { key: "calendar.start", since: start };
+  const segments = written.map((segment, index): Segment => {
+    const key = `calendar.segments[${index}]`;
+    const { scale, until } = isTable(segment) ? segment : {};
+    if (typeof scale !== "number" || !(scale > 0)) throw refused(`${key}.scale`, scale, "it is not a positive number");
+    if (until === undefined) {
+      if (index < written.length - 1) throw refused(`${key}.until`, until, "only the last segment may have no until");
+      return { scale };
+    }
+    const { since } = dayTime(until, `${key}.until`, false);
+    if (since <= previous.since) throw refused(`${key}.until`, until, `it is not after ${previous.key}`);
+    previous = { key: `${key}.until`, since };
+    return { scale, until: since };
   });
-  const hours = Object.fromEntries(
-    Object.entries((table.hours ?? {}) as Record<string, TomlTable>).map(([name, { days, from, to }]) => [
-      name,
-      { days: days as Weekday[], from: secondsOfDay(from as string), to: secondsOfDay(to as string) },
-    ]),
-  );
+  const hours = Object.fromEntries(Object.entries(isTable(value.hours ?? {}) ? (value.hours ?? {}) : {}).map(([name, set]) => [name, hoursOf(set, `calendar.hours.${name}`)]));
   return { start, weekdayOfDayOne, segments, hours };
+}
+
+/** A named set of weekly hours, refused, naming its key, when its days are empty or unknown, or its from is not before its to. */
+function hoursOf(value: TomlValue, key: string): Hours {
+  const { days, from, to } = isTable(value) ? value : {};
+  if (!Array.isArray(days) || days.length === 0) throw refused(key, value, "its days are empty");
+  const weekdays = days.map((day) => weekdayOf(day, key));
+  const [fromSeconds, toSeconds] = [timeOfDay(from, `${key}.from`), timeOfDay(to, `${key}.to`)];
+  if (fromSeconds >= toSeconds) throw refused(key, value, "its from is not before its to");
+  return { days: weekdays, from: fromSeconds, to: toSeconds };
+}
+
+/** Whether a TOML value is a table. */
+function isTable(value: TomlValue | undefined): value is TomlTable {
+  return typeof value === "object" && !Array.isArray(value) && !(value instanceof Date);
 }
 
 /**
