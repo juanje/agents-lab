@@ -291,3 +291,51 @@ describe("the congress's caterers, sponsors, agency and their perturbation (FR-C
     expect(refusing((configuration) => ((configuration.perturbations as TomlTable).sponsor_withdraws = { between: ["day 10 09:00", "day 10 12:00"], for: "c1" }))).toThrow(/perturbations\.sponsor_withdraws/);
   });
 });
+
+describe("travel and similar events, services the organiser uses as tools (FR-CONGRESS-05)", () => {
+  /** The congress with a train "t1" from "north" and a hotel "h1" near "v1", and three similar events of "soil". */
+  function loaded(soldOut = 0) {
+    const configuration = parse(congressScenario.baseConfiguration);
+    configuration.city = stringify({ places: [{ id: "office" }], venues: [{ id: "v1", entrance: "v1-entrance", hours: "always", rooms: [{ id: "main-hall", seats: 120 }] }], passages: [{ between: ["office", "v1-entrance"], length: 40, step_free: true }] });
+    (configuration.calendar as TomlTable).hours = { always: { days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], from: "00:00", to: "23:59" } };
+    configuration.travel = stringify({ stations: ["north"], trains: [{ id: "t1", from: "north", arrives: "08:10", price: 40 }], hotels: [{ id: "h1", near: "v1", rooms: 1, price: 90 }], sold_out_probability: soldOut });
+    configuration.similar_events = stringify({ events: [{ topic: "soil", name: "Soil Days", price: 60, size: 80 }, { topic: "rivers", name: "River Week", price: 300, size: 50 }] });
+    const scenario = loadScenario({ ...(congressScenario as Scenario<unknown>), baseConfiguration: stringify(configuration) }, 1);
+    return { initial: scenario.world.state };
+  }
+  const tool = (name: string) => congressScenario.tools.find((each) => each.name === name) as never as { sense: (...args: unknown[]) => string; action: { precondition: (...args: unknown[]) => { holds: boolean; reason?: string }; effect: (...args: unknown[]) => unknown } };
+  const on = (day: number) => ({ day, weekday: "Monday" as const, seconds: 9 * 3600 });
+
+  it("travel_options gives the trains from a station on a date, their price rising in the last two weeks, and the hotels with rooms the night before", () => {
+    const { initial } = loaded();
+    const options = (day: number) => JSON.parse(tool("travel_options").sense(initial, "organiser", { from: "north", date: "day 26" }, 0, on(day)));
+    expect(options(5)).toEqual({ trains: [{ id: "t1", option: "t1 day 26", arrives: "08:10", price: 40, sold_out: false }], hotels: [{ id: "h1", near: "v1", option: "h1 day 25", rooms_left: 1, price: 90 }] });
+    expect(options(19).trains[0].price).toBe(56);
+    expect(options(26).trains[0].price).toBe(72);
+  });
+
+  it("a train sells out in the last two days with the material's probability", () => {
+    const { initial } = loaded(1);
+    const soldOut = (day: number) => JSON.parse(tool("travel_options").sense(initial, "organiser", { from: "north", date: "day 26" }, 0, on(day))).trains[0].sold_out;
+    expect([soldOut(23), soldOut(24)]).toEqual([false, true]);
+  });
+
+  it("book_travel books an option and the travel's account invoices the organiser for it; an unknown option or one sold out fails", () => {
+    const { initial } = loaded();
+    const book = tool("book_travel");
+    const call = (option: string, day = 1) => ({ agent: "organiser", arguments: { option, traveller: "s2" }, atMs: 0, world: on(day) });
+    expect(book.action.precondition(initial, call("t1 day 26"))).toEqual({ holds: true });
+    const after = book.action.effect(initial, call("t1 day 26")) as { money: { invoices: unknown[] }; travel: { booked: unknown[] } };
+    expect(after.money.invoices).toEqual([{ id: "i-1", from: "travel", to: "organiser", amount: 40, due: "day 1", for: "t1 day 26 s2", paid: false }]);
+    expect(after.travel.booked).toEqual([{ option: "t1 day 26", traveller: "s2", price: 40 }]);
+    expect(book.action.precondition(initial, call("t9 day 26"))).toEqual({ holds: false, reason: "no_such_option" });
+    const hotelBooked = book.action.effect(initial, call("h1 day 25"));
+    expect(book.action.precondition(hotelBooked, call("h1 day 25"))).toEqual({ holds: false, reason: "sold_out" });
+    expect(book.action.precondition(loaded(1).initial, call("t1 day 26", 25))).toEqual({ holds: false, reason: "sold_out" });
+  });
+
+  it("similar_events lists the similar congresses of the drawn topic, with their prices and sizes", () => {
+    const { initial } = loaded();
+    expect(JSON.parse(tool("similar_events").sense(initial, "organiser", {}, 0, on(1)))).toEqual([{ name: "Soil Days", price: 60, size: 80 }]);
+  });
+});
