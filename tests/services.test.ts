@@ -340,3 +340,49 @@ describe("travel and similar events, services the organiser uses as tools (FR-CO
     expect(JSON.parse(tool("similar_events").sense(initial, "organiser", {}, 0, on(1)))).toEqual([{ name: "Soil Days", price: 60, size: 80 }]);
   });
 });
+
+describe("the sponsor's payments (FR-CONGRESS-05)", () => {
+  const sp1 = { id: "sp1", amount: 1200, conditions: ["logo", "morning_slot"], insists: ["morning_slot"], pay_days: [1, 3], pick_up: 1, organiser: "organiser" };
+  const invoiceNotice: Stimulus = { channel: "invoice_notice", source: "organiser", content: "New invoice from organiser: sponsorship" };
+  const invoices = (...each: { id: string; amount: number; paid?: boolean }[]) => () => ({ invoices_to_pay: each.map(({ id, amount, paid = false }) => ({ id, from: "organiser", amount, due: "day 10", for: "sponsorship", paid })) });
+
+  /** A sponsor that has agreed, then is told of the invoices given, at the times given. */
+  function agreed(ledger: () => Record<string, unknown>, seed = 1, changes: Record<string, unknown> = {}) {
+    const rules = sponsorRules.start({ ...sp1, ...changes }, new Random(seed));
+    const clock = { time: "day 2 Tuesday 10:00" };
+    const answer = (message: string) => tools(() => message, () => clock.time, ledger);
+    drive(rules, answer(""));
+    drive(rules, answer("From: organiser. Act: accept_sponsorship. conditions: logo, morning_slot."), [[notice]], true);
+    return { rules, clock, answer };
+  }
+
+  it("reads its ledger when an invoice notice reaches it, and pays an invoice from the organiser, within its amount, pay_days after, drawn from its own sequence", () => {
+    for (let seed = 1; seed <= 10; seed += 1) {
+      const { rules, clock, answer } = agreed(invoices({ id: "i-1", amount: 1200 }), seed);
+      const waiting = drive(rules, answer(""), [[invoiceNotice]], true);
+      const draws = new Random(seed);
+      const days = 1 + draws.next() * 2;
+      expect(waiting.at(-1)).toEqual({ kind: "wait", minutes: days * 1440 });
+      clock.time = "day 6 Saturday 10:00";
+      const paying = drive(rules, answer(""), [[]], true);
+      expect(calls(paying, "pay")).toEqual([{ invoice: "i-1" }]);
+      expect(rules.outcome()).toMatchObject({ paid: 1200 });
+    }
+  });
+
+  it("pays nothing beyond its amount, nothing already paid, and nothing without an agreement or after it withdrew", () => {
+    const over = agreed(invoices({ id: "i-1", amount: 1500 }, { id: "i-2", amount: 800, paid: true }));
+    expect(calls(drive(over.rules, over.answer(""), [[invoiceNotice]], true), "pay")).toEqual([]);
+    expect(drive(over.rules, over.answer(""), [[invoiceNotice]], true).some((step) => step.kind === "wait")).toBe(false);
+
+    const unagreed = sponsorRules.start(sp1, new Random(1));
+    drive(unagreed, tools(() => ""));
+    expect(drive(unagreed, tools(() => "", undefined, invoices({ id: "i-1", amount: 100 })), [[invoiceNotice]], true).filter((step) => step.kind === "wait" || (step.kind === "call" && step.tool === "pay"))).toEqual([]);
+
+    const withdrawn = agreed(invoices({ id: "i-1", amount: 1200 }));
+    drive(withdrawn.rules, withdrawn.answer(""), [[invoiceNotice]], true);
+    drive(withdrawn.rules, withdrawn.answer(""), [[{ channel: "sponsor_withdraws", source: "the sponsor's board", content: "x" }]], true);
+    withdrawn.clock.time = "day 6 Saturday 10:00";
+    expect(calls(drive(withdrawn.rules, withdrawn.answer(""), [[]], true), "pay")).toEqual([]);
+  });
+});
