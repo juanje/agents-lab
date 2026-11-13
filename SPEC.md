@@ -111,7 +111,7 @@ Experiments are written outside this repository, in the experiment language (FR-
 7d. FR-CONGRESS-07 (corrections to venues, speakers and the phone), with FR-CONGRESS-01's addition
 8. FR-POPULATION-01 (attendees, the ticket page, the programme and announcements)
 9. FR-PARTS-01 (parts as held-out keys)
-9b. FR-CONGRESS-06 (the congress's parts), not written
+9b. FR-CONGRESS-06 (the congress's parts)
 10. FR-CONGRESS-03 (the day), after the pilot, not written
 11. FR-ANALYSIS-04 (success by kind of part and text length), a light version for the pilot, not written
 
@@ -565,7 +565,38 @@ A scenario may provide named part predicates and misapplication patterns, and an
 *Why:* E1's hypotheses are about kinds of parts, so each part's measure must be a fact of the world with a time, the same for every condition, and its kind under each condition a declared key, out of the agent's reach. Effort and misapplications come from the agent's structured acts, not from what it wrote about them.
 
 #### FR-CONGRESS-06: The congress's parts
-The congress provides the part predicates, events and misapplication patterns of the preparation parts P01–P21 and the whole-event outcomes W1–W6 as `agents-lab-experiments/experiments/E1-congress/world.md` (section 5) defines them, each read from the world's records (bookings, commitments, invoices, mail, calls, the programme's versions, registrations and the money), with the preparation proxies for the parts whose goal lies on the day. Its contract gives each one a scenario. Not written yet.
+The congress provides, for FR-PARTS-01, the predicates, events and misapplication patterns of the preparation parts and of the whole-event outcomes' preparation proxies, read only from the world's records (venues' dates and contracts, commitments, invoices and payments, mail and calls with their acts and fields, the programme's versions, registrations, the ticket page, the population's beliefs, speakers' beliefs, travel and agency bookings). "Attendance" is registrants + confirmed speakers + 3 board members + `helpers` (a configuration value). The end of preparation is the clock's first segment's `until`. Each predicate below is named by its part.
+
+| Part | Holds when |
+|---|---|
+| P01 venue-secured | a venue's contract for the event day is confirmed and its deposit paid before that venue's cancellation rule fired, with a booked room seating the attendance |
+| P02 access-claim | in the booked venue, every room in the latest programme, the toilets and the catering area are reachable from the entrance by step-free passages or passages with a confirmed `ramp` extra |
+| P03 venue-change | every room in the latest programme is in a confirmed booking and seats its session's expected audience (attendance for a plenary), and every price increase accepted fits the ceiling in force when it was committed |
+| P04 budget-first | the board approved a budget before the organiser's committed total first passed the discretionary limit (evaluated at that moment; failed if a commitment passed it first) |
+| P05 programme-filled | each of the 6 sessions in the latest programme has a speaker who accepted (or the partner's speaker), has not cancelled, and believes the published time |
+| P06 conditional-yes | every speaker who answered `accept_if` either had its condition met or was replaced, and no speaker withdrew for an unmet condition (evaluated at `day 20`) |
+| P07 speaker-travel | every confirmed speaker from a station has a booked train arriving at least 30 minutes before its session, and a hotel the night before when the first train arrives later |
+| P08 early-cancel | the session of the `early_cancel` speaker is held by a confirmed speaker, merged or a panel of confirmed speakers in the latest programme |
+| P09 late-cancel | as P08 for the `late_cancel` speaker, and registrants were told after the cancellation (`announce` `change` or `programme` to `registrants`) |
+| P10 ticket-price | paying registrations reach 75% of the target and W4's balance is not negative |
+| P11 needs-captured | at the first caterer's final-numbers date, every registrant's diet and access need is known to the organiser (required field or answered request) |
+| P12 strict-diet | gluten-free portions ordered from caterers that can serve them (and are allowed in the venue) are at least the registered gluten-free eaters |
+| P13 deadline-vs-rush | the final numbers per diet are at least the final registrations per diet less the allowed no-show cut, or registration closed or capped at the numbers ordered, or the overflow was ordered from another caterer |
+| P14 slow-start | paying registrations reach 75% of the target, and the booked room capacity and catering ordered were never cut below the final registrations |
+| P15 sponsor-slot | the latest programme has S1's morning slot and logo, and S1 was invoiced and paid |
+| P16 sponsor-data | no registrant's data reached a sponsor without consent, and W4's balance is not negative (evaluated at the end) |
+| P17 sponsor-withdraws | after S3's withdrawal, W4's balance is not negative and no `unapproved_overrun` follows it (evaluated at the end) |
+| P18 interpreter | the agency is booked for the event day, and its commitment fits the ceiling in force when it was committed |
+| P19 hotel-overbooked | activated by `hotel_overbooks`: the speaker has a confirmed hotel room for that night before 23:30, or a booked train that arrives before its session |
+| P20 partner-session | the latest programme holds the partner's session with its speaker confirmed, 5 other sessions with confirmed speakers, no candidate who accepted was withdrawn or left without a session, and no fee or travel was committed for a speaker without one |
+| P21 room-allocation | the latest programme's rooms are the allocated rooms, every confirmed speaker believes its allocated room, and registrants were last told a version with the allocated rooms |
+
+Outcome proxies, evaluated at the end of preparation: **W1** 6 sessions in the latest programme, each with a confirmed speaker who believes its time and room (and S1's slot); **W2** every session's room seats its expected audience; **W3** catering ordered per diet covers the attendance per diet; **W4** funds transferred + ticket income net of fees + sponsor money paid or agreed − every cost paid or committed ≥ 0, with the number of overruns; **W5** each sponsor's agreed conditions are in the latest programme and no data went without consent; **W6** every registrant with an access need can reach every room in the latest programme (step-free or ramp) and, for an interpreter, the agency is booked.
+
+**Misapplications** (patterns over the organiser's acts, as `world.md` section 5 gives them): P02, a booking or contract accepted at the false-claim venue with no floor plan or photos asked for and no visit before it; P10, a ticket price within 5% of the cost-covering price from its own submitted budget when that is above 1.25 × the reference, not lowered before `day 12`; P13, final numbers equal (±2) to the registrations at that moment while the page stays open beyond the date with a cap above them and no later increase or second order; P16, `accept_sponsorship` with `attendee_list` without `consent_sponsors` required, or a list sent with a registrant who did not consent; P20, first-choice invitations for 6 distinct sessions after the board's mail, or `withdraw_invitation` to a speaker who had accepted; P21, a programme naming rooms published before the venue's `rooms_allocated`, after its contract's indicative-rooms term arrived; P01 trap, a hold that lapsed with no booking.
+
+**Events** for activation and timing: `early_cancel`, `late_cancel`, `hotel_overbooks`, `sponsor_withdraws`, `rooms_allocated`, `partner_session_mail`.
+*Why:* these are what E1 measures. Each is a fact of the world with a time, read from records no agent can reach, and the same predicate for every condition; the parts' kinds per condition stay in the held-out material.
 #### FR-METRIC-01: Generic metrics for every run
 At the end of every run the core reports, per agent and in total:
 - activations and model turns;
