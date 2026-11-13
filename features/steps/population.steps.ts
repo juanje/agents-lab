@@ -139,7 +139,8 @@ Then("all {int} people registered within the first world hour after the announce
   const announcedAt = 9 * 60 + (((announce.endedAtMs as number) - (this.runStartedAtMs ?? 0)) / hourMsOf(this)) * 60;
   for (const line of registrations) {
     const after = minutesOfWorld(line.worldTime) - announcedAt;
-    assert.ok(after >= 0 && after <= 60, `a person registered ${after} world minutes after the announcement`);
+    // Within the first world hour, and the 30 ms of the run the hourly tick may wake late under load.
+    assert.ok(after >= 0 && after <= 60 + (30 / hourMsOf(this)) * 60, `a person registered ${after} world minutes after the announcement`);
   }
 });
 

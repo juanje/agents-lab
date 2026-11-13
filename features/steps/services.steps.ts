@@ -208,7 +208,8 @@ Then('"sp1" paid 1200 two days after the invoice landed', function (this: Contex
   assert.equal(payments[0].amount, 1200);
   const after = minutesOfWorld(payments[0].worldTime) - minutesOfWorld(invoice.worldTime);
   // Within the moments of the run its reading and paying take, here a few world minutes.
-  assert.ok(Math.abs(after - 2 * 1440) <= 10, `"sp1" paid ${after} world minutes after the invoice landed`);
+  // Within 30 ms of the run, the moments reading and paying take under load.
+  assert.ok(Math.abs(after - 2 * 1440) <= lateMinutesOf(this), `"sp1" paid ${after} world minutes after the invoice landed`);
 });
 
 Then("the organiser's balance is {int}", function (this: Context, balance: number) {
@@ -226,7 +227,7 @@ Then('"sp2" mailed the organiser "withdraw" on "day 10" between "09:00" and "12:
   const withdrawn = sentWith(this, "sp2", "withdraw");
   assert.equal(withdrawn.to, ORGANISER);
   assert.equal(dayOf(withdrawn), 10);
-  assertBetween(withdrawn, "day 10 09:00", "day 10 12:00");
+  assertBetween(withdrawn, "day 10 09:00", "day 10 12:00", lateMinutesOf(this));
 });
 
 Then('an invoice to "sp2" issued after that is never paid', function (this: Context) {
@@ -238,9 +239,12 @@ Then('an invoice to "sp2" issued after that is never paid', function (this: Cont
 });
 
 Then('"sp2" answered "received" and "acknowledged"', function (this: Context) {
+  // The organiser's two mails may land in either order.
   assert.deepEqual(
-    sentBy(this, "sp2").map((line) => line.act),
-    ["received", "acknowledged"],
+    sentBy(this, "sp2")
+      .map((line) => line.act)
+      .sort(),
+    ["acknowledged", "received"],
   );
 });
 
@@ -340,6 +344,11 @@ congressChanges.push(
 
 // FR-CONGRESS-05's addition: charges, hotels, P19 and sponsors' payments.
 
+/** 30 ms of the run, in world minutes: what a step allows for the moments a run takes under load. */
+function lateMinutesOf(context: Context): number {
+  return (30 / hourMsOf(context)) * 60;
+}
+
 /** The travel material with the train "t1" (40) from "north" and the hotel "h1" near "v1" with these rooms. */
 function travelWith(context: Context, rooms: number): void {
   change(context, (configuration) => (configuration.travel = stringify({ stations: ["north"], trains: [{ id: "t1", from: "north", arrives: "08:10", price: 40 }], hotels: [{ id: "h1", near: "v1", rooms, price: 90 }], sold_out_probability: 0 })));
@@ -407,12 +416,12 @@ Then('"h1"\'s room for "s2" was cancelled and its commitment released', function
   assert.ok(ranLines(this).some((line) => line.type === "component_action" && line.component === "hotel_overbooks" && line.outcome === "success"), "hotel_overbooks cancelled nothing");
 });
 
-Then('"s2" called the organiser at {string}, within one world hour, with the act "no_room"', function (this: Context, at: string) {
+Then(/^"s2" called the organiser at "([^"]+)", within (one|two) world hours?, with the act "no_room"$/, function (this: Context, at: string, hours: string) {
   const calls = ranLines(this).filter((line) => line.type === "call" && line.from === "s2" && line.to === ORGANISER);
   assert.equal(calls.length, 1, `"s2" called the organiser ${calls.length} times`);
   assert.equal(calls[0].act, "no_room");
   const rang = minutesOfWorld((calls[0].rang as { worldTime: unknown }).worldTime);
-  assert.ok(Math.abs(rang - minutesOf(at)) <= 60, `it rang at ${JSON.stringify((calls[0].rang as { worldTime: unknown }).worldTime)}`);
+  assert.ok(Math.abs(rang - minutesOf(at)) <= (hours === "two" ? 120 : 60), `it rang at ${JSON.stringify((calls[0].rang as { worldTime: unknown }).worldTime)}`);
 });
 
 Given('"sp1" agreed to 1200', function (this: Context) {

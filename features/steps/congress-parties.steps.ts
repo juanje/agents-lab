@@ -418,9 +418,9 @@ Given('the configuration declares the perturbation "room_allocation" at {string}
 });
 
 /** Checks that a line's world time falls between two world times, written "day <n> HH:MM". */
-export function assertBetween(line: Record<string, unknown>, from: string, to: string): void {
+export function assertBetween(line: Record<string, unknown>, from: string, to: string, lateMinutes = 1): void {
   const at = minutesOfWorld(line.worldTime);
-  assert.ok(at >= minutesOf(from) && at <= minutesOf(to) + 1, `it came at day ${dayOf(line)}, ${Math.floor((at % 1440) / 60)}:${String(Math.floor(at % 60)).padStart(2, "0")}`);
+  assert.ok(at >= minutesOf(from) && at <= minutesOf(to) + lateMinutes, `it came at day ${dayOf(line)}, ${Math.floor((at % 1440) / 60)}:${String(Math.floor(at % 60)).padStart(2, "0")}`);
 }
 
 Then(

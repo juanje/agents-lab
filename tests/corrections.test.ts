@@ -220,8 +220,9 @@ describe("what the congress gives its parties for FR-CONGRESS-07", () => {
   });
 
   it("gives each party the minutes it calls a missed ring back within: from the ring's end to its reply delay after it", () => {
-    expect(paramsOf("v1").call_back_minutes).toEqual([5, 35]);
-    expect(paramsOf("v2").call_back_minutes).toEqual([5, 5]);
+    // A world minute after the ring ends, so as not to find the caller's line still busy.
+    expect(paramsOf("v1").call_back_minutes).toEqual([6, 36]);
+    expect(paramsOf("v2").call_back_minutes).toEqual([6, 6]);
   });
 });
 
