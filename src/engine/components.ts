@@ -1,4 +1,5 @@
 import { CUT_OFF } from "./adapter.ts";
+import type { WorldDuration, WorldTime } from "./calendar.ts";
 import { type ChangesSinceSensing, applyCounted } from "./changes.ts";
 import { type RunClock, waitAtLeast } from "./clock.ts";
 import type { Random } from "./random.ts";
@@ -20,7 +21,8 @@ export type Step<State> =
   | {
       kind: "action";
       name: string;
-      durationMs: number;
+      /** In milliseconds of the run, or as a duration in world time (FR-CLOCK-03). */
+      durationMs: number | WorldDuration;
       /**
        * For an action under way in the world, such as crossing a passage, the change it makes as it starts, through the
        * arbiter, as an effector's start (FR-TOOL-04, FR-SPACE-03). It cannot fail: a start the world refuses is a defect
@@ -39,11 +41,11 @@ export type Step<State> =
 
 /**
  * A component's life cycle in one run: it chooses each next step from the world's state, the outcome of the step before,
- * when that was an action (undefined before its first step and after a wait or a delivery), and the time since the run
- * started.
+ * when that was an action (undefined before its first step and after a wait or a delivery), the time since the run
+ * started, and the world's time then, for a run with a calendar (FR-CLOCK-03).
  */
 export interface Cycle<State> {
-  next(state: State, outcome: string | undefined, sinceStartMs: number): Step<State>;
+  next(state: State, outcome: string | undefined, sinceStartMs: number, world?: WorldTime): Step<State>;
 }
 
 /**
@@ -96,7 +98,7 @@ export async function runComponent<State>(component: Component<State>, { world, 
   const cycle = component.cycle(random);
   let outcome: string | undefined;
   while (!runEnd.aborted) {
-    const step = cycle.next(world.state, outcome, clock.sinceStartMs());
+    const step = cycle.next(world.state, outcome, clock.sinceStartMs(), clock.worldTime());
     outcome = undefined;
     if (step.kind === "end") return;
     if (step.kind === "wait") {
@@ -112,7 +114,7 @@ export async function runComponent<State>(component: Component<State>, { world, 
       const started = applyCounted(world, changes, component.name, step.start, { component: component.name, atMs: startedAtMs });
       if (started !== "success") throw new Error(`the start of component "${component.name}"'s action "${step.name}" was refused with "${started}"`);
     }
-    await waitAtLeast(step.durationMs, runEnd);
+    await waitAtLeast(clock.runMsOf(step.durationMs), runEnd);
     outcome = runEnd.aborted ? CUT_OFF : applyCounted(world, changes, component.name, step.action, { component: component.name, atMs: performance.now() });
     record({ component: component.name, action: step.name, startedAtMs, endedAtMs: performance.now(), outcome });
   }
