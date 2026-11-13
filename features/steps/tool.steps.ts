@@ -75,7 +75,8 @@ Given(
 );
 
 // Longer than cucumber's 5 s: a run that waits for a participant's hours lasts over 6 s (FR-PARTICIPANT-01).
-When("the run ends", { timeout: 40_000 }, async function (this: Context) {
+// An agreed sponsor waits for its day-25 check of the programme (FR-POPULATION-01), which takes about 35 s.
+When("the run ends", { timeout: 90_000 }, async function (this: Context) {
   await runTheScenario(this);
 });
 
