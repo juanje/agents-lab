@@ -119,7 +119,7 @@ const silent: RuleSet = {
 };
 
 /** The congress scenario of the library, with the configuration the steps set up and the rule set "silent". */
-function congressOf(setup: CongressSetup) {
+export function congressOf(setup: CongressSetup) {
   const scenario = setup.context.libraryScenario;
   return { ...scenario, ruleSets: { ...scenario.ruleSets, silent } };
 }
