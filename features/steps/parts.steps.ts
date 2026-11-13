@@ -125,6 +125,14 @@ Given(
     this.libraryScenario = partsScenario(setup) as never;
     this.seed = 1;
     script(this, "ana", [{ text: "Nothing to do.", delayMs: 0 }]);
+    // The inventory loads the scenario under the condition, which reads and checks the parts.
+    this.inventoryInstead = () => {
+      try {
+        loadScenario(partsScenario(setup), this.seed, conditionOf(setup));
+      } catch (error) {
+        this.runError = error as Error;
+      }
+    };
     this.runInstead = async () => {
       try {
         setup.loaded = loadScenario(partsScenario(setup), this.seed, conditionOf(setup));
@@ -304,4 +312,39 @@ Given("the parts material is changed so that {}", function (this: Context, writt
   const known = changes.find(([pattern]) => pattern.test(written));
   assert.ok(known !== undefined, `the steps do not read the change "${written}"`);
   known[1](setupOf(this));
+});
+
+// The approved addition: a group beside the kind.
+
+/** A part of the setup, by its id. */
+const partNamed = (context: Context, id: string) => setupOf(context).parts.find((part) => part.id === id) as Part;
+
+Given('the part "p1" also has the group "covered", and its kinds give "none" new and "rules" covered', function (this: Context) {
+  Object.assign(partNamed(this, "p1"), { group: "covered", kinds: { none: "new", rules: "covered" } });
+});
+
+Then(/^the "part" line for "p1" gives the group "(\w+)" and the kind "(\w+)"$/, function (this: Context, group: string, kind: string) {
+  const line = partLine(this, "p1");
+  assert.deepEqual({ group: line.group, kind: line.kind }, { group, kind });
+});
+
+Given('the part "p2" has the group "variant", activation the event "flag_raised" with flag "alarm", evaluated at "end"', function (this: Context) {
+  setupOf(this).parts.push({ id: "p2", predicate: "flag_set", params: { flag: "gate" }, activation: { event: "flag_raised", params: { flag: "alarm" } }, evaluate_at: "end", group: "variant", actors: [] } as Part);
+});
+
+Then('the "part" line for "p2" says it was not active and gives the group "variant"', function (this: Context) {
+  const line = partLine(this, "p2");
+  assert.deepEqual({ active: line.active, group: line.group }, { active: false, group: "variant" });
+});
+
+Given('"p1"\'s kinds also give the level "character" covered, which the experiment does not run', function (this: Context) {
+  (partNamed(this, "p1").kinds as Record<string, string>).character = "covered";
+});
+
+Then("it is not refused", function (this: Context) {
+  assert.equal(this.runError, undefined, `it was refused: ${this.runError?.message}`);
+});
+
+Given('"p1" has the group "changed" and kinds only for "rules"', function (this: Context) {
+  Object.assign(partNamed(this, "p1"), { group: "changed", kinds: { rules: "covered" } });
 });

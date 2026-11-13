@@ -216,6 +216,8 @@ export class Context extends CucumberWorld {
   calendar?: TomlTable;
   /** The scenario "the inventory is made" lists, when the scenario sets up one other than the slots test world with its calendar. */
   inventoryScenario?: () => Partial<Scenario<any>>;
+  /** How a scenario that is no congress makes "the experiment's inventory", keeping a refusal as the run's error (FR-PARTS-01's addition). */
+  inventoryInstead?: () => void;
 }
 
 setWorldConstructor(Context);

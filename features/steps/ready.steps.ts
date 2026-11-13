@@ -166,6 +166,10 @@ Given('a condition that sets "[mail] colour" to "blue"', function (this: Context
 });
 
 When("the experiment's inventory is made", function (this: Context) {
+  if (this.inventoryInstead !== undefined) {
+    this.inventoryInstead();
+    return;
+  }
   // The Background's congress, or an experiment of one condition over it when the scenario wrote none.
   if (!experiments.has(this)) writeExperiment(this, {});
   const written = experimentOf(this);

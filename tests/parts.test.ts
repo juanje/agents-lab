@@ -43,7 +43,6 @@ describe("readParts (FR-PARTS-01)", () => {
     expect(refusing({ misapplications: [{ pattern: "act_named", before: { event: "eclipse" } }] })).toThrow(/p1\.misapplications/);
     expect(refusing({ kinds: { none: "new", rules: "easy" } })).toThrow(/p1\.kinds/);
     expect(refusing({ kinds: { rules: "covered" } })).toThrow(/p1\.kinds/);
-    expect(refusing({ kinds: { none: "new", rules: "covered", chaos: "new" } })).toThrow(/p1\.kinds/);
     expect(refusing({}, { kindFactor: { name: "colour" } })).toThrow(/kind_factor/);
     expect(refusing({ evaluate_at: "Monday" })).toThrow(/p1\.evaluate_at/);
     expect(refusing({ actors: ["zoe"] })).toThrow(/p1\.actors/);
@@ -240,5 +239,32 @@ describe("a part's effort money and reached_at (FR-CONGRESS-10)", () => {
     kept.changed(state({ door: true }), at(1, "12:00"));
     kept.due(state({ door: true }), at(1, "18:00"));
     expect(lines[0]).toMatchObject({ part: "p1", held: true, reached_at: "day 1 09:30" });
+  });
+});
+
+describe("a part's group beside its kinds (FR-PARTS-01's addition)", () => {
+  it("reads a group, ignores kinds for levels the experiment does not run, and lets the group stand for a level's missing kind", () => {
+    expect(read([{ ...P1, group: "covered" }])[0]).toMatchObject({ group: "covered", kinds: { none: "new", rules: "covered" } });
+    expect(read([{ ...P1, kinds: { none: "new", rules: "covered", character: "covered" } }])[0].kinds).toEqual({ none: "new", rules: "covered" });
+    expect(read([{ ...P1, group: "changed", kinds: { rules: "covered" } }])[0]).toMatchObject({ group: "changed", kinds: { rules: "covered" } });
+    expect(() => read([{ ...P1, kinds: { rules: "covered" } }])).toThrow(/p1\.kinds/);
+    expect(() => read([{ ...P1, group: "easy" }])).toThrow(/p1\.group/);
+  });
+
+  it("gives the group in the part's line, active or not, and the group as the kind where the level has none", () => {
+    const lines: Record<string, unknown>[] = [];
+    const parts = readParts(
+      [
+        { ...P1, group: "changed", kinds: { none: "new" } },
+        { ...P1, id: "p2", group: "variant", kinds: undefined, activation: { event: "flag_raised", params: { flag: "alarm" } }, evaluate_at: "end" },
+      ],
+      provided,
+      { participants: ["shop"], kindFactor: { name: "guidance", levels: ["none", "rules"] } },
+    );
+    const kept = new PartsBook<Flags>({ parts, provided, level: "rules", agents: ["ana"], record: (line) => lines.push(line) });
+    kept.start(state(), at(1, "09:00"));
+    kept.finish(state(), at(1, "19:00"));
+    expect(lines.find(({ part }) => part === "p1")).toMatchObject({ group: "changed", kind: "changed" });
+    expect(lines.find(({ part }) => part === "p2")).toMatchObject({ active: false, group: "variant" });
   });
 });
