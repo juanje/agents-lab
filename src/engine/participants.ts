@@ -107,6 +107,8 @@ export type RuleStep = { kind: "call"; tool: string; arguments: Record<string, u
 
 /** A rule set as it decides one participant in one run: from what the participant perceives only, never the world's state. */
 export interface Rules {
+  /** Its first step, as the run starts, taken as a wake with no stimuli; none, or undefined, and it waits for its first stimulus. */
+  atStart?(): RuleStep | undefined;
   next(perceived: Perceived): RuleStep;
   /** The participant's outcome record, named values, when the run ends. */
   outcome(): Readonly<Record<string, string | number | boolean>>;
@@ -166,6 +168,8 @@ export class Participants<State> {
       const rules = ruleSets[participant.rules].start(participant.params);
       this.#rules.set(participant.name, rules);
       stimuli.watch(participant.name, () => this.#wake(participant, rules));
+      const first = rules.atStart?.();
+      if (first !== undefined) this.#wake(participant, rules, first);
     }
   }
 
@@ -200,11 +204,11 @@ export class Participants<State> {
     return !runEnd.aborted;
   }
 
-  /** Wakes a rule set that waits for a stimulus; one at work takes the stimulus with its next step. */
-  #wake(participant: ParticipantSettings, rules: Rules): void {
+  /** Wakes a rule set that waits for a stimulus, or with its first step as the run starts; one at work takes the stimulus with its next step. */
+  #wake(participant: ParticipantSettings, rules: Rules, first?: RuleStep): void {
     if (this.#awake.has(participant.name)) return;
     this.#awake.add(participant.name);
-    void this.#track(this.#act(participant, rules)).finally(() => this.#awake.delete(participant.name));
+    void this.#track(this.#act(participant, rules, first)).finally(() => this.#awake.delete(participant.name));
   }
 
   /**
@@ -212,11 +216,15 @@ export class Participants<State> {
    * participant's tool, recorded under its name, and each wait until its end or a stimulus that reaches the participant.
    * A call of a tool the participant does not declare stops the run.
    */
-  async #act({ name, tools: declared }: ParticipantSettings, rules: Rules): Promise<void> {
+  async #act({ name, tools: declared }: ParticipantSettings, rules: Rules, first?: RuleStep): Promise<void> {
     const { world, tools, stimuli, runEnd, call, records } = this.#run;
     try {
-      for (let waiting = stimuli.take(name); waiting.length > 0 && !runEnd.aborted; waiting = stimuli.take(name)) {
-        let step = rules.next({ stimuli: waiting });
+      for (let step = first; !runEnd.aborted; step = undefined) {
+        if (step === undefined) {
+          const waiting = stimuli.take(name);
+          if (waiting.length === 0) return;
+          step = rules.next({ stimuli: waiting });
+        }
         while (step.kind !== "end") {
           if (step.kind === "wait") {
             await this.#wait(name, step.minutes);

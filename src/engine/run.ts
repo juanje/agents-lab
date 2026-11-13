@@ -263,13 +263,14 @@ async function runAgents<State>(
     call: { sensings, changes, stimuli, records, runEnd: runEnd.signal, stop, clock },
     records,
   });
-  parties.start();
   // The mail watches the world for messages sent before any agent or component can send one (FR-MESSAGE-01).
   const medium =
     mail === undefined
       ? undefined
       : new MailMedium({ world, ...mail, clock, runEnd: runEnd.signal, changes, stimuli, seed, agents: [...agents.map(({ name }) => name), ...participants.flatMap(({ name, decides }) => (decides === "rules" ? [name] : []))], record: (line) => recorder.record(line) });
   medium?.start(startedAtMs);
+  // Participants start once the mail and the phone watch the world, so a rule set's first step reaches them (FR-PARTICIPANT-01).
+  parties.start();
   const sample = () => sampleMetrics(world, toolCalls, scenario.metrics, recorder, performance.now());
   sampleMetrics(world, toolCalls, scenario.metrics, recorder, startedAtMs);
   const timer = setTimeout(() => runEnd.abort(), settings.timeLimitMs);
