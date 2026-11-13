@@ -535,3 +535,14 @@ describe("inventory, the phone (FR-PHONE-01)", () => {
     );
   });
 });
+
+describe("inventory, a scenario's world (FR-CONGRESS-01)", () => {
+  it("gives what the scenario says of its world, from the configuration, and prints it as JSON", () => {
+    const scenario = slotsWith({ worldInventory: (configuration) => ({ places: ["office"], agents: configuration.agents }) } as never);
+    const made = inventory(experimentOf(["[conditions.base]"]), scenario);
+
+    const { world } = made.conditions[0] as { world?: Record<string, unknown> };
+    expect(world?.places).toEqual(["office"]);
+    expect(inventoryMarkdown(made)).toContain('### World\n\n```json\n{\n  "places": [\n    "office"\n  ],');
+  });
+});
