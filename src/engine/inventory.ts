@@ -4,6 +4,7 @@ import type { Component } from "./components.ts";
 import type { Compaction, Experiment, Limits, ThinkingLevel } from "./experiment.ts";
 import { MAIL_DURATIONS, type MailInventory, mailInventory, mailTools } from "./mail.ts";
 import type { ParticipantSettings } from "./participants.ts";
+import { PHONE_DURATIONS, type PhoneSettings, phoneInventory, phoneTools } from "./phone.ts";
 import { type LoadedScenario, type Scenario, loadScenario } from "./scenario.ts";
 import { Stimuli, type Stimulus } from "./stimuli.ts";
 import type { Tool } from "./tools.ts";
@@ -58,6 +59,8 @@ export interface ConditionInventory {
   mail?: MailInventory;
   /** Each participant, as the condition's configuration declares it, for a condition that declares any (FR-PARTICIPANT-01). */
   participants?: ParticipantSettings[];
+  /** The phone, for a condition whose configuration declares a [phone] (FR-PHONE-01). */
+  phone?: PhoneSettings;
 }
 
 /** A tool as its agents see it, with its duration as the scenario describes it and the text for each of its outcomes. */
@@ -112,13 +115,15 @@ export function inventory<State>(experiment: Experiment, scenario: Partial<Scena
 function conditionInventory<State>(
   { models, thinkingLevel, compaction, limits }: Experiment,
   condition: string,
-  { scenario, configuration, systemPrompts, channels, firstStimuli, materials, components, calendar, mail, participants = [] }: LoadedScenario<State>,
+  { scenario, configuration, systemPrompts, channels, firstStimuli, materials, components, calendar, mail, phone, participants = [] }: LoadedScenario<State>,
 ): ConditionInventory {
   // Each agent's first wake, as a run's stimuli give it, without the rhythm's stimulus, which every wake starts with.
   const stimuli = new Stimuli(channels, undefined, firstStimuli);
   // The mail's tools are every agent's, beside the scenario's own, and the mail describes their durations (FR-MESSAGE-01).
   const mailToolsOf = mail === undefined ? [] : mailTools(mail.settings, mail.keeper);
-  const durationOf = (tool: string) => MAIL_DURATIONS[tool] ?? scenario.describeDuration(configuration, tool);
+  // So are the phone's, which describes theirs (FR-PHONE-01).
+  const phoneToolsOf = phone === undefined ? [] : phoneTools({ ...phone, acts: mail?.settings.acts ?? {}, inHours: () => true });
+  const durationOf = (tool: string) => MAIL_DURATIONS[tool] ?? PHONE_DURATIONS[tool] ?? scenario.describeDuration(configuration, tool);
   return {
     condition,
     agents: [...systemPrompts].map(([name, systemPrompt]) => ({
@@ -127,7 +132,7 @@ function conditionInventory<State>(
       systemPrompt,
       firstStimuli: stimuli.wake(name).slice(1),
     })),
-    tools: [...scenario.tools, ...mailToolsOf].map((tool) => ({
+    tools: [...scenario.tools, ...mailToolsOf, ...phoneToolsOf].map((tool) => ({
       name: tool.name,
       kind: tool.kind,
       description: tool.description,
@@ -156,6 +161,7 @@ function conditionInventory<State>(
     ...(calendar === undefined ? {} : { calendar: calendarInventory(calendar) }),
     ...(mail === undefined ? {} : { mail: mailInventory(mail.settings) }),
     ...(participants.length === 0 ? {} : { participants: participants.map((participant) => ({ ...participant })) }),
+    ...(phone === undefined ? {} : { phone: phoneInventory(phone.settings) }),
   };
 }
 
@@ -194,6 +200,7 @@ export function inventoryMarkdown({ experiment, scenario, conditions }: Inventor
       ...(condition.calendar === undefined ? [] : [calendarMarkdown(condition.calendar)]),
       ...(condition.mail === undefined ? [] : [mailMarkdown(condition.mail)]),
       ...(condition.participants === undefined ? [] : [participantsMarkdown(condition.participants)]),
+      ...(condition.phone === undefined ? [] : [phoneMarkdown(condition.phone)]),
     ].join("\n"),
   );
   return [`# Environment inventory of experiment "${experiment}", scenario "${scenario}"\n`, ...sections].join("\n");
@@ -332,6 +339,12 @@ function mailMarkdown({ mailboxes, acts, deliveryMinutes, durations, notice }: M
     notice === undefined ? `- Notice: ${NONE}` : `- Notice from ${notice.source}: ${notice.text}`,
     "",
   ].join("\n");
+}
+
+/** The phone, in Markdown: its lines, its durations as a configuration writes them, and its ring. */
+function phoneMarkdown({ lines, ringMinutes, callMinutes, callWordsPerMinute, ring }: PhoneSettings): string {
+  const words = `call_words_per_minute${callWordsPerMinute === undefined ? `: ${NONE}` : ` ${callWordsPerMinute}`}`;
+  return ["### Phone\n", `- Lines: ${lines.join(", ")}`, `- Durations: ring_minutes ${ringMinutes}, call_minutes ${callMinutes}, ${words}`, `- Ring: ${ring}`, ""].join("\n");
 }
 
 /** The participants, in Markdown: each one's decider, tools, channels, hours and reply delay. */
