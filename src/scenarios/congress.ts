@@ -1,6 +1,7 @@
 import { type TomlTable, parse } from "smol-toml";
 import { type Calendar, type WorldTime, hoursAt, readCalendar, worldTimeText } from "../engine/calendar.ts";
 import type { Mail } from "../engine/mail.ts";
+import type { Money } from "../engine/money.ts";
 import type { Phone } from "../engine/phone.ts";
 import { type Places, arrive, exits, inSight, layout, leave, put, where } from "../engine/places.ts";
 import type { Random } from "../engine/random.ts";
@@ -8,6 +9,7 @@ import type { Configuration, Scenario } from "../engine/scenario.ts";
 import type { Channel } from "../engine/stimuli.ts";
 import type { AgentCall, Effector, Sensor, Sight, Tool } from "../engine/tools.ts";
 import type { Action } from "../engine/world.ts";
+import { boardRules, perturbationMinutes, venueRules } from "./congress-parties.ts";
 import { describeUniformRhythm, rhythmChannels, uniformRhythm } from "./rhythm.ts";
 
 /** The congress's one agent. */
@@ -82,6 +84,8 @@ export interface Congress {
   settings: { durations: Record<string, number>; waitMaxMinutes: number; awayFactor: number };
   mail: Mail;
   phone: Phone;
+  /** The money, which the engine puts here as a run starts when the configuration declares [money] (FR-MONEY-01). */
+  money: Money;
 }
 
 /** A key of the congress that cannot be followed: an error that names it, its value and why. */
@@ -201,20 +205,101 @@ function variant(configuration: Configuration, random: Random): { configuration:
     drawn.chosen[kind] = chosen.map(({ id }) => id as string);
     if (Object.hasOwn(settings, kind)) templates.push(...chosen.map((template) => ({ ...template, kind })));
   }
+  const calendar = configuration.calendar === undefined ? undefined : readCalendar(configuration.calendar);
+  const city = cityOf(configuration, calendar);
+  assertParties(kinds, settings, city);
+  const perturbations = perturbationsOf(configuration, kinds.venue ?? []);
+  const accounts: Record<string, TomlTable> = {};
   const participants = Object.fromEntries(
-    templates.map(({ id, kind, ...params }) => [id as string, { decides: "rules", ...(settings[kind as string] as TomlTable), params }]),
+    templates.map(({ id, kind, ...params }) => {
+      const { account, ...kept } = settings[kind as string] as TomlTable;
+      if (account === "unlimited") accounts[id as string] = { unlimited: true };
+      else if (typeof account === "string") accounts[id as string] = { opening: params[account] as number };
+      return [id as string, { decides: "rules", ...kept, params: { ...params, ...worldOf(kept.rules, id as string, configuration, city, perturbations) } }];
+    }),
   );
   const names = Object.keys(participants);
   const mail = configuration.mail as TomlTable | undefined;
   const phone = configuration.phone as TomlTable | undefined;
+  const money = configuration.money as TomlTable | undefined;
   const completed: Configuration = {
     ...configuration,
     participants: { ...((configuration.participants ?? {}) as TomlTable), ...participants },
     drawn: drawn as unknown as TomlTable,
     ...(mail === undefined ? {} : { mail: { ...mail, mailboxes: [...((mail.mailboxes ?? []) as string[]), ...names] } }),
     ...(phone === undefined ? {} : { phone: { ...phone, lines: [...((phone.lines ?? []) as string[]), ...names] } }),
+    ...(money === undefined ? {} : { money: { ...money, accounts: { ...((money.accounts ?? {}) as TomlTable), ...accounts } } }),
   };
   return { configuration: completed, drawn: { ...drawn } };
+}
+
+/** The organiser, whom the congress's parties answer. */
+const ORGANISER_NAME = "organiser";
+
+/** Whether a share is a number from 0 to 1. */
+const isShare = (value: unknown): value is number => typeof value === "number" && value >= 0 && value <= 1;
+
+/**
+ * Refuses, naming it, a party the congress's rule sets cannot follow (FR-CONGRESS-02): a venue in the pools that the city
+ * does not declare; for a kind decided by the rule set "venue", a template without rooms, price or access_claim, a
+ * deposit_share, cancellation share or pick_up outside 0 to 1; for one decided by "board", a template without funds.
+ */
+function assertParties(kinds: Readonly<Record<string, TomlTable[]>>, settings: TomlTable, city: City): void {
+  for (const { id } of kinds.venue ?? []) {
+    if (!city.venues.some((venue) => venue.id === id)) throw refused("pools venue", id, `the city declares no venue "${String(id)}"`);
+  }
+  for (const [kind, templates] of Object.entries(kinds)) {
+    const rules = (settings[kind] as TomlTable | undefined)?.rules;
+    for (const template of templates) {
+      const naming = (key: string, why: string) => refused(`pools ${kind} "${String(template.id)}" ${key}`, template[key], why);
+      if (rules === "venue") {
+        if (!Array.isArray(template.rooms) || template.rooms.length === 0) throw naming("rooms", "a venue needs its rooms");
+        if (typeof template.price !== "number" || !(template.price > 0)) throw naming("price", "a venue needs a price");
+        if (typeof template.access_claim !== "string") throw naming("access_claim", "a venue needs the access it claims");
+        if (!isShare(template.deposit_share)) throw naming("deposit_share", "it is not a share from 0 to 1");
+        if (!Array.isArray(template.cancellation) || !(template.cancellation as TomlTable[]).every(({ share }) => isShare(share))) throw naming("cancellation", "its shares are not from 0 to 1");
+        if (template.pick_up !== undefined && !isShare(template.pick_up)) throw naming("pick_up", "it is not a probability from 0 to 1");
+      }
+      if (rules === "board" && typeof template.funds !== "number") throw naming("funds", "a board needs its funds");
+    }
+  }
+}
+
+/** A perturbation as the configuration declares it (NFR-13): its name, kind, window or time, and the venue it is for, if one. */
+interface Perturbation {
+  name: string;
+  kind?: string;
+  between?: [string, string];
+  at?: string;
+  for?: string;
+}
+
+/** The configuration's perturbations, refused, naming them, when their times do not follow "day <n> HH:MM" or they are for no venue. */
+function perturbationsOf(configuration: Configuration, venues: readonly TomlTable[]): Perturbation[] {
+  return Object.entries((configuration.perturbations ?? {}) as TomlTable).map(([name, written]) => {
+    const declared = { name, ...(written as TomlTable) } as unknown as Perturbation;
+    const times = [...(declared.between ?? []), ...(declared.at === undefined ? [] : [declared.at])];
+    if (times.length === 0 || times.some((time) => perturbationMinutes(time) === undefined)) throw refused(`perturbations.${name}`, written, 'its times do not follow "day <n> HH:MM"');
+    if (declared.for !== undefined && !venues.some(({ id }) => id === declared.for)) throw refused(`perturbations.${name}`, written, `"${declared.for}" is no venue`);
+    return declared;
+  });
+}
+
+/**
+ * What the world adds to a party's parameters, by its rule set: a venue gets the organiser it answers, the event's day,
+ * its interior's true floor plan from the city and the perturbations for it; a board gets the organiser.
+ */
+function worldOf(rules: unknown, id: string, configuration: Configuration, city: City, perturbations: readonly Perturbation[]): TomlTable {
+  if (rules === "board") return { organiser: ORGANISER_NAME };
+  if (rules !== "venue") return {};
+  const venue = city.venues.find((each) => each.id === id) as Venue;
+  const inside = [venue.entrance, ...venue.rooms.map((room) => room.id)];
+  return {
+    organiser: ORGANISER_NAME,
+    event_day: configuration.event_day as number,
+    floor_plan: city.passages.filter(({ between }) => between.every((place) => inside.includes(place))).map(({ between, step_free: stepFree }) => ({ between, step_free: stepFree })),
+    perturbations: perturbations.filter((each) => each.for === undefined || each.for === id) as unknown as TomlTable[],
+  };
 }
 
 /** The congress's world as a replica starts: the city's places, the chosen venues', the organiser in its place, no notes. */
@@ -246,6 +331,7 @@ function initialState(configuration: Configuration): Congress {
     settings,
     mail: { mailboxes: {}, inTransit: [] },
     phone: { calls: [] },
+    money: { balances: {}, invoices: [], commitments: [], ceilings: {}, overruns: [], events: [] },
   };
 }
 
@@ -523,17 +609,50 @@ const BASE_CONFIGURATION = [
   "'''",
   "pools = '''",
   'topics = ["congress"]',
+  "venue = []",
+  "board = []",
   "'''",
   "draw = '''",
   "attendance = [100, 100]",
   "'''",
+  "event_day = 26",
   "away_factor = 1.0",
   "wait_max_minutes = 60",
   "[calendar]",
   'start = "day 1 Monday 09:00"',
   "[[calendar.segments]]",
   "scale = 60",
-  "[kinds]",
+  "[mail]",
+  'mailboxes = ["organiser"]',
+  "delivery_minutes = [1, 1]",
+  "send_minutes = 0",
+  "check_minutes = 0",
+  "read_minutes = 0",
+  'notice_source = "mail client"',
+  'notice = "New mail from {from}: {subject}"',
+  "[phone]",
+  'lines = ["organiser"]',
+  "ring_minutes = 5",
+  "call_minutes = 4",
+  'ring = "{from} calls ({call}): {act}. {fields}{text}"',
+  "[money]",
+  "discretionary_limit = 300",
+  "[money.accounts.organiser]",
+  "opening = 0",
+  'tools = ["ledger", "pay", "issue_invoice"]',
+  "[kinds.venue]",
+  'rules = "venue"',
+  'tools = ["send_mail", "check_mail", "read_mail", "answer_call", "check_time", "ledger", "commit", "release", "issue_invoice"]',
+  'channels = ["mail_notice", "phone"]',
+  "reply_minutes = [0, 0]",
+  'account = "unlimited"',
+  "[kinds.board]",
+  'rules = "board"',
+  'tools = ["send_mail", "check_mail", "read_mail", "answer_call", "approve", "transfer"]',
+  'channels = ["mail_notice", "phone"]',
+  "reply_minutes = [0, 0]",
+  'account = "funds"',
+  "[perturbations]",
   "[durations]",
   "check_time = 0",
   "look = 0",
@@ -574,6 +693,8 @@ export const congressScenario: Scenario<Congress> = {
   describeRhythm: describeUniformRhythm,
   mail: { of: (state) => state.mail, with: (state, mail) => ({ ...state, mail }) },
   phone: { of: (state) => state.phone, with: (state, phone) => ({ ...state, phone }) },
+  money: { of: (state) => state.money, with: (state, money) => ({ ...state, money }) },
+  ruleSets: { venue: venueRules, board: boardRules },
   variant,
   slowedBy: (state, agent) => (agent === ORGANISER && hereOf(state, agent) !== OFFICE ? state.settings.awayFactor : 1),
   worldInventory,
