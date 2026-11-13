@@ -2016,6 +2016,18 @@ describe("run, with components", () => {
     expect(actions).toMatchObject([{ component: "porter", outcome: "cut_off" }]);
   });
 
+  it("writes a component's outcome as a participant_outcome line as the run ends, and the lines its scenario gives for each change (FR-POPULATION-01)", async () => {
+    const logDirectory = newLogDirectory();
+    const porter = { ...filler("porter", { slot: 2, thing: "crate", waitMs: () => 0, actionMs: 10 }), outcome: (state: Slots) => ({ filled: holder(state, 2) ?? "none" }) };
+    const loaded = slots({ ...agentsNamed(), components: () => [porter], logLines: (before, after) => (holder(before, 2) === holder(after, 2) ? [] : [{ type: "slot", slot: 2, holder: holder(after, 2) }]) });
+
+    const { runId } = await run(loaded, [], seed, { ...settings, logDirectory });
+
+    const lines = logOf(logDirectory, runId) as Record<string, unknown>[];
+    expect(lines.filter((line) => line.type === "slot")).toEqual([{ type: "slot", slot: 2, holder: "crate", atMs: expect.any(Number) }]);
+    expect(lines.filter((line) => line.type === "participant_outcome")).toEqual([{ type: "participant_outcome", participant: "porter", outcome: { filled: "crate" } }]);
+  });
+
   it("gives each component a random sequence from the replica's seed and its name, whatever other components run", async () => {
     const alone: number[] = [];
     const withOther: number[] = [];

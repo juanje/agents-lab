@@ -183,6 +183,12 @@ describe("runComponent", () => {
     expect(stimuli.take("a")).toEqual([{ channel: "illness", source: "illness", content: "You are ill." }]);
   });
 
+  it("fills a delivered stimulus's text with the values the step gives (FR-POPULATION-01)", async () => {
+    const stimuli = new Stimuli([{ name: "programme", source: "the programme", stimulus: "Your session: {time} in {room}." }]);
+    await runIn(stepping([{ kind: "deliver", agent: "a", channel: "programme", values: { time: "10:00", room: "main-hall" } }], []), new World(emptySlots(1)), undefined, stimuli);
+    expect(stimuli.take("a")).toEqual([{ channel: "programme", source: "the programme", content: "Your session: 10:00 in main-hall." }]);
+  });
+
   it("gives its cycle the world's time, and takes an action's duration in world time as the run time it spans (FR-CLOCK-03)", async () => {
     const world = new World(emptySlots(1));
     const given: unknown[] = [];
