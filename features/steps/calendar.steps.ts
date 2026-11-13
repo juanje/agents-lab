@@ -6,6 +6,7 @@ import { type Inventory, inventory, inventoryMarkdown } from "../../src/engine/i
 import * as calendars from "../../src/engine/calendar.ts";
 import type { Weekday, WorldDuration, WorldTime } from "../../src/engine/calendar.ts";
 import type { Component } from "../../src/engine/components.ts";
+import type { Scenario } from "../../src/engine/scenario.ts";
 import type { Sensor } from "../../src/engine/tools.ts";
 import { World } from "../../src/engine/world.ts";
 import { type Slots, slotsScenario } from "../../tests/fixtures/slots.ts";
@@ -264,9 +265,16 @@ When("the inventory is made", function (this: Context) {
       "",
     ].join("\n"),
   );
-  const scenario = { ...slotsScenario, baseConfiguration: `${slotsScenario.baseConfiguration}\n${stringify({ calendar: calendarOf(this) })}\n` };
+  const scenario: Partial<Scenario<any>> = this.inventoryScenario?.() ?? { ...slotsScenario, baseConfiguration: `${slotsScenario.baseConfiguration}\n${stringify({ calendar: calendarOf(this) })}\n` };
   inventories.set(this, inventory(experiment, scenario));
 });
+
+/** The inventory the scenario made. */
+export function madeInventory(context: Context): Inventory {
+  const made = inventories.get(context);
+  assert.ok(made !== undefined, "no inventory was made");
+  return made;
+}
 
 Then(
   "it gives the start {string}, the first segment with scale {int} until {string} taking {int} milliseconds of the run, and the second with scale {int} {string}",

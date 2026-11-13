@@ -5,11 +5,12 @@ import { type TomlTable, stringify } from "smol-toml";
 import type { WorldTime } from "../../src/engine/calendar.ts";
 import type { Component } from "../../src/engine/components.ts";
 import type { Mail } from "../../src/engine/mail.ts";
+import { inventoryMarkdown } from "../../src/engine/inventory.ts";
 import { type LoadedScenario, type Scenario, loadScenario } from "../../src/engine/scenario.ts";
 import type { ScriptedAnswer } from "../../src/engine/scripted-model.ts";
 import { rhythmChannel } from "../../tests/fixtures/slots.ts";
 import type { Context } from "../support/context.ts";
-import { toTheMinute } from "./calendar.steps.ts";
+import { madeInventory, toTheMinute } from "./calendar.steps.ts";
 import { linesOf, logLines } from "./record.steps.ts";
 import { asRead } from "./stimulus.steps.ts";
 import { returned, runTheScenario, script } from "./tool.steps.ts";
@@ -70,6 +71,7 @@ Given(
     setups.set(this, setup);
     // Each agent ends its only activation at once unless the scenario scripts its turns.
     for (const agent of setup.agents) script(this, agent, [{ text: "Nothing to do.", delayMs: 0 }]);
+    this.inventoryScenario = () => mailScenario(this, setup.agents);
     this.assembleRun = (agents) => {
       setup.loaded = loadScenario(mailScenario(this, agents), this.seed);
       return setup.loaded as LoadedScenario<unknown>;
@@ -497,5 +499,25 @@ Then(
     const [message] = messages;
     assert.deepEqual({ from: message.from, subject: message.subject }, { from, subject });
     if (received !== undefined) assert.equal(message.received, received);
+  },
+);
+
+Then(
+  "it gives the mailboxes of {string}, {string} and {string}, {string}'s acts {string} \\(date, rooms) and {string} \\(none), {string} [{int}, {int}], the durations, and the notice's source and text",
+  function (this: Context, first: string, second: string, third: string, recipient: string, book: string, ask: string, key: string, fewest: number, most: number) {
+    const [condition] = madeInventory(this).conditions;
+    assert.equal(key, "delivery_minutes");
+    assert.deepEqual(condition.mail, {
+      mailboxes: [first, second, third],
+      acts: { [recipient]: { [book]: ["date", "rooms"], [ask]: [] } },
+      deliveryMinutes: [fewest, most],
+      durations: { sendMinutes: 3, sendMinutesPerField: 0, checkMinutes: 2, readMinutes: 1 },
+      notice: { source: "mail client", text: "New mail from {from}: {subject}" },
+    });
+    // "lab inventory" prints what the inventory gives.
+    const printed = inventoryMarkdown(madeInventory(this));
+    for (const text of ["### Mail", first, second, third, `${book} (date, rooms)`, `${ask} (none)`, `${fewest} to ${most} world minutes`, "mail client", "New mail from {from}: {subject}"]) {
+      assert.ok(printed.includes(text), `the printed inventory does not give ${text}`);
+    }
   },
 );

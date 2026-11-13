@@ -214,6 +214,8 @@ export class Context extends CucumberWorld {
   lastDurationRead?: { tool: string; ms: number };
   /** The configuration's [calendar], as the scenario declares it, for the test world (FR-CLOCK-03). */
   calendar?: TomlTable;
+  /** The scenario "the inventory is made" lists, when the scenario sets up one other than the slots test world with its calendar. */
+  inventoryScenario?: () => Partial<Scenario<any>>;
 }
 
 setWorldConstructor(Context);

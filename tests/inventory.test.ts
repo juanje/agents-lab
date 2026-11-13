@@ -3,6 +3,7 @@ import { summaryInstructions } from "../src/engine/compaction.ts";
 import { readExperiment } from "../src/engine/experiment.ts";
 import { inventory, inventoryMarkdown } from "../src/engine/inventory.ts";
 import type { Scenario } from "../src/engine/scenario.ts";
+import { postScenario } from "./fixtures/post.ts";
 import { type Slots, filler, slotsScenario } from "./fixtures/slots.ts";
 
 /** An experiment file over the slots test scenario, in TOML, with these conditions after its other fields. */
@@ -393,6 +394,49 @@ describe("inventory", () => {
 
     expect(inventory(experiment, slotsWith()).conditions[0]).not.toHaveProperty("calendar");
     expect(printed(experiment, slotsWith())).not.toContain("Calendar");
+  });
+
+  it("gives the mail a condition's configuration declares: its mailboxes, each recipient's acts with their fields, delivery_minutes, the durations and the notice (FR-MESSAGE-01)", () => {
+    const experiment = experimentOf(["[conditions.base]"]);
+    const made = inventory(experiment, postScenario);
+
+    expect(made.conditions[0].mail).toEqual({
+      mailboxes: ["ana", "ben", "desk"],
+      acts: { desk: { book: ["date", "rooms"], ask: [] } },
+      deliveryMinutes: [1, 1],
+      durations: { sendMinutes: 3, sendMinutesPerField: 0, checkMinutes: 2, readMinutes: 1 },
+      notice: { source: "mail client", text: "New mail from {from}: {subject}" },
+    });
+    expect(inventoryMarkdown(made)).toContain(
+      [
+        "### Mail\n",
+        "- Mailboxes: ana, ben, desk",
+        "- Acts of desk: book (date, rooms), ask (none)",
+        "- Delivery: 1 to 1 world minutes",
+        "- Durations: send_minutes 3, send_minutes_per_field 0, check_minutes 2, read_minutes 1",
+        "- Notice from mail client: New mail from {from}: {subject}",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  it("lists the mail's tools beside the scenario's, with their durations as the mail gives them, and says mail is not instant (FR-MESSAGE-01)", () => {
+    const [condition] = inventory(experimentOf(["[conditions.base]"]), postScenario).conditions;
+
+    expect(condition.tools.map(({ name, kind }) => [name, kind])).toEqual([
+      ["send_mail", "effector"],
+      ["check_mail", "sensor"],
+    ]);
+    expect(condition.tools.map(({ duration }) => duration)).toEqual([
+      "send_minutes, plus send_minutes_per_field for each field and one minute per send_words_per_minute words of the subject and text, in world minutes",
+      "check_minutes, in world minutes",
+    ]);
+    expect(condition.channels.map(({ name }) => name)).toEqual(["rhythm", "mail_notice"]);
+    expect(condition.informationSpeed).toBe("Every sensor and channel is instant, but mail, which takes from 1 to 1 world minutes to arrive.");
+  });
+
+  it("has no mail for a configuration that declares none", () => {
+    expect(inventory(experimentOf(["[conditions.base]"]), slotsWith()).conditions[0]).not.toHaveProperty("mail");
   });
 
   it("fences a system prompt that holds a fence with a longer one, so the prompt is given whole", () => {
