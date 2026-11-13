@@ -1,6 +1,9 @@
+import { stringify } from "smol-toml";
 import { describe, expect, it } from "vitest";
 import type { WorldTime } from "../src/engine/calendar.ts";
 import { type PartsProvided, PartsBook, readParts } from "../src/engine/parts.ts";
+import { loadScenario } from "../src/engine/scenario.ts";
+import { slotsScenario } from "./fixtures/slots.ts";
 
 /** A world of flags, each raise recorded with its time, and the money's events. */
 interface Flags {
@@ -128,5 +131,27 @@ describe("PartsBook (FR-PARTS-01)", () => {
       ["parts_not_evaluated", undefined],
     ]);
     expect(lines[1]).toEqual({ type: "parts_not_evaluated", parts: ["p3"] });
+  });
+});
+
+describe("loadScenario, with parts (FR-PARTS-01)", () => {
+  /** The slots test scenario, providing the predicate "slot_held", with a "parts" text in its base configuration. */
+  const scenario = (parts: Record<string, unknown>[], provides = true) => ({
+    ...slotsScenario,
+    ...(provides ? { parts: { predicates: { slot_held: () => true }, events: {}, misapplications: {} } } : {}),
+    baseConfiguration: `${slotsScenario.baseConfiguration}\nparts = ${JSON.stringify(stringify({ parts }))}\n`,
+  });
+  const part = { id: "p1", predicate: "slot_held", activation: "always", evaluate_at: "end", kinds: { none: "new", rules: "covered" } };
+  const condition = { name: "guidance=rules", change: "", levels: { guidance: "rules" }, kindFactor: { name: "guidance", levels: ["none", "rules"] } };
+
+  it("reads the configuration's parts with the condition's level of its kind factor", () => {
+    const loaded = loadScenario(scenario([part]), 1, condition);
+    expect(loaded.parts).toEqual({ parts: [expect.objectContaining({ id: "p1", kinds: { none: "new", rules: "covered" } })], level: "rules" });
+  });
+
+  it("keeps no parts when the configuration gives none, and refuses parts a scenario provides nothing for, or cannot follow", () => {
+    expect(loadScenario(slotsScenario, 1).parts).toBeUndefined();
+    expect(() => loadScenario(scenario([part], false), 1, condition)).toThrow(/parts/);
+    expect(() => loadScenario(scenario([{ ...part, predicate: "moon_full" }]), 1, condition)).toThrow(/p1\.predicate/);
   });
 });

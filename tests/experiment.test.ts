@@ -265,6 +265,19 @@ function withSet(path: string, value: TomlValue | undefined): string {
   return stringify(file);
 }
 
+describe("readExperiment with a kind_factor (FR-PARTS-01)", () => {
+  it("gives every condition the kind factor, with its levels when it is one of the file's factors", () => {
+    const { conditions } = readExperiment(`kind_factor = "held"\n${withFactors}`);
+    for (const condition of conditions) expect(condition.kindFactor).toEqual({ name: "held", levels: ["none", "two"] });
+    expect(readExperiment(`kind_factor = "colour"\n${withFactors}`).conditions[0].kindFactor).toEqual({ name: "colour" });
+    expect(readExperiment(withFactors).conditions[0]).not.toHaveProperty("kindFactor");
+  });
+
+  it("refuses a kind_factor that is not a text, naming it", () => {
+    expect(() => readExperiment(`kind_factor = 3\n${withFactors}`)).toThrow(/kind_factor/);
+  });
+});
+
 describe("replicaSeed", () => {
   it("derives each replica's seed from the base seed and the replica: the same pair gives the same seed, another replica another", () => {
     const seeds = [1, 2, 3].map((replica) => replicaSeed(7, replica));
