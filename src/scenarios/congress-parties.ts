@@ -76,10 +76,27 @@ class Party {
   readonly #callBacks: { at: number; ring: Received }[] = [];
   /** How it answers what reaches it, as it last handled something. */
   #answer?: (received: Received) => Answer | undefined;
+  /** The hours it keeps: its days, and from and to "HH:MM" on each (FR-CONGRESS-09); none, always. */
+  readonly #keeps?: { days: readonly string[]; from: string; to: string };
 
-  /** A party with its parameters: call_back_minutes, when the world gives them. */
+  /** A party with its parameters: call_back_minutes and the hours it keeps, when the world gives them. */
   constructor(params: Readonly<Record<string, unknown>> = {}) {
     this.#callBack = params.call_back_minutes as [number, number] | undefined;
+    this.#keeps = params.keeps as { days: readonly string[]; from: string; to: string } | undefined;
+  }
+
+  /** The first moment, in world minutes, at or after the one given that is within its hours (FR-CONGRESS-09). */
+  withinHours(minutes: number): number {
+    const keeps = this.#keeps;
+    if (keeps === undefined) return minutes;
+    const clock = (text: string) => Number(text.slice(0, 2)) * 60 + Number(text.slice(3, 5));
+    for (let day = Math.floor(minutes / 1440); day < Math.floor(minutes / 1440) + 8; day += 1) {
+      if (!keeps.days.includes(WEEKDAYS[(this.weekdayOfDayOne + day) % 7])) continue;
+      const opens = day * 1440 + clock(keeps.from);
+      const closes = day * 1440 + clock(keeps.to);
+      if (minutes < closes) return Math.max(minutes, opens);
+    }
+    return minutes;
   }
 
   /** A call of one of its tools; it gives the call's result and keeps any stimulus that came meanwhile. */
@@ -1226,16 +1243,29 @@ export const sponsorRules: RuleSet = {
     /** When it reads the programme: the starts of days 19 and 25, in world minutes. */
     const checks = PROGRAMME_CHECK_DAYS.map((day) => (day - 1) * 1440);
 
-    /** Reads the programme, and mails condition_missing for each logo or morning slot it agreed to that is not there. */
-    function* checkProgramme(): Generator<RuleStep, void, Perceived> {
+    /** The logo and morning slot it agreed to that the latest programme, which it reads, does not give. */
+    function* missingFromProgramme(): Generator<RuleStep, string[], Perceived> {
       const read = (yield* party.call("read_programme")).text;
       const programme = (read.startsWith("{") ? JSON.parse(read) : { logos: [], sponsor_slots: [] }) as { logos?: string[]; sponsor_slots?: { sponsor: string; start: string }[] };
       const agreed = listIn(record.agreement);
-      const missing = [
+      return [
         ...(agreed.includes("logo") && !(programme.logos ?? []).includes(sponsor.id) ? ["logo"] : []),
         ...(agreed.includes("morning_slot") && !(programme.sponsor_slots ?? []).some(({ sponsor: slot, start }) => slot === sponsor.id && start < "12:00") ? ["morning_slot"] : []),
       ];
-      for (const condition of missing) yield* party.call("send_mail", { to: sponsor.organiser, act: "condition_missing", fields: { condition } });
+    }
+
+    /** Reads the programme, and mails condition_missing for each logo or morning slot it agreed to that is not there. */
+    function* checkProgramme(): Generator<RuleStep, void, Perceived> {
+      for (const condition of yield* missingFromProgramme()) yield* party.call("send_mail", { to: sponsor.organiser, act: "condition_missing", fields: { condition } });
+    }
+
+    /**
+     * Whether its agreed conditions stand as it pays (FR-CONGRESS-09): the programme's are due from day 19, when it
+     * first reads the programme, and must then be in the latest one.
+     */
+    function* conditionsStand(): Generator<RuleStep, boolean, Perceived> {
+      if (party.now < (PROGRAMME_CHECK_DAYS[0] - 1) * 1440) return true;
+      return (yield* missingFromProgramme()).length === 0;
     }
 
     /** The payments it has set, each an invoice and when it pays it, in world minutes. */
@@ -1246,7 +1276,7 @@ export const sponsorRules: RuleSet = {
     function* readInvoices(): Generator<RuleStep, void, Perceived> {
       const ledger = yield* party.ledger();
       yield* party.clock();
-      for (const invoice of (ledger.invoices_to_pay ?? []) as { id: string; from: string; amount: number; paid: boolean }[]) {
+      for (const invoice of (ledger.invoices_to_pay ?? []) as { id: string; from: string; amount: number; paid: boolean; issued?: string }[]) {
         const left = sponsor.amount - record.paid - payments.reduce((sum, { amount }) => sum + amount, 0);
         if (invoice.paid || invoice.from !== sponsor.organiser || settled.has(invoice.id)) continue;
         // An invoice above what it agreed is disputed, not paid (FR-CONGRESS-05's addition).
@@ -1257,7 +1287,9 @@ export const sponsorRules: RuleSet = {
         }
         const [fewest, most] = sponsor.pay_days;
         settled.add(invoice.id);
-        payments.push({ invoice: invoice.id, amount: invoice.amount, at: party.now + (fewest + random.next() * (most - fewest)) * 1440 });
+        // pay_days after the invoice was issued, at the first moment within its hours (FR-CONGRESS-09).
+        const issued = perturbationMinutes(invoice.issued) ?? party.now;
+        payments.push({ invoice: invoice.id, amount: invoice.amount, at: party.withinHours(issued + (fewest + random.next() * (most - fewest)) * 1440) });
       }
     }
 
@@ -1281,7 +1313,12 @@ export const sponsorRules: RuleSet = {
         }
         payments.sort((one, other) => one.at - other.at);
         while (payments.length > 0 && payments[0].at <= party.now && !record.withdrew) {
-          const due = payments.shift() as { invoice: string; amount: number };
+          const due = payments.shift() as { invoice: string; amount: number; at: number };
+          // A payment whose conditions do not stand waits a day, and is paid once they do (FR-CONGRESS-09).
+          if (!(yield* conditionsStand())) {
+            payments.push({ ...due, at: party.withinHours(party.now + 1440) });
+            break;
+          }
           if ((yield* party.call("pay", { invoice: due.invoice })).outcome === "success") record.paid += due.amount;
         }
         if (party.stimuli.length > 0) continue;

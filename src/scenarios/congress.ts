@@ -356,8 +356,11 @@ function variant(configuration: Configuration, random: Random): { configuration:
       const [, slowest = 0] = ((replyMinutes ?? kept.reply_minutes ?? []) as number[]);
       const callBack: TomlTable = ring === undefined ? {} : { call_back_minutes: [ring + 1, ring + 1 + slowest] };
       const world = worldOf(kept.rules, id as string, configuration, city, perturbations, chosenVenues);
+      // A party knows the hours it keeps, within which it writes its own mail and pays (FR-CONGRESS-09).
+      const hoursKept = (hours ?? kept.hours) as string | undefined;
+      const keeps = hoursKept === undefined ? undefined : (((configuration.calendar as TomlTable | undefined)?.hours as TomlTable | undefined)?.[hoursKept] as TomlTable | undefined);
       // Every party knows its own id, by which it names what it commits and invoices.
-      return [id as string, { decides: "rules", ...kept, ...own, params: { id: id as string, ...params, ...callBack, ...world } }];
+      return [id as string, { decides: "rules", ...kept, ...own, params: { id: id as string, ...params, ...callBack, ...world, ...(keeps === undefined ? {} : { keeps }) } }];
     }),
   );
   const names = Object.keys(participants);

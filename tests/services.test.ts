@@ -414,7 +414,7 @@ describe("a sponsor's payment (FR-CONGRESS-09)", () => {
   /** A sponsor that agreed to its conditions, read its invoice at a time, then woke at each later time, with this programme. */
   function paying(slot: boolean, read: string, later: string[]) {
     const clock = { time: "day 1 Monday 09:01" };
-    const answer = (tool: string) => ({ text: tool === "read_programme" ? programmeWith(slot) : tools(() => "From: organiser. Act: accept_sponsorship. conditions: logo, morning_slot.", () => clock.time, () => ({ invoices_to_pay: invoices }))(tool).text });
+    const answer = (tool: string) => ({ text: tool === "read_programme" ? programmeWith(slot) : tools(() => "From: organiser. Act: accept_sponsorship. conditions: logo, morning_slot.", () => clock.time, () => ({ invoices_to_pay: invoices }))(tool, {}).text });
     const rules = sponsor();
     drive(rules, answer, [[notice]]);
     clock.time = read;

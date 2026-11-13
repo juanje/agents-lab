@@ -318,7 +318,15 @@ export function moneyTools<State>(settings: MoneySettings, keeper: MoneyKeeper<S
 
 /** An account as its ledger shows it to its holder. */
 function ledgerOf(money: Money, account: string): Record<string, unknown> {
-  const invoice = (other: "from" | "to") => ({ id, from, to, amount, due, for: what, paid }: Invoice) => ({ id, [other]: other === "from" ? from : to, amount, due, for: what, paid });
+  // When an invoice was issued, as its event was stamped, "day <n> HH:MM" (FR-CONGRESS-09).
+  const issuedOf = (id: string) => {
+    const at = money.events.find((event) => event.kind === "invoice" && event.invoice === id)?.at;
+    if (typeof at !== "number") return {};
+    const day = Math.floor(at / 1440);
+    const two = (value: number) => String(Math.floor(value)).padStart(2, "0");
+    return { issued: `day ${day + 1} ${two((at - day * 1440) / 60)}:${two(at % 60)}` };
+  };
+  const invoice = (other: "from" | "to") => ({ id, from, to, amount, due, for: what, paid }: Invoice) => ({ id, [other]: other === "from" ? from : to, amount, due, for: what, paid, ...issuedOf(id) });
   const commitment = (other: "by" | "with") => ({ id, by, with: account2, amount, for: what }: Commitment) => ({ id, [other]: other === "by" ? by : account2, amount, for: what });
   const balance = money.balances[account];
   return {
