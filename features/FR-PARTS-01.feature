@@ -73,7 +73,6 @@ Feature: Parts as held-out keys
       | "p1"'s predicate is "moon_full"                     | p1.predicate    |
       | "p1"'s kind for "rules" is "easy"                   | p1.kinds        |
       | "p1"'s kinds lack "none"                            | p1.kinds        |
-      | "p1"'s kinds name the level "chaos"                 | p1.kinds        |
       | the experiment's "kind_factor" is "colour"          | kind_factor     |
       | "p1" is evaluated at "Monday"                       | p1.evaluate_at  |
       | "p1"'s actors name "zoe"                            | p1.actors       |

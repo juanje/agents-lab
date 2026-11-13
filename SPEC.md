@@ -615,7 +615,7 @@ A scenario may provide named part predicates and misapplication patterns, and an
 
 **Recorded.** Each part's result is a `part` line, written when the part is evaluated; the run's last line before it ends lists the parts not yet evaluated as `not_evaluated`. The `parts` material's hash is in the setup line, as any held-out material's.
 
-**Refusals**, before any model call, with an error that names the part and the key: a predicate, pattern or event the scenario does not provide; a kind other than the four; a `kinds` table that lacks a level of `kind_factor` or names a level it does not have; a `kind_factor` that is no factor of the experiment while a part has kinds; an `evaluate_at` that does not follow its format; an actor that is no participant; two parts with the same id.
+**Refusals**, before any model call, with an error that names the part and the key: a predicate, pattern or event the scenario does not provide; a kind other than the four; a `kinds` table that lacks a level of `kind_factor` the experiment runs, with no group to stand for it; a `kind_factor` that is no factor of the experiment while a part has kinds; an `evaluate_at` that does not follow its format; an actor that is no participant; two parts with the same id.
 *Why:* E1's hypotheses are about kinds of parts, so each part's measure must be a fact of the world with a time, the same for every condition, and its kind under each condition a declared key, out of the agent's reach. Effort and misapplications come from the agent's structured acts, not from what it wrote about them.
 
 
