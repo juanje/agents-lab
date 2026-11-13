@@ -814,6 +814,11 @@ function components(configuration: Configuration): Component<Congress>[] {
   return declared.map((each) => (each.name === SPONSOR_PERTURBATION ? sponsorWithdrawal(each, calendar) : cancellation(each, speakers, calendar)));
 }
 
+/** The factor by which the organiser's web tools take longer away from the office (FR-CONGRESS-01, FR-CONGRESS-07). */
+function awayFactorOf(state: Congress, agent: string): number {
+  return agent === ORGANISER && hereOf(state, agent) !== OFFICE ? state.settings.awayFactor : 1;
+}
+
 /** How many days before its date a train's price starts to rise, and by how much it has risen on the day. */
 const PRICE_RISE_DAYS = 14;
 const PRICE_RISE = 0.8;
@@ -845,7 +850,7 @@ const travelOptions: Sensor<Congress> = {
   name: "travel_options",
   description: 'The trains from a station that arrive on a date ("day <n>"), with their times and prices, and the hotels near the venues with rooms left the night before, with their prices.',
   parameters: { type: "object", properties: { from: { type: "string" }, date: { type: "string" } }, required: ["from", "date"] },
-  durationMs: (state) => ({ worldSeconds: state.settings.durations.travel_options * 60 }),
+  durationMs: (state, call) => ({ worldSeconds: state.settings.durations.travel_options * 60 * awayFactorOf(state, call.agent) }),
   sense: (state, _agent, { from, date }, _sinceStartMs, world) => {
     const day = dayOfDate(date);
     const today = (world as WorldTime).day;
@@ -907,7 +912,7 @@ const similarEventsTool: Sensor<Congress> = {
   name: "similar_events",
   description: "The similar congresses of your congress's topic, with their ticket prices and sizes.",
   parameters: { type: "object", properties: {} },
-  durationMs: (state) => ({ worldSeconds: state.settings.durations.similar_events * 60 }),
+  durationMs: (state, call) => ({ worldSeconds: state.settings.durations.similar_events * 60 * awayFactorOf(state, call.agent) }),
   sense: (state) => JSON.stringify(state.similar),
 };
 
@@ -1112,7 +1117,7 @@ export const congressScenario: Scenario<Congress> = {
   worldAccounts: [TRAVEL],
   ruleSets: { venue: venueRules, board: boardRules, speaker: speakerRules, partner: partnerRules, caterer: catererRules, sponsor: sponsorRules, agency: agencyRules },
   variant,
-  slowedBy: (state, agent) => (agent === ORGANISER && hereOf(state, agent) !== OFFICE ? state.settings.awayFactor : 1),
+  slowedBy: awayFactorOf,
   worldInventory,
   baseConfiguration: BASE_CONFIGURATION,
 };
