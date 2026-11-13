@@ -286,6 +286,9 @@ function programmeOf(written: string): Record<string, unknown> {
   const both = /^with "(\w+)" and "(\w+)" both at "([^"]+)" in "([^"]+)"$/.exec(written);
   if (both !== null) return { sessions: [sessionOf([both[1]], both[3], both[4]), sessionOf([both[2]], both[3], both[4])] };
   if (written === "again as version 2") return { sessions: [sessionOf(["s1"], "12:00", "main-hall")] };
+  // A session naming its speaker by a name that is no id (FR-CONGRESS-09).
+  const named = /^with a session whose speaker is "([^"]+)"$/.exec(written);
+  if (named !== null) return { sessions: [sessionOf([named[1]], "10:00", "hall-a")] };
   const sessions = [...written.matchAll(/"(\w+)" at "([^"]+)" in "([^"]+)"/g)].map(([, speaker, start, room]) => sessionOf([speaker], start, room));
   assert.ok(sessions.length > 0, `the steps do not read the programme "${written}"`);
   return { sessions };

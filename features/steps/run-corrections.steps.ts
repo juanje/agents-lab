@@ -57,6 +57,22 @@ const SPEAKERS: TomlTable[] = [
   { id: "s2", title: "Soil water", draw: 1, fee: 0, home: "local", available: true, acceptance: 0.5, pick_up: 1 },
 ];
 
+/** The attendees material of the Background: a ticket page, and nobody who comes to it. */
+const ATTENDEES = {
+  pool_factor: 1,
+  base_per_day: 0,
+  unannounced: 0,
+  promotion_factor: 1,
+  payment_fee_share: 0,
+  cancel_share: 0,
+  consent_share: 1,
+  pay_share: 1,
+  no_show_share: 0,
+  diets: { none: 1 },
+  access: { none: 1 },
+  fixed: [],
+};
+
 /** The sponsor of the Background. */
 const SP1: TomlTable = { id: "sp1", amount: 1200, conditions: ["logo", "morning_slot"], insists: [], pay_days: [2, 2], pick_up: 1 };
 
@@ -65,7 +81,11 @@ Given(
   function (this: Context, start: string, scale: number, hourMs: number) {
     assert.equal((3600 * 1000) / scale, hourMs);
     setUpCongress(this, { start, segments: [{ scale }], hours: HOURS });
-    change(this, (configuration) => (configuration.city = stringify(CITY)));
+    change(this, (configuration) => {
+      configuration.city = stringify(CITY);
+      // A population with a ticket page and no one who registers unless a scenario says so.
+      configuration.attendees = stringify(ATTENDEES);
+    });
     // The run ends 5 world hours in, unless a scenario says when.
     this.timeLimitMs = 5 * hourMs;
   },
@@ -199,4 +219,11 @@ Then('"s1" cancelled, and "s2" did not', function (this: Context) {
   assert.deepEqual(ill, ["s1"]);
   sentWith(this, "s1", "cancel");
   assert.equal(sentBy(this, "s2").filter((line) => line.act === "cancel").length, 0);
+});
+
+Then('the call failed with the outcome "invalid_value", naming "Rosa Ferreira"', function (this: Context) {
+  assert.equal(organiserCall(this, "publish_programme").outcome, "invalid_value");
+  const messages = modelOf(this, ORGANISER).received.at(-1) ?? [];
+  const result = messages.find((message) => message.role === "toolResult" && message.toolName === "publish_programme");
+  assert.match(JSON.stringify(result?.content), /Rosa Ferreira/);
 });

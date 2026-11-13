@@ -70,6 +70,21 @@ function sense(state: PopulationWorld, name: string, args: Record<string, unknow
   return JSON.parse(tool.sense(state, "organiser", args, 0, at(1)));
 }
 
+describe("the programme takes ids (FR-CONGRESS-09)", () => {
+  const ids = { speakers: ["s1", "s4"], sponsors: ["sp1"] };
+  const tool = () => populationTools<PopulationWorld>({ organiser: "organiser", idsOf: (_state, kind) => ids[kind] }).find((each) => each.name === "publish_programme") as Tool<PopulationWorld> & { kind: "effector" };
+  const refusal = (args: Record<string, unknown>) => tool().refuses?.(world(), { agent: "organiser", arguments: args, atMs: 0, world: at(1) }, at(1));
+  const session = (speakers: string[]) => ({ start: "10:00", end: "10:45", title: "Talk", speakers, room: "main-hall" });
+
+  it("refuses, as invalid_value naming them, speakers or sponsors that are no drawn id, and says so in its description", () => {
+    expect(refusal({ sessions: [session(["Rosa Ferreira", "s1"])] })).toEqual({ outcome: "invalid_value", reason: expect.stringContaining('"Rosa Ferreira"') });
+    expect(refusal({ sessions: [session(["s1"])], sponsor_slots: [{ sponsor: "Nordtech", start: "09:30", end: "09:45" }] })?.reason).toContain('"Nordtech"');
+    expect(refusal({ sessions: [session(["s1"])], logos: ["sp9"] })?.reason).toContain('"sp9"');
+    expect(refusal({ sessions: [session(["s1", "s4"])], sponsor_slots: [{ sponsor: "sp1", start: "09:30", end: "09:45" }], logos: ["sp1"] })).toBeUndefined();
+    expect(tool().description).toMatch(/speakers and sponsors by id/);
+  });
+});
+
 describe("the organiser's ticket page, programme and announcements (FR-POPULATION-01)", () => {
   it("edit_ticket_page changes the page from then on, and refuses a value it cannot take as invalid_value", () => {
     const { state } = apply(world(), "edit_ticket_page", { open: true, price: 100, cap: 2, close_date: "day 20", required_fields: ["diet"], info: ["date"], waiting_list: true });
