@@ -39,9 +39,14 @@ export class Stimuli {
     this.#first = new Map(first);
   }
 
-  /** Delivers a channel's stimulus to an agent: it waits until the agent's session takes it. */
-  deliver(agent: string, channel: string): void {
-    const stimulus = this.#stimulusOf(channel);
+  /**
+   * Delivers a channel's stimulus to an agent, each `{name}` in its text filled with the value given for it, such as a
+   * mail notice's sender (FR-MESSAGE-01): it waits until the agent's session takes it.
+   */
+  deliver(agent: string, channel: string, values: Readonly<Record<string, string>> = {}): void {
+    const declared = this.#stimulusOf(channel);
+    const content = declared.content.replace(/\{(\w+)\}/g, (written, name: string) => (Object.hasOwn(values, name) ? values[name] : written));
+    const stimulus = { ...declared, content };
     this.#delivered(agent, stimulus);
     this.#waiting.set(agent, [...(this.#waiting.get(agent) ?? []), stimulus]);
     for (const watcher of this.#watchers.get(agent) ?? []) watcher(stimulus);
