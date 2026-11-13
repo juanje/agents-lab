@@ -631,7 +631,9 @@ interface BoardParams {
 
 /**
  * The board's rules (FR-CONGRESS-02): it approves a budget within its funds, setting the organiser's ceiling and
- * transferring the funds asked, or counters it; it approves an extra amount within its reserve, or refuses it.
+ * transferring the funds asked, or counters it with the funds it was given; a new budget replaces the approved one, the
+ * difference transferred, or taken back by an invoice (FR-CONGRESS-09). It approves an extra amount within its reserve,
+ * or refuses it, saying the reserve left.
  */
 export const boardRules: RuleSet = {
   start: (given, random) => {
@@ -641,32 +643,38 @@ export const boardRules: RuleSet = {
     const ceilings = new Map<string, number>();
     const answer = ({ from, act, fields }: Received): Answer => {
       if (act === "submit_budget") {
-        const left = board.funds - counts.funds_transferred;
         const asked = Number(fields.funds_requested);
-        if (!(asked <= left)) return { act: "budget_countered", fields: { funds: left } };
+        // A new budget replaces the approved one, so all the funds it was given are available for it.
+        if (!(asked <= board.funds)) return { act: "budget_countered", fields: { funds: board.funds } };
         const ceiling = Number(fields.costs) + Number(fields.contingency);
+        const difference = asked - counts.funds_transferred;
         ceilings.set(from, ceiling);
         counts.approvals += 1;
-        counts.funds_transferred += asked;
+        counts.funds_transferred = asked;
         return {
           act: "budget_approved",
           fields: { ceiling, funds: asked },
           then: function* () {
             yield* party.call("approve", { account: from, ceiling });
-            yield* party.call("transfer", { to: from, amount: asked, for: "budget" });
+            if (difference > 0) yield* party.call("transfer", { to: from, amount: difference, for: "budget" });
+            if (difference < 0) {
+              yield* party.clock();
+              yield* party.call("issue_invoice", { to: from, amount: -difference, due: `day ${Math.floor(party.now / 1440) + 1}`, for: "budget returned" });
+            }
           } as () => Script,
         };
       }
       if (act === "request_approval") {
         const amount = Number(fields.amount);
+        const reserve = (board.reserve ?? 0) - counts.reserve_used;
         // It approves more only over a budget it approved (FR-CONGRESS-07).
         if (!ceilings.has(from)) {
           counts.refusals += 1;
-          return { act: "refused", fields: { amount, reason: "no_budget" } };
+          return { act: "refused", fields: { amount, reason: "no_budget", reserve } };
         }
-        if (!(amount <= (board.reserve ?? 0) - counts.reserve_used)) {
+        if (!(amount <= reserve)) {
           counts.refusals += 1;
-          return { act: "refused", fields: { amount } };
+          return { act: "refused", fields: { amount, reserve } };
         }
         const ceiling = (ceilings.get(from) ?? 0) + amount;
         ceilings.set(from, ceiling);

@@ -1527,7 +1527,7 @@ const BASE_CONFIGURATION = [
   'account = "unlimited"',
   "[kinds.board]",
   'rules = "board"',
-  'tools = ["send_mail", "check_mail", "read_mail", "call", "answer_call", "check_time", "approve", "transfer"]',
+  'tools = ["send_mail", "check_mail", "read_mail", "call", "answer_call", "check_time", "approve", "transfer", "issue_invoice"]',
   'channels = ["mail_notice", "phone"]',
   "reply_minutes = [0, 0]",
   'account = "funds"',
