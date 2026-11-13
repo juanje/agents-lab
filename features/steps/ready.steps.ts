@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Given, Then, When } from "@cucumber/cucumber";
-import { type TomlTable, stringify } from "smol-toml";
+import { type TomlTable, parse, stringify } from "smol-toml";
 import { type Inventory, inventory } from "../../src/engine/inventory.ts";
 import { readExperiment } from "../../src/engine/experiment.ts";
 import { MONEY_TOOLS } from "../../src/engine/money.ts";
@@ -243,10 +243,13 @@ Then(
     const lines = system.split("\n");
     for (const party of ["chair", "mill-house", "nordtech"]) assert.equal(lines.filter((line) => line.includes(party)).length, 1, `the system prompt has no one line for "${party}":\n${system}`);
     const line = lines.find((each) => each.includes("mill-house")) as string;
-    for (const text of ["venue", "mailbox", "line", "ask_quote (date, attendance)", "book (date, rooms, hours)", "hold (date)", "accept_contract (contract)", "cancel_booking"]) {
-      assert.ok(line.includes(text), `the line of "mill-house" does not give "${text}": ${line}`);
+    for (const text of ["venue", "mailbox", "line"]) assert.ok(line.includes(text), `the line of "mill-house" does not give "${text}": ${line}`);
+    // Its acts are its kind's, given once for every venue (FR-CONGRESS-08's addition).
+    const acts = lines.find((each) => each.startsWith("A venue takes")) ?? "";
+    for (const text of ["ask_quote (date, attendance)", "book (date, rooms, hours)", "hold (date)", "accept_contract (contract)", "cancel_booking"]) {
+      assert.ok(acts.includes(text), `the venues' acts do not give "${text}": ${acts}`);
     }
-    assert.ok(!line.includes("{"), `the line has braces: ${line}`);
+    assert.ok(!system.includes("{"), `the directory has braces: ${system}`);
   },
 );
 
@@ -366,4 +369,64 @@ Then("the organiser's tools in the inventory are exactly those its session is of
   const offered = ["check_time", "look", "go", "write_note", "read_notes", "wait", "travel_options", "book_travel", "similar_events", "edit_ticket_page", "ticket_page", "publish_programme", "announce", "read_programme", "send_mail", "check_mail", "read_mail", "call", "answer_call", "ledger", "pay", "issue_invoice"].sort();
   assert.deepEqual(listed, offered);
   for (const tool of excluded) assert.ok((MONEY_TOOLS as readonly string[]).includes(tool) && !listed.includes(tool), `the inventory lists "${tool}"`);
+});
+
+// The approved addition: a fuller, shorter directory.
+
+Given(
+  /^the variant draws the speakers "ana-ruiz" \(title "Soil and water", home "north"\) and "ben-ott" \(title "Village shops", home "local"\), the caterer "library-cafe", in-house for "old-library", and the partner "lena-ford"$/,
+  function (this: Context) {
+    const speaker = (id: string, title: string, home: string) => ({ id, title, home, draw: 1, fee: 0, available: true, acceptance: 1 });
+    changePools(this, (pool) => {
+      pool.venue.push({ ...structuredClone(MILL_HOUSE), id: "old-library", roles: [], catering: "in_house", rooms: [{ id: "reading-room", seats: 80, equipment: [] }] });
+      pool.speaker = [speaker("ana-ruiz", "Soil and water", "north"), speaker("ben-ott", "Village shops", "local")];
+      pool.caterer = [{ id: "library-cafe", in_house_for: "old-library", price_per_head: 20, diets: {}, minimum: 0, final_days: 7, deposit_share: 0.2, deposit_due_days: 3, cancellation: [{ share: 0.3 }] }];
+      pool.partner = [{ id: "lena-ford", title: "The partner's survey", session: 3 }];
+    });
+    change(this, (configuration) => {
+      const city = parse(configuration.city as string) as unknown as typeof CITY;
+      city.venues.push({ id: "old-library", entrance: "old-library-entrance", hours: "always", rooms: [{ id: "reading-room", seats: 80 }] });
+      city.passages.push({ between: ["office", "old-library-entrance"], length: 15, step_free: true }, { between: ["old-library-entrance", "reading-room"], length: 1, step_free: true });
+      configuration.city = stringify(city as unknown as TomlTable);
+      configuration.travel = stringify({ stations: ["north"], trains: [], hotels: [], sold_out_probability: 0 });
+      const draw = parse(configuration.draw as string);
+      configuration.draw = stringify({ ...draw, venue: { roles: { false_claim: 1 }, count: 1 }, speaker: 2, caterer: 0, partner: 1 });
+    });
+  },
+);
+
+/** The organiser's system prompt, as its model first received it. */
+function systemPrompt(context: Context): string {
+  ranLines(context);
+  const [messages] = modelOf(context, ORGANISER).received;
+  return String(messages?.find((message) => message.role === "system")?.content ?? "");
+}
+
+Then("the organiser's system prompt gives the speakers' acts once", function (this: Context) {
+  const system = systemPrompt(this);
+  assert.equal(system.split("invite (session, time, fee, travel_paid)").length - 1, 1, system);
+});
+
+Then(
+  /^the lines "ana-ruiz", a speaker, "Soil and water", from "north"; "ben-ott", a speaker, "Village shops", local; and "library-cafe", a caterer, in-house for "old-library"$/,
+  function (this: Context) {
+    const lines = systemPrompt(this).split("\n");
+    const lineOf = (id: string) => {
+      const found = lines.filter((line) => line.includes(id) && !line.startsWith("A "));
+      assert.equal(found.length, 1, `no one line for "${id}": ${lines.join("\n")}`);
+      return found[0];
+    };
+    for (const [id, texts] of [
+      ["ana-ruiz", ["speaker", "Soil and water", "north"]],
+      ["ben-ott", ["speaker", "Village shops", "local"]],
+      ["library-cafe", ["caterer", "in-house", "old-library"]],
+    ] as const) {
+      for (const text of texts) assert.ok(lineOf(id).includes(text), `the line of "${id}" does not give "${text}": ${lineOf(id)}`);
+      assert.ok(!lineOf(id).includes("invite ("), `the line of "${id}" gives acts: ${lineOf(id)}`);
+    }
+  },
+);
+
+Then('no line for "lena-ford"', function (this: Context) {
+  assert.ok(!systemPrompt(this).includes("lena-ford"), "the directory names the partner");
 });

@@ -317,7 +317,7 @@ describe("the congress ready for an experiment (FR-CONGRESS-08)", () => {
     expect(() => loadScenario(congress((configuration) => (configuration.task = "Use {funds}.")), 1)).toThrow(/task.*\{funds\}.*no board/);
   });
 
-  it("gives in {directory} one line per drawn party with its id, kind, mailbox, line and the acts its rule set takes", () => {
+  it("gives in {directory} each kind's acts once, with their required fields, then one line per drawn party with its id, kind, mailbox and line (FR-CONGRESS-08's addition)", () => {
     const withVenues = (scenario: Scenario<unknown>): Scenario<unknown> => ({ ...scenario, ruleSets: { ...congressScenario.ruleSets, ...scenario.ruleSets } });
     const loaded = loadScenario(
       withVenues(congress((configuration) => {
@@ -330,11 +330,13 @@ describe("the congress ready for an experiment (FR-CONGRESS-08)", () => {
     const lines = (loaded.systemPrompts.get("organiser") as string).split("\n").slice(1);
     const { chosen } = loaded.variant as { chosen: Record<string, string[]> };
 
-    expect(lines).toHaveLength(chosen.venue.length + chosen.speaker.length);
-    expect(lines.find((line) => line.includes("v1"))).toBe(
-      "- v1: venue, with a mailbox and a line; takes ask_quote (date, attendance), request_document (kind), hold (date), book (date, rooms, hours), accept_contract (contract), change_booking (rooms, hours), request_extra (item), accept_extra (item), cancel_booking, accept_change (option?), decline_change",
-    );
-    expect(lines.find((line) => line.includes(chosen.speaker[0]))).toBe(`- ${chosen.speaker[0]}: speaker, with a mailbox and a line; takes no act the congress lists`);
+    expect(lines.filter((line) => line.startsWith("A "))).toEqual([
+      "A venue takes ask_quote (date, attendance), request_document (kind), hold (date), book (date, rooms, hours), accept_contract (contract), change_booking (rooms, hours), request_extra (item), accept_extra (item), cancel_booking, accept_change, decline_change.",
+      "A speaker takes no act the congress lists.",
+    ]);
+    expect(lines.filter((line) => line.startsWith("- "))).toHaveLength(chosen.venue.length + chosen.speaker.length);
+    expect(lines.find((line) => line.includes("v1"))).toBe("- v1: venue, with a mailbox and a line");
+    expect(lines.find((line) => line.includes(chosen.speaker[0]))).toBe(`- ${chosen.speaker[0]}: speaker, with a mailbox and a line`);
   });
 
   it("names each drawn party's role and kind for parts' actors, and the phone wakes a resting organiser while the mail's notice does not", () => {
