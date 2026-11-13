@@ -620,6 +620,12 @@ interface SpeakerParams {
 /** Whether a time "HH:MM" is in the morning, before 12:00. */
 const inMorning = (time: unknown) => String(time) < "12:00";
 
+/** The perturbations that make a speaker cancel, each reaching it on a channel of its own name. */
+export const SPEAKER_PERTURBATIONS = ["early_cancel", "late_cancel"];
+
+/** When a speaker whose condition is not met withdraws: day 19's start, in world minutes since day 1's midnight. */
+const WITHDRAW_MINUTES = 18 * 1440;
+
 /** The acts the partner's speaker takes. */
 const PARTNER_ACTS = ["invite", "confirm", "change", "ask_slides"];
 
@@ -734,11 +740,30 @@ export const speakerRules: RuleSet = {
       }
     };
 
+    /** Its cancellation, when an illness reaches it: by mail, or for late_cancel by a call first, then by mail if the call is not answered. */
+    function* cancel(channel: string): Generator<RuleStep, void, Perceived> {
+      record.cancelled = true;
+      if (channel === "late_cancel" && (yield* party.call("call", { to: speaker.organiser, act: "cancel" })).outcome === "success") return;
+      yield* party.call("send_mail", { to: speaker.organiser, act: "cancel", fields: {} });
+    }
+
     function* script(): Script {
       yield* party.clock();
       for (;;) {
+        const ill = party.stimuli.filter(({ channel }) => SPEAKER_PERTURBATIONS.includes(channel));
+        party.stimuli.splice(0, party.stimuli.length, ...party.stimuli.filter((stimulus) => !ill.includes(stimulus)));
+        for (const { channel } of ill) yield* cancel(channel);
         yield* party.handle(answer, speaker.pick_up ?? 1, random);
-        yield* party.rest(undefined);
+        // A condition not met by day 19 makes it withdraw.
+        const pending = record.answer === "accept_if";
+        if (pending) yield* party.clock();
+        if (pending && party.now >= WITHDRAW_MINUTES) {
+          record.answer = "withdraw";
+          yield* party.call("send_mail", { to: speaker.organiser, act: "withdraw", fields: { session: invitation.session as number, condition: speaker.condition as string } });
+          continue;
+        }
+        if (party.stimuli.length > 0) continue;
+        yield* party.rest(pending ? WITHDRAW_MINUTES - party.now : undefined);
       }
     }
 

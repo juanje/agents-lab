@@ -9,7 +9,7 @@ import type { Configuration, Scenario } from "../engine/scenario.ts";
 import type { Channel } from "../engine/stimuli.ts";
 import type { AgentCall, Effector, Sensor, Sight, Tool } from "../engine/tools.ts";
 import type { Action } from "../engine/world.ts";
-import { SPEAKER_CONDITIONS, SPEAKER_CONSTRAINTS, boardRules, partnerRules, perturbationMinutes, speakerRules, venueRules } from "./congress-parties.ts";
+import { SPEAKER_CONDITIONS, SPEAKER_CONSTRAINTS, SPEAKER_PERTURBATIONS, boardRules, partnerRules, perturbationMinutes, speakerRules, venueRules } from "./congress-parties.ts";
 import { describeUniformRhythm, rhythmChannels, uniformRhythm } from "./rhythm.ts";
 
 /** The congress's one agent. */
@@ -293,9 +293,6 @@ function assertSpeaker(template: TomlTable, rules: "speaker" | "partner", naming
   if (template.condition !== undefined && !(SPEAKER_CONDITIONS as readonly unknown[]).includes(template.condition)) throw naming("condition", `it is none of ${SPEAKER_CONDITIONS.join(", ")}`);
   if (template.constraint !== undefined && !(SPEAKER_CONSTRAINTS as readonly unknown[]).includes(template.constraint)) throw naming("constraint", `it is none of ${SPEAKER_CONSTRAINTS.join(", ")}`);
 }
-
-/** The perturbations that make a speaker cancel (FR-CONGRESS-04); the others are a venue's. */
-export const SPEAKER_PERTURBATIONS = ["early_cancel", "late_cancel"];
 
 /** A perturbation as the configuration declares it (NFR-13): its name, kind, window or time, and the venue it is for, if one. */
 interface Perturbation {
