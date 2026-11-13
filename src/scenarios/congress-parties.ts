@@ -71,12 +71,26 @@ export function perturbationMinutes(text: unknown): number | undefined {
   return day === undefined ? undefined : (Number(day) - 1) * 1440 + Number(hours) * 60 + Number(minutes);
 }
 
+/** The probability that a party calls back a ring it missed (FR-CONGRESS-07). */
+const CALL_BACK = 0.5;
+
 /** What any party's script does: its calls, its waits, its clock, its mail and its rings, from what it perceives only. */
 class Party {
   /** The stimuli that reached it and wait to be handled. */
   readonly stimuli: Stimulus[] = [];
   now = 0;
   weekdayOfDayOne = 0;
+  /** When it calls back a ring it missed: between the two numbers, in world minutes after the ring (FR-CONGRESS-07). */
+  readonly #callBack?: readonly [number, number];
+  /** The rings it missed and will call back, each at its world time. */
+  readonly #callBacks: { at: number; ring: Received }[] = [];
+  /** How it answers what reaches it, as it last handled something. */
+  #answer?: (received: Received) => Answer | undefined;
+
+  /** A party with its parameters: call_back_minutes, when the world gives them. */
+  constructor(params: Readonly<Record<string, unknown>> = {}) {
+    this.#callBack = params.call_back_minutes as [number, number] | undefined;
+  }
 
   /** A call of one of its tools; it gives the call's result and keeps any stimulus that came meanwhile. */
   *call(tool: string, args: Record<string, unknown> = {}): Generator<RuleStep, { outcome: string; text: string }, Perceived> {
@@ -85,10 +99,29 @@ class Party {
     return perceived.result ?? { outcome: "none", text: "" };
   }
 
-  /** A wait, or the end when there is nothing to wait for; it keeps the stimuli that wake it. */
+  /**
+   * A wait, or the end when there is nothing to wait for; it keeps the stimuli that wake it. A call back it owes shortens
+   * the wait, and is made once its time has come.
+   */
   *rest(minutes: number | undefined): Generator<RuleStep, void, Perceived> {
-    const perceived = yield minutes === undefined ? { kind: "end" } : { kind: "wait", minutes };
+    const next = this.#callBacks.reduce((first, { at }) => Math.min(first, at), Infinity);
+    const until = Math.min(minutes ?? Infinity, next - this.now);
+    const perceived = yield until === Infinity ? { kind: "end" } : { kind: "wait", minutes: until };
     this.stimuli.push(...perceived.stimuli);
+    if (this.#callBacks.length > 0) yield* this.callBack();
+  }
+
+  /** Calls back each ring it missed whose time has come, with missed_call; answered, it answers the ring's act by mail. */
+  *callBack(): Generator<RuleStep, void, Perceived> {
+    yield* this.clock();
+    for (const due of this.#callBacks.filter(({ at }) => at <= this.now)) {
+      this.#callBacks.splice(this.#callBacks.indexOf(due), 1);
+      if ((yield* this.call("call", { to: due.ring.from, act: "missed_call" })).outcome !== "success") continue;
+      const given = this.#answer?.(due.ring);
+      if (given === undefined) continue;
+      yield* this.call("send_mail", { to: due.ring.from, act: given.act, fields: given.fields });
+      if (given.then !== undefined) yield* given.then();
+    }
   }
 
   /** Reads the world's time with its own check_time. */
@@ -133,12 +166,23 @@ class Party {
    */
   *handle(answer: (received: Received) => Answer | undefined, pickUp: number, random: Random): Generator<RuleStep, void, Perceived> {
     let mail = false;
+    this.#answer = answer;
     while (this.stimuli.length > 0) {
       const stimulus = this.stimuli.shift() as Stimulus;
       if (stimulus.channel === "mail_notice") mail = true;
       if (stimulus.channel !== "phone") continue;
       const ring = readRing(stimulus.content);
-      if (ring === undefined || !(random.next() < pickUp)) continue;
+      if (ring === undefined) continue;
+      if (!(random.next() < pickUp)) {
+        // A missed ring is called back with probability 0.5, within the party's reply delay after the ring ends (FR-CONGRESS-07).
+        if (this.#callBack !== undefined && random.next() < CALL_BACK) {
+          const [fewest, most] = this.#callBack;
+          const after = fewest + random.next() * (most - fewest);
+          yield* this.clock();
+          this.#callBacks.push({ at: this.now + after, ring });
+        }
+        continue;
+      }
       const given = answer(ring);
       if (given === undefined) continue;
       yield* this.call("answer_call", { call: ring.call, act: given.act, fields: given.fields });
@@ -245,7 +289,7 @@ interface Timer {
 export const venueRules: RuleSet = {
   start: (given, random) => {
     const venue = given as unknown as VenueParams;
-    const party = new Party();
+    const party = new Party(given);
     const dates = new Map<string, string>((venue.booked_by_others ?? []).map((date) => [date, "other"]));
     const contracts: Contract[] = [];
     const timers: Timer[] = [];
@@ -600,7 +644,7 @@ interface BoardParams {
 export const boardRules: RuleSet = {
   start: (given, random) => {
     const board = given as unknown as BoardParams;
-    const party = new Party();
+    const party = new Party(given);
     const counts = { approvals: 0, refusals: 0, funds_transferred: 0, reserve_used: 0 };
     const ceilings = new Map<string, number>();
     const answer = ({ from, act, fields }: Received): Answer => {
@@ -694,7 +738,7 @@ const PARTNER_ACTS = ["invite", "confirm", "change", "ask_slides"];
 export const speakerRules: RuleSet = {
   start: (given, random) => {
     const speaker = given as unknown as SpeakerParams;
-    const party = new Party();
+    const party = new Party(given);
     const fee = speaker.fee ?? 0;
     const record = {
       invitation: "none",
@@ -882,7 +926,7 @@ const LATE_SURCHARGE = 0.1;
 export const catererRules: RuleSet = {
   start: (given, random) => {
     const caterer = given as unknown as CatererParams;
-    const party = new Party();
+    const party = new Party(given);
     const record = { quotes: 0, order: "none", ordered: 0, final_numbers: "none", surcharges: 0, invoices_issued: 0, cancelled: false };
     const forOrder = `order ${caterer.id}`;
     const finalDay = caterer.event_day - caterer.final_days;
@@ -1016,7 +1060,7 @@ interface AgencyParams {
 export const agencyRules: RuleSet = {
   start: (given, random) => {
     const agency = given as unknown as AgencyParams;
-    const party = new Party();
+    const party = new Party(given);
     const record = { booked: "none", cancelled: false };
     const forBooking = `interpreting ${agency.id}`;
     const today = () => Math.floor(party.now / 1440) + 1;
@@ -1089,7 +1133,7 @@ const listIn = (text: unknown) =>
 export const sponsorRules: RuleSet = {
   start: (given, random) => {
     const sponsor = given as unknown as SponsorParams;
-    const party = new Party();
+    const party = new Party(given);
     const record = { conditions: sponsor.conditions.join(", "), agreement: "none", paid: 0, withdrew: false };
     const agreed = (conditions: string[]): Answer => {
       record.agreement = conditions.join(", ");
