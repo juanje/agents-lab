@@ -310,7 +310,7 @@ Then(
   'the "check_mail" result lists one message from "board" with the subject "partner_session", received at "day 1 Monday 09:00"',
   function (this: Context) {
     const [checked] = organiserCalls(this, "check_mail");
-    assert.equal(String(checked?.text).trim(), 'm-1: from board, subject "partner_session", received day 1 Monday 09:00');
+    assert.equal(String(checked?.result).trim(), 'm-1: from board, subject "partner_session", received day 1 Monday 09:00');
   },
 );
 
