@@ -6,6 +6,7 @@ import { type Scenario, loadScenario } from "../src/engine/scenario.ts";
 import type { Stimulus } from "../src/engine/stimuli.ts";
 import { agencyRules, catererRules, sponsorRules } from "../src/scenarios/congress-parties.ts";
 import { congressScenario } from "../src/scenarios/congress.ts";
+import { resultOf, withRecord } from "./fixtures/rules.ts";
 
 /** The mail notice of a message from the organiser. */
 const notice: Stimulus = { channel: "mail_notice", source: "mail client", content: "New mail from organiser: x" };
@@ -24,12 +25,12 @@ function drive(rules: Rules, answer: Answer, wakes: Stimulus[][] = [], started =
       steps.push(step);
       if (step.kind === "wait") break;
       const { outcome = "success", text } = answer(step.tool, step.arguments);
-      const perceived: Perceived = { stimuli: [], result: { tool: step.tool, outcome, text } };
+      const perceived: Perceived = { stimuli: [], result: resultOf(step.tool, outcome, text) };
       step = rules.next(perceived);
     }
   };
   if (!started) take(rules.atStart?.());
-  for (const stimuli of wakes) take(rules.next({ stimuli }));
+  for (const stimuli of wakes) take(rules.next({ stimuli: stimuli.map(withRecord) }));
   return steps;
 }
 

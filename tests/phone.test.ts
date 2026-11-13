@@ -102,6 +102,13 @@ describe("run, with a phone (FR-PHONE-01)", () => {
     expect(Math.abs((answer.endedAtMs as number) - (call.endedAtMs as number))).toBeLessThan(10);
   });
 
+  it("gives the callee's rule set the world's record of the call beside the ring's text: its caller, id, act, fields and text (FR-CONGRESS-09)", async () => {
+    const rings: Perceived[] = [];
+    await runSwitchboard(operator(true, rings), { ana: calls({ name: "call", arguments: { to: "desk", act: "ask", fields: { date: "day 5" }, text: "Free? Notes: date: none." } }) });
+
+    expect(rings[0].stimuli[0]).toMatchObject({ channel: "phone", record: { from: "ana", call: "c-1", act: "ask", fields: { date: "day 5" }, text: "Free? Notes: date: none." } });
+  });
+
   it("writes a call line as the call ends: its id, parties, act, answer, outcome, and when it rang, was answered and ended", async () => {
     const { lines, into } = await runSwitchboard(operator(true), { ana: calls({ name: "call", arguments: { to: "desk", act: "ask", text: "Free?" } }) });
 

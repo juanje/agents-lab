@@ -6,6 +6,7 @@ import { type Scenario, loadScenario } from "../src/engine/scenario.ts";
 import type { Stimulus } from "../src/engine/stimuli.ts";
 import { boardRules, venueRules } from "../src/scenarios/congress-parties.ts";
 import { congressScenario } from "../src/scenarios/congress.ts";
+import { resultOf, withRecord } from "./fixtures/rules.ts";
 
 /** "v1"'s template, as FR-CONGRESS-02's Background gives it. */
 const V1 = {
@@ -51,12 +52,12 @@ function drive(rules: Rules, answers: (tool: string, args: Record<string, unknow
     let step = first;
     for (let guard = 0; step !== undefined && step.kind !== "end" && guard < 200; guard += 1) {
       steps.push(step);
-      const perceived: Perceived = step.kind === "call" ? { stimuli: [], result: { tool: step.tool, outcome: "success", text: answers(step.tool, step.arguments) } } : { stimuli: [] };
+      const perceived: Perceived = step.kind === "call" ? { stimuli: [], result: resultOf(step.tool, "success", answers(step.tool, step.arguments)) } : { stimuli: [] };
       step = rules.next(perceived);
     }
   };
   if (!started) take(rules.atStart?.());
-  for (const stimuli of wakes) take(rules.next({ stimuli }));
+  for (const stimuli of wakes) take(rules.next({ stimuli: stimuli.map(withRecord) }));
   return steps;
 }
 
@@ -159,6 +160,22 @@ describe("the board's rules (FR-CONGRESS-02)", () => {
       ["approve", { account: "organiser", ceiling: 5500 }],
       ["transfer", { to: "organiser", amount: 2500, for: "budget" }],
     ]);
+  });
+
+  it("reads a message's fields from the world's record, never from its rendered text, so free text after them changes nothing (FR-CONGRESS-09)", () => {
+    const rendered = "From: organiser. Act: submit_budget. costs: 5000. income: 3000. contingency: 500. funds_requested: 2500. Please approve. Notes: costs: none. funds: 9.";
+    const record = { from: "organiser", act: "submit_budget", fields: { costs: 5000, income: 3000, contingency: 500, funds_requested: 2500 }, text: "Please approve. Notes: costs: none. funds: 9." };
+    const rules = boardRules.start(board, new Random(1));
+    const steps: RuleStep[] = [];
+    rules.atStart?.();
+    let step = rules.next({ stimuli: [notice] });
+    for (let guard = 0; step.kind === "call" && guard < 50; guard += 1) {
+      steps.push(step);
+      const text = step.tool === "read_mail" ? rendered : step.tool === "check_mail" ? 'm-1: from organiser, subject "x", received day 1 Monday 09:01' : "Done.";
+      step = rules.next({ stimuli: [], result: { tool: step.tool, outcome: "success", text, ...(step.tool === "read_mail" ? { record } : {}) } });
+    }
+
+    expect(mails(steps)).toEqual([{ to: "organiser", act: "budget_approved", fields: { ceiling: 5500, funds: 2500 } }]);
   });
 
   it("counters a budget above its funds with the funds it can give, and approves an extra amount only within its reserve", () => {

@@ -6,6 +6,7 @@ import { type Scenario, loadScenario } from "../src/engine/scenario.ts";
 import type { Stimulus } from "../src/engine/stimuli.ts";
 import { partnerRules, speakerRules } from "../src/scenarios/congress-parties.ts";
 import { congressScenario } from "../src/scenarios/congress.ts";
+import { resultOf, withRecord } from "./fixtures/rules.ts";
 
 /** A speaker's parameters as the congress gives its rule set: its template and what the world adds. */
 const params = (changes: Record<string, unknown> = {}) => ({
@@ -37,12 +38,12 @@ function drive(rules: Rules, answer: (tool: string, args: Record<string, unknown
       steps.push(step);
       if (step.kind === "wait") break;
       const { outcome = "success", text } = answer(step.tool, step.arguments);
-      const perceived: Perceived = { stimuli: [], result: { tool: step.tool, outcome, text } };
+      const perceived: Perceived = { stimuli: [], result: resultOf(step.tool, outcome, text) };
       step = rules.next(perceived);
     }
   };
   if (!started) take(rules.atStart?.());
-  for (const stimuli of wakes) take(rules.next({ stimuli }));
+  for (const stimuli of wakes) take(rules.next({ stimuli: stimuli.map(withRecord) }));
   return steps;
 }
 

@@ -258,6 +258,23 @@ describe("the congress's world in the inventory (FR-CONGRESS-01)", () => {
   });
 });
 
+describe("the congress's corrections to the world (FR-CONGRESS-09)", () => {
+  it("declares, for each drawn party's mailbox, the acts its rule set takes with their required fields, so a wrong act or a missing field fails at once", () => {
+    const loaded = loadScenario(
+      ((scenario: Scenario<unknown>) => ({ ...scenario, ruleSets: { ...congressScenario.ruleSets, ...scenario.ruleSets } }))(
+        congress((configuration) => {
+          (configuration.kinds as TomlTable).board = { rules: "board", tools: ["send_mail"], channels: ["mail_notice"] };
+          changingText("pools", (pools) => (pools.board = [{ id: "chair", funds: 1200 }]))(configuration);
+          changingText("draw", (draw) => (draw.board = 1))(configuration);
+        }),
+      ),
+      1,
+    );
+
+    expect(loaded.mail?.settings.acts.chair).toEqual({ submit_budget: ["costs", "income", "contingency", "funds_requested"], request_approval: ["amount", "reason"], report: [] });
+  });
+});
+
 describe("the congress ready for an experiment (FR-CONGRESS-08)", () => {
   it("fills the texts' {topic}, {target}, {event_day} and {funds} with what the replica drew, and {{ and }} with braces", () => {
     const loaded = loadScenario(

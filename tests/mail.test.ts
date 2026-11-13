@@ -238,6 +238,13 @@ describe("read_mail", () => {
     expect(read().reply?.text(after, call("ana", "m-1"))).toBe("From: the board. Act: inform. session: 3. A partner society runs session 3.");
     expect(read().reply?.text(after, call("ben", "m-2"))).toBe("From: the board. Act: inform. date: day 5. price: 900.");
   });
+
+  it("gives a rule set the world's record of the message beside its text: its sender, act, fields and text (FR-CONGRESS-09)", () => {
+    const after = read().action?.effect(start, call("ana", "m-1")) as Post;
+
+    expect(read().reply?.record?.(after, call("ana", "m-1"))).toEqual({ from: "the board", act: "inform", fields: { session: 3 }, text: "A partner society runs session 3." });
+    expect(read().reply?.record?.(after, call("ben", "m-2"))).toEqual({ from: "the board", act: "inform", fields: { date: "day 5", price: 900 } });
+  });
 });
 
 describe("MailMedium", () => {
