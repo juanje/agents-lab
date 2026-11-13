@@ -156,3 +156,28 @@ describe("loadScenario, with parts (FR-PARTS-01)", () => {
     expect(() => loadScenario(scenario([{ ...part, predicate: "moon_full" }]), 1, condition)).toThrow(/p1\.predicate/);
   });
 });
+
+describe("traps and patterns that read the world (FR-CONGRESS-06)", () => {
+  const withTraps: PartsProvided<Flags> = {
+    ...provided,
+    misapplications: { ...provided.misapplications, while_set: (act, params, state) => act.tool === params.tool && state.flags.door === true },
+    traps: { alarm_raised: (state) => state.raised.some(({ flag }) => flag === "alarm") },
+  };
+
+  it("gives a pattern the world's state at the act's time, and writes the traps that hold at evaluation as traps", () => {
+    const parts = readParts([{ ...P1, misapplications: [{ pattern: "while_set", params: { tool: "clear_flag" } }], traps: [{ trap: "alarm_raised" }] }], withTraps, { participants: ["shop"], kindFactor: { name: "guidance", levels: ["none", "rules"] } });
+    const lines: Record<string, unknown>[] = [];
+    const book = new PartsBook<Flags>({ parts, provided: withTraps, level: "rules", agents: ["ana"], record: (line) => lines.push(line) });
+    book.start(state(), at(1, "09:00"));
+    book.acted({ agent: "ana", tool: "clear_flag", arguments: { flag: "door" }, world: at(1, "09:30") });
+    book.changed(state({ door: true }), at(1, "10:00"));
+    book.acted({ agent: "ana", tool: "clear_flag", arguments: { flag: "door" }, world: at(1, "10:30") });
+    book.changed(state({ door: true }, [{ flag: "alarm", at: at(1, "11:00") }]), at(1, "11:00"));
+    book.due(state({ door: true }, [{ flag: "alarm", at: at(1, "11:00") }]), at(1, "18:00"));
+    expect(lines[0]).toMatchObject({ misapplications: [{ tool: "clear_flag", at: "day 1 10:30" }], traps: ["alarm_raised"] });
+  });
+
+  it("refuses a trap the scenario does not provide, naming the part", () => {
+    expect(() => readParts([{ ...P1, traps: [{ trap: "ghost" }] }], withTraps, { participants: ["shop"], kindFactor: { name: "guidance", levels: ["none", "rules"] } })).toThrow(/p1\.traps/);
+  });
+});
