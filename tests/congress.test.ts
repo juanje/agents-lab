@@ -92,7 +92,7 @@ describe("the congress's variant (FR-CONGRESS-01)", () => {
     const { topic, attendance, chosen } = first.variant as { topic: string; attendance: number; chosen: Record<string, string[]> };
     expect(POOLS.topics).toContain(topic);
     expect(Number.isInteger(attendance) && attendance >= 50 && attendance <= 80).toBe(true);
-    expect(chosen.venue.toSorted()).toEqual(["v1", "v2"]);
+    expect([...chosen.venue].sort()).toEqual(["v1", "v2"]);
     expect(new Set(chosen.speaker).size).toBe(2);
   });
 
@@ -101,7 +101,7 @@ describe("the congress's variant (FR-CONGRESS-01)", () => {
     const { chosen } = loaded.variant as { chosen: Record<string, string[]> };
 
     const speakers = (loaded.participants ?? []).filter(({ name }) => chosen.speaker.includes(name));
-    expect(speakers.map(({ name }) => name).toSorted()).toEqual(chosen.speaker.toSorted());
+    expect(speakers.map(({ name }) => name).sort()).toEqual([...chosen.speaker].sort());
     for (const speaker of speakers) {
       expect(speaker).toMatchObject({ decides: "rules", rules: "silent", tools: ["send_mail"], channels: ["mail_notice"], replyMinutes: [5, 10] });
       if (speaker.name === "s1" && speaker.decides === "rules") expect(speaker.params).toEqual({ fee: 300 });
@@ -252,7 +252,7 @@ describe("the congress's world in the inventory (FR-CONGRESS-01)", () => {
       draw: { attendance: [50, 80], venue: 2, speaker: 2 },
       kinds: { speaker: { rules: "silent", tools: ["send_mail"], channels: ["mail_notice"], reply_minutes: [5, 10] } },
       away_factor: 1.5,
-      prompt: { task: "", limits: "", restrictions: "", knowledge: "", guidance: "" },
+      prompt: { task: "", limits: "", restrictions: "", knowledge: "You organise a congress.", guidance: "" },
     });
     expect(world.placement).toMatchObject({ task: "person", guidance: "system" });
   });
