@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { Given, When } from "@cucumber/cucumber";
+import { Given, Then, When } from "@cucumber/cucumber";
 import type { TomlTable } from "smol-toml";
-import type { WorldTime } from "../../src/engine/calendar.ts";
+import type { WorldDuration, WorldTime } from "../../src/engine/calendar.ts";
 import type { Sensor } from "../../src/engine/tools.ts";
 import { World } from "../../src/engine/world.ts";
 import type { Slots } from "../../tests/fixtures/slots.ts";
@@ -23,7 +23,7 @@ function toTheMinute({ day, weekday, seconds }: WorldTime): string {
  * A sensor of the test scenario that gives the world's time when it reads the world, to the minute, and takes this
  * duration; without the world's time it says so, which no scenario expects.
  */
-function clockSensor(name: string, duration: number): Sensor<Slots> {
+function clockSensor(name: string, duration: number | WorldDuration): Sensor<Slots> {
   return {
     kind: "sensor",
     name,
@@ -35,7 +35,7 @@ function clockSensor(name: string, duration: number): Sensor<Slots> {
 }
 
 /** Declares a clock sensor in the test scenario, in place of one of the same name. */
-function declareClockSensor(context: Context, name: string, duration: number): void {
+function declareClockSensor(context: Context, name: string, duration: number | WorldDuration): void {
   context.tools = [...context.tools.filter((tool) => tool.name !== name), clockSensor(name, duration)];
 }
 
@@ -95,6 +95,58 @@ Given(
   function (this: Context, waitMs: number, tool: string, durationMs: number) {
     declareClockSensor(this, tool, durationMs);
     script(this, AGENT, callWithThenEnd(tool, {}, waitMs));
+  },
+);
+
+Given("a sensor {string} whose duration is {int} world minutes and that gives the world's time when it ends", function (this: Context, name: string, minutes: number) {
+  declareClockSensor(this, name, { worldSeconds: minutes * 60 });
+});
+
+Given(
+  "a sensor {string} whose duration is {int} milliseconds of the run and that gives the world's time when it ends",
+  function (this: Context, name: string, durationMs: number) {
+    declareClockSensor(this, name, durationMs);
+  },
+);
+
+Given("the agent's scripted turns wait {int} milliseconds, then call {string}, then end", function (this: Context, waitMs: number, tool: string) {
+  script(this, AGENT, callWithThenEnd(tool, {}, waitMs));
+});
+
+Given("the agent's scripted turns call {string}, then end", function (this: Context, tool: string) {
+  script(this, AGENT, callWithThenEnd(tool, {}, 0));
+});
+
+/** The agent's one call of a tool, which "its" names from here on, and when it started and ended, in milliseconds into the run. */
+function checkedCall(context: Context, tool: string) {
+  const calls = (context.toolCalls ?? []).filter((call) => call.tool === tool);
+  assert.equal(calls.length, 1, `the agent made ${calls.length} "${tool}" calls`);
+  const [call] = calls;
+  context.lastToolCall = call;
+  const runStartedAtMs = context.runStartedAtMs ?? 0;
+  return { startedMs: call.startedAtMs - runStartedAtMs, endedMs: call.endedAtMs - runStartedAtMs };
+}
+
+/** Checks a span of the run's milliseconds against the one the contract gives, within its slack. */
+function assertTook(what: string, tookMs: number, expectedMs: number, withinMs: number): void {
+  assert.ok(Math.abs(tookMs - expectedMs) <= withinMs, `${what} took ${Math.round(tookMs)} ms of the run, not ${expectedMs} within ${withinMs}`);
+}
+
+Then("the {string} call took {int} milliseconds of the run, within {int}", function (this: Context, tool: string, durationMs: number, withinMs: number) {
+  const { startedMs, endedMs } = checkedCall(this, tool);
+  assertTook(`the "${tool}" call`, endedMs - startedMs, durationMs, withinMs);
+});
+
+Then(
+  "the {string} call took {int} milliseconds of the run, within {int}: {int} in the first segment and {int} in the second",
+  function (this: Context, tool: string, durationMs: number, withinMs: number, firstMs: number, secondMs: number) {
+    const { startedMs, endedMs } = checkedCall(this, tool);
+    assertTook(`the "${tool}" call`, endedMs - startedMs, durationMs, withinMs);
+    const [first] = segmentsOf(this);
+    const firstEndsMs = ((secondsOf(first.until as string) - secondsOf(calendarOf(this).start as string)) / (first.scale as number)) * 1000;
+    // The time the call started is what its duration counts from: the agent's wait and the engine's own moment before it.
+    assertTook(`in the first segment, the "${tool}" call`, firstEndsMs - startedMs, firstMs, withinMs);
+    assertTook(`in the second segment, the "${tool}" call`, endedMs - firstEndsMs, secondMs, withinMs);
   },
 );
 

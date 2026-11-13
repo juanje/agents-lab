@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readCalendar, worldTimeAt } from "../src/engine/calendar.ts";
+import { readCalendar, runMsFor, worldTimeAt } from "../src/engine/calendar.ts";
 
 /** A calendar from Friday 17:00, at 600 world seconds per run second until 17:10, then at 300. */
 const twoSegments = readCalendar({
@@ -29,5 +29,17 @@ describe("worldTimeAt", () => {
     const sunday = readCalendar({ start: "day 1 Sunday 23:58", segments: [{ scale: 600 }] });
 
     expect(worldTimeAt(sunday, 350)).toEqual({ day: 2, weekday: "Monday", seconds: at(0, 1, 30) });
+  });
+});
+
+describe("runMsFor", () => {
+  it("gives the run time a duration in world time spans from a moment, segment by segment", () => {
+    // From 17:02:30, 15 world minutes end at 17:17:30: 450 world seconds in the first segment, 450 in the second.
+    expect(runMsFor(twoSegments, 250, 900)).toBeCloseTo(750 + 1500, 6);
+  });
+
+  it("gives less run time for the same world duration in a faster segment", () => {
+    expect(runMsFor(twoSegments, 0, 60)).toBeCloseTo(100, 6);
+    expect(runMsFor(twoSegments, 1000, 60)).toBeCloseTo(200, 6);
   });
 });

@@ -564,6 +564,29 @@ describe("run", () => {
     expect(given.seconds).toBeLessThan(18);
   });
 
+  it("waits, for a sensor whose duration is in world time, the run time that world time spans from the call's start (FR-CLOCK-03)", async () => {
+    const slow: Sensor<Slots> = {
+      kind: "sensor",
+      name: "slow",
+      description: "Takes ten world minutes.",
+      parameters: { type: "object", properties: {} },
+      durationMs: () => ({ worldSeconds: 600 }),
+      sense: () => "done",
+    };
+    const model = new ScriptedModel([
+      { toolCalls: [{ name: "slow", arguments: {} }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+    const calendar = ["[calendar]", 'start = "day 1 Monday 09:00"', "[[calendar.segments]]", "scale = 6000", ""].join("\n");
+
+    const { toolCalls } = await run(slots({ tools: [slow], baseConfiguration: `${slotsScenario.baseConfiguration}\n${calendar}` }), [{ name: "a", model, activations: 1 }], seed, settings);
+
+    // Ten world minutes at 6000 world seconds per run second.
+    const tookMs = toolCalls[0].endedAtMs - toolCalls[0].startedAtMs;
+    expect(tookMs).toBeGreaterThanOrEqual(100);
+    expect(tookMs).toBeLessThan(130);
+  });
+
   it("applies an effector the model calls through the arbiter, with the agent and the call's arguments", async () => {
     const loaded = slots();
     const { world } = loaded;

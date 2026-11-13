@@ -356,6 +356,11 @@ Then("its result shows {string} in the passage towards {string}", function (this
 });
 
 Then("its result is {string}", function (this: Context, text: string) {
+  // Outside the workplace, the call a step checked last: the test scenario's agent's (FR-CLOCK-03).
+  if (this.workerCalls.length === 0 && this.lastToolCall !== undefined) {
+    assert.deepEqual({ outcome: this.lastToolCall.outcome, result: this.lastToolCall.result }, { outcome: "success", result: text });
+    return;
+  }
   const last = lastCall(this);
   assert.equal(last.outcome, "success");
   assert.equal(last.text, text);
