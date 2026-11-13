@@ -73,7 +73,7 @@ function sense(state: PopulationWorld, name: string, args: Record<string, unknow
 describe("the programme takes ids (FR-CONGRESS-09)", () => {
   const ids = { speakers: ["s1", "s4"], sponsors: ["sp1"] };
   const tool = () => populationTools<PopulationWorld>({ organiser: "organiser", idsOf: (_state, kind) => ids[kind] }).find((each) => each.name === "publish_programme") as Tool<PopulationWorld> & { kind: "effector" };
-  const refusal = (args: Record<string, unknown>) => tool().refuses?.(world(), { agent: "organiser", arguments: args, atMs: 0, world: at(1) }, at(1));
+  const refusal = (args: Record<string, unknown>) => tool().refuses?.(world(), { agent: "organiser", arguments: args }, at(1));
   const session = (speakers: string[]) => ({ start: "10:00", end: "10:45", title: "Talk", speakers, room: "main-hall" });
 
   it("refuses, as invalid_value naming them, speakers or sponsors that are no drawn id, and says so in its description", () => {

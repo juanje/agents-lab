@@ -311,7 +311,7 @@ describe("the congress ready for an experiment (FR-CONGRESS-08)", () => {
 
     expect(lines).toHaveLength(chosen.venue.length + chosen.speaker.length);
     expect(lines.find((line) => line.includes("v1"))).toBe(
-      "- v1: venue, with a mailbox and a line; takes ask_quote (date, attendance), request_document (kind), hold (date), book (date, rooms, hours), accept_contract (contract), change_booking (rooms, hours), request_extra (item), accept_extra (item), cancel_booking, accept_change (option), decline_change",
+      "- v1: venue, with a mailbox and a line; takes ask_quote (date, attendance), request_document (kind), hold (date), book (date, rooms, hours), accept_contract (contract), change_booking (rooms, hours), request_extra (item), accept_extra (item), cancel_booking, accept_change (option?), decline_change",
     );
     expect(lines.find((line) => line.includes(chosen.speaker[0]))).toBe(`- ${chosen.speaker[0]}: speaker, with a mailbox and a line; takes no act the congress lists`);
   });

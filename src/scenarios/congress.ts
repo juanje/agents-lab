@@ -103,6 +103,8 @@ export interface PartsContext {
   homes?: Readonly<Record<string, string>>;
   /** Each chosen venue's catering rule and in-house caterer, by its id. */
   catering?: Readonly<Record<string, { rule?: string; inHouse?: string }>>;
+  /** The drawn speakers, the partner's among them, and sponsors, by id (FR-CONGRESS-09). */
+  ids?: { speakers: readonly string[]; sponsors: readonly string[] };
 }
 
 /** The congress's world (FR-CONGRESS-01). */
@@ -846,8 +848,8 @@ function contextOf(configuration: Configuration, discretionaryLimit: number): Pa
   };
 }
 
-/** The travelling speakers' stations and the chosen venues' catering rules and in-house caterers, from the participants' params. */
-function partiesContext(configuration: Configuration): Pick<PartsContext, "homes" | "catering"> {
+/** The travelling speakers' stations, the chosen venues' catering rules and in-house caterers, and the speakers' and sponsors' ids, from the participants. */
+function partiesContext(configuration: Configuration): Pick<PartsContext, "homes" | "catering" | "ids"> {
   const parties = Object.entries((configuration.participants ?? {}) as TomlTable).map(([name, participant]) => ({ name, rules: (participant as TomlTable).rules, params: ((participant as TomlTable).params ?? {}) as TomlTable }));
   const homes = Object.fromEntries(parties.filter(({ rules, params }) => rules === "speaker" && typeof params.home === "string" && params.home !== "local").map(({ name, params }) => [name, params.home as string]));
   const catering = Object.fromEntries(
@@ -858,7 +860,8 @@ function partiesContext(configuration: Configuration): Pick<PartsContext, "homes
         return [name, { ...(typeof params.catering === "string" ? { rule: params.catering } : {}), ...(inHouse === undefined ? {} : { inHouse }) }];
       }),
   );
-  return { homes, catering };
+  const named = (...rules: string[]) => parties.filter((party) => rules.includes(String(party.rules))).map(({ name }) => name);
+  return { homes, catering, ids: { speakers: named("speaker", "partner"), sponsors: named("sponsor") } };
 }
 
 /** The place the organiser is in; in a passage, none. */
@@ -1382,6 +1385,7 @@ const TOOLS: readonly Tool<Congress>[] = [
   ...populationTools<Congress>({
     organiser: ORGANISER,
     roomsOf: (state) => Object.keys(state.rooms),
+    idsOf: (state, kind) => state.context.ids?.[kind] ?? [],
     durationOf: (state, tool) => state.settings.durations[tool] * awayFactorOf(state, ORGANISER),
   }),
 ];

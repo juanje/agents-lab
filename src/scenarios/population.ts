@@ -232,6 +232,8 @@ export interface PopulationToolOptions<State> {
   durationOf?: (state: State, tool: string) => number;
   /** The speakers or sponsors an announcement goes to, by its audience. */
   membersOf?: (state: State, audience: "speakers" | "sponsors") => readonly string[];
+  /** The drawn ids a programme may name as speakers or sponsors (FR-CONGRESS-09); without it, any name. */
+  idsOf?: (state: State, kind: "speakers" | "sponsors") => readonly string[];
 }
 
 /** The registrants: people registered and not cancelled. */
@@ -338,10 +340,24 @@ export function populationTools<State extends PopulationWorld>(options: Populati
     },
   };
 
+  /** The speakers and sponsors a programme names that are no drawn id, refused as invalid_value naming them (FR-CONGRESS-09). */
+  const strangers = (state: State, sessions: readonly Session[], slots: unknown, logos: unknown) => {
+    if (options.idsOf === undefined) return undefined;
+    const speakers = options.idsOf(state, "speakers");
+    const sponsors = options.idsOf(state, "sponsors");
+    const named = [
+      ...sessions.flatMap(({ speakers: given = [] }) => given.filter((speaker) => !speakers.includes(speaker))),
+      ...((Array.isArray(slots) ? slots : []) as { sponsor?: string }[]).map(({ sponsor }) => String(sponsor)).filter((sponsor) => !sponsors.includes(sponsor)),
+      ...((Array.isArray(logos) ? logos : []) as string[]).filter((logo) => !sponsors.includes(logo)),
+    ];
+    return named.length === 0 ? undefined : invalid(`${[...new Set(named)].map((name) => `"${name}"`).join(", ")} ${named.length === 1 ? "is" : "are"} no speaker or sponsor id`);
+  };
+
   const publishProgramme: Effector<State> = {
     kind: "effector",
     name: "publish_programme",
-    description: "Publish a new version of the programme on the ticket page: sessions (each start and end \"HH:MM\", title, speakers and room), breaks, sponsor_slots (each sponsor, start, end) and logos (the sponsors whose logo it shows).",
+    description:
+      "Publish a new version of the programme on the ticket page: sessions (each start and end \"HH:MM\", title, speakers and room), breaks, sponsor_slots (each sponsor, start, end) and logos (the sponsors whose logo it shows). It names speakers and sponsors by id.",
     parameters: {
       type: "object",
       properties: {
@@ -352,14 +368,15 @@ export function populationTools<State extends PopulationWorld>(options: Populati
       },
       required: ["sessions"],
     },
-    refuses: (state, { arguments: { sessions } }) => {
+    refuses: (state, { arguments: { sessions, sponsor_slots: slots = [], logos = [] } }) => {
       if (state.population === undefined) return noPage;
       const given = (Array.isArray(sessions) ? sessions : []) as Session[];
       const rooms = roomsOf(state);
       const stranger = given.find(({ room }) => !rooms.includes(room));
       if (stranger !== undefined) return invalid(`no chosen venue has the room "${stranger.room}"`);
       const clash = given.find((one, index) => given.some((other, before) => before < index && other.room === one.room && clockMinutes(one.start) < clockMinutes(other.end) && clockMinutes(other.start) < clockMinutes(one.end)));
-      return clash === undefined ? undefined : invalid(`two sessions are in "${clash.room}" at once`);
+      if (clash !== undefined) return invalid(`two sessions are in "${clash.room}" at once`);
+      return strangers(state, given, slots, logos);
     },
     durationMs: duration("publish_programme"),
     action: {
