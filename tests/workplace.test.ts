@@ -158,6 +158,12 @@ class = "control"
       expect(refusal({ situation_keys: "a =" })).toThrow(/^the configuration's "situation_keys" is not valid TOML: /);
     });
 
+    it("a [calendar] in a configuration that sets the time scale, whose clock declares a calendar of its own (FR-CLOCK-03)", () => {
+      const calendar = { start: "day 1 Monday 09:00", segments: [{ scale: 60 }] };
+
+      expect(refusal({ time_scale: 60, calendar })).toThrow(/\[calendar\]/);
+    });
+
     it("a thing in a place the world does not declare", () => {
       expect(refusal({ world: WORLD.replace('place = "office"\ncontainer', 'place = "attic"\ncontainer') })).toThrow(
         'the thing "cupboard" is in the place "attic", which the world does not declare',

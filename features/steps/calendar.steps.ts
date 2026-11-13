@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { Given, Then, When } from "@cucumber/cucumber";
-import { type TomlTable, stringify } from "smol-toml";
+import { type TomlTable, parse, stringify } from "smol-toml";
 import { readExperiment } from "../../src/engine/experiment.ts";
 import { type Inventory, inventory, inventoryMarkdown } from "../../src/engine/inventory.ts";
 import * as calendars from "../../src/engine/calendar.ts";
@@ -287,6 +287,42 @@ Then(
     for (const text of [start, `${firstScale}`, until, `${takesMs} ms`, `${secondScale}`, lasts]) assert.ok(printed.includes(text), `the printed inventory does not give ${text}`);
   },
 );
+
+/** Each change the contract makes to the Background's calendar, by how it writes it; a quoted value is the change's own. */
+const calendarChanges: [RegExp, (context: Context, value: string) => void][] = [
+  [/^its start is "(.+)"$/, (context, start) => (calendarOf(context).start = start)],
+  [/^its start's weekday is "(.+)"$/, (context, weekday) => (calendarOf(context).start = (calendarOf(context).start as string).replace(/^(day \d+) \w+/, `$1 ${weekday}`))],
+  [/^its start's day is (\d+)$/, (context, day) => (calendarOf(context).start = (calendarOf(context).start as string).replace(/^day \d+/, `day ${day}`))],
+  [/^the first segment's scale is (\d+)$/, (context, scale) => (segmentsOf(context)[0].scale = Number(scale))],
+  [/^the first segment's until is "(.+)"$/, (context, until) => (segmentsOf(context)[0].until = until)],
+  [/^the first segment has no until$/, (context) => delete segmentsOf(context)[0].until],
+  [/^it has no segments$/, (context) => (calendarOf(context).segments = [])],
+  [/^it declares hours "(\w+)" from "18:00" to "09:00"$/, (context, name) => (calendarOf(context).hours = { [name]: { days: ["Monday"], from: "18:00", to: "09:00" } })],
+  [/^it declares hours "(\w+)" with no days$/, (context, name) => (calendarOf(context).hours = { [name]: { days: [], from: "09:00", to: "18:00" } })],
+  [
+    /^it is a workplace configuration that also sets "time_scale"$/,
+    (context) => {
+      // The workplace of FR-WORKPLACE-05, whose configuration sets "time_scale", with the Background's calendar too.
+      workplaceDay(context, "ms_per_length", 20);
+      const scenario = withBase(context.libraryScenario, { time_scale: 600 });
+      // The [calendar] is a key the engine reads, not the workplace, so withBase, which takes only the workplace's own, does not set it.
+      context.libraryScenario = { ...scenario, baseConfiguration: stringify({ ...parse(scenario.baseConfiguration ?? ""), calendar: calendarOf(context) }) };
+    },
+  ],
+];
+
+Given("the configuration's calendar is changed so that {}", function (this: Context, change: string) {
+  const known = calendarChanges.find(([written]) => written.test(change));
+  assert.ok(known !== undefined, `the steps do not read the change "${change}"`);
+  const [written, apply] = known;
+  apply(this, written.exec(change)?.[1] ?? "");
+});
+
+Then("it is refused before any model call, with an error that names {string}", function (this: Context, key: string) {
+  assert.ok(this.runError !== undefined, "the run was not refused");
+  assert.ok(this.runError.message.includes(key), `the error does not name ${key}: ${this.runError.message}`);
+  for (const [name, model] of this.models) assert.equal(model.received.length, 0, `the model "${name}" was called`);
+});
 
 When("the run is attempted", async function (this: Context) {
   try {
