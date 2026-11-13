@@ -22,7 +22,7 @@ const AGENT = "agent";
 const two = (value: number) => String(value).padStart(2, "0");
 
 /** A world time to the minute, as the test scenario's sensors give it: "day <n> <weekday> HH:MM". */
-function toTheMinute({ day, weekday, seconds }: WorldTime): string {
+export function toTheMinute({ day, weekday, seconds }: WorldTime): string {
   return `day ${day} ${weekday} ${two(Math.floor(seconds / 3600))}:${two(Math.floor(seconds / 60) % 60)}`;
 }
 

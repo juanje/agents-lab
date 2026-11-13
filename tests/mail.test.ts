@@ -1,0 +1,205 @@
+import { parse } from "smol-toml";
+import { describe, expect, it } from "vitest";
+import { readCalendar } from "../src/engine/calendar.ts";
+import { ChangesSinceSensing } from "../src/engine/changes.ts";
+import { RunClock } from "../src/engine/clock.ts";
+import { type Mail, type MailKeeper, type MailLine, MailMedium, mailTools, readMail, startingMail } from "../src/engine/mail.ts";
+import { Stimuli } from "../src/engine/stimuli.ts";
+import type { Effector, Tool } from "../src/engine/tools.ts";
+import { World } from "../src/engine/world.ts";
+import { rhythmChannel } from "./fixtures/slots.ts";
+
+/** A test world that keeps the mail and nothing else. */
+interface Post {
+  mail: Mail;
+}
+
+const keeper: MailKeeper<Post> = { of: (state) => state.mail, with: (state, mail) => ({ ...state, mail }) };
+
+/** A calendar where one world minute is 100 ms of the run. */
+const calendar = readCalendar(parse(['start = "day 1 Monday 09:00"', "[[segments]]", "scale = 600", ""].join("\n")));
+
+/** The [mail] of the contract's Background, with any of its keys replaced. */
+function mailTable(changes: Record<string, unknown> = {}) {
+  return {
+    mailboxes: ["ana", "ben", "desk"],
+    delivery_minutes: [1, 1],
+    send_minutes: 3,
+    check_minutes: 2,
+    read_minutes: 1,
+    notice_source: "mail client",
+    notice: "New mail from {from}: {subject}",
+    acts: { desk: { book: ["date", "rooms"], ask: [] } },
+    ...changes,
+  } as never;
+}
+
+/** A mail tool by its name. */
+function toolNamed<State>(tools: readonly Tool<State>[], name: string): Tool<State> {
+  const tool = tools.find((each) => each.name === name);
+  if (tool === undefined) throw new Error(`no mail tool "${name}"`);
+  return tool;
+}
+
+describe("readMail", () => {
+  it("reads the mailboxes, each recipient's acts with their fields, the delivery delay, the durations and the notice", () => {
+    expect(readMail(mailTable(), calendar)).toEqual({
+      mailboxes: ["ana", "ben", "desk"],
+      acts: { desk: { book: ["date", "rooms"], ask: [] } },
+      deliveryMinutes: [1, 1],
+      sendMinutes: 3,
+      sendMinutesPerField: 0,
+      checkMinutes: 2,
+      readMinutes: 1,
+      notice: { source: "mail client", text: "New mail from {from}: {subject}" },
+      initial: [],
+    });
+  });
+
+  it("gives the words per minute when the configuration gives them, and no notice when it declares none", () => {
+    const table = mailTable({ send_words_per_minute: 10, read_words_per_minute: 50, send_minutes_per_field: 0.5 });
+    delete (table as Record<string, unknown>).notice;
+
+    expect(readMail(table, calendar)).toMatchObject({ sendMinutesPerField: 0.5, sendWordsPerMinute: 10, readWordsPerMinute: 50 });
+    expect(readMail(table, calendar)).not.toHaveProperty("notice");
+  });
+});
+
+describe("startingMail", () => {
+  it("gives every mailbox empty and nothing in transit", () => {
+    expect(startingMail(readMail(mailTable(), calendar))).toEqual({ mailboxes: { ana: [], ben: [], desk: [] }, inTransit: [] });
+  });
+});
+
+describe("send_mail", () => {
+  const settings = readMail(mailTable(), calendar);
+  const send = toolNamed(mailTools(settings, keeper), "send_mail") as Effector<Post>;
+  const state: Post = { mail: startingMail(settings) };
+  const world = { day: 1, weekday: "Monday", seconds: 9 * 3600 + 180 } as const;
+
+  it("is an effector that lasts send_minutes in world time", () => {
+    expect(send.kind).toBe("effector");
+    expect(send.durationMs(state, { agent: "ana", arguments: { to: "ben", act: "ask", subject: "Friday", text: "Free on Friday?" } })).toEqual({ worldSeconds: 180 });
+  });
+
+  it("puts the message in transit when it lands, numbered from 1, from the caller, with the world's time it was sent and its act as its subject when it has none", () => {
+    const call = { agent: "ana", arguments: { to: "ben", act: "offer", fields: { date: "day 5", price: 900 } }, atMs: 0, world };
+
+    expect(send.action?.precondition(state, call)).toEqual({ holds: true });
+    const sent = send.action?.effect(state, call);
+
+    expect(sent?.mail).toEqual({
+      mailboxes: { ana: [], ben: [], desk: [] },
+      inTransit: [{ id: "m-1", from: "ana", to: "ben", act: "offer", fields: { date: "day 5", price: 900 }, subject: "offer", sent: world }],
+    });
+  });
+
+  it("numbers each message after every message sent or received before it", () => {
+    const first = send.action?.effect(state, { agent: "ana", arguments: { to: "ben", act: "ask", subject: "Friday", text: "Free on Friday?" }, atMs: 0, world }) as Post;
+    const second = send.action?.effect(first, { agent: "ben", arguments: { to: "ana", act: "ask" }, atMs: 0, world }) as Post;
+
+    expect(second.mail.inTransit.map(({ id }) => id)).toEqual(["m-1", "m-2"]);
+    expect(second.mail.inTransit[0]).toMatchObject({ subject: "Friday", text: "Free on Friday?", fields: {} });
+  });
+});
+
+describe("MailMedium", () => {
+  /** A medium over a world with the Background's mail, started now, and what it recorded and delivered as stimuli. */
+  function started(table = mailTable(), seed = 1) {
+    const settings = readMail(table, calendar);
+    const world = new World<Post>({ mail: startingMail(settings) });
+    const clock = new RunClock(calendar);
+    const lines: MailLine[] = [];
+    const delivered: [string, string][] = [];
+    const notice = { name: "mail_notice", source: "mail client", stimulus: "New mail from {from}: {subject}" };
+    const stimuli = new Stimuli([rhythmChannel, notice], (agent, stimulus) => delivered.push([agent, `${stimulus.source}: ${stimulus.content}`]));
+    const runEnd = new AbortController();
+    const medium = new MailMedium({ world, keeper, settings, clock, runEnd: runEnd.signal, changes: new ChangesSinceSensing(), stimuli, seed, agents: ["ana", "ben"], record: (line) => lines.push(line) });
+    const startedAtMs = clock.start();
+    medium.start();
+    const send = toolNamed(mailTools(settings, keeper), "send_mail") as Effector<Post>;
+    const sendNow = (agent: string, args: Record<string, unknown>) => world.apply(send.action!, { agent, arguments: args, atMs: performance.now(), world: clock.worldTime() });
+    return { world, lines, delivered, medium, runEnd, startedAtMs, sendNow };
+  }
+
+  it("records a message as it is sent, delivers it unread after its delay in world minutes, records its delivery, and sends its recipient the notice", async () => {
+    const { world, lines, delivered, medium, startedAtMs, sendNow } = started();
+
+    sendNow("ana", { to: "ben", act: "ask", subject: "Friday", text: "Free on Friday?" });
+    expect(lines).toEqual([
+      {
+        type: "message_sent",
+        id: "m-1",
+        from: "ana",
+        to: "ben",
+        act: "ask",
+        fields: {},
+        subject: "Friday",
+        text: "Free on Friday?",
+        atMs: expect.any(Number),
+        worldTime: { day: 1, weekday: "Monday", seconds: 9 * 3600 },
+      },
+    ]);
+    expect(world.state.mail.mailboxes.ben).toEqual([]);
+    await medium.delivered();
+
+    const [, landed] = lines;
+    expect(landed).toEqual({ type: "message_delivered", id: "m-1", atMs: expect.any(Number), worldTime: { day: 1, weekday: "Monday", seconds: expect.any(Number) } });
+    // One world minute is 100 ms of the run; the engine's own milliseconds add a little.
+    const landedMs = (landed as { atMs: number }).atMs - startedAtMs;
+    expect(landedMs).toBeGreaterThanOrEqual(100);
+    expect(landedMs).toBeLessThan(130);
+    expect((landed as { worldTime: { seconds: number } }).worldTime.seconds - 9 * 3600).toBeGreaterThanOrEqual(60);
+    expect(world.state.mail.inTransit).toEqual([]);
+    expect(world.state.mail.mailboxes.ben).toEqual([
+      { id: "m-1", from: "ana", to: "ben", act: "ask", fields: {}, subject: "Friday", text: "Free on Friday?", sent: expect.any(Object), received: (landed as { worldTime: unknown }).worldTime, read: false },
+    ]);
+    expect(delivered).toEqual([["ben", "mail client: New mail from ana: Friday"]]);
+  });
+
+  it("sends no notice for a message that lands in a component's mailbox, nor for any when the mail declares no notice", async () => {
+    const quiet = mailTable();
+    delete (quiet as Record<string, unknown>).notice;
+    for (const [table, to] of [
+      [mailTable(), "desk"],
+      [quiet, "ben"],
+    ] as const) {
+      const { delivered, medium, world, sendNow } = started(table);
+      sendNow("ana", { to, act: "ask" });
+      await medium.delivered();
+
+      expect(world.state.mail.mailboxes[to]).toHaveLength(1);
+      expect(delivered).toEqual([]);
+    }
+  });
+
+  it("draws each delay between the two numbers of delivery_minutes, from the seed and the sender, so the same seed gives the same delays", async () => {
+    const delays = async (seed: number) => {
+      const { lines, medium, sendNow } = started(mailTable({ delivery_minutes: [1, 5] }), seed);
+      sendNow("ana", { to: "ben", act: "ask" });
+      await medium.delivered();
+      const [sent, landed] = lines as { worldTime: { seconds: number } }[];
+      return (landed.worldTime.seconds - sent.worldTime.seconds) / 60;
+    };
+
+    const [first, again, other] = [await delays(42), await delays(42), await delays(7)];
+
+    expect(first).toBeGreaterThanOrEqual(1);
+    expect(first).toBeLessThanOrEqual(5.2);
+    expect(Math.abs(again - first)).toBeLessThan(0.2);
+    expect(Math.abs(other - first)).toBeGreaterThan(0.2);
+  });
+
+  it("never delivers a message still in transit when the run ends", async () => {
+    const { world, lines, delivered, medium, runEnd, sendNow } = started(mailTable({ delivery_minutes: [60, 60] }));
+
+    sendNow("ana", { to: "ben", act: "ask" });
+    setTimeout(() => runEnd.abort(), 50);
+    await medium.delivered();
+
+    expect(lines.map(({ type }) => type)).toEqual(["message_sent"]);
+    expect(world.state.mail.inTransit).toHaveLength(1);
+    expect(world.state.mail.mailboxes.ben).toEqual([]);
+    expect(delivered).toEqual([]);
+  });
+});
