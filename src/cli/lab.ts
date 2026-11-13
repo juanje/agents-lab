@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { judgeRuns } from "../analysis/judge.ts";
+import { partsMarkdown, partsOfRuns } from "../analysis/parts.ts";
 import { summarizeRuns, summaryMarkdown } from "../analysis/replicas.ts";
 import type { AgentModel } from "../engine/adapter.ts";
 import { type Experiment, readExperiment } from "../engine/experiment.ts";
@@ -30,7 +31,7 @@ export interface LabEnvironment {
 const PROGRESS_INTERVAL_MS = 30_000;
 
 /** How the command is used, as an error for other arguments says. */
-const USAGE = "Usage: lab run <experiment.toml> [--resume] [--progress-interval-ms <ms>], lab inventory <experiment.toml>, lab summarize <runs-dir> [--json] or lab judge <runs-dir> <judge.toml>";
+const USAGE = "Usage: lab run <experiment.toml> [--resume] [--progress-interval-ms <ms>], lab inventory <experiment.toml>, lab summarize <runs-dir> [--json], lab parts <runs-dir> [--json] or lab judge <runs-dir> <judge.toml>";
 
 /**
  * The `lab` command, with its arguments: `lab run <experiment.toml>` runs the experiment, printing each run's progress
@@ -45,6 +46,12 @@ export async function lab(args: readonly string[], environment: LabEnvironment):
   if (command.name === "judge") {
     const written = await judgeRuns(resolve(environment.directory, command.path), resolve(environment.directory, command.judgeFile), environment.scenarios, environment.model);
     environment.print(`The verdicts are in ${written}\n`);
+    return;
+  }
+  if (command.name === "parts") {
+    // The materials the setup lines name are read from the directory lab runs in (FR-ANALYSIS-04).
+    const report = partsOfRuns(resolve(environment.directory, command.path), environment.directory, command.path);
+    environment.print(command.json ? `${JSON.stringify(report, null, 2)}\n` : partsMarkdown(report));
     return;
   }
   if (command.name === "summarize") {
@@ -67,6 +74,7 @@ type Command =
   | { name: "inventory"; path: string }
   | { name: "run"; path: string; progressIntervalMs: number; resume: boolean }
   | { name: "summarize"; path: string; json: boolean }
+  | { name: "parts"; path: string; json: boolean }
   | { name: "judge"; path: string; judgeFile: string };
 
 /** The command the arguments give; it refuses any other arguments, saying how the command is used. */
@@ -76,6 +84,12 @@ function parse(args: readonly string[]): Command {
   if (path !== undefined && name === "judge" && options.length === 1) return { name, path, judgeFile: options[0] };
   if (path !== undefined && name === "summarize" && options.length <= 1 && options.every((option) => option === "--json")) {
     return { name, path, json: options.length === 1 };
+  }
+  // lab parts <runs-dir> [--json], the option before or after the directory (FR-ANALYSIS-04).
+  if (name === "parts") {
+    const given = args.slice(1);
+    const paths = given.filter((arg) => arg !== "--json");
+    if (paths.length === 1 && given.length - paths.length <= 1) return { name, path: paths[0], json: given.length > paths.length };
   }
   if (path !== undefined && name === "run") {
     const rest = options.filter((option) => option !== "--resume");

@@ -1,0 +1,220 @@
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import type { IndexLine } from "../engine/runner.ts";
+import { quartiles } from "./replicas.ts";
+import { indexOf, linesOf } from "./runs.ts";
+
+/** A part line as a run's log gives it (FR-PARTS-01). */
+interface PartLine {
+  part: string;
+  active: boolean;
+  held?: boolean;
+  reached_at?: string;
+  effort?: { calls: number; money: number };
+  misapplications?: { tool: string; at: string }[];
+  kind?: string;
+  values?: Record<string, unknown>;
+}
+
+/** A row per part and condition. */
+export interface PartRow {
+  part: string;
+  condition: string;
+  kind: string;
+  completed: number;
+  stopped: number;
+  active: number;
+  held: number;
+  /** Each completed run's reached_at, in replica order; none when it was not reached. */
+  reached: (string | null)[];
+  calls: number[];
+  money: number[];
+  minimum: number | null;
+  median: number | null;
+  maximum: number | null;
+  misapplications: { replica: number; count: number; acts: string[] }[];
+}
+
+/** A row per kind and condition: of the active parts of that kind, how many held. */
+export interface KindRow {
+  kind: string;
+  condition: string;
+  active: number;
+  held: number;
+  share: number | null;
+}
+
+/** A row per outcome and condition: in how many runs it held, and each run's values when it gives them. */
+export interface OutcomeRow {
+  outcome: string;
+  condition: string;
+  completed: number;
+  stopped: number;
+  held: number;
+  values: Record<string, unknown>[];
+}
+
+/** A row per condition: its guidance's length in words and estimated tokens, and its runs' model turns, input tokens and cost. */
+export interface ConditionRow {
+  condition: string;
+  completed: number;
+  stopped: number;
+  words: number | null;
+  tokens: number | null;
+  modelTurns: number;
+  inputTokens: number;
+  cost: number;
+}
+
+/** What lab parts gives. */
+export interface PartsReport {
+  parts: PartRow[];
+  kinds: KindRow[];
+  outcomes: OutcomeRow[];
+  conditions: ConditionRow[];
+}
+
+/** A run of the index with its log's lines. */
+interface Run extends IndexLine {
+  lines: Record<string, unknown>[];
+}
+
+/** The words of the guidance text a run's setup line names, read from where its materials are; none when it names none or the file is missing. */
+function guidanceWords(run: Run, materialsFrom: string): number | null {
+  const setup = run.lines.find((line) => line.type === "run_setup") as { materials?: { path: string; key: string }[] } | undefined;
+  const material = setup?.materials?.find(({ key }) => key === "guidance" || key.endsWith(".guidance"));
+  if (material === undefined) return null;
+  const path = join(materialsFrom, material.path);
+  if (!existsSync(path)) return null;
+  return readFileSync(path, "utf8").split(/\s+/).filter((word) => word !== "").length;
+}
+
+/**
+ * The parts of an experiment's runs (FR-ANALYSIS-04), from its runs directory: its index, its logs, and the materials
+ * their setup lines name, read from a directory. Rows by part, kind, outcome and condition; a stopped run is counted
+ * apart and gives no values. It refuses a directory without an index, naming it as given.
+ */
+export function partsOfRuns(directory: string, materialsFrom: string, name: string = directory): PartsReport {
+  const runs: Run[] = indexOf(directory, name).map((run) => ({ ...run, lines: linesOf<Record<string, unknown>>(join(directory, `${run.runId}.jsonl`)) }));
+  const conditions = [...new Set(runs.map(({ condition }) => condition))];
+  const completedOf = (condition: string) => runs.filter((run) => run.condition === condition && run.status === "completed").sort((one, other) => one.replica - other.replica);
+  const stoppedOf = (condition: string) => runs.filter((run) => run.condition === condition && run.status !== "completed").length;
+  const partLines = (run: Run) => run.lines.filter((line) => line.type === "part") as unknown as PartLine[];
+  const lineOf = (run: Run, part: string) => partLines(run).find((line) => line.part === part);
+  const names = [...new Set(runs.filter(({ status }) => status === "completed").flatMap((run) => partLines(run).map(({ part }) => part)))];
+  const kindOf = (part: string, condition: string) => runs.filter((run) => run.condition === condition).flatMap((run) => partLines(run)).find((line) => line.part === part && line.kind !== undefined)?.kind;
+  const isOutcome = (part: string) => runs.every((run) => partLines(run).every((line) => line.part !== part || line.kind === undefined));
+
+  const parts: PartRow[] = [];
+  const outcomes: OutcomeRow[] = [];
+  for (const part of names) {
+    for (const condition of conditions) {
+      const completed = completedOf(condition);
+      const lines = completed.map((run) => lineOf(run, part));
+      const active = lines.filter((line) => line?.active === true).length;
+      const held = lines.filter((line) => line?.active === true && line.held === true).length;
+      if (isOutcome(part)) {
+        outcomes.push({ outcome: part, condition, completed: completed.length, stopped: stoppedOf(condition), held, values: lines.flatMap((line) => (line?.values === undefined ? [] : [line.values])) });
+        continue;
+      }
+      const calls = lines.map((line) => line?.effort?.calls ?? 0);
+      const { minimum, median, maximum } = quartiles(calls);
+      parts.push({
+        part,
+        condition,
+        kind: kindOf(part, condition) ?? "",
+        completed: completed.length,
+        stopped: stoppedOf(condition),
+        active,
+        held,
+        reached: lines.map((line) => line?.reached_at ?? null),
+        calls,
+        money: lines.map((line) => line?.effort?.money ?? 0),
+        minimum,
+        median,
+        maximum,
+        misapplications: completed.flatMap((run, at) => {
+          const found = lines[at]?.misapplications ?? [];
+          return found.length === 0 ? [] : [{ replica: run.replica, count: found.length, acts: found.map(({ tool, at: when }) => `${tool} at ${when}`) }];
+        }),
+      });
+    }
+  }
+  const kinds: KindRow[] = [];
+  for (const condition of conditions) {
+    for (const kind of [...new Set(parts.filter((row) => row.condition === condition).map((row) => row.kind))]) {
+      const rows = parts.filter((row) => row.condition === condition && row.kind === kind);
+      const active = rows.reduce((sum, row) => sum + row.active, 0);
+      const held = rows.reduce((sum, row) => sum + row.held, 0);
+      kinds.push({ kind, condition, active, held, share: active === 0 ? null : held / active });
+    }
+  }
+  const rows: ConditionRow[] = conditions.map((condition) => {
+    const completed = completedOf(condition);
+    const turns = completed.flatMap((run) => run.lines.filter((line) => line.type === "model_turn")) as { tokens?: { input?: number }; cost?: { total?: number } }[];
+    const words = runs.filter((run) => run.condition === condition).map((run) => guidanceWords(run, materialsFrom)).find((count) => count !== null) ?? null;
+    return {
+      condition,
+      completed: completed.length,
+      stopped: stoppedOf(condition),
+      words,
+      tokens: words === null ? null : Math.round((words * 4) / 3),
+      modelTurns: turns.length,
+      inputTokens: turns.reduce((sum, turn) => sum + (turn.tokens?.input ?? 0), 0),
+      cost: Math.round(turns.reduce((sum, turn) => sum + (turn.cost?.total ?? 0), 0) * 1e6) / 1e6,
+    };
+  });
+  return { parts, kinds, outcomes, conditions: rows };
+}
+
+/** A share as a cell: one decimal, more when it needs them. */
+const shareText = (share: number | null) => (share === null ? "-" : Number.isInteger(share * 10) ? share.toFixed(1) : String(Math.round(share * 1000) / 1000));
+
+/** A Markdown table with a heading. */
+function tableOf(heading: string, headers: readonly string[], rows: readonly (readonly string[])[]): string {
+  const line = (cells: readonly string[]) => `| ${cells.join(" | ")} |\n`;
+  return `## ${heading}\n\n${line(headers)}${line(headers.map(() => "---"))}${rows.map(line).join("")}\n`;
+}
+
+/** The report as Markdown: its four tables, or a line saying the runs have no parts. */
+export function partsMarkdown({ parts, kinds, outcomes, conditions }: PartsReport): string {
+  if (parts.length === 0 && outcomes.length === 0) return "The runs have no parts.\n";
+  const or = (value: number | null) => (value === null ? "-" : String(value));
+  return [
+    tableOf(
+      "Parts",
+      ["Part", "Condition", "Kind", "Completed", "Stopped", "Active", "Held", "Reached at", "Effort (calls)", "Effort (money)", "Minimum", "Median", "Maximum", "Misapplications"],
+      parts.map((row) => [
+        row.part,
+        row.condition,
+        row.kind,
+        String(row.completed),
+        String(row.stopped),
+        String(row.active),
+        String(row.held),
+        row.reached.map((at) => at ?? "-").join(", "),
+        row.calls.join(", "),
+        row.money.join(", "),
+        or(row.minimum),
+        or(row.median),
+        or(row.maximum),
+        row.misapplications.length === 0 ? "0" : `${row.misapplications.reduce((sum, { count }) => sum + count, 0)} (${row.misapplications.map(({ replica, acts }) => `replica ${replica}: ${acts.join(", ")}`).join("; ")})`,
+      ]),
+    ),
+    tableOf(
+      "Kinds",
+      ["Kind", "Condition", "Active", "Held", "Share"],
+      kinds.map((row) => [row.kind, row.condition, String(row.active), String(row.held), shareText(row.share)]),
+    ),
+    tableOf(
+      "Outcomes",
+      ["Outcome", "Condition", "Completed", "Stopped", "Held", "Values"],
+      outcomes.map((row) => [row.outcome, row.condition, String(row.completed), String(row.stopped), String(row.held), row.values.map((values) => JSON.stringify(values)).join("; ")]),
+    ),
+    tableOf(
+      "Conditions",
+      ["Condition", "Completed", "Stopped", "Words", "Tokens (estimate)", "Model turns", "Input tokens", "Cost"],
+      conditions.map((row) => [row.condition, String(row.completed), String(row.stopped), or(row.words), or(row.tokens), String(row.modelTurns), String(row.inputTokens), String(row.cost)]),
+    ),
+  ].join("");
+}
