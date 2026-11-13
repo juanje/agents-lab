@@ -449,3 +449,62 @@ describe("inventory", () => {
     expect(printed(experiment, scenario)).toContain("System prompt:\n\n````text\nAnswer like this:\n```\ndone\n```\n````\n");
   });
 });
+
+describe("inventory, participants (FR-PARTICIPANT-01)", () => {
+  const withParticipants = {
+    ...postScenario,
+    ruleSets: { echo: { start: () => ({ next: () => ({ kind: "end" as const }), outcome: () => ({}) }) } },
+    baseConfiguration: [
+      postScenario.baseConfiguration,
+      "[participants.desk]",
+      'decides = "rules"',
+      'rules = "echo"',
+      'tools = ["check_mail", "read_mail", "send_mail"]',
+      'channels = ["mail_notice"]',
+      "reply_minutes = [10, 10]",
+      "[participants.desk.params]",
+      'answer = "yes"',
+      "[participants.door]",
+      'decides = "model"',
+      'model = "openai/gpt-6-luna"',
+      'system_prompt = "You keep the door."',
+      'tools = ["check_mail"]',
+      "channels = []",
+      "",
+    ].join("\n"),
+  };
+
+  it("gives each participant: who decides, its rule set and parameters or its model, its tools, channels, hours and reply delay", () => {
+    const made = inventory(experimentOf(["[conditions.base]"]), withParticipants);
+
+    expect((made.conditions[0] as { participants?: unknown }).participants).toEqual([
+      { name: "desk", decides: "rules", rules: "echo", params: { answer: "yes" }, tools: ["check_mail", "read_mail", "send_mail"], channels: ["mail_notice"], replyMinutes: [10, 10] },
+      { name: "door", decides: "model", model: "openai/gpt-6-luna", systemPrompt: "You keep the door.", tools: ["check_mail"], channels: [] },
+    ]);
+    expect(inventoryMarkdown(made)).toContain(
+      [
+        "### Participants\n",
+        '#### Participant "desk"\n',
+        '- Decided by: the rule set "echo", with answer = "yes"',
+        "- Tools: check_mail, read_mail, send_mail",
+        "- Channels: mail_notice",
+        "- Hours: none",
+        "- Reply delay: 10 to 10 world minutes",
+        "",
+        '#### Participant "door"\n',
+        '- Decided by: the model "openai/gpt-6-luna", with the system prompt "You keep the door."',
+        "- Tools: check_mail",
+        "- Channels: none",
+        "- Hours: none",
+        "- Reply delay: none",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  it("gives none for a condition whose configuration declares no participant", () => {
+    const made = inventory(experimentOf(["[conditions.base]"]), postScenario);
+    expect(made.conditions[0]).not.toHaveProperty("participants");
+    expect(inventoryMarkdown(made)).not.toContain("Participants");
+  });
+});

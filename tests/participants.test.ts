@@ -1,10 +1,11 @@
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { getCurrentTools } from "@earendil-works/pi-ai";
 import { stringify } from "smol-toml";
 import { describe, expect, it } from "vitest";
 import { readCalendar } from "../src/engine/calendar.ts";
-import { type Perceived, type RuleSet, readParticipants } from "../src/engine/participants.ts";
+import { type Declared, type Perceived, type RuleSet, readParticipants } from "../src/engine/participants.ts";
 import { type RunSettings, run } from "../src/engine/run.ts";
 import { type Scenario, loadScenario } from "../src/engine/scenario.ts";
 import { ScriptedModel } from "../src/engine/scripted-model.ts";
@@ -106,5 +107,109 @@ describe("run, with a participant decided by rules (FR-PARTICIPANT-01)", () => {
     expect(lines.filter((line) => line.type === "model_turn" && line.agent === "desk")).toEqual([]);
     // The run waits for the held notice and the call it wakes.
     expect((checked[0].endedAtMs as number) - startedAtMs).toBeGreaterThanOrEqual(1600);
+  });
+});
+
+describe("run, with a rule set that calls a tool its participant does not declare (FR-PARTICIPANT-01)", () => {
+  it("stops, with an error that names the participant and the tool, as the log's last line", async () => {
+    const looking: RuleSet = { start: () => ({ next: () => ({ kind: "call", tool: "look", arguments: {} }), outcome: () => ({}) }) };
+    const logDirectory = mkdtempSync(join(tmpdir(), "agents-lab-logs-"));
+    const runId = "looking";
+
+    const running = run(loadScenario(withDesk(looking), 1), [{ name: "ana", model: anaAsks(), activations: 1 }], 1, { ...settings, logDirectory, runId });
+
+    await expect(running).rejects.toThrow(/"desk".*"look"/);
+    expect(logOf(logDirectory, runId).at(-1)).toMatchObject({ type: "run_stopped", error: expect.stringMatching(/"desk".*"look"/) });
+  });
+});
+
+describe("run, recording each participant's outcome (FR-PARTICIPANT-01)", () => {
+  it("writes a participant_outcome line for each participant decided by rules, with its rule set's outcome record, when the run ends", async () => {
+    const logDirectory = mkdtempSync(join(tmpdir(), "agents-lab-logs-"));
+
+    const { runId } = await run(loadScenario(withDesk(checking([])), 1), [{ name: "ana", model: anaAsks(), activations: 1 }], 1, { ...settings, logDirectory });
+
+    const lines = logOf(logDirectory, runId);
+    expect(lines.filter(({ type }) => type === "participant_outcome")).toEqual([{ type: "participant_outcome", participant: "desk", outcome: { checked: 1 } }]);
+    // Written once the participant's work is done, before the run's last metric sample.
+    expect(lines.findIndex(({ type }) => type === "participant_outcome")).toBe(lines.length - 2);
+  });
+});
+
+describe("readParticipants, a participant decided by a model (FR-PARTICIPANT-01)", () => {
+  it("reads its model and system prompt in place of a rule set", () => {
+    const written = desk({ decides: "model", rules: undefined, model: "openai/gpt-6-luna", system_prompt: "You run the front desk." });
+    expect(readParticipants({ desk: written } as never, declared)).toEqual([
+      { name: "desk", decides: "model", model: "openai/gpt-6-luna", systemPrompt: "You run the front desk.", tools: ["check_mail", "read_mail", "send_mail"], channels: ["mail_notice"], replyMinutes: [10, 10] },
+    ]);
+  });
+});
+
+describe("readParticipants, refusing what cannot be followed (FR-PARTICIPANT-01)", () => {
+  const refusing = (written: Record<string, unknown>, given: Declared = declared) => () => readParticipants(written as never, given);
+
+  it("refuses a tool or a channel the scenario does not declare, naming the key", () => {
+    expect(refusing({ desk: desk({ tools: ["check_mail", "fly"] }) })).toThrow(/participants\.desk\.tools.*"fly"/);
+    expect(refusing({ desk: desk({ channels: ["radio"] }) })).toThrow(/participants\.desk\.channels.*"radio"/);
+  });
+
+  it("refuses hours the calendar does not declare, and hours without a calendar", () => {
+    expect(refusing({ desk: desk({ hours: "night" }) })).toThrow(/participants\.desk\.hours.*"night"/);
+    const { calendar: _calendar, ...withoutCalendar } = declared;
+    expect(refusing({ desk: desk({ hours: "office" }) }, withoutCalendar)).toThrow(/participants\.desk\.hours/);
+  });
+
+  it("refuses reply_minutes that are not two numbers, the first at least 0 and not above the second", () => {
+    for (const replyMinutes of [[30, 10], [-1, 10], [10], ["ten", 20]]) {
+      expect(refusing({ desk: desk({ reply_minutes: replyMinutes }) })).toThrow(/participants\.desk\.reply_minutes/);
+    }
+  });
+
+  it("refuses decides that is neither rules nor model, and a rule set the scenario does not provide", () => {
+    expect(refusing({ desk: desk({ decides: "dice" }) })).toThrow(/participants\.desk\.decides.*"dice"/);
+    expect(refusing({ desk: desk({ rules: "mirror" }) })).toThrow(/participants\.desk\.rules.*"mirror"/);
+  });
+
+  it("refuses a participant decided by a model without a model or a system prompt", () => {
+    const byModel = { decides: "model", rules: undefined, model: "openai/gpt-6-luna", system_prompt: "You run the front desk." };
+    expect(refusing({ desk: desk({ ...byModel, model: undefined }) })).toThrow(/participants\.desk\.model/);
+    expect(refusing({ desk: desk({ ...byModel, system_prompt: undefined }) })).toThrow(/participants\.desk\.system_prompt/);
+  });
+
+  it("refuses a participant whose name an agent or a component already has", () => {
+    expect(refusing({ ana: desk() })).toThrow(/participants\.ana/);
+  });
+});
+
+describe("run, with a participant decided by a model (FR-PARTICIPANT-01)", () => {
+  const byModel = { decides: "model", rules: undefined, model: "scripted/desk", system_prompt: "You run the front desk.", tools: ["check_mail"] };
+
+  it("loads it as an agent of the run, with its system prompt and the scenario's rhythm", () => {
+    const loaded = loadScenario(withDesk(checking([]), byModel), 1);
+
+    expect([...loaded.systemPrompts]).toEqual([
+      ["ana", 'You are "ana".'],
+      ["desk", "You run the front desk."],
+    ]);
+    expect([...loaded.rhythms.keys()]).toEqual(["ana", "desk"]);
+  });
+
+  it("offers its session only its own tools, and holds its stimuli by its reply delay", async () => {
+    const logDirectory = mkdtempSync(join(tmpdir(), "agents-lab-logs-"));
+    const deskModel = new ScriptedModel([{ text: "Nothing yet.", delayMs: 0 }]);
+
+    const { runId, startedAtMs } = await run(
+      loadScenario(withDesk(checking([]), byModel), 1),
+      [
+        { name: "ana", model: anaAsks(), activations: 1 },
+        { name: "desk", model: deskModel, activations: 1 },
+      ],
+      1,
+      { ...settings, logDirectory },
+    );
+
+    expect(getCurrentTools(deskModel.received[0]).map(({ name }) => name)).toEqual(["check_mail"]);
+    const notice = logOf(logDirectory, runId).find((line) => line.type === "stimulus" && line.agent === "desk" && line.channel === "mail_notice");
+    expect((notice?.deliveredAtMs as number) - startedAtMs).toBeGreaterThanOrEqual(1400);
   });
 });
