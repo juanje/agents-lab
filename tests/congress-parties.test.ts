@@ -165,7 +165,10 @@ describe("the board's rules (FR-CONGRESS-02)", () => {
     const countered = drive(boardRules.start(board, new Random(1)), tools("From: organiser. Act: submit_budget. costs: 9000. income: 1000. contingency: 500. funds_requested: 8000."), [[notice]]);
     expect(mails(countered)).toEqual([{ to: "organiser", act: "budget_countered", fields: { funds: 6000 } }]);
 
-    const refused = drive(boardRules.start(board, new Random(1)), tools("From: organiser. Act: request_approval. amount: 1200. reason: ramp."), [[notice]]);
+    // Over a budget it approved, since before one it refuses with no_budget (FR-CONGRESS-07).
+    const rules = boardRules.start(board, new Random(1));
+    drive(rules, tools("From: organiser. Act: submit_budget. costs: 5000. income: 3000. contingency: 500. funds_requested: 2500."), [[notice]]);
+    const refused = drive(rules, tools("From: organiser. Act: request_approval. amount: 1200. reason: ramp."), [[notice]], true);
     expect(mails(refused)).toEqual([{ to: "organiser", act: "refused", fields: { amount: 1200 } }]);
   });
 });
