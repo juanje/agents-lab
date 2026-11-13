@@ -13,6 +13,7 @@ import type { Context } from "../support/context.ts";
 import { madeInventory, toTheMinute } from "./calendar.steps.ts";
 import { linesOf, logLines } from "./record.steps.ts";
 import { asRead } from "./stimulus.steps.ts";
+import { hourMsOf } from "./congress.steps.ts";
 import { returned, runTheScenario, script } from "./tool.steps.ts";
 
 /** The test scenario's world: the mail the engine keeps in it, and nothing else. */
@@ -162,6 +163,9 @@ function argumentsOf(tool: string, written: string): JsonObject {
   const answer = /^for "([^"]+)" with the act "([^"]+)"$/.exec(written);
   if (tool === "answer_call" && answer !== null) return { call: answer[1], act: answer[2] };
   if (written === "") return {};
+  // A flag of FR-PARTS-01's test scenario.
+  const flag = /^"(\w+)"$/.exec(written);
+  if ((tool === "set_flag" || tool === "clear_flag") && flag !== null) return { flag: flag[1] };
   if (written === 'with "unread_only"') return { unread_only: true };
   if (written === "with the first message's id") return { id: FIRST_MESSAGE_ID };
   const id = /^with the id "([^"]+)"$/.exec(written)?.[1];
@@ -173,13 +177,19 @@ function argumentsOf(tool: string, written: string): JsonObject {
  * An agent's turns as the contract writes them: parts joined by ", then ", each a wait before the next call, a call
  * (`call "<tool>" …`, or `"<tool>" …` after the first), or the end; each call is a turn of its own.
  */
-function turnsOf(written: string): ScriptedAnswer[] {
+function turnsOf(written: string, hourMs: () => number): ScriptedAnswer[] {
   const answers: ScriptedAnswer[] = [];
   let delayMs = 0;
   for (const part of written.split(", then ")) {
     const wait = /^wait (\d+) milliseconds$/.exec(part);
     if (wait !== null) {
       delayMs += Number(wait[1]);
+      continue;
+    }
+    // A wait in world hours, by the scenario's calendar (FR-PARTS-01).
+    const hours = /^wait (\d+) world hours?$/.exec(part);
+    if (hours !== null) {
+      delayMs += Number(hours[1]) * hourMs();
       continue;
     }
     if (part === "end") {
@@ -197,7 +207,7 @@ function turnsOf(written: string): ScriptedAnswer[] {
 
 // An agent's turns "woken by the ring" are those of its first activation, whose stimuli hold the ring (FR-PHONE-01).
 Given(/^"(\w+)"'s scripted turns(?:, woken by the ring,)? (.+)$/, function (this: Context, agent: string, written: string) {
-  script(this, agent, turnsOf(written));
+  script(this, agent, turnsOf(written, () => hourMsOf(this)));
 });
 
 /** A line of the run's log, as JSON gives it back. */

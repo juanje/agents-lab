@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { Given, Then, When } from "@cucumber/cucumber";
 import { type JsonObject, getCurrentTools } from "@earendil-works/pi-ai";
 import type { WorldDuration } from "../../src/engine/calendar.ts";
-import { type Agent, run } from "../../src/engine/run.ts";
+import { type Agent, type RunSettings, run } from "../../src/engine/run.ts";
 import { type ScriptedAnswer, ScriptedModel } from "../../src/engine/scripted-model.ts";
 import { type Configuration, type LoadedScenario, type Scenario, calendarOf } from "../../src/engine/scenario.ts";
 import { type Action, World } from "../../src/engine/world.ts";
@@ -150,7 +150,7 @@ export function assembled<State>(scenario: Scenario<State>, world: World<State>,
  * Runs agents in a loaded scenario, watching its arbiter, and keeps what the run gave: by default the scenario's agents,
  * each on the model the scenario gives it by its name.
  */
-export async function runScenario<State>(context: Context, loaded: LoadedScenario<State>, agents = agentsOf(context)): Promise<void> {
+export async function runScenario<State>(context: Context, loaded: LoadedScenario<State>, agents = agentsOf(context), more: Partial<RunSettings> = {}): Promise<void> {
   const { world } = loaded;
   context.stateBefore = world.state;
   // Watched, not changed: the arbiter still decides, and the scenario sees the order it applied effects in.
@@ -170,6 +170,7 @@ export async function runScenario<State>(context: Context, loaded: LoadedScenari
     ...(context.rateLimit === undefined ? {} : { rateLimit: context.rateLimit }),
     timeLimitMs: context.timeLimitMs,
     metricIntervalMs: context.metricIntervalMs,
+    ...more,
     onStart: (stimuli) => {
       context.stimuli = stimuli;
       // Watched too: an agent wakes when its session takes its rhythm's stimulus.
