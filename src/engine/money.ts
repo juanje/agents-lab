@@ -111,6 +111,16 @@ export function withRelease(money: Money, id: string): Money {
   };
 }
 
+/**
+ * The money with the events a change added stamped with the world time it applied, as `at`, in world minutes since day
+ * 1's midnight (FR-CONGRESS-06); unstamped without a world time.
+ */
+export function stamped(before: Money, after: Money, world: WorldTime | undefined): Money {
+  if (world === undefined) return after;
+  const at = (world.day - 1) * 1440 + world.seconds / 60;
+  return { ...after, events: [...after.events.slice(0, before.events.length), ...after.events.slice(before.events.length).map((event) => ({ ...event, at }))] };
+}
+
 /** The money with an amount moved from one account to another, and its event: as transfer applies it, and as the world pays from an account of its own (FR-POPULATION-01). */
 export function withTransfer(money: Money, { from, to, amount, for: what }: { from: string; to: string; amount: number; for: string }): Money {
   return { ...money, balances: moved(money, from, to, amount), events: [...money.events, { kind: "transfer", from, to, amount, for: what }] };
@@ -201,7 +211,7 @@ export function moneyTools<State>(settings: MoneySettings, keeper: MoneyKeeper<S
       const reason = fails(moneyOf(state), call);
       return reason === undefined ? { holds: true } : { holds: false, reason };
     },
-    effect: (state, call) => keeper.with(state, change(moneyOf(state), call)),
+    effect: (state, call) => keeper.with(state, stamped(moneyOf(state), change(moneyOf(state), call), (call as { world?: WorldTime }).world)),
   });
   /** Refuses a call from a caller without an account, or that names no account, or an amount that is not positive. */
   const refusing = (account: string | undefined, amount: unknown): Refusal | undefined => {

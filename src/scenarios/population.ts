@@ -1,7 +1,7 @@
 import type { WorldTime } from "../engine/calendar.ts";
 import type { Component, Step } from "../engine/components.ts";
 import { type Mail, withSent } from "../engine/mail.ts";
-import { type Money, withTransfer } from "../engine/money.ts";
+import { type Money, stamped, withTransfer } from "../engine/money.ts";
 import type { Random } from "../engine/random.ts";
 import type { Effector, Sensor, Tool } from "../engine/tools.ts";
 
@@ -87,6 +87,8 @@ export interface Programme {
   breaks: unknown[];
   sponsor_slots: { sponsor: string; start: string; end?: string }[];
   logos: string[];
+  /** When it was published, in world minutes since day 1's midnight (FR-CONGRESS-06). */
+  published?: number;
 }
 
 /** The population as the world keeps it (FR-POPULATION-01). */
@@ -356,10 +358,13 @@ export function populationTools<State extends PopulationWorld>(options: Populati
     durationMs: duration("publish_programme"),
     action: {
       precondition: () => ({ holds: true }),
-      effect: (state, { arguments: { sessions, breaks = [], sponsor_slots: slots = [], logos = [] } }) =>
+      effect: (state, { arguments: { sessions, breaks = [], sponsor_slots: slots = [], logos = [] }, world }) =>
         withPopulation(state, (population) => ({
           ...population,
-          programme: [...population.programme, { version: population.programme.length + 1, sessions: sessions as Session[], breaks: breaks as unknown[], sponsor_slots: slots as Programme["sponsor_slots"], logos: logos as string[] }],
+          programme: [
+            ...population.programme,
+            { version: population.programme.length + 1, sessions: sessions as Session[], breaks: breaks as unknown[], sponsor_slots: slots as Programme["sponsor_slots"], logos: logos as string[], ...(world === undefined ? {} : { published: nowOf(world) }) },
+          ],
         })),
     },
     texts: { success: "Published.", [INVALID_VALUE]: "invalid_value: the programme cannot be followed" },
@@ -591,7 +596,7 @@ export function populationComponent<State extends PopulationWorld>(options: Popu
                 effect: (current, { world: landing }) => {
                   let next = { population: current.population as Population, money: current.money, mail: current.mail };
                   for (const change of changes) next = change(next.population, next.money, next.mail, landing);
-                  return { ...current, ...next };
+                  return { ...current, ...next, money: stamped(current.money, next.money, landing) };
                 },
               },
             };

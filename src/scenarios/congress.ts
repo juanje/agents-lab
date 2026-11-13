@@ -1,7 +1,7 @@
 import { type TomlTable, parse } from "smol-toml";
 import { type Calendar, type WorldTime, hoursAt, reachedAfterMs, readCalendar, worldTimeText } from "../engine/calendar.ts";
 import type { Mail } from "../engine/mail.ts";
-import { INVOICE_NOTICE, invoiced, withCommitment, withRelease } from "../engine/money.ts";
+import { INVOICE_NOTICE, invoiced, stamped, withCommitment, withRelease } from "../engine/money.ts";
 import type { Money } from "../engine/money.ts";
 import type { Phone } from "../engine/phone.ts";
 import { type Places, arrive, exits, inSight, layout, leave, put, where } from "../engine/places.ts";
@@ -89,6 +89,17 @@ interface KeptRoom {
   equipment?: string[];
 }
 
+/** What the congress's parts read besides the records (FR-CONGRESS-06): world times are world minutes since day 1's midnight. */
+export interface PartsContext {
+  eventDay: number;
+  helpers: number;
+  target: number;
+  endOfPreparation: number;
+  roles: Readonly<Record<string, Readonly<Record<string, readonly string[]>>>>;
+  noShowCut: number;
+  discretionaryLimit: number;
+}
+
 /** The congress's world (FR-CONGRESS-01). */
 export interface Congress {
   space: Places;
@@ -107,7 +118,11 @@ export interface Congress {
   /** The money, which the engine puts here as a run starts when the configuration declares [money] (FR-MONEY-01). */
   money: Money;
   /** The travel material, each train's draw for selling out, and what was booked for whom (FR-CONGRESS-05). */
-  travel: { material: Travel; soldOutDraws: Record<string, number>; booked: { option: string; traveller: string; price: number }[] };
+  travel: { material: Travel; soldOutDraws: Record<string, number>; booked: { option: string; traveller: string; price: number; at?: number }[] };
+  /** Each perturbation as it fired: its name, its target and its world time, in world minutes (FR-CONGRESS-06). */
+  perturbations: { name: string; target: string; at: number }[];
+  /** What the congress's parts read besides the records (FR-CONGRESS-06). */
+  context: PartsContext;
   /** The similar congresses of the drawn topic (FR-CONGRESS-05). */
   similar: { name: string; price: number; size: number }[];
   /** The attendees, the ticket page and the programme, when the configuration gives an attendees material (FR-POPULATION-01). */
@@ -619,6 +634,8 @@ function initialState(configuration: Configuration, random: Random): Congress {
     // Each train's draw for selling out comes from the travel's own sequence, the replica's initial state's.
     travel: { material: travel, soldOutDraws: Object.fromEntries(travel.trains.map(({ id }) => [id, random.next()])), booked: [] },
     similar: similarOf(configuration),
+    perturbations: [],
+    context: contextOf(configuration, settings.discretionaryLimit),
     ...(attendeesOf(configuration) === undefined ? {} : { population: populationOf(configuration, attendeesOf(configuration) as AttendeesMaterial) }),
   };
 }
@@ -683,6 +700,23 @@ function populationOf(configuration: Configuration, material: AttendeesMaterial)
     promotions: [],
     programme: [],
     sponsorData: {},
+  };
+}
+
+/** What the congress's parts read besides the records (FR-CONGRESS-06), from the configuration and the variant. */
+function contextOf(configuration: Configuration, discretionaryLimit: number): PartsContext {
+  const drawn = configuration.drawn as unknown as Drawn | undefined;
+  const eventDay = configuration.event_day as number;
+  const until = ((configuration.calendar as TomlTable | undefined)?.segments as TomlTable[] | undefined)?.[0]?.until;
+  return {
+    eventDay,
+    helpers: (configuration.helpers as number | undefined) ?? 0,
+    target: drawn?.attendance ?? 0,
+    // The end of preparation is the clock's first segment's until; the event day's start without one.
+    endOfPreparation: typeof until === "string" ? minutesOfTime(until) : (eventDay - 1) * 1440,
+    roles: drawn?.roles ?? {},
+    noShowCut: (configuration.no_show_cut as number | undefined) ?? 0,
+    discretionaryLimit,
   };
 }
 
@@ -931,17 +965,25 @@ function cancellation(declared: Perturbation, speakers: readonly string[], calen
       const left = [...speakers];
       const order = speakers.map(() => left.splice(Math.floor(random.next() * left.length), 1)[0]);
       let done = false;
+      let pending: Step<Congress> | undefined;
       const waitUntil = (minutes: number, now: number, sinceStartMs: number): Step<Congress> => ({ kind: "wait", ms: reachedAfterMs(calendar, sinceStartMs, (minutes - now) * 60) });
       return {
         next: (state, _outcome, sinceStartMs, world) => {
           const now = minutesOfWorld(world as WorldTime);
+          if (pending !== undefined) {
+            const next = pending;
+            pending = undefined;
+            return next;
+          }
           if (done) return { kind: "end" };
           if (now < time) return waitUntil(time, now, sinceStartMs);
           const standing = order.filter((speaker) => !hasCancelled(state, speaker));
           const confirmed = standing.filter((speaker) => (confirmedAt(state, speaker) ?? Infinity) <= time);
+          // It records itself, then tells its speaker.
           const hit = (speaker: string): Step<Congress> => {
             done = true;
-            return { kind: "deliver", agent: speaker, channel: declared.name, held: false };
+            pending = { kind: "deliver", agent: speaker, channel: declared.name, held: false };
+            return recording(declared.name, [speaker]);
           };
           if (confirmed.length > 0) return hit(confirmed[0]);
           if (declared.name !== "early_cancel") return { kind: "end" };
@@ -952,6 +994,19 @@ function cancellation(declared: Perturbation, speakers: readonly string[], calen
           return now < fires ? waitUntil(fires, now, sinceStartMs) : hit(next);
         },
       };
+    },
+  };
+}
+
+/** A perturbation's record of itself, as it fires, for each of its targets (FR-CONGRESS-06): an action that takes no time. */
+function recording(name: string, targets: readonly string[]): Step<Congress> {
+  return {
+    kind: "action",
+    name: `${name} fires`,
+    durationMs: 0,
+    action: {
+      precondition: () => ({ holds: true }),
+      effect: (state, { world }) => ({ ...state, perturbations: [...state.perturbations, ...targets.map((target) => ({ name, target, at: minutesOfWorld(world as WorldTime) }))] }),
     },
   };
 }
@@ -968,14 +1023,15 @@ function sponsorWithdrawal(declared: Perturbation, calendar: Calendar): Componen
     cycle: (random) => {
       const [from, to] = (declared.between ?? [declared.at, declared.at]).map((time) => perturbationMinutes(time) as number);
       const time = from + random.next() * (to - from);
-      let done = false;
+      let step = 0;
       return {
         next: (_state, _outcome, sinceStartMs, world) => {
           const now = minutesOfWorld(world as WorldTime);
-          if (done) return { kind: "end" };
+          if (step === 2) return { kind: "end" };
           if (now < time) return { kind: "wait", ms: reachedAfterMs(calendar, sinceStartMs, (time - now) * 60) };
-          done = true;
-          return { kind: "deliver", agent: declared.for as string, channel: declared.name, held: false };
+          step += 1;
+          // It records itself, then tells its sponsor.
+          return step === 1 ? recording(declared.name, [declared.for as string]) : { kind: "deliver", agent: declared.for as string, channel: declared.name, held: false };
         },
       };
     },
@@ -1011,10 +1067,12 @@ function hotelOverbooking(declared: Perturbation, calendar: Calendar, eventDay: 
                 effect: (current) => {
                   const cancelled = current.travel.booked.filter((booking) => hit(current, booking));
                   const commitments = current.money.commitments.filter((commitment) => !commitment.released && commitment.by === TRAVEL && cancelled.some(({ option, traveller }) => commitment.for === `${option} ${traveller}`));
+                  const at = minutesOfWorld(world as WorldTime);
                   return {
                     ...current,
                     travel: { ...current.travel, booked: current.travel.booked.filter((booking) => !cancelled.includes(booking)) },
-                    money: commitments.reduce((money, { id }) => withRelease(money, id), current.money),
+                    money: stamped(current.money, commitments.reduce((money, { id }) => withRelease(money, id), current.money), world as WorldTime),
+                    perturbations: [...current.perturbations, ...cancelled.map(({ traveller }) => ({ name: declared.name, target: traveller, at }))],
                   };
                 },
               },
@@ -1139,9 +1197,9 @@ const bookTravel: Effector<Congress> = {
       const what = `${String(option)} ${String(traveller)}`;
       return {
         ...state,
-        travel: { ...state.travel, booked: [...state.travel.booked, { option: String(option), traveller: String(traveller), price }] },
+        travel: { ...state.travel, booked: [...state.travel.booked, { option: String(option), traveller: String(traveller), price, at: minutesOfWorld(world as WorldTime) }] },
         // The travel's account commits the price with the organiser before it invoices it (FR-CONGRESS-05's addition).
-        money: invoiced(withCommitment(state.money, { by: TRAVEL, with: agent, amount: price, for: what }, state.settings.discretionaryLimit), { from: TRAVEL, to: agent, amount: price, due: `day ${today}`, for: what }),
+        money: stamped(state.money, invoiced(withCommitment(state.money, { by: TRAVEL, with: agent, amount: price, for: what }, state.settings.discretionaryLimit), { from: TRAVEL, to: agent, amount: price, due: `day ${today}`, for: what }), world),
       };
     },
   },
@@ -1266,6 +1324,9 @@ const BASE_CONFIGURATION = [
   "attendance = [100, 100]",
   "'''",
   "event_day = 26",
+  // The helpers counted in the attendance, and the share of no-shows final numbers may leave out (FR-CONGRESS-06).
+  "helpers = 0",
+  "no_show_cut = 0.05",
   "travel = '''",
   "stations = []",
   "trains = []",
