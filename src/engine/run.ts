@@ -236,7 +236,7 @@ async function runAgents<State>(
     mail === undefined
       ? undefined
       : new MailMedium({ world, ...mail, clock, runEnd: runEnd.signal, changes, stimuli, seed, agents: agents.map(({ name }) => name), record: (line) => recorder.record(line) });
-  medium?.start();
+  medium?.start(startedAtMs);
   const sample = () => sampleMetrics(world, toolCalls, scenario.metrics, recorder, performance.now());
   sampleMetrics(world, toolCalls, scenario.metrics, recorder, startedAtMs);
   const timer = setTimeout(() => runEnd.abort(), settings.timeLimitMs);

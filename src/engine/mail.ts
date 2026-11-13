@@ -4,7 +4,7 @@ import { type ChangesSinceSensing, applyCounted } from "./changes.ts";
 import { type RunClock, waitAtLeast } from "./clock.ts";
 import { Random } from "./random.ts";
 import type { Stimuli } from "./stimuli.ts";
-import type { Effector, Refusal, Tool } from "./tools.ts";
+import type { Effector, Refusal, Sensor, Tool } from "./tools.ts";
 import type { Action, World } from "./world.ts";
 
 /** A message's fields: named values that a rule-based participant can read (FR-MESSAGE-01). */
@@ -224,7 +224,7 @@ function refusalOf(settings: Pick<MailSettings, "mailboxes" | "acts">, { to, act
   return missing === undefined ? undefined : { outcome: "missing_field", reason: `the act "${act}" requires the field "${missing}"` };
 }
 
-/** The agents' mail tools (FR-MESSAGE-01): send_mail. */
+/** The agents' mail tools (FR-MESSAGE-01): send_mail and check_mail. */
 export function mailTools<State>(settings: MailSettings, keeper: MailKeeper<State>): Tool<State>[] {
   const sendMail: Effector<State> = {
     kind: "effector",
@@ -245,7 +245,31 @@ export function mailTools<State>(settings: MailSettings, keeper: MailKeeper<Stat
     texts: { success: "Sent." },
     readTarget: () => "not_sensed",
   };
-  return [sendMail];
+  const checkMail: Sensor<State> = {
+    kind: "sensor",
+    name: "check_mail",
+    description: "List the messages in your mailbox, oldest first: each one's id, sender, subject and when it was received; only the unread ones if you ask.",
+    parameters: { type: "object", properties: { unread_only: { type: "boolean" } } },
+    durationMs: () => ({ worldSeconds: settings.checkMinutes * 60 }),
+    sense: (state, agent, args) => {
+      const mailbox = keeper.of(state).mailboxes[agent] ?? [];
+      const listed = [...mailbox].sort((one, other) => sinceMidnightOfDayOne(one.received) - sinceMidnightOfDayOne(other.received)).filter(({ read }) => args.unread_only !== true || !read);
+      if (listed.length === 0) return "No messages.";
+      return listed.map(({ id, from, subject, received }) => `${id}: from ${from}, subject "${subject}", received ${worldTimeText(received)}`).join("\n");
+    },
+  };
+  return [sendMail, checkMail];
+}
+
+/** The world seconds since day 1's midnight of a world time, which orders world times. */
+function sinceMidnightOfDayOne({ day, seconds }: WorldTime): number {
+  return (day - 1) * 24 * 3600 + seconds;
+}
+
+/** A world time to the minute, as the mail's tools give it: "day <n> <weekday> HH:MM". */
+function worldTimeText({ day, weekday, seconds }: WorldTime): string {
+  const two = (value: number) => String(value).padStart(2, "0");
+  return `day ${day} ${weekday} ${two(Math.floor(seconds / 3600))}:${two(Math.floor(seconds / 60) % 60)}`;
 }
 
 /** The delivery of a message in transit: it lands in its recipient's mailbox, unread, at the world's time given. */
@@ -297,9 +321,13 @@ export class MailMedium<State> {
     this.#run = run;
   }
 
-  /** Watches the world from now on for each message sent. */
-  start(): void {
-    const { world, keeper } = this.#run;
+  /**
+   * Records each message at the start as delivered at the run's start, the moment given, with the world's time it was
+   * received, and watches the world from now on for each message sent.
+   */
+  start(startedAtMs: number): void {
+    const { world, keeper, settings, record } = this.#run;
+    for (const { id, received } of settings.initial) record({ type: "message_delivered", id, atMs: startedAtMs, worldTime: received });
     world.watch((before, after) => {
       const was = new Set(keeper.of(before).inTransit.map(({ id }) => id));
       for (const message of keeper.of(after).inTransit) if (!was.has(message.id)) this.#sent(message);
