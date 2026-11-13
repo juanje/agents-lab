@@ -3,6 +3,7 @@ import { Given, Then, When } from "@cucumber/cucumber";
 import type { TomlTable } from "smol-toml";
 import * as calendars from "../../src/engine/calendar.ts";
 import type { Weekday, WorldDuration, WorldTime } from "../../src/engine/calendar.ts";
+import type { Component } from "../../src/engine/components.ts";
 import type { Sensor } from "../../src/engine/tools.ts";
 import { World } from "../../src/engine/world.ts";
 import type { Slots } from "../../tests/fixtures/slots.ts";
@@ -186,6 +187,38 @@ Then("it answers within: {word}, next beginning at {string}", function (this: Co
   const answer = answers.get(this);
   assert.ok(answer !== undefined, "the engine was not asked");
   assert.deepEqual({ within: answer.within, next: toTheSecond(answer.next) }, { within: within === "yes", next: toTheSecond(worldTimeOf(next)) });
+});
+
+/** What each component of the test scenario recorded of the world's time, by the component's name. */
+const recorded = new WeakMap<Context, Map<string, string[]>>();
+
+Given(
+  "a component {string} whose cycle records the world's time it is given, acting every {int} world minutes, {int} times",
+  function (this: Context, name: string, minutes: number, times: number) {
+    const records = recorded.get(this) ?? new Map<string, string[]>();
+    recorded.set(this, records);
+    const times_: string[] = [];
+    records.set(name, times_);
+    // Its action changes nothing and lasts its world minutes, so it chooses again that many world minutes later.
+    const rest = { precondition: () => ({ holds: true as const }), effect: (state: Slots) => state };
+    const bell: Component<Slots> = {
+      name,
+      kind: "world",
+      description: `Records the world's time every ${minutes} world minutes, ${times} times.`,
+      cycle: () => ({
+        next: (_state, _outcome, _sinceStartMs, world) => {
+          if (times_.length === times) return { kind: "end" };
+          times_.push(world === undefined ? "no world time was given" : toTheMinute(world));
+          return { kind: "action", name: "act", durationMs: { worldSeconds: minutes * 60 }, action: rest };
+        },
+      }),
+    };
+    this.components = [...this.components, bell];
+  },
+);
+
+Then("{string} recorded, to the minute, {string}, {string} and {string}", function (this: Context, name: string, first: string, second: string, third: string) {
+  assert.deepEqual(recorded.get(this)?.get(name), [first, second, third]);
 });
 
 When("the run is attempted", async function (this: Context) {

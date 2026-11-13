@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ChangesSinceSensing } from "../src/engine/changes.ts";
+import { readCalendar } from "../src/engine/calendar.ts";
 import { RunClock } from "../src/engine/clock.ts";
 import { type Component, type ComponentAction, type Step, runComponent } from "../src/engine/components.ts";
 import { Random } from "../src/engine/random.ts";
@@ -166,5 +167,34 @@ describe("runComponent", () => {
     expect(stimuli.take("a")).toEqual([delivered[0].stimulus]);
     expect(actions.map((action) => action.action)).toEqual(["fill"]);
     expect(given).toEqual([undefined, "success", undefined]);
+  });
+
+  it("gives its cycle the world's time, and takes an action's duration in world time as the run time it spans (FR-CLOCK-03)", async () => {
+    const world = new World(emptySlots(1));
+    const given: unknown[] = [];
+    let acted = 0;
+    const timer: Component<Slots> = {
+      name: "timer",
+      kind: "world",
+      description: "Acts twice, a world minute each time.",
+      cycle: () => ({
+        next: (_state, _outcome, _sinceStartMs, worldTime) => {
+          given.push(worldTime);
+          if (acted++ === 2) return { kind: "end" };
+          return { kind: "action", name: "act", durationMs: { worldSeconds: 60 }, action: { precondition: () => ({ holds: true }), effect: (state) => state } };
+        },
+      }),
+    };
+    // One world minute is 50 ms of the run.
+    const clock = new RunClock(readCalendar({ start: "day 1 Monday 09:00", segments: [{ scale: 1200 }] }));
+    clock.start();
+
+    await runComponent(timer, { world, random: new Random(1), runEnd: new AbortController().signal, changes: new ChangesSinceSensing(), clock, stimuli: new Stimuli([]), record: () => {} });
+
+    expect(given).toEqual([
+      { day: 1, weekday: "Monday", seconds: 9 * 3600 },
+      { day: 1, weekday: "Monday", seconds: 9 * 3600 + 60 },
+      { day: 1, weekday: "Monday", seconds: 9 * 3600 + 120 },
+    ].map((time, index) => ({ ...time, seconds: expect.toSatisfy((seconds: number) => seconds >= time.seconds && seconds < time.seconds + 6, `${index}`) })));
   });
 });
