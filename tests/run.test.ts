@@ -587,6 +587,53 @@ describe("run", () => {
     expect(tookMs).toBeLessThan(130);
   });
 
+  it("gives an effector's action, as it is checked and applied, the world's time its configuration's calendar gives then (FR-CLOCK-03)", async () => {
+    const given: unknown[] = [];
+    const stamping: Effector<Slots> = {
+      ...(slotTools[1] as Effector<Slots>),
+      action: {
+        precondition: (_slots, call) => {
+          given.push(call.world);
+          return { holds: true };
+        },
+        effect: (slots, call) => {
+          given.push(call.world);
+          return slots;
+        },
+      },
+    };
+    const model = new ScriptedModel([
+      { toolCalls: [{ name: "take", arguments: { slot: 1 } }], delayMs: 120 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+    const calendar = ["[calendar]", 'start = "day 3 Sunday 23:59"', "[[calendar.segments]]", "scale = 600", ""].join("\n");
+
+    await run(slots({ tools: [stamping], baseConfiguration: `${slotsScenario.baseConfiguration}\n${calendar}` }), [{ name: "a", model, activations: 1 }], seed, settings);
+
+    // 120 ms of the run is 72 world seconds at the scale 600, past midnight; the engine's own milliseconds add a few more.
+    expect(given).toHaveLength(2);
+    expect(given[1]).toEqual(given[0]);
+    expect(given[0]).toMatchObject({ day: 4, weekday: "Monday" });
+    expect((given[0] as { seconds: number }).seconds).toBeGreaterThanOrEqual(12);
+    expect((given[0] as { seconds: number }).seconds).toBeLessThan(18);
+  });
+
+  it("gives an effector's action no world time in a run without a calendar", async () => {
+    const given: unknown[] = [];
+    const stamping: Effector<Slots> = {
+      ...(slotTools[1] as Effector<Slots>),
+      action: { precondition: (_slots, call) => (given.push("world" in call ? call.world : "none"), { holds: true }), effect: (slots) => slots },
+    };
+    const model = new ScriptedModel([
+      { toolCalls: [{ name: "take", arguments: { slot: 1 } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+
+    await run(slots({ tools: [stamping] }), [{ name: "a", model, activations: 1 }], seed, settings);
+
+    expect(given).toEqual(["none"]);
+  });
+
   it("applies an effector the model calls through the arbiter, with the agent and the call's arguments", async () => {
     const loaded = slots();
     const { world } = loaded;
