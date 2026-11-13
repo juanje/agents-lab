@@ -109,7 +109,8 @@ Experiments are written outside this repository, in the experiment language (FR-
 7b. FR-CONGRESS-04 (speakers and the partner's session)
 7c. FR-CONGRESS-05 (caterers, sponsors and services)
 8. FR-POPULATION-01 (attendees, the ticket page, the programme and announcements)
-9. FR-PARTS-01 (parts as held-out keys), not written
+9. FR-PARTS-01 (parts as held-out keys)
+9b. FR-CONGRESS-06 (the congress's parts), not written
 10. FR-CONGRESS-03 (the day), after the pilot, not written
 11. FR-ANALYSIS-04 (success by kind of part and text length), a light version for the pilot, not written
 
@@ -518,6 +519,26 @@ A fixed person registers at a time drawn in their window, if the page lets them 
 
 **Refusals**, before any model call, with an error that names it: diet shares that do not add up to 1 (within 0.001); a negative rate, factor or share; a `consent_share`, `cancel_share` or `payment_fee_share` outside 0–1; a fixed person's window that does not follow the calendar's format or whose first time is after its second; a `group_size` whose first number is above its second.
 *Why:* who comes, when and with what needs is what the organiser's decisions about price, rooms, food and access are measured against. The rules are simple and published here, so that anyone reading the results knows what was assumed about the market; registrations come late, react to price and to the programme, and tell the organiser only what it asks for.
+
+#### FR-PARTS-01: Parts as held-out keys
+A scenario may provide named part predicates and misapplication patterns, and an experiment may give a held-out material `parts` (FR-EXPERIMENT-04) that the engine reads and no tool or prompt gives an agent. Each part (`[[parts]]`) has:
+- an `id`;
+- a `predicate`, the name of one the scenario provides, with its `params`: a test over the world's state and records that holds or not at any moment;
+- an `activation`: `always`, or the first record of a named kind (`event`, with optional `params`), from which the part exists;
+- an `evaluate_at`: a world time (`"day <n> HH:MM"`), `end` (the run's end), or a named event with `after_minutes`;
+- `kinds`: for each level of the experiment's `kind_factor` (a factor of the experiment, such as the condition's guidance), the part's kind: `covered`, `variant`, `changed` or `new`; a part with no kinds is an outcome;
+- `actors`: the participants whose dealings count as the part's effort;
+- `misapplications`: patterns the scenario provides, with their `params`, over the agent's structured acts (tool calls with their arguments and the world time they landed), optionally relative to the time of a named event (`before` or `after` it).
+
+**Evaluation.** The engine checks every active part's predicate after each change the world applies, and keeps the intervals in which it held. At its evaluation time, a part's result is: whether it was active; whether its predicate held then; `reached_at`, the start of the last interval in which it held up to then (none when it did not hold); its effort, the agent's tool calls whose arguments name one of its actors and the money the agent paid or committed to them, between its activation and `reached_at` (or its evaluation, when not reached); the misapplications found, each with the act and its time; and its kind for the run's level of `kind_factor`. A part not active at its evaluation time is recorded as not active, with no result.
+
+**Recorded.** Each part's result is a `part` line, written when the part is evaluated; the run's last line before it ends lists the parts not yet evaluated as `not_evaluated`. The `parts` material's hash is in the setup line, as any held-out material's.
+
+**Refusals**, before any model call, with an error that names the part and the key: a predicate, pattern or event the scenario does not provide; a kind other than the four; a `kinds` table that lacks a level of `kind_factor` or names a level it does not have; a `kind_factor` that is no factor of the experiment while a part has kinds; an `evaluate_at` that does not follow its format; an actor that is no participant; two parts with the same id.
+*Why:* E1's hypotheses are about kinds of parts, so each part's measure must be a fact of the world with a time, the same for every condition, and its kind under each condition a declared key, out of the agent's reach. Effort and misapplications come from the agent's structured acts, not from what it wrote about them.
+
+#### FR-CONGRESS-06: The congress's parts
+The congress provides the part predicates, events and misapplication patterns of the preparation parts P01–P21 and the whole-event outcomes W1–W6 as `agents-lab-experiments/experiments/E1-congress/world.md` (section 5) defines them, each read from the world's records (bookings, commitments, invoices, mail, calls, the programme's versions, registrations and the money), with the preparation proxies for the parts whose goal lies on the day. Its contract gives each one a scenario. Not written yet.
 #### FR-METRIC-01: Generic metrics for every run
 At the end of every run the core reports, per agent and in total:
 - activations and model turns;
