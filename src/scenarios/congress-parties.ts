@@ -592,3 +592,72 @@ export const boardRules: RuleSet = {
     return rulesOf(script(), () => ({ ...counts }));
   },
 };
+
+/** The conditions a speaker may set on its acceptance. */
+export const SPEAKER_CONDITIONS = ["travel_paid", "morning_slot", "fee"] as const;
+
+/** The constraints a speaker may have on its session's time. */
+export const SPEAKER_CONSTRAINTS = ["morning", "afternoon"] as const;
+
+/** A speaker's parameters: its template and what the congress adds to it. */
+interface SpeakerParams {
+  id: string;
+  fee: number;
+  home: string;
+  available: boolean;
+  constraint?: (typeof SPEAKER_CONSTRAINTS)[number];
+  acceptance: number;
+  condition?: (typeof SPEAKER_CONDITIONS)[number];
+  pick_up?: number;
+  organiser: string;
+}
+
+/** Whether a time "HH:MM" is in the morning, before 12:00. */
+const inMorning = (time: unknown) => String(time) < "12:00";
+
+/**
+ * The speaker's rules (FR-CONGRESS-04): from its template, it answers an invitation, and learns the time, its mail and
+ * its rings only through its own tools.
+ */
+export const speakerRules: RuleSet = {
+  start: (given, random) => {
+    const speaker = given as unknown as SpeakerParams;
+    const party = new Party();
+
+    /** Whether a session at this time breaks its constraint. */
+    const breaksConstraint = (time: unknown) => (speaker.constraint === "morning" && !inMorning(time)) || (speaker.constraint === "afternoon" && inMorning(time));
+
+    /** Whether an invitation meets its condition. */
+    const meetsCondition = (fields: Fields) => {
+      if (breaksConstraint(fields.time)) return false;
+      if (speaker.condition === "fee") return Number(fields.fee ?? 0) >= speaker.fee;
+      if (speaker.condition === "travel_paid") return speaker.home === "local" || fields.travel_paid === true;
+      if (speaker.condition === "morning_slot") return inMorning(fields.time);
+      return true;
+    };
+
+    const answer = ({ act, fields }: Received): Answer => {
+      const session = fields.session as number;
+      switch (act) {
+        case "invite": {
+          if (!speaker.available || (breaksConstraint(fields.time) && speaker.condition === undefined)) return { act: "decline", fields: { session } };
+          if (random.next() < 1 - speaker.acceptance) return { act: "decline", fields: { session } };
+          if (speaker.condition !== undefined && !meetsCondition(fields)) return { act: "accept_if", fields: { session, condition: speaker.condition } };
+          return { act: "accept", fields: { session } };
+        }
+        default:
+          return { act: "not_available", fields: { what: act } };
+      }
+    };
+
+    function* script(): Script {
+      yield* party.clock();
+      for (;;) {
+        yield* party.handle(answer, speaker.pick_up ?? 1, random);
+        yield* party.rest(undefined);
+      }
+    }
+
+    return rulesOf(script(), () => ({}));
+  },
+};
