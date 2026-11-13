@@ -228,6 +228,16 @@ function callOf(written: string): { name: string; arguments: Record<string, unkn
   // An invoice, a travel booking and travel options (FR-CONGRESS-05).
   const invoice = /^to "(\w+)" for (\d+), due "([^"]+)", for "([^"]+)"$/.exec(rest);
   if (tool === "issue_invoice" && invoice !== null) return { name: tool, arguments: { to: invoice[1], amount: Number(invoice[2]), due: invoice[3], for: invoice[4] } };
+  // The ticket page, announcements and the programme (FR-POPULATION-01).
+  if (tool === "edit_ticket_page") {
+    const fields = fieldsIn(rest.replace(/^with /, ""), written);
+    if (typeof fields.required_fields === "string") fields.required_fields = fields.required_fields.split(", ");
+    return { name: tool, arguments: fields };
+  }
+  const announced = /^to "(\w+)" the kind "(\w+)"$/.exec(rest);
+  if (tool === "announce" && announced !== null) return { name: tool, arguments: { audience: announced[1], kind: announced[2] } };
+  if (tool === "ticket_page") return { name: tool, arguments: { detail: quoted[0] } };
+  if (tool === "publish_programme") return { name: tool, arguments: programmeOf(rest) };
   if (tool === "book_travel") return { name: tool, arguments: { option: quoted[0], traveller: quoted[1] } };
   if (tool === "travel_options") return { name: tool, arguments: { from: quoted[0], date: quoted[1] } };
   if (tool === "go") return { name: tool, arguments: { place: /^to "([^"]+)"$/.exec(rest)?.[1] } };
@@ -256,6 +266,33 @@ export const FIRST_CONTRACT = (venue: string) => `${venue}-contract-1`;
 function messageOf(written: string): Record<string, unknown> {
   const [, to, act, rest = ""] = /^to "(\w+)" with the act "(\w+)"(.*)$/.exec(written) ?? [];
   assert.ok(to !== undefined, `the steps do not read the message "${written}"`);
+  const fields = fieldsIn(rest, written);
+  if (rest.includes("the contract's id")) fields.contract = FIRST_CONTRACT(to);
+  return { to, act, ...(Object.keys(fields).length === 0 ? {} : { fields }) };
+}
+
+/** A session of a programme as the contract writes it: its speakers at a time in a room, for 45 world minutes. */
+function sessionOf(speakers: string[], start: string, room: string): Record<string, unknown> {
+  const [hours, minutes] = start.split(":").map(Number);
+  const end = hours * 60 + minutes + 45;
+  return { start, end: `${String(Math.floor(end / 60)).padStart(2, "0")}:${String(end % 60).padStart(2, "0")}`, title: `Talk by ${speakers.join(" and ")}`, speakers, room };
+}
+
+/**
+ * A programme as the contract writes it: `with "s1" at "10:00" in "main-hall" and "s4" at "11:00" in "room-b"`, `with
+ * "s1" and "s4" both at "10:00" in "main-hall"`, or `again as version 2`, a programme of its own.
+ */
+function programmeOf(written: string): Record<string, unknown> {
+  const both = /^with "(\w+)" and "(\w+)" both at "([^"]+)" in "([^"]+)"$/.exec(written);
+  if (both !== null) return { sessions: [sessionOf([both[1]], both[3], both[4]), sessionOf([both[2]], both[3], both[4])] };
+  if (written === "again as version 2") return { sessions: [sessionOf(["s1"], "12:00", "main-hall")] };
+  const sessions = [...written.matchAll(/"(\w+)" at "([^"]+)" in "([^"]+)"/g)].map(([, speaker, start, room]) => sessionOf([speaker], start, room));
+  assert.ok(sessions.length > 0, `the steps do not read the programme "${written}"`);
+  return { sessions };
+}
+
+/** The fields a message or a tool call gives, as the contract writes them after its act or "with". */
+function fieldsIn(rest: string, written: string): Record<string, unknown> {
   const fields: Record<string, unknown> = {};
   // The quoted texts are kept aside, so the commas and "and"s within them do not split the fields.
   const quoted: string[] = [];
@@ -282,10 +319,14 @@ function messageOf(written: string): Record<string, unknown> {
     } else if (more !== null && last !== undefined) {
       const [, text, count] = more;
       fields[last.name] = last.kind === "counts" ? `${String(fields[last.name])}; ${textOf(text)}: ${count}` : `${String(fields[last.name])}, ${textOf(text)}`;
+    } else if (/^list the (\d+) registrants' ids$/.test(segment)) {
+      // The registrants' ids, a-1 onwards, as a list (FR-POPULATION-01).
+      const count = Number(/(\d+)/.exec(segment)?.[1]);
+      fields.list = Array.from({ length: count }, (_, index) => `a-${index + 1}`).join(", ");
+      last = { name: "list", kind: "list" };
     } else assert.ok(segment === "the contract's id", `the steps do not read the field "${segment}" of "${written}"`);
   }
-  if (rest.includes("the contract's id")) fields.contract = FIRST_CONTRACT(to);
-  return { to, act, ...(Object.keys(fields).length === 0 ? {} : { fields }) };
+  return fields;
 }
 
 /** The organiser's scripted answers as the contract writes its turns, joined by ", then ": calls, and waits of world hours, each before the next call. */
@@ -293,9 +334,9 @@ export function organiserTurns(written: string, hourMs: number): { toolCalls: ne
   const turns: { toolCalls: never; delayMs: number }[] = [];
   let delayMs = 0;
   for (const part of written.split(", then ")) {
-    const wait = /^wait (\d+) world hours?$/.exec(part);
+    const wait = /^wait (\d+) world (hours?|days?)$/.exec(part);
     if (wait !== null) {
-      delayMs += Number(wait[1]) * hourMs;
+      delayMs += Number(wait[1]) * hourMs * (wait[2].startsWith("day") ? 24 : 1);
       continue;
     }
     turns.push({ toolCalls: [callOf(part)] as never, delayMs });
