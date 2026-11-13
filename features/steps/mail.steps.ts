@@ -32,10 +32,13 @@ const setups = new WeakMap<Context, MailSetup>();
 
 /** The mail of the test world each scenario last loaded, for every test scenario that keeps mail in its world. */
 const loadedMail = new WeakMap<Context, () => Mail | undefined>();
+/** The [mail] of the configuration each scenario sets up, for every test scenario that keeps mail in its world. */
+const mailTables = new WeakMap<Context, TomlTable>();
 
-/** Says where the mail of the test world a scenario loads is, for the steps that read a mailbox. */
-export function keepsMail(context: Context, mail: () => Mail | undefined): void {
+/** Says where the mail of the test world a scenario loads is, and its configuration's [mail], for the steps that read or change them. */
+export function keepsMail(context: Context, mail: () => Mail | undefined, table?: TomlTable): void {
   loadedMail.set(context, mail);
+  if (table !== undefined) mailTables.set(context, table);
 }
 
 function setupOf(context: Context): MailSetup {
@@ -77,7 +80,7 @@ Given(
   function (this: Context, first: string, second: string, component: string) {
     const setup: MailSetup = { agents: [first, second], components: new Map([[component, idle]]), mail: { mailboxes: [first, second, component] } };
     setups.set(this, setup);
-    keepsMail(this, () => setup.loaded?.world.state.mail);
+    keepsMail(this, () => setup.loaded?.world.state.mail, setup.mail);
     // Each agent ends its only activation at once unless the scenario scripts its turns.
     for (const agent of setup.agents) script(this, agent, [{ text: "Nothing to do.", delayMs: 0 }]);
     this.inventoryScenario = () => mailScenario(this, setup.agents);
@@ -115,7 +118,9 @@ Given(/^the mail's notice source is "([^"]+)" and its notice is "([^"]+)"$/, fun
 Given(
   "{string} takes the acts {string}, which requires the fields {string} and {string}, and {string}, which requires none",
   function (this: Context, recipient: string, first: string, field: string, other: string, second: string) {
-    setupOf(this).mail.acts = { [recipient]: { [first]: [field, other], [second]: [] } };
+    const table = mailTables.get(this);
+    assert.ok(table !== undefined, "the scenario set up no mail");
+    table.acts = { [recipient]: { [first]: [field, other], [second]: [] } };
   },
 );
 
@@ -150,7 +155,10 @@ function sendArguments(written: string): JsonObject {
 
 /** The arguments of a call of a tool, from what follows its name in the contract's words. */
 function argumentsOf(tool: string, written: string): JsonObject {
-  if (tool === "send_mail") return sendArguments(written);
+  // A call is written as a message is (FR-PHONE-01).
+  if (tool === "send_mail" || tool === "call") return sendArguments(written);
+  const answer = /^for "([^"]+)" with the act "([^"]+)"$/.exec(written);
+  if (tool === "answer_call" && answer !== null) return { call: answer[1], act: answer[2] };
   if (written === "") return {};
   if (written === 'with "unread_only"') return { unread_only: true };
   if (written === "with the first message's id") return { id: FIRST_MESSAGE_ID };
@@ -185,7 +193,8 @@ function turnsOf(written: string): ScriptedAnswer[] {
   assert.fail(`the agent's turns "${written}" do not end`);
 }
 
-Given(/^"(\w+)"'s scripted turns (.+)$/, function (this: Context, agent: string, written: string) {
+// An agent's turns "woken by the ring" are those of its first activation, whose stimuli hold the ring (FR-PHONE-01).
+Given(/^"(\w+)"'s scripted turns(?:, woken by the ring,)? (.+)$/, function (this: Context, agent: string, written: string) {
   script(this, agent, turnsOf(written));
 });
 

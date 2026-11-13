@@ -15,9 +15,10 @@ import { linesOf, logLines } from "./record.steps.ts";
 import { asRead } from "./stimulus.steps.ts";
 import { modelOf, runScenario, script } from "./tool.steps.ts";
 
-/** The test scenario's world: the mail the engine keeps in it, and nothing else. */
+/** The test scenario's world: the mail and the phone the engine keeps in it, and nothing else. */
 interface Post {
   mail: Mail;
+  phone: unknown;
 }
 
 /** What a rule set perceives at each step: the stimuli that reached its participant since its last step, and its last call's result. */
@@ -39,11 +40,18 @@ interface EchoChanges {
   waitsAfterAnswering?: number;
 }
 
-/** What the participant scenarios set up: the agents, the [mail] and [participants] of the configuration, "echo" and what it was given. */
-interface ParticipantSetup {
+/**
+ * What the participant scenarios set up: the agents, the [mail], [phone] and [participants] of the configuration, "echo"
+ * and what it was given, and the other rule sets a scenario provides.
+ */
+export interface ParticipantSetup {
   agents: string[];
   /** The configuration's [mail]; none when it declares none. */
   mail?: TomlTable;
+  /** The configuration's [phone]; none when it declares none (FR-PHONE-01). */
+  phone?: TomlTable;
+  /** The rule sets the scenario provides besides "echo", by name. */
+  ruleSets?: Record<string, unknown>;
   participants: Record<string, TomlTable>;
   echo: EchoChanges;
   /** Every input "echo" was given, in order: what its rule set was started with, then what it perceived at each step. */
@@ -57,7 +65,7 @@ interface ParticipantSetup {
 
 const setups = new WeakMap<Context, ParticipantSetup>();
 
-function setupOf(context: Context): ParticipantSetup {
+export function setupOf(context: Context): ParticipantSetup {
   const setup = setups.get(context);
   assert.ok(setup !== undefined, "the scenario set up no participant test scenario");
   return setup;
@@ -156,7 +164,7 @@ function participantScenario(context: Context): Scenario<Post> {
     name: "participants",
     agents: () => setup.agents,
     // The engine puts the mail in the world as it loads the scenario; the scenario starts it with none.
-    initialState: () => ({ mail: { mailboxes: {}, inTransit: [] } }),
+    initialState: () => ({ mail: { mailboxes: {}, inTransit: [] }, phone: { calls: [] } }),
     tools: [],
     channels: () => [rhythmChannel],
     metrics: {},
@@ -165,32 +173,38 @@ function participantScenario(context: Context): Scenario<Post> {
     describeDuration: () => "As the mail gives it.",
     describeRhythm: () => "No wait before any activation.",
     mail: { of: (state) => (failing === undefined ? state.mail : failingMail(state.mail, failing)), with: (state, mail) => ({ ...state, mail }) },
-    ruleSets: { echo: echo(setup) },
+    phone: { of: (state: Post) => state.phone, with: (state: Post, phone: unknown) => ({ ...state, phone }) },
+    ruleSets: { echo: echo(setup), ...setup.ruleSets },
     baseConfiguration: stringify({
       agents: setup.agents,
       ...(context.calendar === undefined ? {} : { calendar: context.calendar }),
       ...(setup.mail === undefined ? {} : { mail: setup.mail }),
+      ...(setup.phone === undefined ? {} : { phone: setup.phone }),
       participants: setup.participants,
     }),
   } as Scenario<Post>;
 }
 
-Given("a test scenario with the agent {string} and the participant {string}, both with a mailbox", function (this: Context, agent: string, participant: string) {
-  const setup: ParticipantSetup = { agents: [agent], mail: { mailboxes: [agent, participant] }, participants: { [participant]: {} }, echo: {}, inputs: [], givenAtMs: [] };
-  setups.set(this, setup);
-  keepsMail(this, () => setup.loaded?.world.state.mail);
-  // The agent ends its only activation at once unless the scenario scripts its turns.
-  script(this, agent, [{ text: "Nothing to do.", delayMs: 0 }]);
-  this.inventoryScenario = () => participantScenario(this);
+/** Sets up the participant test scenario for a scenario: its run, its inventory, and its agents, which end at once unless scripted. */
+export function setUpParticipants(context: Context, setup: ParticipantSetup): void {
+  setups.set(context, setup);
+  keepsMail(context, () => setup.loaded?.world.state.mail, setup.mail);
+  // Each agent ends its only activation at once unless the scenario scripts its turns.
+  for (const agent of setup.agents) script(context, agent, [{ text: "Nothing to do.", delayMs: 0 }]);
+  context.inventoryScenario = () => participantScenario(context);
   // A run that stops on an error, or is refused, leaves its error for the steps that check it; the others check there is none.
-  this.runInstead = async () => {
+  context.runInstead = async () => {
     try {
-      setup.loaded = loadScenario(participantScenario(this), this.seed);
-      await runScenario(this, setup.loaded);
+      setup.loaded = loadScenario(participantScenario(context), context.seed);
+      await runScenario(context, setup.loaded);
     } catch (error) {
-      this.runError = error as Error;
+      context.runError = error as Error;
     }
   };
+}
+
+Given("a test scenario with the agent {string} and the participant {string}, both with a mailbox", function (this: Context, agent: string, participant: string) {
+  setUpParticipants(this, { agents: [agent], mail: { mailboxes: [agent, participant] }, participants: { [participant]: {} }, echo: {}, inputs: [], givenAtMs: [] });
 });
 
 Given(
@@ -223,26 +237,26 @@ Given(
 );
 
 /** The lines of the log the scenario's last run wrote, parsed; a run that stopped or was refused has none to check. */
-function ranLines(context: Context): Record<string, unknown>[] {
+export function ranLines(context: Context): Record<string, unknown>[] {
   assert.equal(context.runError, undefined, `the run stopped: ${context.runError?.message}`);
   return stoppedLines(context);
 }
 
 /** The lines of the log the scenario's last run wrote, parsed, whether or not it stopped. */
-function stoppedLines(context: Context): Record<string, unknown>[] {
+export function stoppedLines(context: Context): Record<string, unknown>[] {
   // A run that stopped gives no id: its log is then the only one the scenario's run wrote.
   if (context.runId === undefined) return logLines(context);
   return linesOf(context, `${context.runId}.jsonl`).map((line) => JSON.parse(line) as Record<string, unknown>);
 }
 
 /** The world's time at a moment of the last run, by performance.now(), by the configuration's calendar. */
-function worldTimeOf(context: Context, atMs: unknown): WorldTime {
+export function worldTimeOf(context: Context, atMs: unknown): WorldTime {
   assert.ok(context.calendar !== undefined && context.runStartedAtMs !== undefined, "the run had no calendar or did not start");
   return worldTimeAt(readCalendar(context.calendar), (atMs as number) - context.runStartedAtMs);
 }
 
 /** The "stimulus" lines of a participant's, on a channel, in the order written. */
-function stimulusLines(lines: readonly Record<string, unknown>[], participant: string, channel: string) {
+export function stimulusLines(lines: readonly Record<string, unknown>[], participant: string, channel: string) {
   return lines.filter((line) => line.type === "stimulus" && line.agent === participant && line.channel === channel);
 }
 
@@ -272,10 +286,10 @@ Then(
 );
 
 /** The run milliseconds one world minute takes in the Background's calendar. */
-const MINUTE_MS = 100;
+export const MINUTE_MS = 100;
 
 /** A participant's "tool_call" lines, in the order written. */
-function callLines(lines: readonly Record<string, unknown>[], participant: string) {
+export function callLines(lines: readonly Record<string, unknown>[], participant: string) {
   return lines.filter((line) => line.type === "tool_call" && line.agent === participant);
 }
 
