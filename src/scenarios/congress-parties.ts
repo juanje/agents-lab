@@ -935,3 +935,65 @@ export const catererRules: RuleSet = {
     return rulesOf(script(), () => ({ ...record }));
   },
 };
+
+/** The interpreter agency's parameters: its template and what the congress adds to it. */
+interface AgencyParams {
+  id: string;
+  price: number;
+  notice_days: number;
+  pick_up?: number;
+  organiser: string;
+}
+
+/**
+ * The interpreter agency's rules (FR-CONGRESS-05): it quotes its price and notice, books a date at least its notice
+ * away with a commitment of its price, and cancels a booking, releasing it.
+ */
+export const agencyRules: RuleSet = {
+  start: (given, random) => {
+    const agency = given as unknown as AgencyParams;
+    const party = new Party();
+    const record = { booked: "none", cancelled: false };
+    const forBooking = `interpreting ${agency.id}`;
+    const today = () => Math.floor(party.now / 1440) + 1;
+    const answer = ({ act, fields }: Received): Answer => {
+      const date = String(fields.date ?? "");
+      switch (act) {
+        case "ask_quote":
+          return { act: "quote", fields: { price: agency.price, notice_days: agency.notice_days } };
+        case "book": {
+          const day = Number(/^day (\d+)$/.exec(date)?.[1]);
+          if (!(day - today() >= agency.notice_days)) return { act: "unavailable", fields: { date } };
+          record.booked = date;
+          return { act: "booked", fields: { date, price: agency.price }, then: function* () { yield* party.call("commit", { with: agency.organiser, amount: agency.price, for: forBooking }); } as () => Script };
+        }
+        case "cancel": {
+          if (record.booked === "none") return { act: "not_available", fields: { what: "booking" } };
+          const booked = record.booked;
+          record.booked = "none";
+          record.cancelled = true;
+          return {
+            act: "cancelled",
+            fields: { date: booked },
+            then: function* () {
+              const ledger = yield* party.ledger();
+              for (const recorded of (ledger.commitments_recorded ?? []) as { id: string; for: string; released?: boolean }[]) {
+                if (recorded.for === forBooking && recorded.released !== true) yield* party.call("release", { commitment: recorded.id });
+              }
+            } as () => Script,
+          };
+        }
+        default:
+          return { act: "not_available", fields: { what: act } };
+      }
+    };
+    function* script(): Script {
+      for (;;) {
+        yield* party.clock();
+        yield* party.handle(answer, agency.pick_up ?? 1, random);
+        if (party.stimuli.length === 0) yield* party.rest(undefined);
+      }
+    }
+    return rulesOf(script(), () => ({ ...record }));
+  },
+};
