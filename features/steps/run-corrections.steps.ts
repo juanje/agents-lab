@@ -274,7 +274,8 @@ function bookingTurns(context: Context, rooms: string, accepts = true) {
 }
 
 Given('the organiser holds a contract "v1-contract-1" with "v1" for "day 26"', function (this: Context) {
-  before(this, bookingTurns(this, "hall-a", false));
+  // For "hall-b": the same book again would be a repeat, which gets no second answer.
+  before(this, bookingTurns(this, "hall-b", false));
 });
 
 Then('"v1" answered "contract_held" with "v1-contract-1"', function (this: Context) {

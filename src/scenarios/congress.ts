@@ -785,7 +785,7 @@ function similarOf(configuration: Configuration): Congress["similar"] {
 }
 
 /** The share keys of an attendees material, each a number from 0 to 1. */
-const MATERIAL_SHARES = ["consent_share", "payment_fee_share", "cancel_share", "pay_share", "no_show_share"] as const;
+const MATERIAL_SHARES = ["consent_share", "payment_fee_share", "cancel_share", "pay_share", "no_show_share", "question_share"] as const;
 
 /**
  * The configuration's attendees material (FR-POPULATION-01), none when it gives none; refused, naming its key, when its

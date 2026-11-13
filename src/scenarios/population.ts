@@ -31,6 +31,8 @@ export interface AttendeesMaterial {
   consent_share: number;
   pay_share?: number;
   no_show_share?: number;
+  /** The share of registrants who mail the organiser a question (FR-CONGRESS-09); none without it. */
+  question_share?: number;
   diets: Record<string, number>;
   access?: Record<string, number>;
   fixed?: FixedPerson[];
@@ -450,6 +452,10 @@ export interface PopulationOptions {
 const CANCEL_IF_NOT_COMING = 0.5;
 /** How long a person takes to answer a request, or to ask what the page did not, in world minutes. */
 const WITHIN_A_DAY = 1440;
+
+/** What a registrant asks the organiser about, and within how many world minutes of registering (FR-CONGRESS-09). */
+const QUESTIONS = ["address", "access", "diet", "refund"];
+const WITHIN_THREE_DAYS = 3 * 1440;
 /** The population's account, which pays the organiser for each paying registrant. */
 const ATTENDEES = "attendees";
 
@@ -475,6 +481,7 @@ export function populationComponent<State extends PopulationWorld>(options: Popu
       /** When each person answers a request for needs, or mails a question, in world minutes. */
       const needsAt = new Map<string, number>();
       const mailAt = new Map<string, { at: number; about: string }>();
+      const questionsAt = new Map<string, { at: number; about: string }>();
       const deliveries: Step<State>[] = [];
 
       return {
@@ -553,6 +560,9 @@ export function populationComponent<State extends PopulationWorld>(options: Popu
             const cancelsAt = cancels ? now + random.next() * Math.max(0, eventStart - now) : undefined;
             const need = person.access !== "none" && !required("access") ? "access" : person.diet === "gluten_free" && !required("diet") ? "diet" : undefined;
             if (need !== undefined) mailAt.set(person.id, { at: now + random.next() * WITHIN_A_DAY, about: need });
+            // A registrant's own question, drawn only when the material gives a share (FR-CONGRESS-09).
+            const share = population.material.question_share ?? 0;
+            if (share > 0 && random.next() < share) questionsAt.set(person.id, { at: now + random.next() * WITHIN_THREE_DAYS, about: QUESTIONS[Math.floor(random.next() * QUESTIONS.length)] });
             const given = { ...(required("diet") ? { diet: person.diet } : {}), ...(required("access") ? { access: person.access } : {}), ...(required("consent_sponsors") ? { consent: person.consents } : {}) };
             const amount = Math.round(page.price * (1 - population.material.payment_fee_share) * 100) / 100;
             changes.push((current, money, mail, landing) => {
@@ -605,9 +615,9 @@ export function populationComponent<State extends PopulationWorld>(options: Popu
             }
           }
           // Questions about a need the page did not ask about, mailed from the person's id.
-          for (const [id, { at, about }] of mailAt) {
+          for (const asking of [mailAt, questionsAt]) for (const [id, { at, about }] of asking) {
             if (at > now) continue;
-            mailAt.delete(id);
+            asking.delete(id);
             changes.push((current, money, mail, landing) => ({ population: current, money, mail: withSent(mail, id, { to: options.organiser, act: "question", fields: { about } }, landing) }));
           }
 
@@ -627,7 +637,7 @@ export function populationComponent<State extends PopulationWorld>(options: Popu
             };
           }
           // Until its next hour, or the next time something it drew is due.
-          const due = [nextTick, ...population.people.flatMap(({ registersAt, registered, cancelsAt, cancelled }) => [...(registered === undefined && registersAt !== undefined && registersAt > now ? [registersAt] : []), ...(cancelled === undefined && cancelsAt !== undefined ? [cancelsAt] : [])]), ...needsAt.values(), ...[...mailAt.values()].map(({ at }) => at)].filter((at) => at > now);
+          const due = [nextTick, ...population.people.flatMap(({ registersAt, registered, cancelsAt, cancelled }) => [...(registered === undefined && registersAt !== undefined && registersAt > now ? [registersAt] : []), ...(cancelled === undefined && cancelsAt !== undefined ? [cancelsAt] : [])]), ...needsAt.values(), ...[...mailAt.values(), ...questionsAt.values()].map(({ at }) => at)].filter((at) => at > now);
           return { kind: "wait", ms: options.msFor(Math.min(...due) - now, sinceStartMs) };
         },
       };
