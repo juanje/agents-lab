@@ -134,10 +134,11 @@ Then('"s1" answered "not_available" with what "acceptance", believes nothing abo
 });
 
 Given('"s5" answered "accept_if" with the condition "fee" to an invitation with fee 100, and the organiser sent "accept_condition"', function (this: Context) {
+  // Accepting the condition offers its fee, so the condition is met (FR-CONGRESS-09).
   before(
     this,
     organiserTurns(
-      'call "send_mail" to "s5" with the act "invite", session 2, time "10:00", fee 100 and travel_paid false, then wait 1 world hour, then "send_mail" to "s5" with the act "accept_condition", then wait 1 world hour, then "check_time"',
+      'call "send_mail" to "s5" with the act "invite", session 2, time "10:00", fee 100 and travel_paid false, then wait 1 world hour, then "send_mail" to "s5" with the act "accept_condition" and fee 300, then wait 1 world hour, then "check_time"',
       hourMsOf(this),
     ),
   );

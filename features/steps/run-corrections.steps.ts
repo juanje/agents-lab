@@ -152,3 +152,51 @@ Then('"chair" answered "budget_countered" with the funds {int}, and "refused" wi
   assert.equal(fieldsOf(sentWith(this, "chair", "budget_countered")).funds, funds);
   assert.equal(fieldsOf(sentWith(this, "chair", "refused")).reserve, reserve);
 });
+
+/** The organiser's turns that invite a speaker to a session at a time, then wait for its answer. */
+function inviteTurns(context: Context, speaker: string, session: number, time: string, fee = 0) {
+  return organiserTurns(`call "send_mail" to "${speaker}" with the act "invite", session ${session}, time "${time}", fee ${fee} and travel_paid false, then wait 1 world hour, then "check_time"`, hourMsOf(context));
+}
+
+Given(/^the organiser invites "(\w+)" to session (\d+) at "([^"]+)", then to session (\d+) at "([^"]+)", then to session (\d+) at "([^"]+)" again$/, function (this: Context, speaker: string, first: string, firstAt: string, second: string, secondAt: string, again: string, againAt: string) {
+  const turns = [[first, firstAt], [second, secondAt], [again, againAt]].flatMap(([session, at]) => inviteTurns(this, speaker, Number(session), at));
+  before(this, turns);
+});
+
+Then(/^"(\w+)" answered session (\d+) once and session (\d+) once, both "accept" or both "decline", as its one draw gave$/, function (this: Context, speaker: string, first: string, second: string) {
+  const answers = sentBy(this, speaker).filter((line) => ["accept", "decline", "accept_if"].includes(String(line.act)));
+  // Cucumber gives a group of digits as a number.
+  const bySession = (session: string) => answers.filter((line) => String(fieldsOf(line).session) === String(session));
+  assert.equal(bySession(first).length, 1, `"${speaker}" answered session ${first} ${bySession(first).length} times`);
+  assert.equal(bySession(second).length, 1, `"${speaker}" answered session ${second} ${bySession(second).length} times`);
+  assert.equal(answers.length, 2);
+  assert.equal(bySession(first)[0].act, bySession(second)[0].act);
+});
+
+/** The organiser's turns that confirm a speaker's session, then wait for its answer. */
+function confirmTurns(context: Context, speaker: string) {
+  return organiserTurns(`call "send_mail" to "${speaker}" with the act "confirm", time "10:00", room "hall-a", length 45 and travel "none", then wait 1 world hour, then "check_time"`, hourMsOf(context));
+}
+
+Given('"s2" declined, and the organiser sent it a confirmation, which it answered "not_available"', function (this: Context) {
+  // "s2" would never accept.
+  changePools(this, (pool) => Object.assign(pool.speaker.find(({ id }) => id === "s2") as TomlTable, { acceptance: 0 }));
+  before(this, [...inviteTurns(this, "s2", 2, "10:00"), ...confirmTurns(this, "s2")]);
+});
+
+Given('"s1" accepted and acknowledged its confirmation', function (this: Context) {
+  before(this, [...inviteTurns(this, "s1", 3, "11:00", 300), ...confirmTurns(this, "s1")]);
+});
+
+Given('the perturbation "early_cancel" fires at {string}', function (this: Context, at: string) {
+  change(this, (configuration) => ((configuration.perturbations as TomlTable).early_cancel = { between: [at, at] }));
+});
+
+Then('"s1" cancelled, and "s2" did not', function (this: Context) {
+  assert.equal(sentWith(this, "s2", "not_available").to, ORGANISER);
+  assert.equal(sentWith(this, "s1", "acknowledged").to, ORGANISER);
+  const ill = ranLines(this).filter((line) => line.type === "stimulus" && line.channel === "early_cancel").map((line) => line.agent);
+  assert.deepEqual(ill, ["s1"]);
+  sentWith(this, "s1", "cancel");
+  assert.equal(sentBy(this, "s2").filter((line) => line.act === "cancel").length, 0);
+});

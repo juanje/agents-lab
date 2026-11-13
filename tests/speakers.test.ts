@@ -186,12 +186,37 @@ describe("a speaker's answers after its invitation, and its outcome (FR-CONGRESS
   const confirm = "From: organiser. Act: confirm. time: 10:00. room: main-hall. length: 45. travel: none.";
 
   it("turns an accept_if into accept when its condition is accepted, and into decline when it is not", () => {
-    const accepted = conversation({ home: "north-station", condition: "travel_paid" }, [invite(), "From: organiser. Act: accept_condition."]);
+    const accepted = conversation({ home: "north-station", condition: "travel_paid" }, [invite(), "From: organiser. Act: accept_condition. travel_paid: true."]);
     expect(mails(accepted.steps).map(({ act }) => act)).toEqual(["accept_if", "accept"]);
     expect(accepted.rules.outcome()).toMatchObject({ condition: "travel_paid", condition_met: true, answer: "accept" });
 
     const declined = conversation({ home: "north-station", condition: "travel_paid" }, [invite(), "From: organiser. Act: decline_condition."]);
     expect(mails(declined.steps).map(({ act }) => act)).toEqual(["accept_if", "decline"]);
+  });
+
+  it("turns an accept_if into accept only when its condition is then met, by the invitation's offer as accept_condition updates it; otherwise it asks again (FR-CONGRESS-09)", () => {
+    const met = conversation({ fee: 300, condition: "fee" }, [invite("10:00", 0), "From: organiser. Act: accept_condition. fee: 300.", confirm]);
+    expect(mails(met.steps).map(({ act }) => act)).toEqual(["accept_if", "accept", "acknowledged"]);
+    expect(calls(met.steps, "commit")).toEqual([{ with: "organiser", amount: 300, for: "fee s1" }]);
+
+    const unmet = conversation({ fee: 300, condition: "fee" }, [invite("10:00", 0), "From: organiser. Act: accept_condition."]);
+    expect(mails(unmet.steps)).toEqual([
+      { to: "organiser", act: "accept_if", fields: { session: 2, condition: "fee" } },
+      { to: "organiser", act: "accept_if", fields: { session: 2, condition: "fee" } },
+    ]);
+    expect(unmet.rules.outcome()).toMatchObject({ condition_met: false, answer: "accept_if" });
+  });
+
+  it("draws whether it would accept once, at its first invitation, answers each session's invitation on its own, and ignores a second invitation to the same session (FR-CONGRESS-09)", () => {
+    const at = (session: number, time: string) => `From: organiser. Act: invite. session: ${session}. time: ${time}. fee: 0. travel_paid: false.`;
+    for (let seed = 1; seed <= 20; seed += 1) {
+      const { steps } = conversation({ acceptance: 0.5 }, [at(2, "10:00"), at(5, "14:00"), at(2, "10:00")], seed);
+      const answered = new Random(seed).next() < 0.5 ? "decline" : "accept";
+      expect(mails(steps)).toEqual([
+        { to: "organiser", act: answered, fields: { session: 2 } },
+        { to: "organiser", act: answered, fields: { session: 5 } },
+      ]);
+    }
   });
 
   it("acknowledges a confirmation and a change, and believes the time and room they give", () => {
@@ -316,7 +341,11 @@ describe("the cancellations, perturbations that find their speaker in the world'
     const [hours, minutes] = clock.split(":").map(Number);
     return { day, weekday: "Monday" as const, seconds: hours * 3600 + minutes * 60 };
   };
-  const confirmTo = (to: string, received: ReturnType<typeof at>) => ({ id: `m-${to}`, from: "organiser", to, act: "confirm", fields: {}, subject: "confirm", received, read: false });
+  /** What a speaker that accepted and acknowledged its confirmation sent the organiser, the acknowledgement received at that time (FR-CONGRESS-09). */
+  const confirmedBy = (speaker: string, received: ReturnType<typeof at>) => [
+    { id: `m-${speaker}-1`, from: speaker, to: "organiser", act: "accept", fields: { session: 2 }, subject: "accept", received, read: false },
+    { id: `m-${speaker}-2`, from: speaker, to: "organiser", act: "acknowledged", fields: {}, subject: "acknowledged", received, read: false },
+  ];
   /** A congress world with the mail and the phone given; the base calendar makes a world minute a second of the run. */
   const world = (mailboxes: Record<string, unknown[]>, calls: unknown[] = []) => ({ mail: { mailboxes, inTransit: [] }, phone: { calls } }) as never;
 
@@ -339,7 +368,7 @@ describe("the cancellations, perturbations that find their speaker in the world'
     expect(ms).toBeGreaterThanOrEqual(8 * 1440 * 1000);
     expect(ms).toBeLessThanOrEqual((8 * 1440 + 180) * 1000);
 
-    const confirmed = world({ s1: [], s4: [confirmTo("s4", at(2, "10:01"))] });
+    const confirmed = world({ organiser: confirmedBy("s4", at(2, "10:01")) });
     expect(fired(cycle, confirmed, undefined, ms, at(9, "12:00"))).toEqual({ kind: "deliver", agent: "s4", channel: "early_cancel", held: false });
     expect(cycle.next(confirmed, undefined, ms, at(9, "12:00"))).toEqual({ kind: "end" });
   });
@@ -350,7 +379,7 @@ describe("the cancellations, perturbations that find their speaker in the world'
     cycle.next(world({}), undefined, 0, at(1, "09:00"));
     expect(cycle.next(world({ s1: [], s4: [] }), undefined, 0, at(9, "12:00")).kind).toBe("wait");
 
-    const confirmed = world({ s1: [confirmTo("s1", at(11, "10:01"))], s4: [] });
+    const confirmed = world({ organiser: confirmedBy("s1", at(11, "10:01")) });
     const waiting = cycle.next(confirmed, undefined, 0, at(11, "11:00"));
     // From 11:00 on day 11 to 10:01 on day 13.
     expect(waiting).toEqual({ kind: "wait", ms: (2 * 1440 - 59) * 1000 });
@@ -360,14 +389,30 @@ describe("the cancellations, perturbations that find their speaker in the world'
   it("late_cancel hits a confirmed speaker who has not cancelled, and nobody when none is left", () => {
     const [late] = cancellations({ late_cancel: { at: "day 23 10:00" } });
     const s1Cancelled = { id: "m-9", from: "s1", to: "organiser", act: "cancel", fields: {}, subject: "cancel", received: at(9, "10:00"), read: false };
-    const both = { s1: [confirmTo("s1", at(2, "10:01"))], s4: [confirmTo("s4", at(2, "10:01"))] };
+    const both = [...confirmedBy("s1", at(2, "10:01")), ...confirmedBy("s4", at(2, "10:01"))];
 
     const cycle = late.cycle(new Random(3));
-    expect(fired(cycle, world({ ...both, organiser: [s1Cancelled] }), undefined, 0, at(23, "10:00"))).toEqual({ kind: "deliver", agent: "s4", channel: "late_cancel", held: false });
+    expect(fired(cycle, world({ organiser: [...both, s1Cancelled] }), undefined, 0, at(23, "10:00"))).toEqual({ kind: "deliver", agent: "s4", channel: "late_cancel", held: false });
 
     const called = late.cycle(new Random(3));
     const s4Called = { id: "c-1", from: "s4", to: "organiser", act: "cancel", fields: {}, status: "ended" };
-    expect(called.next(world({ ...both, organiser: [s1Cancelled] }, [s4Called]), undefined, 0, at(23, "10:00"))).toEqual({ kind: "end" });
+    expect(called.next(world({ organiser: [...both, s1Cancelled] }, [s4Called]), undefined, 0, at(23, "10:00"))).toEqual({ kind: "end" });
+  });
+
+  it("choose only a speaker who accepted a session and acknowledged its confirmation, not one a confirm merely reached (FR-CONGRESS-09)", () => {
+    const [early] = cancellations({ early_cancel: { between: ["day 9 09:00", "day 9 09:00"] } });
+    const declinedThenConfirmed = [
+      { id: "m-1", from: "s1", to: "organiser", act: "decline", fields: { session: 2 }, subject: "decline", received: at(2, "10:00"), read: false },
+      { id: "m-2", from: "s1", to: "organiser", act: "not_available", fields: { what: "acceptance" }, subject: "not_available", received: at(2, "11:00"), read: false },
+    ];
+    const s1Confirm = { id: "m-3", from: "organiser", to: "s1", act: "confirm", fields: {}, subject: "confirm", received: at(2, "10:30"), read: false };
+    const state = world({ s1: [s1Confirm], organiser: [...declinedThenConfirmed, ...confirmedBy("s4", at(3, "10:00"))] });
+
+    for (let seed = 1; seed <= 10; seed += 1) {
+      const cycle = early.cycle(new Random(seed));
+      cycle.next(state, undefined, 0, at(1, "09:00"));
+      expect(fired(cycle, state, undefined, 0, at(9, "09:00"))).toEqual({ kind: "deliver", agent: "s4", channel: "early_cancel", held: false });
+    }
   });
 });
 
