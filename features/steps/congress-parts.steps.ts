@@ -582,3 +582,53 @@ Then("it does not hold, with the misapplication of that list", function (this: C
     ["send_attendee_list"],
   );
 });
+
+// The approved addition: each part and outcome giving its other answer.
+Given(/^(the latest programme has S1's slot at "10:30" but not its logo, and S1 paid its invoice|the latest programme has S1's slot at "10:30" and its logo, and S1 was invoiced but has not paid|the venue raised its price by 400 on "day 8", accepted when the committed total was 5000 and the ceiling 5500, and every programme room is booked and seats the attendance|45 paying registrations, and the booked rooms and catering never fell below 45|S3 withdrew on "day 12", no "unapproved_overrun" followed, and the W4 balance is 50|5 sessions in the latest programme, each with a confirmed speaker who believes its time and room|every session in "main-hall" \(120 seats\) and an expected audience of 45|45 attendance with 4 vegan, and catering ordered for 45 with 2 vegan|S1's and S2's agreed conditions all in the latest programme, and no data sent without consent|the wheelchair user registered, and a programme room is reached only through "3 steps" with no ramp)$/, function (this: Context, state: string) {
+  const { state: world } = recordsOf(this);
+  if (state.startsWith("the latest programme has S1's slot")) {
+    const logo = !state.includes("not its logo");
+    const paid = !state.includes("has not paid");
+    publish(this, [session(["s1"], "11:00")], minutes("day 12"), { sponsor_slots: [{ sponsor: "sp1", start: "10:30", end: "10:45" }], logos: logo ? ["sp1"] : [] });
+    world.money = { ...world.money, invoices: [{ id: "i-1", from: "organiser", to: "sp1", amount: 1200, due: "day 10", for: "sponsorship", paid }] };
+    if (paid) money(this, { kind: "payment", from: "sp1", to: "organiser", amount: 1200, invoice: "i-1" }, minutes("day 8"));
+  } else if (state.startsWith("the venue raised")) {
+    booked(this, "main-hall");
+    money(this, { kind: "approval", from: "board", to: "organiser", ceiling: 5500 }, minutes("day 2"));
+    money(this, { kind: "commitment", from: "organiser", to: "c1", amount: 3000, commitment: "k-2", for: "order c1" }, minutes("day 5"));
+    mail(this, "v1", "organiser", "price_change", { contract: "v1-contract-1", old_price: 2000, price: 2400 }, minutes("day 8"));
+    mail(this, "v1", "organiser", "confirmed", { contract: "v1-contract-1", price: 2400, rooms: "main-hall" }, minutes("day 9"));
+    money(this, { kind: "commitment", from: "organiser", to: "v1", amount: 400, commitment: "k-3", for: "v1-contract-1 change" }, minutes("day 9"));
+    register(this, 40);
+    publish(this, [session(["s1"], "10:00")], minutes("day 12"));
+  } else if (state.startsWith("45 paying")) {
+    booked(this, "main-hall");
+    register(this, 45);
+    mail(this, "c1", "organiser", "order_confirmed", { total: 50, price: 1500 }, minutes("day 8"));
+    mail(this, "c1", "organiser", "numbers_accepted", { total: 48, price: 1440 }, minutes("day 18"));
+  } else if (state.startsWith("S3 withdrew")) {
+    world.perturbations.push({ name: "sponsor_withdraws", target: "sp3", at: minutes("day 12") });
+    money(this, { kind: "transfer", from: "board", to: "organiser", amount: 3050, for: "budget" }, minutes("day 3"));
+    money(this, { kind: "commitment", from: "organiser", to: "v1", amount: 3000, commitment: "k-1", for: "v1-contract-1" }, minutes("day 15"));
+  } else if (state.startsWith("5 sessions")) {
+    SIX.slice(0, 5).forEach((speaker, index) => confirmed(this, speaker, TIMES[index]));
+    publish(this, SIX.slice(0, 5).map((speaker, index) => session([speaker], TIMES[index])), minutes("day 12"), { sponsor_slots: [{ sponsor: "sp1", start: "09:15", end: "09:30" }], logos: ["sp1"] });
+  } else if (state.startsWith("every session in")) {
+    register(this, 40);
+    publish(this, [session(["s1"], "10:00"), session(["s2"], "11:00")], minutes("day 12"));
+  } else if (state.startsWith("45 attendance")) {
+    register(this, 36);
+    register(this, 4, { diet: "vegan", given: { diet: "vegan", access: "none" } });
+    mail(this, "organiser", "c1", "order", { counts: "standard: 43; vegan: 2", date: "day 26" }, minutes("day 10") - 1);
+    mail(this, "c1", "organiser", "order_confirmed", { total: 45, price: 1350 }, minutes("day 10"));
+  } else if (state.startsWith("S1's and S2's")) {
+    mail(this, "sp1", "organiser", "agreement", { amount: 1200, conditions: "logo, morning_slot" }, minutes("day 5"));
+    mail(this, "sp2", "organiser", "agreement", { amount: 1000, conditions: "logo" }, minutes("day 5"));
+    publish(this, [session(["s1"], "11:00")], minutes("day 12"), { sponsor_slots: [{ sponsor: "sp1", start: "09:15", end: "09:30" }], logos: ["sp1", "sp2"] });
+  } else {
+    world.passages = world.passages.map((passage) => (passage.between.includes("room-b") ? { ...passage, step_free: "3 steps" } : passage));
+    booked(this, "main-hall, room-b");
+    register(this, 1, { id: "w1", access: "wheelchair", given: { diet: "none", access: "wheelchair" } } as Partial<Person>);
+    publish(this, [session(["s1"], "10:00", "room-b")], minutes("day 12"));
+  }
+});
