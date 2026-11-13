@@ -57,7 +57,7 @@ function textOf(value: TomlValue | undefined, key: string): string {
  * Reads a configuration's [participants] (FR-PARTICIPANT-01), in the order it gives them; none when it declares none.
  * One that cannot be followed is refused, with an error that names the key: a name an agent or a component already has,
  * a tool or channel the scenario does not declare, hours the calendar does not declare or hours without a calendar,
- * reply_minutes that are not two numbers from 0 with the first not above the second, decides that is neither rules nor
+ * reply_minutes without a calendar or that are not two numbers from 0 with the first not above the second, decides that is neither rules nor
  * model, a rule set the scenario does not provide, and a participant decided by a model without a model or a system prompt.
  */
 export function readParticipants(value: TomlValue | undefined, declared: Declared): ParticipantSettings[] {
@@ -71,13 +71,19 @@ export function readParticipants(value: TomlValue | undefined, declared: Declare
       tools: namesOf(table.tools, `${key}.tools`, declared.tools, "tool"),
       channels: namesOf(table.channels, `${key}.channels`, declared.channels, "channel"),
       ...(hours === undefined ? {} : { hours: hoursOf(hours, `${key}.hours`, declared.calendar) }),
-      ...(replyMinutes === undefined ? {} : { replyMinutes: minutesBetween(replyMinutes, `${key}.reply_minutes`) }),
+      ...(replyMinutes === undefined ? {} : { replyMinutes: replyMinutesOf(replyMinutes, `${key}.reply_minutes`, declared.calendar) }),
     };
     if (decides === "model") return { ...kept, decides, model: textOf(model, `${key}.model`), systemPrompt: textOf(systemPrompt, `${key}.system_prompt`) };
     if (decides !== "rules") throw refused(`${key}.decides`, decides, 'it is neither "rules" nor "model"');
     if (typeof rules !== "string" || !declared.ruleSets.includes(rules)) throw refused(`${key}.rules`, rules, `the scenario provides no rule set "${String(rules)}"`);
     return { ...kept, decides, rules, params: (isTable(params) ? params : {}) as Record<string, unknown> };
   });
+}
+
+/** A participant's reply delay, two numbers of world minutes, refused, naming its key, when there is no calendar to give them. */
+function replyMinutesOf(value: TomlValue, key: string, calendar: Calendar | undefined): readonly [number, number] {
+  if (calendar === undefined) throw refused(key, value, "they are world minutes, and the configuration declares no [calendar]");
+  return minutesBetween(value, key);
 }
 
 /** The name of a set of hours a participant keeps, refused, naming its key, when the calendar does not declare it or there is no calendar. */
