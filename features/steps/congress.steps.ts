@@ -7,7 +7,7 @@ import { type Condition, type LoadedScenario, loadScenario } from "../../src/eng
 import { scenarioLibrary } from "../../src/scenarios/library.ts";
 import type { Context } from "../support/context.ts";
 import { madeInventory } from "./calendar.steps.ts";
-import { logLines } from "./record.steps.ts";
+import { linesOf, logLines } from "./record.steps.ts";
 import { modelOf, runScenario, script } from "./tool.steps.ts";
 
 /** The congress's one agent. */
@@ -249,6 +249,10 @@ Given("the calendar starts at {string} and the organiser starts in {string}", fu
   startsAt(this, place, time);
 });
 
+Given("the calendar starts at {string}, within the venue's hours", function (this: Context, time: string) {
+  change(this, (configuration) => ((configuration.calendar as TomlTable).start = time));
+});
+
 Given("the organiser starts in {string}", function (this: Context, place: string) {
   startsAt(this, place);
 });
@@ -429,7 +433,9 @@ When("one replica of each runs with the seed {int}", { timeout: 20_000 }, async 
   for (const condition of setup.conditions) {
     script(this, ORGANISER, [{ text: "Nothing to do.", delayMs: 0 }]);
     await runCongress(this, condition);
-    setup.runs.push(ranLines(this));
+    assert.equal(this.runError, undefined, `the run stopped: ${this.runError?.message}`);
+    // Each run writes its own log in the scenario's log directory.
+    setup.runs.push(linesOf(this, `${this.runId}.jsonl`).map((line) => JSON.parse(line) as Record<string, unknown>));
   }
 });
 
