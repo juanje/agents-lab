@@ -544,7 +544,7 @@ After an agreement, a sponsor pays any invoice from the organiser for at most it
 
 **Speakers.** A speaker draws whether it would accept once, the first time it is invited; later invitations to it reuse that draw. It answers each session's invitation on its own, and a second invitation to the same session changes nothing. `accept_condition` may carry the fields its condition concerns (`fee`, `travel_paid`, `time`), which update the invitation's; it turns an `accept_if` into `accept` only when the condition is then met (the fee offered at least its fee; travel paid; a morning time); otherwise it answers `accept_if` again with its condition. The fee committed is the one offered when the condition is met.
 
-**Confirmed** means a speaker accepted a session and acknowledged its confirmation. The cancellation perturbations choose only among confirmed speakers.
+**Confirmed** means a speaker accepted a session and acknowledged its confirmation; its confirmation time is when the confirmation reached it, counted once it has accepted and acknowledged. The cancellation perturbations choose only among confirmed speakers.
 
 **The programme takes ids.** `publish_programme` refuses, as `invalid_value` naming them, speakers or sponsors that are no drawn id; its description says that sessions name speakers and sponsors by id.
 

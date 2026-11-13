@@ -30,7 +30,7 @@ Feature: Speakers and the partner's session
 
   Scenario: A condition accepted turns an accept_if into an accept
     Given "s2" answered "accept_if" with the condition "travel_paid"
-    And the organiser's scripted turns call "send_mail" to "s2" with the act "accept_condition", then end
+    And the organiser's scripted turns call "send_mail" to "s2" with the act "accept_condition" and travel_paid true, then end
     When the run ends
     Then "s2" answered "accept"
 
