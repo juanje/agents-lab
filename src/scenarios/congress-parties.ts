@@ -120,9 +120,9 @@ class Party {
 
   /**
    * Handles what has reached it: a ring it picks up, with the probability given, is answered by answer_call; its unread
-   * mail is answered by mail. Each answer is made, then what it does once it has answered.
+   * mail is answered by mail. Each answer is made, then what it does once it has answered; no answer, nothing is sent.
    */
-  *handle(answer: (received: Received) => Answer, pickUp: number, random: Random): Generator<RuleStep, void, Perceived> {
+  *handle(answer: (received: Received) => Answer | undefined, pickUp: number, random: Random): Generator<RuleStep, void, Perceived> {
     let mail = false;
     while (this.stimuli.length > 0) {
       const stimulus = this.stimuli.shift() as Stimulus;
@@ -131,12 +131,14 @@ class Party {
       const ring = readRing(stimulus.content);
       if (ring === undefined || !(random.next() < pickUp)) continue;
       const given = answer(ring);
+      if (given === undefined) continue;
       yield* this.call("answer_call", { call: ring.call, act: given.act, fields: given.fields });
       if (given.then !== undefined) yield* given.then();
     }
     if (!mail) return;
     for (const message of yield* this.mail()) {
       const given = answer(message);
+      if (given === undefined) continue;
       yield* this.call("send_mail", { to: message.from, act: given.act, fields: given.fields });
       if (given.then !== undefined) yield* given.then();
     }
@@ -602,27 +604,53 @@ export const SPEAKER_CONSTRAINTS = ["morning", "afternoon"] as const;
 /** A speaker's parameters: its template and what the congress adds to it. */
 interface SpeakerParams {
   id: string;
-  fee: number;
-  home: string;
-  available: boolean;
+  title?: string;
+  fee?: number;
+  home?: string;
+  available?: boolean;
   constraint?: (typeof SPEAKER_CONSTRAINTS)[number];
-  acceptance: number;
+  acceptance?: number;
   condition?: (typeof SPEAKER_CONDITIONS)[number];
   pick_up?: number;
   organiser: string;
+  /** The partner's speaker accepts any session it is given, and takes only confirm, change and ask_slides besides. */
+  partner?: true;
 }
 
 /** Whether a time "HH:MM" is in the morning, before 12:00. */
 const inMorning = (time: unknown) => String(time) < "12:00";
 
+/** The acts the partner's speaker takes. */
+const PARTNER_ACTS = ["invite", "confirm", "change", "ask_slides"];
+
 /**
- * The speaker's rules (FR-CONGRESS-04): from its template, it answers an invitation, and learns the time, its mail and
- * its rings only through its own tools.
+ * The speaker's rules (FR-CONGRESS-04): from its template and its own sequence, it answers an invitation, its
+ * condition's answer, a confirmation and a change (which set what it believes about its session), a withdrawn
+ * invitation, and requests of slides, a panel or promotion; it learns the time, its mail and its rings only through its
+ * own tools.
  */
 export const speakerRules: RuleSet = {
   start: (given, random) => {
     const speaker = given as unknown as SpeakerParams;
     const party = new Party();
+    const fee = speaker.fee ?? 0;
+    const record = {
+      invitation: "none",
+      answer: "none",
+      condition: speaker.condition ?? "none",
+      condition_met: false,
+      believes_time: "none",
+      believes_room: "none",
+      cancelled: false,
+      broken_agreement: false,
+      claim: 0,
+    };
+    let invitation: Fields = {};
+    /** The fee it agreed to, and whether it has committed it. */
+    let agreedFee = 0;
+    let committed = false;
+    let acknowledged = false;
+    const today = () => Math.floor(party.now / 1440) + 1;
 
     /** Whether a session at this time breaks its constraint. */
     const breaksConstraint = (time: unknown) => (speaker.constraint === "morning" && !inMorning(time)) || (speaker.constraint === "afternoon" && inMorning(time));
@@ -630,21 +658,77 @@ export const speakerRules: RuleSet = {
     /** Whether an invitation meets its condition. */
     const meetsCondition = (fields: Fields) => {
       if (breaksConstraint(fields.time)) return false;
-      if (speaker.condition === "fee") return Number(fields.fee ?? 0) >= speaker.fee;
+      if (speaker.condition === "fee") return Number(fields.fee ?? 0) >= fee;
       if (speaker.condition === "travel_paid") return speaker.home === "local" || fields.travel_paid === true;
       if (speaker.condition === "morning_slot") return inMorning(fields.time);
       return true;
     };
 
-    const answer = ({ act, fields }: Received): Answer => {
-      const session = fields.session as number;
+    /** Its answer to an invitation, or to its condition's answer, as it records it. */
+    const answering = (act: string, fields: Fields = {}): Answer => {
+      record.answer = act;
+      if (act === "accept") agreedFee = Number(invitation.fee ?? 0) > 0 ? Number(invitation.fee) : 0;
+      return { act, fields: { session: invitation.session as number, ...fields } };
+    };
+
+    const answer = ({ act, fields }: Received): Answer | undefined => {
+      if (speaker.partner === true && !PARTNER_ACTS.includes(act)) return { act: "not_available", fields: { what: act } };
       switch (act) {
         case "invite": {
-          if (!speaker.available || (breaksConstraint(fields.time) && speaker.condition === undefined)) return { act: "decline", fields: { session } };
-          if (random.next() < 1 - speaker.acceptance) return { act: "decline", fields: { session } };
-          if (speaker.condition !== undefined && !meetsCondition(fields)) return { act: "accept_if", fields: { session, condition: speaker.condition } };
-          return { act: "accept", fields: { session } };
+          invitation = fields;
+          record.invitation = JSON.stringify(fields);
+          if (speaker.partner === true) return answering("accept");
+          if (speaker.available !== true || (breaksConstraint(fields.time) && speaker.condition === undefined)) return answering("decline");
+          if (random.next() < 1 - (speaker.acceptance ?? 1)) return answering("decline");
+          if (speaker.condition !== undefined && !meetsCondition(fields)) return answering("accept_if", { condition: speaker.condition });
+          return answering("accept");
         }
+        case "accept_condition":
+        case "decline_condition": {
+          if (record.answer !== "accept_if") return { act: "not_available", fields: { what: act } };
+          if (act === "decline_condition") return answering("decline");
+          record.condition_met = true;
+          const answered = answering("accept");
+          if (speaker.condition === "fee") agreedFee = fee;
+          return answered;
+        }
+        case "confirm":
+        case "change": {
+          if (fields.time !== undefined) record.believes_time = String(fields.time);
+          if (fields.room !== undefined) record.believes_room = String(fields.room);
+          const first = !acknowledged;
+          acknowledged = true;
+          return {
+            act: "acknowledged",
+            fields: {},
+            then: function* () {
+              if (!first || agreedFee <= 0) return;
+              yield* party.call("commit", { with: speaker.organiser, amount: agreedFee, for: `fee ${speaker.id}` });
+              committed = true;
+            } as () => Script,
+          };
+        }
+        case "withdraw_invitation": {
+          const hadAccepted = record.answer === "accept";
+          record.broken_agreement = hadAccepted;
+          record.answer = "withdrawn";
+          return {
+            act: "withdrawn",
+            fields: {},
+            then: function* () {
+              if (!hadAccepted || !committed) return;
+              yield* party.clock();
+              yield* party.call("issue_invoice", { to: speaker.organiser, amount: agreedFee, due: `day ${today()}`, for: `claim ${speaker.id}` });
+              record.claim = agreedFee;
+            } as () => Script,
+          };
+        }
+        case "ask_slides":
+          return random.next() < 0.8 ? { act: "slides", fields: { title: speaker.title ?? speaker.id } } : undefined;
+        case "ask_panel":
+          return { act: speaker.available === true && random.next() < 0.6 ? "accept" : "decline", fields: { slot: fields.slot as number } };
+        case "ask_promote":
+          return { act: "promoting", fields: {} };
         default:
           return { act: "not_available", fields: { what: act } };
       }
@@ -658,11 +742,11 @@ export const speakerRules: RuleSet = {
       }
     }
 
-    return rulesOf(script(), () => ({}));
+    return rulesOf(script(), () => ({ ...record }));
   },
 };
 
 /** The partner's rules (FR-CONGRESS-04): a speaker's, but it accepts any session it is given. */
 export const partnerRules: RuleSet = {
-  start: (given, random) => speakerRules.start(given, random),
+  start: (given, random) => speakerRules.start({ ...given, partner: true }, random),
 };
