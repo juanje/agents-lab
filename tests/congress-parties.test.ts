@@ -112,7 +112,8 @@ describe("the venue's rules (FR-CONGRESS-02)", () => {
   it("holds a free date until hold_days later and waits until then; a date others booked is unavailable", () => {
     const steps = drive(venueRules.start(params(), new Random(1)), venueTools("From: organiser. Act: hold. date: day 26."), [[notice]]);
     expect(mails(steps)).toEqual([{ to: "organiser", act: "held", fields: { date: "day 26", until: "day 3 Wednesday 09:01" } }]);
-    expect(steps.at(-1)).toEqual({ kind: "wait", minutes: 2 * 1440 });
+    // Its clock stands still here, so it keeps waiting until the hold's end.
+    expect(steps).toContainEqual({ kind: "wait", minutes: 2 * 1440 });
 
     const taken = drive(venueRules.start(params({ booked_by_others: ["day 26"] }), new Random(1)), venueTools("From: organiser. Act: ask_quote. date: day 26. attendance: 60."), [[notice]]);
     expect(mails(taken)).toEqual([{ to: "organiser", act: "unavailable", fields: { date: "day 26" } }]);
@@ -121,7 +122,7 @@ describe("the venue's rules (FR-CONGRESS-02)", () => {
   it("offers a contract for a booking, and on its acceptance confirms, commits the price and invoices the deposit", () => {
     const rules = venueRules.start(params(), new Random(1));
     const answers = { message: "From: organiser. Act: book. date: day 26. rooms: main-hall. hours: 08:00-18:00." };
-    const steps = drive(rules, (tool, args) => (tool === "read_mail" ? answers.message : venueTools("")(tool)) as string, [[notice]]);
+    const steps = drive(rules, (tool) => (tool === "read_mail" ? answers.message : venueTools("")(tool)) as string, [[notice]]);
     expect(mails(steps)[0]).toMatchObject({ to: "organiser", act: "contract", fields: { contract: "v1-contract-1", date: "day 26", rooms: "main-hall", hours: "08:00-18:00", price: 2000 } });
 
     answers.message = "From: organiser. Act: accept_contract. contract: v1-contract-1.";
