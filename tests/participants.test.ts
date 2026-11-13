@@ -204,6 +204,36 @@ describe("run, with a rule set that waits (FR-PARTICIPANT-01)", () => {
   });
 });
 
+describe("run, with a rule set that gives a first step as the run starts (FR-PARTICIPANT-01)", () => {
+  it("takes that step at the run's start, as a wake with no stimuli; one that gives nothing waits for its first stimulus", async () => {
+    const perceived: Perceived[] = [];
+    const startsChecking: RuleSet = {
+      start: () => ({
+        atStart: () => ({ kind: "call", tool: "check_mail", arguments: {} }),
+        next: (input) => {
+          perceived.push(input);
+          return { kind: "end" };
+        },
+        outcome: () => ({}),
+      }),
+    };
+    const logDirectory = mkdtempSync(join(tmpdir(), "agents-lab-logs-"));
+    const quiet = new ScriptedModel([{ text: "Nothing.", delayMs: 0 }]);
+
+    const { runId, startedAtMs } = await run(loadScenario(withDesk(startsChecking), 1), [{ name: "ana", model: quiet, activations: 1 }], 1, { ...settings, logDirectory });
+
+    const [checked] = logOf(logDirectory, runId).filter((line) => line.type === "tool_call" && line.agent === "desk");
+    expect(checked).toMatchObject({ tool: "check_mail", outcome: "success" });
+    expect((checked.startedAtMs as number) - startedAtMs).toBeLessThan(30);
+    expect(perceived).toEqual([{ stimuli: [], result: { tool: "check_mail", outcome: "success", text: "No messages." } }]);
+
+    const nothing: Perceived[] = [];
+    const givesNothing: RuleSet = { start: () => ({ atStart: () => undefined, next: (input) => (nothing.push(input), { kind: "end" }), outcome: () => ({}) }) };
+    await run(loadScenario(withDesk(givesNothing), 1), [{ name: "ana", model: new ScriptedModel([{ text: "Nothing.", delayMs: 0 }]), activations: 1 }], 1, { ...settings, logDirectory });
+    expect(nothing).toEqual([]);
+  });
+});
+
 describe("run, recording each participant's outcome (FR-PARTICIPANT-01)", () => {
   it("writes a participant_outcome line for each participant decided by rules, with its rule set's outcome record, when the run ends", async () => {
     const logDirectory = mkdtempSync(join(tmpdir(), "agents-lab-logs-"));
