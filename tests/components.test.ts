@@ -171,6 +171,18 @@ describe("runComponent", () => {
     expect(given).toEqual([undefined, "success", undefined]);
   });
 
+  it("delivers a stimulus its recipient's hold would keep at once when the step says it is not held, and holds it otherwise (FR-CONGRESS-04)", async () => {
+    const stimuli = new Stimuli([{ name: "illness", source: "illness", stimulus: "You are ill." }]);
+    // A hold that never lets a stimulus reach, as a long reply delay would.
+    stimuli.hold("a", () => new Promise<boolean>(() => {}));
+
+    await runIn(stepping([{ kind: "deliver", agent: "a", channel: "illness" }], []), new World(emptySlots(1)), undefined, stimuli);
+    expect(stimuli.take("a")).toEqual([]);
+
+    await runIn(stepping([{ kind: "deliver", agent: "a", channel: "illness", held: false }], []), new World(emptySlots(1)), undefined, stimuli);
+    expect(stimuli.take("a")).toEqual([{ channel: "illness", source: "illness", content: "You are ill." }]);
+  });
+
   it("gives its cycle the world's time, and takes an action's duration in world time as the run time it spans (FR-CLOCK-03)", async () => {
     const world = new World(emptySlots(1));
     const given: unknown[] = [];
