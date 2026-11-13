@@ -40,7 +40,7 @@ describe("readCalendar", () => {
   };
   /** The valid calendar with a change, as a configuration would give it. */
   const changed = (change: (calendar: any) => void) => {
-    const calendar = structuredClone(valid);
+    const calendar: any = structuredClone(valid);
     change(calendar);
     return () => readCalendar(calendar);
   };
