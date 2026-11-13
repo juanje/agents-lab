@@ -448,6 +448,8 @@ Given('S3 withdrew on "day 12", and a commitment on "day 15" was recorded as an 
 // P18.
 Given(/^(the agency was booked on "day 15" and its commitment fit the ceiling|the agency was booked and its commitment was an "unapproved_overrun"|the agency was not booked)$/, function (this: Context, booking: string) {
   if (booking.includes("not booked")) return;
+  // The ceiling in force: one the board approved, which the 400 fits; without it, the discretionary limit, which it does not.
+  if (booking.includes("fit the ceiling")) money(this, { kind: "approval", from: "board", to: "organiser", ceiling: 5500 }, minutes("day 10"));
   mail(this, "a1", "organiser", "booked", { date: "day 26", price: 400 }, minutes("day 15"));
   money(this, { kind: "commitment", from: "organiser", to: "a1", amount: 400, commitment: "k-1", for: "interpreting a1" }, minutes("day 15"));
   if (booking.includes("unapproved_overrun")) money(this, { kind: "unapproved_overrun", from: "organiser", amount: 400, commitment: "k-1", limit: 300 }, minutes("day 15"));
