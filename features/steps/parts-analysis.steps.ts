@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { Given, Then, When } from "@cucumber/cucumber";
 import type { Context } from "../support/context.ts";
 import { runCommand } from "./summarize.steps.ts";
@@ -64,6 +64,9 @@ Given('in "character", "p1" held in replica 1 only, reached at "day 7 10:00" wit
   runOf(this, "character", 2).parts.push(part("p1", "new", false, undefined, 5), part("p2", "variant", true, "day 11 10:00", 2), { ...part("w1", undefined, true), values: { balance: 5, overruns: 0 } });
 });
 
+/** Where the runs' setup lines say the experiment file is, and the directory "lab parts" runs from, when a scenario moves them (FR-ANALYSIS-04's addition). */
+const moved = new WeakMap<Context, { experimentFile: string; from: string }>();
+
 /** The guidance material's words, by condition. */
 const words = new WeakMap<Context, Record<string, number>>();
 
@@ -87,12 +90,16 @@ function writeRuns(context: Context): string {
   mkdirSync(directory, { recursive: true });
   mkdirSync(join(context.home, "materials"), { recursive: true });
   const counts = words.get(context) ?? { rules: 300, character: 150 };
-  for (const [condition, count] of Object.entries(counts)) writeFileSync(join(context.home, "materials", `${condition}.md`), Array.from({ length: count }, (_, at) => `word${at}`).join(" "));
+  const place = moved.get(context);
+  // The materials sit beside the experiment file the setup lines name, or under the home.
+  const materials = place === undefined ? context.home : join(context.home, dirname(place.experimentFile));
+  mkdirSync(join(materials, "materials"), { recursive: true });
+  for (const [condition, count] of Object.entries(counts)) writeFileSync(join(materials, "materials", `${condition}.md`), Array.from({ length: count }, (_, at) => `word${at}`).join(" "));
   const index: string[] = [];
   for (const [at, run] of (written.get(context) ?? []).entries()) {
     const runId = `run-${at + 1}`;
     index.push(JSON.stringify({ runId, condition: run.condition, model: "scripted/one", replica: run.replica, seed: run.replica, status: run.status }));
-    const setup = { type: "run_setup", runId, condition: run.condition, materials: [{ path: `materials/${run.condition}.md`, key: "guidance", hash: "sha256:x", heldOut: false }] };
+    const setup = { type: "run_setup", runId, condition: run.condition, ...(place === undefined ? {} : { experimentFile: place.experimentFile }), materials: [{ path: `materials/${run.condition}.md`, key: "guidance", hash: "sha256:x", heldOut: false }] };
     // Two model turns of 1000 input tokens each, costing 0.01 each.
     const turns = [1, 2].map(() => ({ type: "model_turn", agent: "organiser", tokens: { input: 1000, output: 50 }, cost: { total: 0.01 } }));
     const lines = [setup, ...turns, ...run.parts, ...(run.status === "stopped" ? [{ type: "run_stopped", error: "stopped" }] : [])];
@@ -103,7 +110,9 @@ function writeRuns(context: Context): string {
 }
 
 When('{string} runs on the directory', async function (this: Context, command: string) {
-  const { output, error } = await runCommand(this, `${command} ${writeRuns(this)}`);
+  const runs = writeRuns(this);
+  const place = moved.get(this);
+  const { output, error } = place === undefined ? await runCommand(this, `${command} ${runs}`) : await runCommand(this, `${command} ../${runs}`, join(this.home, place.from));
   this.labOutput = output;
   this.labError = error;
 });
@@ -214,4 +223,41 @@ Then("it fails with an error that names the directory", function (this: Context)
 Then("it prints that the runs have no parts", function (this: Context) {
   assert.equal(this.labError, undefined, `"lab parts" failed: ${this.labError?.message}`);
   assert.match(this.labOutput ?? "", /The runs have no parts\./);
+});
+
+// The approved addition: fixes found by E1's smoke run.
+
+Given('"p2"\'s line in replica 1 of "rules" says it was not active and gives the group "changed"', function (this: Context) {
+  const run = runOf(this, "rules", 1);
+  run.parts = run.parts.map((line) => (line.part === "p2" ? { type: "part", part: "p2", evaluated_at: "day 26 06:30", active: false, group: "changed" } : line));
+});
+
+Then('"p2" is in the Parts table, counted as not active in that run, and not among the outcomes', function (this: Context) {
+  const row = rowOf(this, "Parts", { Part: "p2", Condition: "rules" });
+  assert.deepEqual({ completed: row.Completed, active: row.Active }, { completed: "2", active: "1" });
+  assert.ok(!table(this, "Outcomes").some((each) => each.Outcome === "p2"), "p2 is among the outcomes");
+});
+
+Given('the part lines give the group "covered" for "p1" in both conditions', function (this: Context) {
+  for (const run of written.get(this) ?? []) run.parts = run.parts.map((line) => (line.part === "p1" ? { ...line, group: "covered" } : line));
+});
+
+Then('"covered" in "character" counts "p1"', function (this: Context) {
+  const row = rowOf(this, "Kinds", { Kind: "covered", Condition: "character" });
+  assert.deepEqual({ active: row.Active, held: row.Held }, { active: "2", held: "1" });
+  assert.ok(!table(this, "Kinds").some((each) => each.Kind === "new" && each.Condition === "character"), "\"new\" in \"character\" still counts p1");
+});
+
+// A regular expression, since a "/" in a Cucumber expression separates alternatives.
+Given(
+  /^the setup lines name the experiment file "experiments\/E1\/experiment\.toml" and its guidance "materials\/rules\.md", and "lab parts" runs from another directory$/,
+  function (this: Context) {
+    moved.set(this, { experimentFile: "experiments/E1/experiment.toml", from: "elsewhere" });
+    mkdirSync(join(this.home, "elsewhere"), { recursive: true });
+  },
+);
+
+Then("the row for {string} gives the guidance's words and tokens", function (this: Context, condition: string) {
+  const row = rowOf(this, "Conditions", { Condition: condition });
+  assert.deepEqual({ words: row.Words, tokens: row["Tokens (estimate)"] }, { words: "300", tokens: "400" });
 });

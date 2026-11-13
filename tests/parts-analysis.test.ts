@@ -63,3 +63,35 @@ describe("partsOfRuns (FR-ANALYSIS-04)", () => {
     expect(partsMarkdown(partsOfRuns(directory, home))).toBe("The runs have no parts.\n");
   });
 });
+
+describe("partsOfRuns, the fixes found by E1's smoke run (FR-ANALYSIS-04's addition)", () => {
+  it("keeps as a part one whose lines give a group, even when none was active, and counts the Kinds table by the group", () => {
+    const inactive = { type: "part", part: "p2", evaluated_at: "day 26 06:30", active: false, group: "changed" };
+    const { directory } = runsDirectory(
+      [
+        { condition: "a", replica: 1, status: "completed", parts: [part("p1", "new", true, { group: "covered" }), inactive] },
+        { condition: "a", replica: 2, status: "completed", parts: [part("p1", "new", false, { group: "covered" }), inactive] },
+      ],
+      {},
+    );
+    const report = partsOfRuns(directory, directory);
+
+    expect(report.outcomes).toEqual([]);
+    expect(report.parts.find(({ part: id }) => id === "p2")).toMatchObject({ active: 0, kind: "changed" });
+    expect(report.kinds.find(({ kind }) => kind === "covered")).toMatchObject({ condition: "a", active: 2, held: 1 });
+    expect(report.kinds.some(({ kind }) => kind === "new")).toBe(false);
+  });
+
+  it("finds the materials from the experiment file's directory the setup line gives, against the directory the runs were written under", () => {
+    const home = mkdtempSync(join(tmpdir(), "agents-lab-parts-"));
+    const directory = join(home, "runs", "e");
+    mkdirSync(directory, { recursive: true });
+    mkdirSync(join(home, "experiments", "E1", "materials"), { recursive: true });
+    writeFileSync(join(home, "experiments", "E1", "materials", "rules.md"), "one two three");
+    const setup = { type: "run_setup", experimentFile: "experiments/E1/experiment.toml", materials: [{ path: "materials/rules.md", key: "guidance", hash: "sha256:x", heldOut: false }] };
+    writeFileSync(join(directory, "run-1.jsonl"), `${JSON.stringify(setup)}\n`);
+    writeFileSync(join(directory, "index.jsonl"), `${JSON.stringify({ runId: "run-1", condition: "rules", model: "m", replica: 1, seed: 1, status: "completed" })}\n`);
+
+    expect(partsOfRuns(directory, join(home, "elsewhere")).conditions[0]).toMatchObject({ words: 3, tokens: 4 });
+  });
+});

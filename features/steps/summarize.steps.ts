@@ -65,13 +65,13 @@ Given("a runs directory {string} whose index lists these runs, each with its log
  * Runs "lab" with a command line, as the person types it, from the scenario's home, with the scenario's library, the
  * whole library unless it gives one, and its models by name.
  */
-export async function runCommand(context: Context, command: string): Promise<Summarized> {
+export async function runCommand(context: Context, command: string, from = context.home): Promise<Summarized> {
   const [program, ...args] = command.split(" ");
   assert.equal(program, "lab");
   const done: Summarized = { output: "" };
   try {
     await lab(args, {
-      directory: context.home,
+      directory: from,
       print: (text) => {
         done.output += text;
       },

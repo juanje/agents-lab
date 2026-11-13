@@ -297,6 +297,15 @@ describe("runExperiment", () => {
 
     for (const { runId } of indexOf(directory)) expect(logLinesOf(directory, String(runId))[0]).toMatchObject({ type: "run_setup", parallelRuns: 3 });
   });
+
+  it("gives the experiment file, as lab run was given it, in each run's setup line (FR-ANALYSIS-04's addition)", async () => {
+    const directory = newRunsDirectory();
+
+    await runExperiment({ ...experiment, replicas: 1, conditions: experiment.conditions.slice(0, 1), file: "experiments/E1/experiment.toml" }, slotsScenario, scriptedModels(), directory);
+
+    const [first] = indexOf(directory);
+    expect(logLinesOf(directory, String(first.runId))[0]).toMatchObject({ type: "run_setup", experimentFile: "experiments/E1/experiment.toml" });
+  });
 });
 
 /** Each model of the experiment, by its name, in its order: a scripted model whose turns take this long and make no tool call. */
