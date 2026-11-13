@@ -124,9 +124,10 @@ export interface Effector<State> extends Declared<State> {
   /**
    * Why the effector does not take a call, from the state as the call starts: its outcome and reason, such as
    * invalid_arguments for a limit its schema cannot give (FR-TOOL-02), or a message its recipient cannot take
-   * (FR-MESSAGE-01); undefined when it takes it. A call it does not take applies nothing and takes no time.
+   * (FR-MESSAGE-01), or a place that is closed at the world's time, which a run with a calendar gives it (FR-CONGRESS-01);
+   * undefined when it takes it. A call it does not take applies nothing and takes no time.
    */
-  refuses?(state: State, call: AgentCall): Refusal | undefined;
+  refuses?(state: State, call: AgentCall, world?: WorldTime): Refusal | undefined;
   /** What ends a call before its duration has passed, for an effector that declares it (FR-WORKPLACE-07). */
   endsEarly?: EarlyEnd<State>;
   /**

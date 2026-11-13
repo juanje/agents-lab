@@ -79,6 +79,13 @@ export interface Scenario<State> {
    * replica's sequence for `variant`, what was drawn, which the run's log gives, and the configuration completed with it.
    */
   variant?: (configuration: Configuration, random: Random) => { configuration: Configuration; drawn: Readonly<Record<string, unknown>> };
+  /**
+   * How many times their duration the engine's own tools (the mail's and the phone's) take for a caller, from the state
+   * as a call starts, for a scenario where that changes (FR-CONGRESS-01); 1 when it does not say.
+   */
+  slowedBy?: (state: State, agent: string, tool: string) => number;
+  /** What the inventory gives of the scenario's world, from the resolved configuration, for a scenario that says (FR-CONGRESS-01). */
+  worldInventory?: (configuration: Configuration) => Readonly<Record<string, unknown>>;
 }
 
 /**

@@ -690,7 +690,7 @@ export async function callTool<State>(
     called = runEnd.aborted
       ? { outcome: CUT_OFF, text: CUT_OFF }
       : (undeclared(tool, args) ??
-        refused(world, tool, { agent, arguments: args }) ??
+        refused(world, tool, { agent, arguments: args }, clock) ??
         (await perform(world, tool, { agent, arguments: args }, { sensings, changes, stimuli }, runEnd, started, clock)));
   } catch (error) {
     // A tool that throws is a defect of the scenario, not the agent's behaviour: no outcome fits it, and the run
@@ -790,8 +790,8 @@ function undeclared<State>(tool: Tool<State>, args: Record<string, unknown>): Ca
  * gives: a limit its schema cannot give, such as one the configuration sets (FR-TOOL-02), or a message its recipient
  * cannot take (FR-MESSAGE-01). It applies nothing and takes no time.
  */
-function refused<State>(world: World<State>, tool: Tool<State>, call: AgentCall): CallResult | undefined {
-  const refusal = tool.kind === "effector" ? tool.refuses?.(world.state, call) : undefined;
+function refused<State>(world: World<State>, tool: Tool<State>, call: AgentCall, clock: RunClock): CallResult | undefined {
+  const refusal = tool.kind === "effector" ? tool.refuses?.(world.state, call, clock.worldTime()) : undefined;
   return refusal === undefined ? undefined : { outcome: refusal.outcome, text: `${refusal.outcome}: ${refusal.reason}` };
 }
 

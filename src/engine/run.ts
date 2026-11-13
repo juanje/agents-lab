@@ -220,11 +220,12 @@ async function runAgents<State>(
     const hours = participants.find(({ name }) => name === callee)?.hours;
     return hours === undefined || calendar === undefined || hoursAt(calendar, hours, clock.worldTime() as WorldTime).within;
   };
-  const tools = [
-    ...scenario.tools,
+  const engineTools = [
     ...(mail === undefined ? [] : mailTools(mail.settings, mail.keeper)),
     ...(phone === undefined ? [] : phoneTools({ ...phone, acts: mail?.settings.acts ?? {}, inHours })),
   ];
+  const slowedBy = scenario.slowedBy;
+  const tools = [...scenario.tools, ...(slowedBy === undefined ? engineTools : engineTools.map((tool) => slowed(tool, slowedBy)))];
   const opening = await Promise.allSettled(
     agents.map((agent) =>
       openSession(world, toolsOf(tools, participants, agent.name), agent, runtime, { ...sessionSettings, systemPrompt: systemPromptOf(systemPrompts, agent.name) }, parallelism, records, stimuli, sensings, changes).catch((error: unknown) => {
@@ -349,6 +350,18 @@ async function sampleEvery(intervalMs: number, sample: () => void, signal: Abort
     if (signal.aborted) return;
     sample();
   }
+}
+
+/** An engine's tool whose every duration is the factor the scenario gives for the caller and the state times its own (FR-CONGRESS-01). */
+function slowed<State>(tool: Tool<State>, slowedBy: (state: State, agent: string, tool: string) => number): Tool<State> {
+  return {
+    ...tool,
+    durationMs: (state, call) => {
+      const duration = tool.durationMs(state, call);
+      const factor = slowedBy(state, call.agent, tool.name);
+      return typeof duration === "number" ? duration * factor : { worldSeconds: duration.worldSeconds * factor };
+    },
+  };
 }
 
 /** The tools an agent's session offers: a participant decided by a model is offered only those it declares (FR-PARTICIPANT-01). */

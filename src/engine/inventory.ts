@@ -61,6 +61,8 @@ export interface ConditionInventory {
   participants?: ParticipantSettings[];
   /** The phone, for a condition whose configuration declares a [phone] (FR-PHONE-01). */
   phone?: PhoneSettings;
+  /** What the scenario says of its world, for a scenario that says (FR-CONGRESS-01). */
+  world?: Readonly<Record<string, unknown>>;
 }
 
 /** A tool as its agents see it, with its duration as the scenario describes it and the text for each of its outcomes. */
@@ -162,6 +164,7 @@ function conditionInventory<State>(
     ...(mail === undefined ? {} : { mail: mailInventory(mail.settings) }),
     ...(participants.length === 0 ? {} : { participants: participants.map((participant) => ({ ...participant })) }),
     ...(phone === undefined ? {} : { phone: phoneInventory(phone.settings) }),
+    ...(scenario.worldInventory === undefined ? {} : { world: scenario.worldInventory(configuration) }),
   };
 }
 
@@ -201,6 +204,7 @@ export function inventoryMarkdown({ experiment, scenario, conditions }: Inventor
       ...(condition.mail === undefined ? [] : [mailMarkdown(condition.mail)]),
       ...(condition.participants === undefined ? [] : [participantsMarkdown(condition.participants)]),
       ...(condition.phone === undefined ? [] : [phoneMarkdown(condition.phone)]),
+      ...(condition.world === undefined ? [] : [`### World\n\n${fenced(JSON.stringify(condition.world, null, 2), "json")}`]),
     ].join("\n"),
   );
   return [`# Environment inventory of experiment "${experiment}", scenario "${scenario}"\n`, ...sections].join("\n");
