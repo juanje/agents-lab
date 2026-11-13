@@ -661,3 +661,8 @@ export const speakerRules: RuleSet = {
     return rulesOf(script(), () => ({}));
   },
 };
+
+/** The partner's rules (FR-CONGRESS-04): a speaker's, but it accepts any session it is given. */
+export const partnerRules: RuleSet = {
+  start: (given, random) => speakerRules.start(given, random),
+};
