@@ -1,0 +1,35 @@
+name: gate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    # Many cucumber scenarios wait on real wall-clock world clocks: several minutes locally, more on a shared runner.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The engine and its tests read only HEAD and `git status`: no history is needed.
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - run: npm ci
+
+      # No model credentials: the gate uses Pi's faux provider only, and cucumber.mjs excludes the @smoke scenario.
+      - run: npm run gate
