@@ -302,11 +302,8 @@ Then(
   { timeout: 30_000 },
   async function (this: Context) {
     turnsBefore.set(this, []);
-    before(this, [
-      ...bookingTurns(this, "hall-a, hall-b"),
-      // The room is lost at 13:00; the organiser drops it, then asks for it back.
-      ...organiserTurns('call "send_mail" to "v1" with the act "change_booking", rooms "hall-a" and hours "08:00-18:00", then wait 1 world hour, then "check_time"', hourMsOf(this)),
-    ]);
+    // The room is lost at 13:00; then the organiser asks to have both rooms.
+    before(this, bookingTurns(this, "hall-a, hall-b"));
     untilTime(this, "day 1 13:30");
     before(this, organiserTurns('call "send_mail" to "v1" with the act "change_booking", rooms "hall-a, hall-b" and hours "08:00-18:00", then wait 1 world hour, then "check_time"', hourMsOf(this)));
     this.timeLimitMs = 6 * hourMsOf(this);

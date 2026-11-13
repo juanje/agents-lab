@@ -288,6 +288,8 @@ export const venueRules: RuleSet = {
     const eventDate = `day ${venue.event_day}`;
     const record = (event: string, fields: Record<string, string | number> = {}) => history.push({ at: party.text(), event, ...fields });
     const statusOf = (date: string) => dates.get(date) ?? "free";
+    /** The rooms lost for each date, which no booking can have back (FR-CONGRESS-09). */
+    const lostRooms = new Map<string, Set<string>>();
     const contractOf = (id: unknown) => contracts.find((contract) => contract.id === id);
     const live = () => contracts.find((contract) => contract.confirmed && statusOf(contract.date) === "confirmed");
     const today = () => Math.floor(party.now / 1440) + 1;
@@ -362,6 +364,9 @@ export const venueRules: RuleSet = {
           return { act: "held", fields: { date, until: party.text(until) } };
         }
         case "book": {
+          // A customer that already holds a contract for the date is told so (FR-CONGRESS-09).
+          const held = contracts.find((each) => each.to === from && each.date === date && ["contracted", "confirmed"].includes(statusOf(date)));
+          if (held !== undefined) return { act: "contract_held", fields: { contract: held.id, date } };
           if (!free(date)) return unavailable(date);
           const rooms = String(fields.rooms ?? "").split(/,\s*/).filter((room) => room !== "");
           const missing = rooms.find((room) => !venue.rooms.some(({ id }) => id === room));
@@ -427,7 +432,8 @@ export const venueRules: RuleSet = {
           const contract = contracts.find((each) => each.to === from && ["contracted", "confirmed"].includes(statusOf(each.date)));
           if (contract === undefined) return notAvailable("booking");
           const rooms = String(fields.rooms ?? "").split(/,\s*/).filter((room) => room !== "");
-          if (rooms.length === 0 || rooms.some((room) => !venue.rooms.some(({ id }) => id === room))) return unavailable(contract.date);
+          const lost = lostRooms.get(contract.date) ?? new Set<string>();
+          if (rooms.length === 0 || rooms.some((room) => !venue.rooms.some(({ id }) => id === room) || lost.has(room))) return unavailable(contract.date);
           const added = rooms.filter((room) => !contract.rooms.includes(room)).reduce((sum, room) => sum + roomPrice(room), 0);
           const dropped = contract.rooms.filter((room) => !rooms.includes(room)).reduce((sum, room) => sum + roomPrice(room), 0);
           contract.rooms = rooms;
@@ -555,7 +561,10 @@ export const venueRules: RuleSet = {
             yield* party.call("send_mail", { to: booked.to, act: "price_change", fields: { contract: booked.id, old_price: booked.price, price } });
             return;
           }
+          // Only a booking with more than one room loses one; the first stays (FR-CONGRESS-09).
+          if (booked.rooms.length < 2) return;
           const lost = booked.rooms.at(-1) as string;
+          lostRooms.set(booked.date, new Set([...(lostRooms.get(booked.date) ?? []), lost]));
           const seats = venue.rooms.find(({ id }) => id === lost)?.seats ?? 0;
           const smaller = venue.rooms.filter(({ id, seats: other }) => other < seats && !booked.rooms.includes(id)).sort((one, other) => other.seats - one.seats)[0];
           // It offers its largest free smaller room, and a cut of the lost room's price (FR-CONGRESS-07).
