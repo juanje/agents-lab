@@ -172,6 +172,8 @@ Then('"v1" called the organiser back within its reply delay with the act "missed
   const back = calls.find((line) => line.from === "v1" && line.to === ORGANISER);
   assert.ok(back !== undefined, '"v1" did not call back');
   assert.equal(back.act, "missed_call");
+  // A call back placed while the organiser's line is still occupied is "busy" and never rings.
+  assert.ok(back.rang !== undefined, `"v1" called back, but the call back's outcome was "${String(back.outcome)}" and it never rang`);
   // Its reply delay is none: it calls back as the missed ring ends, within the moments the run takes.
   const after = minutesOfWorld((back.rang as { worldTime: unknown }).worldTime) - minutesOfWorld((missed.ended as { worldTime: unknown }).worldTime);
   assert.ok(after >= 0 && after <= 30, `"v1" called back ${after} world minutes after the missed ring ended`);
