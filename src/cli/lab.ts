@@ -59,7 +59,7 @@ export async function lab(args: readonly string[], environment: LabEnvironment):
     environment.print(command.json ? `${JSON.stringify(rows, null, 2)}\n` : summaryMarkdown(rows));
     return;
   }
-  const experiment = readExperiment(readFileSync(command.path, "utf8"), dirname(command.path));
+  const experiment = { ...readExperiment(readFileSync(command.path, "utf8"), dirname(command.path)), file: command.path };
   const scenario = environment.scenarios.get(experiment.scenario);
   if (scenario === undefined) throw new Error(`The scenario library has no scenario "${experiment.scenario}"`);
   if (command.name === "inventory") {

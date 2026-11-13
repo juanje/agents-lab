@@ -103,6 +103,7 @@ export async function runExperiment<State>(
     const levels = condition.levels === undefined ? {} : { levels: condition.levels };
     const setup: RunSetup = {
       experiment: experiment.id,
+      ...(experiment.file === undefined ? {} : { experimentFile: experiment.file }),
       scenario: experiment.scenario,
       condition: condition.name,
       configuration: hidingHeldOut(loaded.configuration, loaded.materials),

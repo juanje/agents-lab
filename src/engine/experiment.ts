@@ -14,6 +14,8 @@ export interface Limits {
 /** An experiment as its file gives it, validated against the experiment schema. */
 export interface Experiment {
   id: string;
+  /** The experiment file, as lab run was given it, relative to the directory it runs in (FR-ANALYSIS-04's addition). */
+  file?: string;
   /** The name of the scenario it runs. */
   scenario: string;
   /** The ids of the models its agents work with. */

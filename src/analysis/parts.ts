@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import type { IndexLine } from "../engine/runner.ts";
 import { quartiles } from "./replicas.ts";
 import { indexOf, linesOf } from "./runs.ts";
@@ -8,6 +8,8 @@ import { indexOf, linesOf } from "./runs.ts";
 interface PartLine {
   part: string;
   active: boolean;
+  /** Its group, beside its kind, active or not (FR-PARTS-01's addition). */
+  group?: string;
   held?: boolean;
   reached_at?: string;
   effort?: { calls: number; money: number };
@@ -79,12 +81,17 @@ interface Run extends IndexLine {
   lines: Record<string, unknown>[];
 }
 
-/** The words of the guidance text a run's setup line names, read from where its materials are; none when it names none or the file is missing. */
-function guidanceWords(run: Run, materialsFrom: string): number | null {
-  const setup = run.lines.find((line) => line.type === "run_setup") as { materials?: { path: string; key: string }[] } | undefined;
+/**
+ * The words of the guidance text a run's setup line names; none when it names none or the file is missing. Its path is
+ * read from the experiment file's directory the setup line gives, against the directory the runs were written under
+ * (`<it>/runs/<id>`); a setup line without one reads it from the directory given (FR-ANALYSIS-04's addition).
+ */
+function guidanceWords(run: Run, runsDirectory: string, materialsFrom: string): number | null {
+  const setup = run.lines.find((line) => line.type === "run_setup") as { experimentFile?: string; materials?: { path: string; key: string }[] } | undefined;
   const material = setup?.materials?.find(({ key }) => key === "guidance" || key.endsWith(".guidance"));
   if (material === undefined) return null;
-  const path = join(materialsFrom, material.path);
+  const base = setup?.experimentFile === undefined ? materialsFrom : resolve(runsDirectory, "..", "..", dirname(setup.experimentFile));
+  const path = join(base, material.path);
   if (!existsSync(path)) return null;
   return readFileSync(path, "utf8").split(/\s+/).filter((word) => word !== "").length;
 }
@@ -102,8 +109,13 @@ export function partsOfRuns(directory: string, materialsFrom: string, name: stri
   const partLines = (run: Run) => run.lines.filter((line) => line.type === "part") as unknown as PartLine[];
   const lineOf = (run: Run, part: string) => partLines(run).find((line) => line.part === part);
   const names = [...new Set(runs.filter(({ status }) => status === "completed").flatMap((run) => partLines(run).map(({ part }) => part)))];
-  const kindOf = (part: string, condition: string) => runs.filter((run) => run.condition === condition).flatMap((run) => partLines(run)).find((line) => line.part === part && line.kind !== undefined)?.kind;
-  const isOutcome = (part: string) => runs.every((run) => partLines(run).every((line) => line.part !== part || line.kind === undefined));
+  // The group stands for the kind when the lines give one (FR-PARTS-01's addition).
+  const kindOf = (part: string, condition: string) => {
+    const line = runs.filter((run) => run.condition === condition).flatMap((run) => partLines(run)).find((each) => each.part === part && (each.group !== undefined || each.kind !== undefined));
+    return line?.group ?? line?.kind;
+  };
+  // A part line with a group or a kind is a part, active or not.
+  const isOutcome = (part: string) => runs.every((run) => partLines(run).every((line) => line.part !== part || (line.kind === undefined && line.group === undefined)));
 
   const parts: PartRow[] = [];
   const outcomes: OutcomeRow[] = [];
@@ -152,7 +164,7 @@ export function partsOfRuns(directory: string, materialsFrom: string, name: stri
   const rows: ConditionRow[] = conditions.map((condition) => {
     const completed = completedOf(condition);
     const turns = completed.flatMap((run) => run.lines.filter((line) => line.type === "model_turn")) as { tokens?: { input?: number }; cost?: { total?: number } }[];
-    const words = runs.filter((run) => run.condition === condition).map((run) => guidanceWords(run, materialsFrom)).find((count) => count !== null) ?? null;
+    const words = runs.filter((run) => run.condition === condition).map((run) => guidanceWords(run, directory, materialsFrom)).find((count) => count !== null) ?? null;
     return {
       condition,
       completed: completed.length,

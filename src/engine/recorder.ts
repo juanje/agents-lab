@@ -20,6 +20,8 @@ import type { Stimulus } from "./stimuli.ts";
  */
 export interface RunSetup {
   experiment: string;
+  /** The experiment file, as lab run was given it, from which the materials' paths are read (FR-ANALYSIS-04's addition). */
+  experimentFile?: string;
   /** The scenario's name in the library, which the run's analysis asks what it declares (FR-ANALYSIS-02). */
   scenario: string;
   condition: string;
