@@ -64,6 +64,7 @@ export type LogLine =
   | { type: "metric_sample"; atMs: number; version: number; metrics: Record<string, MetricValue> }
   | MailLine
   | CallLine
+  | ({ type: "variant" } & Readonly<Record<string, unknown>>)
   | { type: "participant_outcome"; participant: string; outcome: Readonly<Record<string, string | number | boolean>> }
   | { type: "run_stopped"; error: string };
 

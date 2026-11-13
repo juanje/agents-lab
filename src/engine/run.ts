@@ -171,7 +171,7 @@ export const PROVIDER_DEFAULTS = "the provider's defaults";
  * sampling settings the sessions use, or null.
  */
 async function runAgents<State>(
-  { world, scenario, systemPrompts, rhythms, components, calendar, mail, phone, participants = [] }: LoadedScenario<State>,
+  { world, scenario, systemPrompts, rhythms, components, calendar, mail, phone, participants = [], variant }: LoadedScenario<State>,
   agents: readonly Agent[],
   seed: number,
   settings: RunSettings,
@@ -243,6 +243,8 @@ async function runAgents<State>(
     thinkingLevels: Object.fromEntries(agents.map((agent, index) => [agent.name, sessions[index].thinkingLevel])),
     otherParameters: PROVIDER_DEFAULTS,
   });
+  // What the replica's variant drew, before anything acts (FR-CONGRESS-01).
+  if (variant !== undefined) recorder.record({ type: "variant", ...variant });
   settings.onStart?.(stimuli);
   const startedAtMs = clock.start();
   // The phone watches the world for calls placed before any agent or participant can place one (FR-PHONE-01).

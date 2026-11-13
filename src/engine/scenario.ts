@@ -74,6 +74,11 @@ export interface Scenario<State> {
   ruleSets?: Readonly<Record<string, RuleSet>>;
   /** Where the state keeps the phone, for a scenario whose configuration may declare a [phone] (FR-PHONE-01). */
   phone?: PhoneKeeper<State>;
+  /**
+   * A replica's variant, for a scenario that draws one (FR-CONGRESS-01): from the resolved configuration and the
+   * replica's sequence for `variant`, what was drawn, which the run's log gives, and the configuration completed with it.
+   */
+  variant?: (configuration: Configuration, random: Random) => { configuration: Configuration; drawn: Readonly<Record<string, unknown>> };
 }
 
 /**
@@ -129,6 +134,8 @@ export interface LoadedScenario<State> {
   participants?: readonly ParticipantSettings[];
   /** The phone, for a configuration that declares a [phone]: its settings, and where the state keeps it (FR-PHONE-01). */
   phone?: LoadedPhone<State>;
+  /** What the replica's variant drew, for a scenario that draws one (FR-CONGRESS-01). */
+  variant?: Readonly<Record<string, unknown>>;
 }
 
 /** A scenario's phone as loaded: its configuration's settings, and where the scenario's state keeps it (FR-PHONE-01). */
@@ -173,7 +180,10 @@ export function loadScenario<State>(
   const base = parse(scenario.baseConfiguration);
   // A text part that holds nothing gives the agents nothing, so it counts as missing.
   if (Object.keys(base).length === 0) throw lacks("base configuration");
-  const { configuration, materials } = condition === undefined ? { configuration: base, materials: [] } : applyCondition(base, condition, scenario.name);
+  const { configuration: resolved, materials } = condition === undefined ? { configuration: base, materials: [] } : applyCondition(base, condition, scenario.name);
+  // From the seed alone, so every condition of a replica meets the same variant (FR-CONGRESS-01).
+  const varied = scenario.variant?.(resolved, Random.derive(seed, "variant"));
+  const configuration = varied?.configuration ?? resolved;
   const channels = scenario.channels(configuration);
   // Each agent wakes by its rhythm's stimulus: without that channel the run would fail at the first wake.
   if (!channels.some((channel) => channel.name === RHYTHM_CHANNEL)) {
@@ -236,6 +246,7 @@ export function loadScenario<State>(
     ...(calendar === undefined ? {} : { calendar }),
     ...(mail === undefined ? {} : { mail }),
     ...(phone === undefined ? {} : { phone }),
+    ...(varied === undefined ? {} : { variant: varied.drawn }),
   };
 }
 
