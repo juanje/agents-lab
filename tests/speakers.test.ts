@@ -239,3 +239,46 @@ describe("a speaker's answers after its invitation, and its outcome (FR-CONGRESS
     expect(partner.outcome()).toMatchObject({ believes_time: "10:00", believes_room: "main-hall" });
   });
 });
+
+describe("a speaker's own cycle and its cancellations (FR-CONGRESS-04)", () => {
+  it("waits until day 19 on a condition not met, then mails withdraw", () => {
+    const clock = { time: "day 2 Tuesday 10:01" };
+    const rules = speakerRules.start(params({ home: "north-station", condition: "travel_paid" }), new Random(1));
+    const answer = tools(() => invite(), () => clock.time);
+    drive(rules, answer);
+    const answered = drive(rules, answer, [[notice]], true);
+    expect(mails(answered).map(({ act }) => act)).toEqual(["accept_if"]);
+    expect(answered.at(-1)).toEqual({ kind: "wait", minutes: 18 * 1440 - (24 * 60 + 10 * 60 + 1) });
+
+    clock.time = "day 19 Saturday 00:00";
+    const after = drive(rules, answer, [[]], true);
+    expect(mails(after)).toEqual([{ to: "organiser", act: "withdraw", fields: { session: 2, condition: "travel_paid" } }]);
+    expect(rules.outcome()).toMatchObject({ answer: "withdraw", condition_met: false });
+  });
+
+  const illness = (channel: string): Stimulus => ({ channel, source: "illness", content: "You are ill and cannot give your session." });
+
+  it("mails cancel when early_cancel reaches it", () => {
+    const rules = speakerRules.start(params(), new Random(1));
+    drive(rules, tools(() => ""));
+    const steps = drive(rules, tools(() => ""), [[illness("early_cancel")]], true);
+    expect(mails(steps)).toEqual([{ to: "organiser", act: "cancel", fields: {} }]);
+    expect(rules.outcome()).toMatchObject({ cancelled: true });
+  });
+
+  it("calls the organiser to cancel when late_cancel reaches it, and mails cancel only when the call is not answered", () => {
+    for (const [outcome, mailed] of [
+      ["no_answer", true],
+      ["busy", true],
+      ["success", false],
+    ] as const) {
+      const rules = speakerRules.start(params(), new Random(1));
+      const answer = (tool: string) => (tool === "call" ? { outcome, text: outcome === "success" ? "Answer from organiser. Act: noted." : `${outcome}: nobody answered` } : tools(() => "")(tool));
+      drive(rules, answer);
+      const steps = drive(rules, answer, [[illness("late_cancel")]], true);
+      expect(steps.filter((step) => step.kind === "call" && step.tool === "call").map((step) => step.kind === "call" && step.arguments)).toEqual([{ to: "organiser", act: "cancel" }]);
+      expect(mails(steps)).toEqual(mailed ? [{ to: "organiser", act: "cancel", fields: {} }] : []);
+      expect(rules.outcome()).toMatchObject({ cancelled: true });
+    }
+  });
+});
