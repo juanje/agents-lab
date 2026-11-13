@@ -136,7 +136,9 @@ Then(
   function (this: Context, balance: string, id: string, from: string, amount: string, due: string, what: string) {
     const ledger = ledgerOf(callsOf(this, undefined, "ledger")[0]);
     assert.equal(ledger.balance, Number(balance));
-    const invoice = (ledger.invoices_to_pay as Record<string, unknown>[]).find((each) => each.id === id);
+    // The time it was issued, which the ledger also gives (FR-CONGRESS-09), is not what this step checks.
+    const { issued, ...invoice } = (ledger.invoices_to_pay as Record<string, unknown>[]).find((each) => each.id === id) ?? {};
+    assert.equal(typeof issued, "string");
     assert.deepEqual(invoice, { id, from, amount: Number(amount), due, for: what, paid: true });
   },
 );

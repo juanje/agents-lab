@@ -136,7 +136,7 @@ When(/^"P05" reads "(\w+)"'s answer for session (\d+)$/, function (this: Context
   answers.set(this, answerFor(recordsOf(this).state, speaker, sessionNumber));
 });
 
-Then("it is {string}", function (this: Context, answer: string) {
+Then(/^it is "(accept|accept_if|decline)"$/, function (this: Context, answer: string) {
   assert.equal(answers.get(this), answer);
 });
 

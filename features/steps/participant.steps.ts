@@ -25,7 +25,7 @@ interface Post {
 /** What a rule set perceives at each step: the stimuli that reached its participant since its last step, and its last call's result. */
 interface Perceived {
   stimuli: readonly Stimulus[];
-  result?: { tool: string; outcome: string; text: string };
+  result?: { tool: string; outcome: string; text: string; record?: Readonly<Record<string, unknown>> };
 }
 
 /** A rule set's next step, as these scenarios use them: a call of one of its participant's tools, a wait in world minutes, or the end. */
@@ -353,7 +353,13 @@ Then(
       const call = calls[results];
       results += 1;
       assert.ok(call !== undefined, `"${rules}" was given the result of a call "${participant}" did not make`);
-      assert.deepEqual(input.result, { tool: call.tool, outcome: call.outcome, text: call.result ?? call.text });
+      // Beside read_mail's text, the world's record of the message it read (FR-CONGRESS-09).
+      const { record, ...result } = input.result;
+      assert.deepEqual(result, { tool: call.tool, outcome: call.outcome, text: call.result ?? call.text });
+      if (record !== undefined) {
+        assert.equal(call.tool, "read_mail");
+        assert.ok(String(result.text).startsWith(`From: ${String(record.from)}. Act: ${String(record.act)}.`), `the record ${JSON.stringify(record)} is not the message read`);
+      }
     }
     assert.equal(results, calls.length, `"${rules}" was given ${results} results of "${participant}"'s ${calls.length} calls`);
   },
