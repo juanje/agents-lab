@@ -73,6 +73,8 @@ export interface Scenario<State> {
   mail?: MailKeeper<State>;
   /** The rule sets the scenario provides, by name, which its configuration's participants may be decided by (FR-PARTICIPANT-01). */
   ruleSets?: Readonly<Record<string, RuleSet>>;
+  /** The accounts of the world itself, besides its agents' and participants', that its configuration's [money] may give (FR-CONGRESS-05). */
+  worldAccounts?: readonly string[];
   /** Where the state keeps the phone, for a scenario whose configuration may declare a [phone] (FR-PHONE-01). */
   phone?: PhoneKeeper<State>;
   /** Where the state keeps the money, for a scenario whose configuration may declare [money] (FR-MONEY-01). */
@@ -229,7 +231,8 @@ export function loadScenario<State>(
   const { calendar } = calendarOf(configuration);
   const declaredParticipants = isTable(configuration.participants ?? {}) ? Object.keys(configuration.participants ?? {}) : [];
   const phone = phoneOf(scenario, configuration, calendar, [...systemPrompts.keys(), ...declaredParticipants]);
-  const money = moneyOf(scenario, configuration, calendar, [...systemPrompts.keys(), ...declaredParticipants]);
+  // The world's own accounts, such as a service's that invoices the agents (FR-CONGRESS-05), hold money too.
+  const money = moneyOf(scenario, configuration, calendar, [...systemPrompts.keys(), ...declaredParticipants, ...(scenario.worldAccounts ?? [])]);
   const mail = mailOf(scenario, configuration, calendar);
   const allChannels = [...channels, ...noticeChannels(mail), ...ringChannels(phone)];
   const participants = readParticipants(configuration.participants, {

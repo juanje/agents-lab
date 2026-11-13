@@ -10,11 +10,28 @@ import type { Configuration, Scenario } from "../engine/scenario.ts";
 import type { Channel } from "../engine/stimuli.ts";
 import type { AgentCall, Effector, Sensor, Sight, Tool } from "../engine/tools.ts";
 import type { Action } from "../engine/world.ts";
-import { SPEAKER_CONDITIONS, SPEAKER_CONSTRAINTS, SPEAKER_PERTURBATIONS, boardRules, partnerRules, perturbationMinutes, speakerRules, venueRules } from "./congress-parties.ts";
+import {
+  SPEAKER_CONDITIONS,
+  SPEAKER_CONSTRAINTS,
+  SPEAKER_PERTURBATIONS,
+  SPONSOR_CONDITIONS,
+  SPONSOR_PERTURBATION,
+  agencyRules,
+  boardRules,
+  catererRules,
+  partnerRules,
+  perturbationMinutes,
+  speakerRules,
+  sponsorRules,
+  venueRules,
+} from "./congress-parties.ts";
 import { describeUniformRhythm, rhythmChannels, uniformRhythm } from "./rhythm.ts";
 
 /** The congress's one agent. */
 const ORGANISER = "organiser";
+
+/** The world's travel, whose account invoices the organiser for what it books (FR-CONGRESS-05). */
+const TRAVEL = "travel";
 
 /** The place away from which the mail tools take away_factor times their duration. */
 const OFFICE = "office";
@@ -202,15 +219,22 @@ function variant(configuration: Configuration, random: Random): { configuration:
     const pool = kinds[kind];
     if (kind === "partner" && typeof count === "number" && count > 1) throw refused("draw.partner", count, "the congress has one partner");
     if (pool === undefined) throw refused(`draw.${kind}`, count, `the pools have no template of the kind "${kind}"`);
-    if (typeof count !== "number" || !(count >= 0 && count <= pool.length)) throw refused(`draw.${kind}`, count, `the pool of "${kind}" has ${pool.length} templates`);
-    const chosen = chooseFrom(pool, count, random);
+    if (typeof count !== "number" || !(count >= 0 && count <= pool.filter(({ in_house_for: inHouse }) => inHouse === undefined).length)) throw refused(`draw.${kind}`, count, `the pool of "${kind}" has ${pool.length} templates`);
+    // A venue's in-house caterer comes with its venue, not from the draw (FR-CONGRESS-05).
+    const drawable = pool.filter(({ in_house_for: inHouse }) => inHouse === undefined);
+    const chosen = chooseFrom(drawable, count, random);
     drawn.chosen[kind] = chosen.map(({ id }) => id as string);
     if (Object.hasOwn(settings, kind)) templates.push(...chosen.map((template) => ({ ...template, kind })));
+  }
+  if (Object.hasOwn(settings, "caterer")) {
+    const venues = drawn.chosen.venue ?? [];
+    templates.push(...(kinds.caterer ?? []).filter(({ in_house_for: inHouse }) => venues.includes(inHouse as string)).map((template) => ({ ...template, kind: "caterer" })));
   }
   const calendar = configuration.calendar === undefined ? undefined : readCalendar(configuration.calendar);
   const city = cityOf(configuration, calendar);
   assertParties(kinds, settings, city);
-  const perturbations = perturbationsOf(configuration, kinds.venue ?? []);
+  travelOf(configuration, city);
+  const perturbations = perturbationsOf(configuration, kinds);
   const accounts: Record<string, TomlTable> = {};
   const participants = Object.fromEntries(
     templates.map(({ id, kind, reply_minutes: replyMinutes, hours, ...params }) => {
@@ -234,7 +258,7 @@ function variant(configuration: Configuration, random: Random): { configuration:
     ...(phone === undefined ? {} : { phone: { ...phone, lines: [...((phone.lines ?? []) as string[]), ...names] } }),
     ...(money === undefined ? {} : { money: { ...money, accounts: { ...((money.accounts ?? {}) as TomlTable), ...accounts } } }),
   };
-  return { configuration: completed, drawn: { ...drawn } };
+  return { configuration: completed, drawn: { ...drawn, ...referencePrice(configuration, drawn.topic) } };
 }
 
 /**
@@ -277,6 +301,8 @@ function assertParties(kinds: Readonly<Record<string, TomlTable[]>>, settings: T
       }
       if (rules === "board" && typeof template.funds !== "number") throw naming("funds", "a board needs its funds");
       if (rules === "speaker" || rules === "partner") assertSpeaker(template, rules, naming);
+      if (rules === "caterer") assertCaterer(template, kinds.venue ?? [], naming);
+      if (rules === "sponsor") assertSponsor(template, naming);
     }
   }
 }
@@ -295,6 +321,95 @@ function assertSpeaker(template: TomlTable, rules: "speaker" | "partner", naming
   if (template.constraint !== undefined && !(SPEAKER_CONSTRAINTS as readonly unknown[]).includes(template.constraint)) throw naming("constraint", `it is none of ${SPEAKER_CONSTRAINTS.join(", ")}`);
 }
 
+/** Whether a value is an amount of at least 0. */
+const isAmount = (value: unknown) => typeof value === "number" && value >= 0;
+
+/**
+ * Refuses, naming it, a caterer template the caterer rule set cannot follow (FR-CONGRESS-05): a negative price per head,
+ * diet limit or minimum, a final_days below 1, or an in_house_for that is no venue in the pools.
+ */
+function assertCaterer(template: TomlTable, venues: readonly TomlTable[], naming: (key: string, why: string) => Error): void {
+  if (!isAmount(template.price_per_head)) throw naming("price_per_head", "it is not an amount of at least 0");
+  const diets = (template.diets ?? {}) as Record<string, TomlTable>;
+  if (Object.values(diets).some(({ limit }) => limit !== undefined && !isAmount(limit))) throw naming("diets", "a limit is not a number of at least 0");
+  if (template.minimum !== undefined && !isAmount(template.minimum)) throw naming("minimum", "it is not a number of at least 0");
+  if (!(typeof template.final_days === "number" && template.final_days >= 1)) throw naming("final_days", "it is not a number of days of at least 1");
+  if (template.in_house_for !== undefined && !venues.some(({ id }) => id === template.in_house_for)) throw naming("in_house_for", "it is no venue in the pools");
+}
+
+/**
+ * Refuses, naming it, a sponsor template the sponsor rule set cannot follow (FR-CONGRESS-05): a negative amount, a
+ * condition it does not know, one it insists on that is not among its conditions, a counter_acceptance outside 0 to 1,
+ * and pay_days whose first number is above its second.
+ */
+function assertSponsor(template: TomlTable, naming: (key: string, why: string) => Error): void {
+  if (!isAmount(template.amount)) throw naming("amount", "it is not an amount of at least 0");
+  const conditions = (template.conditions ?? []) as string[];
+  if (!conditions.every((condition) => (SPONSOR_CONDITIONS as readonly string[]).includes(condition))) throw naming("conditions", `they are not among ${SPONSOR_CONDITIONS.join(", ")}`);
+  if (!((template.insists ?? []) as string[]).every((condition) => conditions.includes(condition))) throw naming("insists", "it insists on a condition that is not among its conditions");
+  if (template.counter_acceptance !== undefined && !isShare(template.counter_acceptance)) throw naming("counter_acceptance", "it is not a probability from 0 to 1");
+  const [fewest, most] = (template.pay_days ?? []) as number[];
+  if (!(isAmount(fewest) && isAmount(most) && fewest <= most)) throw naming("pay_days", "it is not two numbers of days, the first not above the second");
+}
+
+/** A train of the travel material: its id, its station, the time it arrives at the city's station, and its base price. */
+interface Train {
+  id: string;
+  from: string;
+  arrives: string;
+  price: number;
+}
+
+/** A hotel of the travel material: its id, the venue it is near, its rooms each night, and its base price. */
+interface Hotel {
+  id: string;
+  near: string;
+  rooms: number;
+  price: number;
+}
+
+/** The travel material (FR-CONGRESS-05): its stations, trains and hotels, and the probability a train sells out in the last 2 days. */
+interface Travel {
+  stations: string[];
+  trains: Train[];
+  hotels: Hotel[];
+  sold_out_probability: number;
+}
+
+/** The configuration's travel, refused, naming "travel", when a train names no station or a hotel no venue of the city. */
+function travelOf(configuration: Configuration, city: City): Travel {
+  const text = textOf(configuration, "travel") as unknown as Partial<Travel>;
+  const travel: Travel = { stations: text.stations ?? [], trains: text.trains ?? [], hotels: text.hotels ?? [], sold_out_probability: text.sold_out_probability ?? 0 };
+  const train = travel.trains.find(({ from }) => !travel.stations.includes(from));
+  if (train !== undefined) throw refused("travel", train, `the train "${train.id}" leaves from "${train.from}", which is no station`);
+  const hotel = travel.hotels.find(({ near }) => !city.venues.some(({ id }) => id === near));
+  if (hotel !== undefined) throw refused("travel", hotel, `the hotel "${hotel.id}" is near "${hotel.near}", which is no venue`);
+  return travel;
+}
+
+/** A similar event of the material: its topic, name, price and size. */
+interface SimilarEvent {
+  topic: string;
+  name: string;
+  price: number;
+  size: number;
+}
+
+/** The similar events of a topic, in the material's order. */
+function similarEvents(configuration: Configuration, topic: string): SimilarEvent[] {
+  return ((textOf(configuration, "similar_events").events ?? []) as unknown as SimilarEvent[]).filter((event) => event.topic === topic);
+}
+
+/** The congress's reference price: the median price of the similar events of its topic; none when there are none. */
+function referencePrice(configuration: Configuration, topic: string): { reference_price?: number } {
+  const prices = similarEvents(configuration, topic)
+    .map(({ price }) => price)
+    .sort((one, other) => one - other);
+  if (prices.length === 0) return {};
+  const middle = Math.floor(prices.length / 2);
+  return { reference_price: prices.length % 2 === 1 ? prices[middle] : (prices[middle - 1] + prices[middle]) / 2 };
+}
+
 /** A perturbation as the configuration declares it (NFR-13): its name, kind, window or time, and the venue it is for, if one. */
 interface Perturbation {
   name: string;
@@ -305,15 +420,20 @@ interface Perturbation {
 }
 
 /** The configuration's perturbations, refused, naming them, when their times do not follow "day <n> HH:MM" or they are for no venue. */
-function perturbationsOf(configuration: Configuration, venues: readonly TomlTable[]): Perturbation[] {
+function perturbationsOf(configuration: Configuration, kinds: Readonly<Record<string, TomlTable[]>>): Perturbation[] {
   return Object.entries((configuration.perturbations ?? {}) as TomlTable).map(([name, written]) => {
     const declared = { name, ...(written as TomlTable) } as unknown as Perturbation;
     const times = [...(declared.between ?? []), ...(declared.at === undefined ? [] : [declared.at])];
     if (times.length === 0 || times.some((time) => perturbationMinutes(time) === undefined)) throw refused(`perturbations.${name}`, written, 'its times do not follow "day <n> HH:MM"');
-    if (declared.for !== undefined && !venues.some(({ id }) => id === declared.for)) throw refused(`perturbations.${name}`, written, `"${declared.for}" is no venue`);
+    // A sponsor's withdrawal is for a sponsor; the others are a venue's.
+    const kind = name === SPONSOR_PERTURBATION ? "sponsor" : "venue";
+    if ((declared.for !== undefined || kind === "sponsor") && !(kinds[kind] ?? []).some(({ id }) => id === declared.for)) throw refused(`perturbations.${name}`, written, `"${String(declared.for)}" is no ${kind}`);
     return declared;
   });
 }
+
+/** The perturbations that are no venue's: the speakers' cancellations and a sponsor's withdrawal. */
+const NOT_A_VENUES = [...SPEAKER_PERTURBATIONS, SPONSOR_PERTURBATION];
 
 /**
  * What the world adds to a party's parameters, by its rule set: a venue gets the organiser it answers, the event's day,
@@ -321,7 +441,8 @@ function perturbationsOf(configuration: Configuration, venues: readonly TomlTabl
  */
 function worldOf(rules: unknown, id: string, configuration: Configuration, city: City, perturbations: readonly Perturbation[]): TomlTable {
   if (rules === "board") return { organiser: ORGANISER_NAME };
-  if (rules === "speaker" || rules === "partner") return { organiser: ORGANISER_NAME, event_day: configuration.event_day as number };
+  if (rules === "speaker" || rules === "partner" || rules === "caterer" || rules === "agency") return { organiser: ORGANISER_NAME, event_day: configuration.event_day as number };
+  if (rules === "sponsor") return { organiser: ORGANISER_NAME };
   if (rules !== "venue") return {};
   const venue = city.venues.find((each) => each.id === id) as Venue;
   const inside = [venue.entrance, ...venue.rooms.map((room) => room.id)];
@@ -330,7 +451,7 @@ function worldOf(rules: unknown, id: string, configuration: Configuration, city:
     organiser: ORGANISER_NAME,
     event_day: configuration.event_day as number,
     floor_plan: city.passages.filter(({ between }) => between.every((place) => inside.includes(place))).map(({ between, step_free: stepFree }) => ({ between, step_free: stepFree })),
-    perturbations: perturbations.filter((each) => !SPEAKER_PERTURBATIONS.includes(each.name) && (each.for === undefined || each.for === id)) as unknown as TomlTable[],
+    perturbations: perturbations.filter((each) => !NOT_A_VENUES.includes(each.name) && (each.for === undefined || each.for === id)) as unknown as TomlTable[],
   };
 }
 
@@ -637,17 +758,43 @@ function cancellation(declared: Perturbation, speakers: readonly string[], calen
   };
 }
 
-/** The speakers' cancellations the configuration declares, among its participants decided by the rule set "speaker". */
+/**
+ * A sponsor's withdrawal (FR-CONGRESS-05), a perturbation component: at a time drawn in its window from its own
+ * sequence, it delivers the withdrawal to the sponsor it is for, not held.
+ */
+function sponsorWithdrawal(declared: Perturbation, calendar: Calendar): Component<Congress> {
+  return {
+    name: declared.name,
+    kind: "perturbation",
+    description: `At a time drawn between ${String(declared.between?.join(" and ") ?? declared.at)}, makes "${String(declared.for)}" withdraw its sponsorship.`,
+    cycle: (random) => {
+      const [from, to] = (declared.between ?? [declared.at, declared.at]).map((time) => perturbationMinutes(time) as number);
+      const time = from + random.next() * (to - from);
+      let done = false;
+      return {
+        next: (_state, _outcome, sinceStartMs, world) => {
+          const now = minutesOfWorld(world as WorldTime);
+          if (done) return { kind: "end" };
+          if (now < time) return { kind: "wait", ms: reachedAfterMs(calendar, sinceStartMs, (time - now) * 60) };
+          done = true;
+          return { kind: "deliver", agent: declared.for as string, channel: declared.name, held: false };
+        },
+      };
+    },
+  };
+}
+
+/** The speakers' cancellations and a sponsor's withdrawal the configuration declares. */
 function components(configuration: Configuration): Component<Congress>[] {
   const declared = Object.entries((configuration.perturbations ?? {}) as TomlTable)
-    .filter(([name]) => SPEAKER_PERTURBATIONS.includes(name))
+    .filter(([name]) => SPEAKER_PERTURBATIONS.includes(name) || name === SPONSOR_PERTURBATION)
     .map(([name, written]) => ({ name, ...(written as TomlTable) }) as unknown as Perturbation);
   if (declared.length === 0) return [];
   const calendar = readCalendar(configuration.calendar);
   const speakers = Object.entries((configuration.participants ?? {}) as TomlTable)
     .filter(([, participant]) => (participant as TomlTable).rules === "speaker")
     .map(([name]) => name);
-  return declared.map((each) => cancellation(each, speakers, calendar));
+  return declared.map((each) => (each.name === SPONSOR_PERTURBATION ? sponsorWithdrawal(each, calendar) : cancellation(each, speakers, calendar)));
 }
 
 /** The organiser's own tools, besides the mail's and the phone's. */
@@ -725,11 +872,23 @@ const BASE_CONFIGURATION = [
   "board = []",
   "speaker = []",
   "partner = []",
+  "caterer = []",
+  "sponsor = []",
+  "agency = []",
   "'''",
   "draw = '''",
   "attendance = [100, 100]",
   "'''",
   "event_day = 26",
+  "travel = '''",
+  "stations = []",
+  "trains = []",
+  "hotels = []",
+  "sold_out_probability = 0",
+  "'''",
+  "similar_events = '''",
+  "events = []",
+  "'''",
   "away_factor = 1.0",
   "wait_max_minutes = 60",
   "[calendar]",
@@ -751,6 +910,9 @@ const BASE_CONFIGURATION = [
   'ring = "{from} calls ({call}): {act}. {fields}{text}"',
   "[money]",
   "discretionary_limit = 300",
+  // The world's travel, which invoices the organiser for what it books (FR-CONGRESS-05).
+  "[money.accounts.travel]",
+  "unlimited = true",
   "[money.accounts.organiser]",
   "opening = 0",
   'tools = ["ledger", "pay", "issue_invoice"]',
@@ -766,6 +928,11 @@ const BASE_CONFIGURATION = [
   'channels = ["mail_notice", "phone"]',
   "reply_minutes = [0, 0]",
   'account = "funds"',
+  ...[
+    ["caterer", '["send_mail", "check_mail", "read_mail", "answer_call", "check_time", "ledger", "commit", "release", "issue_invoice"]', '["mail_notice", "phone"]', '"unlimited"'],
+    ["sponsor", '["send_mail", "check_mail", "read_mail", "answer_call", "check_time", "ledger", "pay"]', `["mail_notice", "phone", "${SPONSOR_PERTURBATION}"]`, '"amount"'],
+    ["agency", '["send_mail", "check_mail", "read_mail", "answer_call", "check_time", "ledger", "commit", "release"]', '["mail_notice", "phone"]', '"unlimited"'],
+  ].flatMap(([kind, tools, channels, account]) => [`[kinds.${kind}]`, `rules = "${kind}"`, `tools = ${tools}`, `channels = ${channels}`, "reply_minutes = [0, 0]", `account = ${account}`]),
   ...["speaker", "partner"].flatMap((kind) => [
     `[kinds.${kind}]`,
     `rules = "${kind}"`,
@@ -808,6 +975,7 @@ export const congressScenario: Scenario<Congress> = {
     { name: PERSON_CHANNEL, source: configuration.task_giver as string, stimulus: textsIn(configuration, "person") },
     // What makes a speaker cancel: an illness, which reaches it on the perturbation's own channel (FR-CONGRESS-04).
     ...SPEAKER_PERTURBATIONS.map((name) => ({ name, source: "illness", stimulus: "You are ill and cannot give your session." })),
+    { name: SPONSOR_PERTURBATION, source: "the sponsor's board", stimulus: "Your board withdraws the sponsorship." },
   ],
   metrics: {},
   firstStimuli: (configuration) => (textsIn(configuration, "person") === "" ? [] : [PERSON_CHANNEL]),
@@ -819,7 +987,8 @@ export const congressScenario: Scenario<Congress> = {
   phone: { of: (state) => state.phone, with: (state, phone) => ({ ...state, phone }) },
   money: { of: (state) => state.money, with: (state, money) => ({ ...state, money }) },
   components,
-  ruleSets: { venue: venueRules, board: boardRules, speaker: speakerRules, partner: partnerRules },
+  worldAccounts: [TRAVEL],
+  ruleSets: { venue: venueRules, board: boardRules, speaker: speakerRules, partner: partnerRules, caterer: catererRules, sponsor: sponsorRules, agency: agencyRules },
   variant,
   slowedBy: (state, agent) => (agent === ORGANISER && hereOf(state, agent) !== OFFICE ? state.settings.awayFactor : 1),
   worldInventory,
