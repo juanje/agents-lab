@@ -556,8 +556,12 @@ describe("run", () => {
 
     const { toolCalls } = await run(slots({ tools: [clock], baseConfiguration: `${slotsScenario.baseConfiguration}\n${calendar}` }), [{ name: "a", model, activations: 1 }], seed, settings);
 
-    // 120 ms of the run is 72 world seconds at the scale 600: past midnight, into day 4.
-    expect(JSON.parse(toolCalls[0].result ?? "null")).toEqual({ day: 4, weekday: "Monday", seconds: 12 });
+    // 120 ms of the run is 72 world seconds at the scale 600: past midnight, into day 4. Running the engine takes a few
+    // milliseconds more, each 0.6 world seconds.
+    const given = JSON.parse(toolCalls[0].result ?? "null");
+    expect(given).toMatchObject({ day: 4, weekday: "Monday" });
+    expect(given.seconds).toBeGreaterThanOrEqual(12);
+    expect(given.seconds).toBeLessThan(18);
   });
 
   it("applies an effector the model calls through the arbiter, with the agent and the call's arguments", async () => {
