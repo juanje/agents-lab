@@ -775,3 +775,163 @@ export const speakerRules: RuleSet = {
 export const partnerRules: RuleSet = {
   start: (given, random) => speakerRules.start({ ...given, partner: true }, random),
 };
+
+/** A caterer's parameters: its template and what the congress adds to it. */
+interface CatererParams {
+  id: string;
+  price_per_head: number;
+  /** Each diet it serves, with its limit when it has one; standard meals have none. */
+  diets?: Record<string, { limit?: number }>;
+  minimum?: number;
+  final_days: number;
+  deposit_share: number;
+  deposit_due_days: number;
+  cancellation: CancellationStep[];
+  pick_up?: number;
+  organiser: string;
+  event_day: number;
+}
+
+/** Counts by diet as a text gives them: "standard: 50; vegan: 6". */
+function countsIn(text: unknown): Record<string, number> {
+  return Object.fromEntries(
+    String(text ?? "")
+      .split(/;\s*/)
+      .filter((each) => each !== "")
+      .map((each) => {
+        const [diet, count] = each.split(/:\s*/);
+        return [diet, Number(count)];
+      }),
+  );
+}
+
+/** How many days before the event a caterer invoices the balance. */
+const BALANCE_DAYS = 5;
+
+/** The share of an ordered total that final numbers may add after their date, and the surcharge on what they add. */
+const LATE_INCREASE = 0.05;
+const LATE_SURCHARGE = 0.1;
+
+/**
+ * The caterer's rules (FR-CONGRESS-05): from its template, it quotes, takes an order within its diets' limits and its
+ * minimum (committing its price and invoicing the deposit), takes final numbers by their date or a small increase after
+ * it with a surcharge, cancels by its schedule, and invoices the balance five days before the event.
+ */
+export const catererRules: RuleSet = {
+  start: (given, random) => {
+    const caterer = given as unknown as CatererParams;
+    const party = new Party();
+    const record = { quotes: 0, order: "none", ordered: 0, final_numbers: "none", surcharges: 0, invoices_issued: 0, cancelled: false };
+    const forOrder = `order ${caterer.id}`;
+    const finalDay = caterer.event_day - caterer.final_days;
+    const balanceAt = (caterer.event_day - BALANCE_DAYS - 1) * 1440;
+    let order: { total: number; price: number; deposit: number; balanced: boolean } | undefined;
+    const today = () => Math.floor(party.now / 1440) + 1;
+    const diets = caterer.diets ?? {};
+    const dietsText = () => Object.entries(diets).map(([diet, { limit }]) => `${diet}: ${limit ?? "no limit"}`).join("; ");
+    const total = (counts: Record<string, number>) => Object.values(counts).reduce((sum, count) => sum + count, 0);
+    /** A diet it does not serve, or over its limit, if any. */
+    const overLimit = (counts: Record<string, number>) => Object.entries(counts).find(([diet, count]) => diet !== "standard" && (!Object.hasOwn(diets, diet) || count > (diets[diet].limit ?? Infinity)))?.[0];
+
+    /** Its commitments for the order, released, and the order's new price committed. */
+    function* recommit(price: number): Generator<RuleStep, void, Perceived> {
+      const ledger = yield* party.ledger();
+      for (const recorded of (ledger.commitments_recorded ?? []) as { id: string; for: string; released?: boolean }[]) {
+        if (recorded.for === forOrder && recorded.released !== true) yield* party.call("release", { commitment: recorded.id });
+      }
+      if (price > 0) yield* party.call("commit", { with: caterer.organiser, amount: price, for: forOrder });
+    }
+
+    function* invoice(amount: number, due: string, what: string): Generator<RuleStep, void, Perceived> {
+      yield* party.call("issue_invoice", { to: caterer.organiser, amount, due, for: `${what} ${forOrder}` });
+      record.invoices_issued += 1;
+    }
+
+    const answer = ({ act, fields }: Received): Answer => {
+      switch (act) {
+        case "ask_quote":
+          record.quotes += 1;
+          return {
+            act: "quote",
+            fields: {
+              price_per_head: caterer.price_per_head,
+              diets: dietsText(),
+              minimum: caterer.minimum ?? 0,
+              final_numbers_by: `day ${finalDay}`,
+              deposit_share: caterer.deposit_share,
+              deposit_due_days: caterer.deposit_due_days,
+              cancellation: scheduleText(caterer.cancellation),
+            },
+          };
+        case "order": {
+          const counts = countsIn(fields.counts);
+          const over = overLimit(counts);
+          if (over !== undefined) return { act: "order_refused", fields: { diet: over } };
+          if (total(counts) < (caterer.minimum ?? 0)) return { act: "order_refused", fields: { minimum: caterer.minimum as number } };
+          const price = total(counts) * caterer.price_per_head;
+          order = { total: total(counts), price, deposit: Math.round(price * caterer.deposit_share), balanced: false };
+          record.order = String(fields.counts);
+          record.ordered = order.total;
+          const placed = order;
+          return {
+            act: "order_confirmed",
+            fields: { total: placed.total, price },
+            then: function* () {
+              yield* party.call("commit", { with: caterer.organiser, amount: price, for: forOrder });
+              yield* invoice(placed.deposit, `day ${today() + caterer.deposit_due_days}`, "deposit");
+            } as () => Script,
+          };
+        }
+        case "final_numbers": {
+          const counts = countsIn(fields.counts);
+          const over = overLimit(counts);
+          if (order === undefined) return { act: "not_available", fields: { what: "order" } };
+          if (over !== undefined) return { act: "numbers_refused", fields: { diet: over } };
+          const asked = total(counts);
+          const increase = asked - order.total;
+          const late = today() >= finalDay;
+          if (late && !(increase >= 0 && increase <= order.total * LATE_INCREASE)) return { act: "numbers_refused", fields: { total: asked } };
+          const surcharge = late ? Math.round(increase * caterer.price_per_head * LATE_SURCHARGE) : 0;
+          const price = asked * caterer.price_per_head + surcharge;
+          order.price = price;
+          record.final_numbers = String(fields.counts);
+          record.surcharges += surcharge;
+          return { act: "numbers_accepted", fields: { total: asked, price }, then: () => recommit(price) as Script };
+        }
+        case "cancel_order": {
+          if (order === undefined) return { act: "not_available", fields: { what: "order" } };
+          const charge = Math.round(order.price * shareCharged(caterer.cancellation, caterer.event_day - today()));
+          order = undefined;
+          record.cancelled = true;
+          return {
+            act: "cancelled",
+            fields: { charge },
+            then: function* () {
+              yield* recommit(0);
+              if (charge > 0) yield* invoice(charge, `day ${today()}`, "cancellation");
+            } as () => Script,
+          };
+        }
+        default:
+          return { act: "not_available", fields: { what: act } };
+      }
+    };
+
+    function* script(): Script {
+      yield* party.clock();
+      for (;;) {
+        if (party.stimuli.length > 0) yield* party.clock();
+        yield* party.handle(answer, caterer.pick_up ?? 1, random);
+        yield* party.clock();
+        if (order !== undefined && !order.balanced && party.now >= balanceAt) {
+          order.balanced = true;
+          yield* invoice(order.price - order.deposit, `day ${caterer.event_day}`, "balance");
+        }
+        if (party.stimuli.length > 0) continue;
+        yield* party.rest(order !== undefined && !order.balanced ? balanceAt - party.now : undefined);
+      }
+    }
+
+    return rulesOf(script(), () => ({ ...record }));
+  },
+};
