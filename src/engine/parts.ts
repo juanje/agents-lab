@@ -10,14 +10,14 @@ export interface Act {
 
 /** What a scenario provides for parts (FR-PARTS-01): its predicates, its events and its misapplication patterns, by name. */
 export interface PartsProvided<State> {
-  /** Whether a part holds in a state, with its params. */
-  predicates: Readonly<Record<string, (state: State, params: Readonly<Record<string, unknown>>) => boolean>>;
+  /** Whether a part holds in a state, with its params; or that, with the values its line gives (FR-CONGRESS-06). */
+  predicates: Readonly<Record<string, (state: State, params: Readonly<Record<string, unknown>>) => boolean | { holds: boolean; values: Readonly<Record<string, unknown>> }>>;
   /** The world time of an event's first record in a state, with its params; none when it has none. */
   events: Readonly<Record<string, (state: State, params: Readonly<Record<string, unknown>>) => WorldTime | undefined>>;
   /** Whether an act is a misapplication, with its params and the world's state at the act's time (FR-CONGRESS-06). */
-  misapplications: Readonly<Record<string, (act: Act, params: Readonly<Record<string, unknown>>, state: State) => boolean>>;
-  /** Whether a trap holds, read from the world's records at evaluation, with its params (FR-CONGRESS-06). */
-  traps?: Readonly<Record<string, (state: State, params: Readonly<Record<string, unknown>>) => boolean>>;
+  misapplications: Readonly<Record<string, (act: Act, params: Readonly<Record<string, unknown>>, state: State, latest: State) => boolean>>;
+  /** Whether a trap holds, read from the world's records at evaluation, with its params and the evaluation's world minutes (FR-CONGRESS-06). */
+  traps?: Readonly<Record<string, (state: State, params: Readonly<Record<string, unknown>>, at: number) => boolean>>;
 }
 
 /** The kinds a part may be under a level of the kind factor. */
@@ -195,7 +195,8 @@ export class PartsBook<State> {
       const { part } = tracked;
       if (tracked.activeAt === undefined) tracked.activeAt = part.activation === "always" ? now : this.#eventAt(part.activation);
       if (tracked.activeAt === undefined) continue;
-      const holds = this.#settings.provided.predicates[part.predicate](state, part.params);
+      const given = this.#settings.provided.predicates[part.predicate](state, part.params);
+      const holds = typeof given === "boolean" ? given : given.holds;
       const open = tracked.intervals.at(-1);
       if (holds && (open === undefined || open.to !== undefined)) tracked.intervals.push({ from: now });
       if (!holds && open !== undefined && open.to === undefined) open.to = now;
@@ -280,13 +281,16 @@ export class PartsBook<State> {
       const beforeAt = before === undefined ? undefined : (this.#eventAt(before) ?? Infinity);
       const afterAt = after === undefined ? undefined : this.#eventAt(after);
       return this.#acts
-        .filter((act) => minutesOf(act.world) <= at && this.#settings.provided.misapplications[pattern](act, params, act.state))
+        .filter((act) => minutesOf(act.world) <= at && this.#settings.provided.misapplications[pattern](act, params, act.state, this.#state as State))
         .filter((act) => (beforeAt === undefined || minutesOf(act.world) < beforeAt) && (after === undefined || (afterAt !== undefined && minutesOf(act.world) >= afterAt)))
         .map((act) => ({ tool: act.tool, arguments: act.arguments, at: timeText(act.world) }));
     });
     const kind = part.kinds === undefined || this.#settings.level === undefined ? {} : { kind: part.kinds[this.#settings.level] };
     const state = this.#state as State;
-    const traps = part.traps.filter(({ trap, params }) => this.#settings.provided.traps?.[trap](state, params) === true).map(({ trap }) => trap);
-    this.#settings.record({ ...line, active: true, held, ...(reachedAt === undefined ? {} : { reached_at: timeText({ day: Math.floor(reachedAt / 1440) + 1, weekday: "Monday", seconds: Math.round((reachedAt % 1440) * 60) }) }), effort: { calls, money }, misapplications, ...(part.traps.length === 0 ? {} : { traps }), ...kind });
+    const traps = part.traps.filter(({ trap, params }) => this.#settings.provided.traps?.[trap](state, params, at) === true).map(({ trap }) => trap);
+    // The values a predicate gives besides whether it holds, read at evaluation (FR-CONGRESS-06).
+    const given = this.#settings.provided.predicates[part.predicate](state, part.params);
+    const values = typeof given === "boolean" ? {} : { values: given.values };
+    this.#settings.record({ ...line, active: true, held, ...(reachedAt === undefined ? {} : { reached_at: timeText({ day: Math.floor(reachedAt / 1440) + 1, weekday: "Monday", seconds: Math.round((reachedAt % 1440) * 60) }) }), effort: { calls, money }, misapplications, ...(part.traps.length === 0 ? {} : { traps }), ...values, ...kind });
   }
 }
