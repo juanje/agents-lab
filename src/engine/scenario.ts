@@ -2,6 +2,7 @@ import { type TomlTable, type TomlValue, parse } from "smol-toml";
 import type { ToolCall } from "./adapter.ts";
 import { type Calendar, readCalendar } from "./calendar.ts";
 import type { Component } from "./components.ts";
+import type { PartsProvided } from "./parts.ts";
 import { MAIL_NOTICE, type MailKeeper, type MailSettings, mailTools, readMail, startingMail } from "./mail.ts";
 import { type ParticipantSettings, type RuleSet, readParticipants } from "./participants.ts";
 import { type MoneyKeeper, type MoneySettings, moneyTools, readMoney, startingMoney } from "./money.ts";
@@ -73,6 +74,8 @@ export interface Scenario<State> {
   mail?: MailKeeper<State>;
   /** The rule sets the scenario provides, by name, which its configuration's participants may be decided by (FR-PARTICIPANT-01). */
   ruleSets?: Readonly<Record<string, RuleSet>>;
+  /** The predicates, events and misapplication patterns of its parts, by name (FR-PARTS-01). */
+  parts?: PartsProvided<State>;
   /** The lines of the run's log the scenario gives for a change of its world, each with its type, recorded as the world applies it (FR-POPULATION-01). */
   logLines?: (before: State, after: State) => readonly ({ type: string } & Readonly<Record<string, unknown>>)[];
   /** The accounts of the world itself, besides its agents' and participants', that its configuration's [money] may give (FR-CONGRESS-05). */
@@ -118,6 +121,8 @@ export interface Condition {
   levels?: Readonly<Record<string, string>>;
   /** Where the materials the change refers to are read from (FR-EXPERIMENT-04). */
   materials?: Materials;
+  /** The experiment's kind_factor, with its levels when it is one of the experiment's factors (FR-PARTS-01). */
+  kindFactor?: { name: string; levels?: readonly string[] };
 }
 
 /**
