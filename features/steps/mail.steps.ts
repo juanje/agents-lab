@@ -419,3 +419,28 @@ Then("no message was sent", function (this: Context) {
   );
   assert.deepEqual(setupOf(this).loaded?.world.state.mail.inTransit, []);
 });
+
+/** A valid message at the start, from outside the run, which a change to the configuration then breaks. */
+function initialMessage(changes: TomlTable = {}): TomlTable {
+  return { to: "ana", from: "the board", act: "inform", fields: {}, subject: "Partner session", text: "A partner society runs session 3.", received: "day 1 Monday 07:30", ...changes };
+}
+
+/** Each change the contract makes to the Background's mail, by how it writes it. */
+const mailChanges: [RegExp, (context: Context, setup: MailSetup) => void][] = [
+  [/^the configuration has no calendar$/, (context) => delete context.calendar],
+  [/^its "delivery_minutes" is \[5, 1\]$/, (_context, { mail }) => (mail.delivery_minutes = [5, 1])],
+  [/^its "delivery_minutes" is \[-1, 1\]$/, (_context, { mail }) => (mail.delivery_minutes = [-1, 1])],
+  [/^its "send_minutes" is -1$/, (_context, { mail }) => (mail.send_minutes = -1)],
+  [/^it declares acts for "zoe", who has no mailbox$/, (_context, { mail }) => ((mail.acts as TomlTable).zoe = { ask: [] })],
+  [/^"desk"'s act "book" requires the field list "date"$/, (_context, { mail }) => (((mail.acts as TomlTable).desk as TomlTable).book = "date")],
+  [/^a message at the start goes to "zoe"$/, (_context, { mail }) => (mail.initial = [initialMessage({ to: "zoe" })])],
+  [/^a message at the start to "desk" has the act "order"$/, (_context, { mail }) => (mail.initial = [initialMessage({ to: "desk", act: "order" })])],
+  [/^a message at the start is received at "day 1 Monday 10:00"$/, (_context, { mail }) => (mail.initial = [initialMessage({ received: "day 1 Monday 10:00" })])],
+  [/^it has a notice and no notice source$/, (_context, { mail }) => delete mail.notice_source],
+];
+
+Given("the configuration's mail is changed so that {}", function (this: Context, change: string) {
+  const known = mailChanges.find(([written]) => written.test(change));
+  assert.ok(known !== undefined, `the steps do not read the change "${change}"`);
+  known[1](this, setupOf(this));
+});

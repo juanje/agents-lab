@@ -65,9 +65,80 @@ describe("readMail", () => {
   });
 });
 
+/** A message at the start as a configuration writes it, with any of its keys replaced. */
+const atStart = (changes: Record<string, unknown> = {}) => ({
+  to: "ana",
+  from: "the board",
+  act: "inform",
+  fields: { session: 3 },
+  subject: "Partner session",
+  text: "A partner society runs session 3.",
+  received: "day 1 Monday 07:30",
+  ...changes,
+});
+
+describe("readMail, refusing what cannot be followed", () => {
+  const refused = (table: unknown, withCalendar = calendar) => () => readMail(table as never, withCalendar);
+
+  it("refuses a [mail] without a [calendar], naming mail", () => {
+    expect(refused(mailTable(), undefined)).toThrow("The configuration's mail cannot be followed: its durations are world time, and the configuration declares no [calendar]");
+  });
+
+  it("refuses delivery_minutes that are not two numbers, the first at least 0 and not above the second", () => {
+    for (const minutes of [[5, 1], [-1, 1], [1], [1, "5"], 3]) {
+      expect(refused(mailTable({ delivery_minutes: minutes }))).toThrow(/^The configuration's mail\.delivery_minutes .* cannot be followed: /);
+    }
+  });
+
+  it("refuses a duration that is negative or not a number, naming it", () => {
+    for (const key of ["send_minutes", "check_minutes", "read_minutes", "send_minutes_per_field", "send_words_per_minute", "read_words_per_minute"]) {
+      expect(refused(mailTable({ [key]: -1 }))).toThrow(`The configuration's mail.${key} -1 cannot be followed`);
+    }
+    expect(refused(mailTable({ send_minutes: "3" }))).toThrow(`The configuration's mail.send_minutes "3" cannot be followed`);
+  });
+
+  it("refuses acts for a participant with no mailbox, and a field list that is not a list of words", () => {
+    expect(refused(mailTable({ acts: { zoe: { ask: [] } } }))).toThrow(`The configuration's mail.acts.zoe {"ask":[]} cannot be followed: "zoe" has no mailbox`);
+    expect(refused(mailTable({ acts: { desk: { book: "date" } } }))).toThrow(`The configuration's mail.acts.desk.book "date" cannot be followed: it is not a list of words`);
+    expect(refused(mailTable({ acts: { desk: { book: ["the date"] } } }))).toThrow("mail.acts.desk.book");
+  });
+
+  it("refuses a notice without a notice source", () => {
+    const table = mailTable();
+    delete (table as Record<string, unknown>).notice_source;
+
+    expect(refused(table)).toThrow("The configuration's mail.notice_source (none) cannot be followed: the mail has a notice");
+  });
+
+  it("refuses a message at the start for a participant with no mailbox, whose act its recipient does not take, that lacks a required field, or received after the calendar's start", () => {
+    expect(refused(mailTable({ initial: [atStart({ to: "zoe" })] }))).toThrow(`The configuration's mail.initial[0].to "zoe" cannot be followed: "zoe" has no mailbox`);
+    expect(refused(mailTable({ initial: [atStart(), atStart({ to: "desk", act: "order" })] }))).toThrow(`The configuration's mail.initial[1].act "order" cannot be followed: "desk" takes the acts book, ask`);
+    expect(refused(mailTable({ initial: [atStart({ to: "desk", act: "book", fields: { date: "day 26" } })] }))).toThrow(
+      `The configuration's mail.initial[0].fields {"date":"day 26"} cannot be followed: the act "book" requires the field "rooms"`,
+    );
+    expect(refused(mailTable({ initial: [atStart({ received: "day 1 Monday 10:00" })] }))).toThrow(
+      `The configuration's mail.initial[0].received "day 1 Monday 10:00" cannot be followed: it is after the calendar's start`,
+    );
+    expect(refused(mailTable({ initial: [atStart({ received: "Monday 07:30" })] }))).toThrow("mail.initial[0].received");
+  });
+});
+
 describe("startingMail", () => {
   it("gives every mailbox empty and nothing in transit", () => {
     expect(startingMail(readMail(mailTable(), calendar))).toEqual({ mailboxes: { ana: [], ben: [], desk: [] }, inTransit: [] });
+  });
+
+  it("puts each message at the start in its recipient's mailbox, unread, numbered from 1, received at its world time, its act as its subject when it has none", () => {
+    const settings = readMail(mailTable({ initial: [atStart(), atStart({ to: "ben", subject: undefined, text: undefined, fields: undefined })] }), calendar);
+
+    expect(startingMail(settings)).toEqual({
+      mailboxes: {
+        ana: [{ id: "m-1", from: "the board", to: "ana", act: "inform", fields: { session: 3 }, subject: "Partner session", text: "A partner society runs session 3.", received: { day: 1, weekday: "Monday", seconds: 7.5 * 3600 }, read: false }],
+        ben: [{ id: "m-2", from: "the board", to: "ben", act: "inform", fields: {}, subject: "inform", received: { day: 1, weekday: "Monday", seconds: 7.5 * 3600 }, read: false }],
+        desk: [],
+      },
+      inTransit: [],
+    });
   });
 });
 
