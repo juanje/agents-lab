@@ -139,7 +139,8 @@ describe("loadScenario, with parts (FR-PARTS-01)", () => {
   const scenario = (parts: Record<string, unknown>[], provides = true) => ({
     ...slotsScenario,
     ...(provides ? { parts: { predicates: { slot_held: () => true }, events: {}, misapplications: {} } } : {}),
-    baseConfiguration: `${slotsScenario.baseConfiguration}\nparts = ${JSON.stringify(stringify({ parts }))}\n`,
+    // At the top, before the base configuration's tables.
+    baseConfiguration: `parts = ${JSON.stringify(stringify({ parts }))}\n${slotsScenario.baseConfiguration}`,
   });
   const part = { id: "p1", predicate: "slot_held", activation: "always", evaluate_at: "end", kinds: { none: "new", rules: "covered" } };
   const condition = { name: "guidance=rules", change: "", levels: { guidance: "rules" }, kindFactor: { name: "guidance", levels: ["none", "rules"] } };
