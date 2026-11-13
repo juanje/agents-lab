@@ -375,6 +375,12 @@ describe("the sponsor's payments (FR-CONGRESS-05)", () => {
     expect(calls(drive(over.rules, over.answer(""), [[invoiceNotice]], true), "pay")).toEqual([]);
     expect(drive(over.rules, over.answer(""), [[invoiceNotice]], true).some((step) => step.kind === "wait")).toBe(false);
 
+    const twice = agreed(invoices({ id: "i-1", amount: 600 }));
+    drive(twice.rules, twice.answer(""), [[invoiceNotice]], true);
+    drive(twice.rules, twice.answer(""), [[invoiceNotice]], true);
+    twice.clock.time = "day 6 Saturday 10:00";
+    expect(calls(drive(twice.rules, twice.answer(""), [[]], true), "pay")).toEqual([{ invoice: "i-1" }]);
+
     const unagreed = sponsorRules.start(sp1, new Random(1));
     drive(unagreed, tools(() => ""));
     expect(drive(unagreed, tools(() => "", undefined, invoices({ id: "i-1", amount: 100 })), [[invoiceNotice]], true).filter((step) => step.kind === "wait" || (step.kind === "call" && step.tool === "pay"))).toEqual([]);
