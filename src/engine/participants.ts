@@ -116,7 +116,8 @@ export interface Rules {
 
 /** A named rule set a scenario provides, started for a participant with its parameters (FR-PARTICIPANT-01). */
 export interface RuleSet {
-  start(params: Readonly<Record<string, unknown>>): Rules;
+  /** Starts it with its participant's parameters and its own sequence, from the seed and `rules of <name>`, for what it draws by chance (FR-CONGRESS-02). */
+  start(params: Readonly<Record<string, unknown>>, random: Random): Rules;
 }
 
 /** What the participants run in: the world, the tools, the run's time, end and seed, the stimuli, and how a call is run and recorded. */
@@ -165,7 +166,7 @@ export class Participants<State> {
         stimuli.hold(participant.name, () => this.#track(this.#held(participant, delays)));
       }
       if (participant.decides !== "rules") continue;
-      const rules = ruleSets[participant.rules].start(participant.params);
+      const rules = ruleSets[participant.rules].start(participant.params, Random.derive(this.#run.seed, `rules of ${participant.name}`));
       this.#rules.set(participant.name, rules);
       stimuli.watch(participant.name, () => this.#wake(participant, rules));
       const first = rules.atStart?.();
