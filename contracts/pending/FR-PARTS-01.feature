@@ -22,7 +22,7 @@ Feature: Parts as held-out keys
   Scenario: reached_at is the start of the last interval in which it held
     Given "ana"'s scripted turns call "set_flag" "door", then "clear_flag" "door", then "set_flag" "door", then end
     When the run's time limit passes at "day 1 Monday 19:00"
-    Then the "part" line for "p1" gives "reached_at" "day 1 13:00", within 30 world minutes
+    Then the "part" line for "p1" gives "reached_at" "day 1 12:00", within 30 world minutes
 
   Scenario: The kind is the one for the run's level of the kind factor
     Given the condition's "guidance" is "none"
