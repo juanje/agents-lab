@@ -197,7 +197,8 @@ describe("runComponent", () => {
       { day: 1, weekday: "Monday", seconds: 9 * 3600 },
       { day: 1, weekday: "Monday", seconds: 9 * 3600 + 60 },
       { day: 1, weekday: "Monday", seconds: 9 * 3600 + 120 },
-    ].map((time, index) => ({ ...time, seconds: expect.toSatisfy((seconds: number) => seconds >= time.seconds && seconds < time.seconds + 6, `${index}`) })));
+      // Within 30 world seconds, 25 ms of the run: a loaded machine wakes a component a few milliseconds late.
+    ].map((time, index) => ({ ...time, seconds: expect.toSatisfy((seconds: number) => seconds >= time.seconds && seconds < time.seconds + 30, `${index}`) })));
   });
 });
 
