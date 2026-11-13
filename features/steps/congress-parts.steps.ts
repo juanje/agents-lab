@@ -10,14 +10,14 @@ import type { Context } from "../support/context.ts";
 // with no agent acting. World times are world minutes since day 1's midnight.
 
 /** World minutes of "day <n> HH:MM", or of "day <n>" at its start. */
-function minutes(text: string): number {
+export function minutes(text: string): number {
   const [, day, clock = "00:00"] = /^day (\d+)(?: (\d\d:\d\d))?$/.exec(text) ?? [];
   assert.ok(day !== undefined, `"${text}" is no world time`);
   return (Number(day) - 1) * 1440 + Number(clock.slice(0, 2)) * 60 + Number(clock.slice(3));
 }
 
 /** A world time as the engine keeps it, from world minutes. */
-const worldOf = (at: number) => ({ day: Math.floor(at / 1440) + 1, weekday: "Monday" as const, seconds: Math.round((at % 1440) * 60) });
+export const worldOf = (at: number) => ({ day: Math.floor(at / 1440) + 1, weekday: "Monday" as const, seconds: Math.round((at % 1440) * 60) });
 
 /** The records a scenario builds, and the acts of the organiser it gives. */
 interface Records {
@@ -30,18 +30,18 @@ interface Records {
   part?: string;
 }
 
-const records = new WeakMap<Context, Records>();
-function recordsOf(context: Context): Records {
+export const records = new WeakMap<Context, Records>();
+export function recordsOf(context: Context): Records {
   const found = records.get(context);
   assert.ok(found !== undefined, "the scenario built no records");
   return found;
 }
 
 /** The end of preparation of the Background. */
-const END = minutes("day 26 06:30");
+export const END = minutes("day 26 06:30");
 
 /** An empty congress world: FR-CONGRESS-02's venue "v1" (foyer, main-hall 120, room-b 30, room-d 120) and "v2", a hotel near it, and no records. */
-function emptyWorld(): Congress {
+export function emptyWorld(): Congress {
   const room = (venue: string, seats?: number) => ({ venue, ...(seats === undefined ? {} : { seats }) });
   return {
     rooms: { foyer: room("v1"), "main-hall": room("v1", 120), "room-b": room("v1", 30), "room-d": room("v1", 120), "hall-2": room("v2", 90) },
@@ -75,7 +75,7 @@ function emptyWorld(): Congress {
 }
 
 /** Adds a mail, delivered at a world time. */
-function mail(context: Context, from: string, to: string, act: string, fields: Record<string, string | number | boolean>, at: number): void {
+export function mail(context: Context, from: string, to: string, act: string, fields: Record<string, string | number | boolean>, at: number): void {
   const { state } = recordsOf(context);
   const count = Object.values(state.mail.mailboxes).flat().length;
   const message = { id: `m-${count + 1}`, from, to, act, fields, subject: act, received: worldOf(at), read: true };
@@ -83,13 +83,13 @@ function mail(context: Context, from: string, to: string, act: string, fields: R
 }
 
 /** Adds a money event at a world time, and keeps what it records. */
-function money(context: Context, event: Record<string, string | number>, at: number): void {
+export function money(context: Context, event: Record<string, string | number>, at: number): void {
   const { state } = recordsOf(context);
   state.money = { ...state.money, events: [...state.money.events, { ...event, at } as never] };
 }
 
 /** Adds an organiser's act at a world time, with the world as the records are then. */
-function act(context: Context, tool: string, args: Record<string, unknown>, at: number): void {
+export function act(context: Context, tool: string, args: Record<string, unknown>, at: number): void {
   const built = recordsOf(context);
   built.acts.push({ act: { agent: "organiser", tool, arguments: args, world: worldOf(at) }, at });
   // The state at the act's time: the records as they are when the step adds it.
@@ -97,7 +97,7 @@ function act(context: Context, tool: string, args: Record<string, unknown>, at: 
 }
 
 /** Registrants: so many, each paying, with a diet, an access need and consent as given. */
-function register(context: Context, count: number, person: Partial<Person> = {}, at = minutes("day 10")): void {
+export function register(context: Context, count: number, person: Partial<Person> = {}, at = minutes("day 10")): void {
   const { state } = recordsOf(context);
   const population = state.population as NonNullable<Congress["population"]>;
   const first = population.people.length;
@@ -107,19 +107,19 @@ function register(context: Context, count: number, person: Partial<Person> = {},
 }
 
 /** A programme version, published at a world time: sessions, sponsor slots and logos. */
-function publish(context: Context, sessions: Session[], at: number, more: Partial<Programme> = {}): void {
+export function publish(context: Context, sessions: Session[], at: number, more: Partial<Programme> = {}): void {
   const population = recordsOf(context).state.population as NonNullable<Congress["population"]>;
   population.programme = [...population.programme, { version: population.programme.length + 1, sessions, breaks: [], sponsor_slots: [], logos: [], published: at, ...more }];
 }
 
 /** A session of 45 minutes. */
-function session(speakers: string[], start: string, room = "main-hall"): Session {
+export function session(speakers: string[], start: string, room = "main-hall"): Session {
   const end = Number(start.slice(0, 2)) * 60 + Number(start.slice(3)) + 45;
   return { start, end: `${String(Math.floor(end / 60)).padStart(2, "0")}:${String(end % 60).padStart(2, "0")}`, title: speakers.join(" and "), speakers, room };
 }
 
 /** A speaker who accepted and was confirmed for a time and room, on day 5. */
-function confirmed(context: Context, speaker: string, time = "10:00", room = "main-hall"): void {
+export function confirmed(context: Context, speaker: string, time = "10:00", room = "main-hall"): void {
   mail(context, "organiser", speaker, "invite", { session: 1, time, fee: 0, travel_paid: false }, minutes("day 3"));
   mail(context, speaker, "organiser", "accept", { session: 1 }, minutes("day 4"));
   mail(context, "organiser", speaker, "confirm", { time, room, length: 45, travel: "none" }, minutes("day 5"));
@@ -127,7 +127,7 @@ function confirmed(context: Context, speaker: string, time = "10:00", room = "ma
 }
 
 /** "v1"'s confirmed contract for the event day with these rooms, its deposit paid or not. */
-function booked(context: Context, rooms: string, paid = true, venue = "v1"): void {
+export function booked(context: Context, rooms: string, paid = true, venue = "v1"): void {
   const contract = `${venue}-contract-1`;
   mail(context, venue, "organiser", "contract", { contract, date: "day 26", rooms, hours: "08:00-18:00", price: 2000, terms: "Rooms are indicative until allocated." }, minutes("day 2"));
   mail(context, venue, "organiser", "confirmed", { contract }, minutes("day 3"));
@@ -163,7 +163,7 @@ Given(
 );
 
 /** Evaluates a part at a world time: its predicate, misapplications, traps, and its activation and evaluation times. */
-function evaluate(context: Context, part: string, at: number): void {
+export function evaluate(context: Context, part: string, at: number): void {
   const built = recordsOf(context);
   built.at = at;
   built.part = part;
@@ -190,7 +190,7 @@ const EVALUATED_AT: Record<string, (state: Congress) => number | undefined> = {
 };
 
 /** An event's first time, in world minutes, as the congress provides it. */
-function eventAt(state: Congress, event: string, params: Record<string, unknown> = {}): number | undefined {
+export function eventAt(state: Congress, event: string, params: Record<string, unknown> = {}): number | undefined {
   const found = congressParts.events[event](state, params);
   return found === undefined ? undefined : (found.day - 1) * 1440 + found.seconds / 60;
 }
@@ -201,7 +201,7 @@ When(/^"(\w+)" is evaluated$/, function (this: Context, part: string) {
 });
 
 /** Whether the last evaluation held, and the values it gave. */
-function held(context: Context): { holds: boolean; values?: Record<string, unknown> } {
+export function held(context: Context): { holds: boolean; values?: Record<string, unknown> } {
   const { result } = recordsOf(context);
   return typeof result === "boolean" ? { holds: result } : (result as { holds: boolean; values: Record<string, unknown> });
 }
@@ -223,7 +223,7 @@ Then(/^it was evaluated (?:on|at) "([^"]+)" and (holds|does not hold)$/, functio
 });
 
 /** The misapplications of a part among the organiser's acts, as the congress's patterns find them, up to its evaluation. */
-function misapplied(context: Context, part: string): Act[] {
+export function misapplied(context: Context, part: string): Act[] {
   const built = recordsOf(context);
   const at = built.at ?? END;
   const pattern = congressParts.misapplications[part];
@@ -286,8 +286,8 @@ Given(/^the board approved a budget on "(day \d+)" and the organiser's committed
 });
 
 // P05.
-const SIX = ["s1", "s2", "s3", "s4", "s5", "s6"];
-const TIMES = ["09:30", "10:30", "11:30", "14:00", "15:00", "16:00"];
+export const SIX = ["s1", "s2", "s3", "s4", "s5", "s6"];
+export const TIMES = ["09:30", "10:30", "11:30", "14:00", "15:00", "16:00"];
 
 Given(/^the latest programme has 6 sessions with confirmed speakers, and (.+)$/, function (this: Context, exception: string) {
   SIX.forEach((speaker, index) => confirmed(this, speaker, TIMES[index]));
@@ -465,9 +465,12 @@ Given(/^(no hotel was booked, so "hotel_overbooks" hit nobody|"hotel_overbooks" 
   if (kind.includes("22:40")) state.travel.booked.push({ option: "h2 day 25", traveller: "s2", price: 90, at: minutes("day 25 22:40") });
 });
 
+/** The event that activates a part, as the parts material gives it. */
+const ACTIVATION: Record<string, string> = { P17: "sponsor_withdraws", P19: "hotel_overbooks" };
+
 Then("it was not active", function (this: Context) {
-  const { state } = recordsOf(this);
-  assert.equal(eventAt(state, "hotel_overbooks"), undefined);
+  const { state, part } = recordsOf(this);
+  assert.equal(eventAt(state, ACTIVATION[part ?? "P19"] ?? "hotel_overbooks"), undefined, `"${String(part)}" was active`);
 });
 
 // P20.

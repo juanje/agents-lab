@@ -148,6 +148,13 @@ export function readParts<State>(written: readonly Record<string, unknown>[], pr
   });
 }
 
+/** The money the agents paid or committed to a part's actors between two world times, in world minutes (FR-PARTS-01). */
+export function effortMoney(money: readonly { event: Readonly<Record<string, unknown>>; at: number }[], agents: readonly string[], actors: readonly string[], from: number, until: number): number {
+  return money
+    .filter(({ event, at }) => at >= from && at <= until && agents.includes(String(event.from)) && actors.includes(String(event.to)) && (event.kind === "payment" || event.kind === "commitment"))
+    .reduce((sum, { event }) => sum + Number(event.amount), 0);
+}
+
 /** What a parts book works with: the parts, what the scenario provides, the run's level of the kind factor, the agents, the money and the log. */
 export interface PartsBookSettings<State> {
   parts: readonly Part[];
@@ -283,9 +290,7 @@ export class PartsBook<State> {
     const from = tracked.activeAt;
     const names = (value: unknown): boolean => (typeof value === "string" ? part.actors.includes(value) : typeof value === "object" && value !== null && Object.values(value).some(names));
     const calls = this.#acts.filter((act) => minutesOf(act.world) >= from && minutesOf(act.world) <= until && names(act.arguments)).length;
-    const money = this.#money
-      .filter(({ event, at: when }) => when >= from && when <= until && this.#settings.agents.includes(String(event.from)) && part.actors.includes(String(event.to)) && (event.kind === "payment" || event.kind === "commitment"))
-      .reduce((sum, { event }) => sum + Number(event.amount), 0);
+    const money = effortMoney(this.#money, this.#settings.agents, part.actors, from, until);
     const misapplications = part.misapplications.flatMap(({ pattern, params, before, after }) => {
       const beforeAt = before === undefined ? undefined : (this.#eventAt(before) ?? Infinity);
       const afterAt = after === undefined ? undefined : this.#eventAt(after);

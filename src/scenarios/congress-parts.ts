@@ -119,6 +119,12 @@ function acceptedOf(state: Congress, speaker: string): boolean {
   return answers.at(-1)?.act === "accept";
 }
 
+/** A speaker's latest answer to the organiser's invitations, given for one session (FR-CONGRESS-10). */
+export function answerFor(state: Congress, speaker: string, session: number): string | undefined {
+  void session;
+  return messagesOf(state).filter(({ from, act }) => from === speaker && ["accept", "accept_if", "decline", "withdraw"].includes(act)).at(-1)?.act;
+}
+
 /** What a speaker believes about its session: the latest of the confirmation or change it received and the latest programme naming it. */
 export function beliefOf(state: Congress, speaker: string): { time?: string; room?: string } | undefined {
   const told: { at: number; time?: string; room?: string }[] = [

@@ -138,7 +138,7 @@ Given('"c1" has confirmed an order of 60 in all', function (this: Context) {
   before(this, ordering(this));
 });
 
-Given("it is {string}", function (this: Context, day: string) {
+Given(/^it is "(day \d+)"$/, function (this: Context, day: string) {
   untilTime(this, `${day} 09:00`);
   script(this, ORGANISER, [...(turnsBefore.get(this) ?? []), { text: "Done.", delayMs: 0 }]);
 });
