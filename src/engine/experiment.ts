@@ -76,7 +76,7 @@ export function readExperiment(toml: string, directory?: string): Experiment {
     rateLimit: { retries: limits.rate_limit_retries ?? 0, waitMs: limits.rate_limit_wait_ms ?? 1000 },
     ...(file.metric_interval_ms === undefined ? {} : { metricIntervalMs: file.metric_interval_ms }),
     parallelRuns: file.parallel_runs ?? 1,
-    conditions: conditionsOf(file).map((condition) => ({ ...condition, ...materials })),
+    conditions: conditionsOf(file).map((condition) => ({ ...condition, ...materials, ...kindFactorOf(file) })),
   };
 }
 
@@ -89,6 +89,13 @@ function compactionOf(holder: TomlTable): Compaction {
   }
   const on = readTable(holder, at, compactionOnSchema);
   return { enabled: true, triggerAt: on.trigger_at, keepRecentTokens: on.keep_recent_tokens };
+}
+
+/** The file's kind_factor, with its levels when it is one of its factors (FR-PARTS-01); none when it gives none. */
+function kindFactorOf(file: { kind_factor?: string; factors?: TomlTable }): { kindFactor?: { name: string; levels?: string[] } } {
+  if (file.kind_factor === undefined) return {};
+  const factor = file.factors?.[file.kind_factor];
+  return { kindFactor: { name: file.kind_factor, ...(factor !== undefined && isTable(factor) ? { levels: Object.keys(factor) } : {}) } };
 }
 
 /** A condition as the file gives it, before its materials: its name, its change as a table, and its levels, if it is a combination. */
@@ -274,6 +281,7 @@ const optionalFileSchema = {
   factors: namedFactors,
   baseline: trueOrFalse,
   common: table,
+  kind_factor: text,
 } satisfies Schema;
 
 const compactionOffSchema = { enabled: trueOrFalse } satisfies Schema;

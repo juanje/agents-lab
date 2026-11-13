@@ -2,7 +2,7 @@ import { type TomlTable, type TomlValue, parse } from "smol-toml";
 import type { ToolCall } from "./adapter.ts";
 import { type Calendar, readCalendar } from "./calendar.ts";
 import type { Component } from "./components.ts";
-import type { PartsProvided } from "./parts.ts";
+import { type Part, type PartsProvided, readParts } from "./parts.ts";
 import { MAIL_NOTICE, type MailKeeper, type MailSettings, mailTools, readMail, startingMail } from "./mail.ts";
 import { type ParticipantSettings, type RuleSet, readParticipants } from "./participants.ts";
 import { type MoneyKeeper, type MoneySettings, moneyTools, readMoney, startingMoney } from "./money.ts";
@@ -157,6 +157,8 @@ export interface LoadedScenario<State> {
   money?: LoadedMoney<State>;
   /** What the replica's variant drew, for a scenario that draws one (FR-CONGRESS-01). */
   variant?: Readonly<Record<string, unknown>>;
+  /** The parts the configuration gives, with the condition's level of the kind factor (FR-PARTS-01). */
+  parts?: { parts: readonly Part[]; level?: string };
 }
 
 /** A scenario's money as loaded: its configuration's settings, and where the scenario's state keeps it (FR-MONEY-01). */
@@ -255,6 +257,7 @@ export function loadScenario<State>(
     taken: [...systemPrompts.keys(), ...components.map(({ name }) => name)],
   });
   if (phone !== undefined) assertAnswering(participants);
+  const heldParts = partsOf(scenario, configuration, condition, participants.map(({ name }) => name));
   // A participant decided by a model runs as an agent of the run, with its own system prompt and the scenario's rhythm.
   for (const participant of participants) {
     if (participant.decides !== "model") continue;
@@ -278,7 +281,27 @@ export function loadScenario<State>(
     ...(phone === undefined ? {} : { phone }),
     ...(money === undefined ? {} : { money }),
     ...(varied === undefined ? {} : { variant: varied.drawn }),
+    ...(heldParts === undefined ? {} : { parts: heldParts }),
   };
+}
+
+/**
+ * The parts a configuration gives in its "parts" text, a held-out material (FR-PARTS-01), read against what the scenario
+ * provides, its participants and the condition's kind factor, with the condition's level of it; none when it gives none.
+ */
+function partsOf<State>(scenario: Scenario<State>, configuration: Configuration, condition: Condition | undefined, participants: readonly string[]): LoadedScenario<State>["parts"] {
+  if (typeof configuration.parts !== "string" || configuration.parts.trim() === "") return undefined;
+  if (scenario.parts === undefined) throw new Error(`The configuration gives parts, but scenario "${scenario.name}" provides no predicate for them`);
+  let written: TomlTable;
+  try {
+    written = parse(configuration.parts);
+  } catch (error) {
+    throw new Error(`The configuration's parts are not valid TOML: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  const kindFactor = condition?.kindFactor;
+  const parts = readParts((written.parts ?? []) as Record<string, unknown>[], scenario.parts, { participants, ...(kindFactor === undefined ? {} : { kindFactor }) });
+  const level = kindFactor === undefined ? undefined : condition?.levels?.[kindFactor.name];
+  return { parts, ...(level === undefined ? {} : { level }) };
 }
 
 /** The scenario's initial state with the mail and the phone at their start in it, for a configuration that declares them. */
