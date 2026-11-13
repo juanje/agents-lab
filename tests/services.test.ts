@@ -300,6 +300,7 @@ describe("travel and similar events, services the organiser uses as tools (FR-CO
     (configuration.calendar as TomlTable).hours = { always: { days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], from: "00:00", to: "23:59" } };
     configuration.travel = stringify({ stations: ["north"], trains: [{ id: "t1", from: "north", arrives: "08:10", price: 40 }], hotels: [{ id: "h1", near: "v1", rooms: 1, price: 90 }], sold_out_probability: soldOut });
     configuration.similar_events = stringify({ events: [{ topic: "soil", name: "Soil Days", price: 60, size: 80 }, { topic: "rivers", name: "River Week", price: 300, size: 50 }] });
+    configuration.pools = stringify({ ...parse(configuration.pools as string), topics: ["soil"] });
     const scenario = loadScenario({ ...(congressScenario as Scenario<unknown>), baseConfiguration: stringify(configuration) }, 1);
     return { initial: scenario.world.state };
   }
