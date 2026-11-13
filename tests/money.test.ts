@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import { readCalendar } from "../src/engine/calendar.ts";
 import { inventory, inventoryMarkdown } from "../src/engine/inventory.ts";
 import { readExperiment } from "../src/engine/experiment.ts";
-import { INVOICE_NOTICE, type Money, MoneyBook, type MoneyKeeper, invoiced, readMoney } from "../src/engine/money.ts";
+import { INVOICE_NOTICE, type Money, MoneyBook, type MoneyKeeper, invoiced, moneyTools, readMoney, startingMoney } from "../src/engine/money.ts";
 import { RunClock } from "../src/engine/clock.ts";
 import { Stimuli } from "../src/engine/stimuli.ts";
 import { World } from "../src/engine/world.ts";
@@ -240,5 +240,17 @@ describe("the invoice notice (FR-CONGRESS-05)", () => {
 
   it("tells nobody without the channel", () => {
     expect(() => booked(undefined)).not.toThrow();
+  });
+});
+
+describe("the ledger's invoices (FR-CONGRESS-09)", () => {
+  it("gives when each invoice was issued, as the world time its event was stamped with", () => {
+    const settings = readMoney(money() as never, calendar, ["ana", "venue", "board"]);
+    const keeper: MoneyKeeper<{ money: Money }> = { of: (state) => state.money, with: (state, given) => ({ ...state, money: given }) };
+    const issued = { id: "i-1", from: "venue", to: "ana", amount: 100, due: "day 22", for: "hall", paid: false };
+    const state = { money: { ...startingMoney(settings), invoices: [issued], events: [{ kind: "invoice" as const, from: "venue", to: "ana", amount: 100, invoice: "i-1", due: "day 22", for: "hall", at: 19 * 1440 + 17 * 60 + 30 }] } };
+    const ledger = moneyTools(settings, keeper).find(({ name }) => name === "ledger") as { sense: (state: unknown, agent: string) => string };
+
+    expect(JSON.parse(ledger.sense(state, "ana")).invoices_to_pay).toEqual([{ id: "i-1", from: "venue", amount: 100, due: "day 22", for: "hall", paid: false, issued: "day 20 17:30" }]);
   });
 });

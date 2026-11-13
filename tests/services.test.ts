@@ -403,3 +403,35 @@ function fired(cycle: { next: (...args: never[]) => unknown }, ...args: unknown[
   const [state, , ...rest] = args;
   return (cycle.next as (...given: unknown[]) => unknown)(state, "success", ...rest);
 }
+
+describe("a sponsor's payment (FR-CONGRESS-09)", () => {
+  const OFFICE = { days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"], from: "09:00", to: "17:00" };
+  const sponsor = (changes: Record<string, unknown> = {}) => sponsorRules.start({ id: "sp1", amount: 1200, conditions: ["logo", "morning_slot"], insists: [], pay_days: [2, 2], organiser: "organiser", keeps: OFFICE, ...changes }, new Random(1));
+  const programmeWith = (slot: boolean) => JSON.stringify({ logos: ["sp1"], sponsor_slots: slot ? [{ sponsor: "sp1", start: "09:30", end: "09:45" }] : [] });
+  const invoices = [{ id: "i-1", from: "organiser", amount: 1200, due: "day 22", for: "sponsorship", paid: false, issued: "day 20 17:30" }];
+  const invoiceNotice: Stimulus = { channel: "invoice_notice", source: "organiser", content: "Invoice from organiser" };
+
+  /** A sponsor that agreed to its conditions, read its invoice at a time, then woke at each later time, with this programme. */
+  function paying(slot: boolean, read: string, later: string[]) {
+    const clock = { time: "day 1 Monday 09:01" };
+    const answer = (tool: string) => ({ text: tool === "read_programme" ? programmeWith(slot) : tools(() => "From: organiser. Act: accept_sponsorship. conditions: logo, morning_slot.", () => clock.time, () => ({ invoices_to_pay: invoices }))(tool).text });
+    const rules = sponsor();
+    drive(rules, answer, [[notice]]);
+    clock.time = read;
+    const steps = drive(rules, answer, [[invoiceNotice]], true);
+    for (const time of later) {
+      clock.time = time;
+      steps.push(...drive(rules, answer, [[]], true));
+    }
+    return steps.flatMap((step) => (step.kind === "call" && step.tool === "pay" ? [step.arguments] : []));
+  }
+
+  it("pays pay_days after the invoice was issued, at the first moment within its hours", () => {
+    expect(paying(true, "day 23 Monday 09:00", ["day 23 Monday 09:00"])).toEqual([{ invoice: "i-1" }]);
+    expect(paying(true, "day 20 Friday 17:31", ["day 22 Sunday 17:30"])).toEqual([]);
+  });
+
+  it("pays nothing while a programme condition it agreed to is missing from the latest programme after day 19", () => {
+    expect(paying(false, "day 23 Monday 09:00", ["day 23 Monday 09:00", "day 24 Tuesday 10:00"])).toEqual([]);
+  });
+});

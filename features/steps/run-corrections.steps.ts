@@ -312,3 +312,52 @@ Then(
     assert.equal(sentAll(this, "v1", "unavailable").length, 1, `"v1" sent ${sentBy(this, "v1").map((line) => line.act).join(", ")}`);
   },
 );
+
+/** The organiser's turn that publishes a programme of one session with "s1", sp1's logo, and its morning slot when asked. */
+function programmeTurn(slot: boolean) {
+  const programme = {
+    sessions: [{ start: "10:00", end: "10:45", title: "Soil life", speakers: ["s1"], room: "hall-a" }],
+    logos: ["sp1"],
+    ...(slot ? { sponsor_slots: [{ sponsor: "sp1", start: "09:30", end: "09:45" }] } : {}),
+  };
+  return { toolCalls: [{ name: "publish_programme", arguments: programme }] as never, delayMs: 0 };
+}
+
+/** The sponsor scenario's turns: an agreement on both conditions, a programme, then an invoice on day 20 at 17:30. */
+function sponsorTurns(context: Context, slot: boolean): void {
+  turnsBefore.set(context, []);
+  changePools(context, (pool) => Object.assign(pool.sponsor[0], { hours: "office" }));
+  before(context, [
+    ...organiserTurns('call "send_mail" to "sp1" with the act "accept_sponsorship" and conditions "logo" and "morning_slot", then wait 1 world hour, then "check_time"', hourMsOf(context)),
+    programmeTurn(slot),
+  ]);
+  untilTime(context, "day 20 17:30");
+  before(context, [{ toolCalls: [{ name: "issue_invoice", arguments: { to: "sp1", amount: 1200, due: "day 22", for: "sponsorship" } }] as never, delayMs: 0 }]);
+}
+
+Given('"sp1" keeps the hours "office", agreed to "logo" and "morning_slot", and the latest programme has its logo but no morning slot after day 19', function (this: Context) {
+  sponsorTurns(this, false);
+});
+
+Given('the organiser issued "sp1" an invoice of 1200 on "day 20 Friday 17:30"', function (this: Context) {
+  // In the turns the sponsor scenario set.
+});
+
+/** The payments "sp1" made, as the log gives them. */
+const paymentsBySponsor = (context: Context) => moneyLines(context, "payment").filter((line) => line.from === "sp1");
+
+Then('"sp1" paid nothing', function (this: Context) {
+  sentWith(this, "sp1", "agreement");
+  assert.deepEqual(paymentsBySponsor(this), []);
+});
+
+Then('with the slot published, "sp1" pays on "day 23 Monday" within its hours', { timeout: 120_000 }, async function (this: Context) {
+  sponsorTurns(this, true);
+  await runTheScenario(this);
+  const [payment, ...more] = paymentsBySponsor(this);
+  assert.equal(more.length, 0);
+  const at = payment?.worldTime as { day: number; weekday: string; seconds: number } | undefined;
+  assert.ok(at !== undefined, '"sp1" paid nothing');
+  assert.deepEqual({ day: at.day, weekday: at.weekday }, { day: 23, weekday: "Monday" });
+  assert.ok(at.seconds >= 9 * 3600 && at.seconds <= 17 * 3600, `"sp1" paid at ${at.seconds / 3600} h`);
+});
