@@ -230,3 +230,23 @@ Feature: The congress's parts
       | W4      | funds 3000, ticket income 2000 net, sponsors agreed 1500, costs committed 6600, and no overrun            | does not hold, with the balance -100 and 0 overruns |
       | W5      | S1's conditions in the programme, S2's logo missing                                                       | does not hold |
       | W6      | the wheelchair user registered, every programme room step-free, and the deaf registrant's interpreter booked | holds      |
+
+  # Approved addition (2026-11-13): the other answer for each part and outcome that had only one.
+
+  Scenario Outline: Each part and outcome is seen giving its other answer
+    Given <state>
+    When "<part>" is evaluated at <when>
+    Then it <result>
+
+    Examples:
+      | part | state                                                                                                  | when                   | result        |
+      | P15  | the latest programme has S1's slot at "10:30" but not its logo, and S1 paid its invoice                 | the end of preparation | does not hold |
+      | P15  | the latest programme has S1's slot at "10:30" and its logo, and S1 was invoiced but has not paid        | the end of preparation | does not hold |
+      | P03  | the venue raised its price by 400 on "day 8", accepted when the committed total was 5000 and the ceiling 5500, and every programme room is booked and seats the attendance | the end of preparation | holds |
+      | P14  | 45 paying registrations, and the booked rooms and catering never fell below 45                          | the end of preparation | holds         |
+      | P17  | S3 withdrew on "day 12", no "unapproved_overrun" followed, and the W4 balance is 50                      | the end of the run     | holds         |
+      | W1   | 5 sessions in the latest programme, each with a confirmed speaker who believes its time and room          | the end of preparation | does not hold |
+      | W2   | every session in "main-hall" (120 seats) and an expected audience of 45                                   | the end of preparation | holds         |
+      | W3   | 45 attendance with 4 vegan, and catering ordered for 45 with 2 vegan                                      | the end of preparation | does not hold |
+      | W5   | S1's and S2's agreed conditions all in the latest programme, and no data sent without consent             | the end of preparation | holds         |
+      | W6   | the wheelchair user registered, and a programme room is reached only through "3 steps" with no ramp       | the end of preparation | does not hold |
