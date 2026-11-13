@@ -282,3 +282,75 @@ describe("a speaker's own cycle and its cancellations (FR-CONGRESS-04)", () => {
     }
   });
 });
+
+describe("the cancellations, perturbations that find their speaker in the world's mail (FR-CONGRESS-04)", () => {
+  const speakers = ["s1", "s4"].map((id) => ({ id, title: id, draw: 1, fee: 0, home: "local", available: true, acceptance: 1 }));
+
+  /** The early and late cancellations of a congress with the speakers "s1" and "s4", as loading gives them. */
+  function cancellations(perturbations: TomlTable) {
+    const configuration = parse(congressScenario.baseConfiguration);
+    configuration.pools = stringify({ topics: ["soil"], venue: [], board: [], speaker: speakers, partner: [] });
+    configuration.draw = stringify({ attendance: [50, 80], speaker: 2 });
+    configuration.perturbations = perturbations;
+    return loadScenario({ ...(congressScenario as Scenario<unknown>), baseConfiguration: stringify(configuration) }, 1).components;
+  }
+
+  /** The world's time "day <n> HH:MM" as the engine gives it, and in world minutes since day 1's midnight. */
+  const at = (day: number, clock: string) => {
+    const [hours, minutes] = clock.split(":").map(Number);
+    return { day, weekday: "Monday" as const, seconds: hours * 3600 + minutes * 60 };
+  };
+  const confirmTo = (to: string, received: ReturnType<typeof at>) => ({ id: `m-${to}`, from: "organiser", to, act: "confirm", fields: {}, subject: "confirm", received, read: false });
+  /** A congress world with the mail and the phone given; the base calendar makes a world minute a second of the run. */
+  const world = (mailboxes: Record<string, unknown[]>, calls: unknown[] = []) => ({ mail: { mailboxes, inTransit: [] }, phone: { calls } }) as never;
+
+  it("are perturbation components, one for each declared, and none without one", () => {
+    expect(cancellations({}).map(({ name }) => name)).toEqual([]);
+    const both = cancellations({ early_cancel: { between: ["day 9 09:00", "day 9 12:00"] }, late_cancel: { at: "day 23 10:00" } });
+    expect(both.map(({ name, kind }) => [name, kind])).toEqual([
+      ["early_cancel", "perturbation"],
+      ["late_cancel", "perturbation"],
+    ]);
+  });
+
+  it("early_cancel waits until its time, drawn in its window, then delivers its illness, not held, to a speaker a confirm has reached", () => {
+    const [early] = cancellations({ early_cancel: { between: ["day 9 09:00", "day 9 12:00"] } });
+    const cycle = early.cycle(new Random(3));
+    const waiting = cycle.next(world({}), undefined, 0, at(1, "09:00"));
+    expect(waiting.kind).toBe("wait");
+    const ms = (waiting as { ms: number }).ms;
+    // Eight days and up to three hours, at a second of the run a world minute.
+    expect(ms).toBeGreaterThanOrEqual(8 * 1440 * 1000);
+    expect(ms).toBeLessThanOrEqual((8 * 1440 + 180) * 1000);
+
+    const confirmed = world({ s1: [], s4: [confirmTo("s4", at(2, "10:01"))] });
+    expect(cycle.next(confirmed, undefined, ms, at(9, "12:00"))).toEqual({ kind: "deliver", agent: "s4", channel: "early_cancel", held: false });
+    expect(cycle.next(confirmed, undefined, ms, at(9, "12:00"))).toEqual({ kind: "end" });
+  });
+
+  it("early_cancel with no confirmed speaker at its time hits the next to be confirmed, two days after its confirm reached it", () => {
+    const [early] = cancellations({ early_cancel: { between: ["day 9 09:00", "day 9 12:00"] } });
+    const cycle = early.cycle(new Random(3));
+    cycle.next(world({}), undefined, 0, at(1, "09:00"));
+    expect(cycle.next(world({ s1: [], s4: [] }), undefined, 0, at(9, "12:00")).kind).toBe("wait");
+
+    const confirmed = world({ s1: [confirmTo("s1", at(11, "10:01"))], s4: [] });
+    const waiting = cycle.next(confirmed, undefined, 0, at(11, "11:00"));
+    // From 11:00 on day 11 to 10:01 on day 13.
+    expect(waiting).toEqual({ kind: "wait", ms: (2 * 1440 - 59) * 1000 });
+    expect(cycle.next(confirmed, undefined, 0, at(13, "10:01"))).toEqual({ kind: "deliver", agent: "s1", channel: "early_cancel", held: false });
+  });
+
+  it("late_cancel hits a confirmed speaker who has not cancelled, and nobody when none is left", () => {
+    const [late] = cancellations({ late_cancel: { at: "day 23 10:00" } });
+    const s1Cancelled = { id: "m-9", from: "s1", to: "organiser", act: "cancel", fields: {}, subject: "cancel", received: at(9, "10:00"), read: false };
+    const both = { s1: [confirmTo("s1", at(2, "10:01"))], s4: [confirmTo("s4", at(2, "10:01"))] };
+
+    const cycle = late.cycle(new Random(3));
+    expect(cycle.next(world({ ...both, organiser: [s1Cancelled] }), undefined, 0, at(23, "10:00"))).toEqual({ kind: "deliver", agent: "s4", channel: "late_cancel", held: false });
+
+    const called = late.cycle(new Random(3));
+    const s4Called = { id: "c-1", from: "s4", to: "organiser", act: "cancel", fields: {}, status: "ended" };
+    expect(called.next(world({ ...both, organiser: [s1Cancelled] }, [s4Called]), undefined, 0, at(23, "10:00"))).toEqual({ kind: "end" });
+  });
+});
