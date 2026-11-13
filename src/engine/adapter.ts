@@ -654,46 +654,68 @@ function definition<State>(
     description: tool.description,
     parameters: tool.parameters as ToolDefinition["parameters"],
     execute: async (id, args: Record<string, unknown>) => {
-      const startedAtMs = performance.now();
-      let called: CallResult;
-      // An effector's start is recorded as it is applied, at the moment the call started (FR-SPACE-03).
-      const started = (change: EffectorStart["change"]) => records.start({ agent, tool: tool.name, atMs: startedAtMs, change });
-      try {
-        // A call that comes after the run has ended is left unrun: it reads no target and applies nothing (FR-CLOCK-02).
-        called = runEnd.aborted
-          ? { outcome: CUT_OFF, text: CUT_OFF }
-          : (undeclared(tool, args) ??
-            refused(world, tool, { agent, arguments: args }) ??
-            (await perform(world, tool, { agent, arguments: args }, { sensings, changes, stimuli }, runEnd, started, clock)));
-      } catch (error) {
-        // A tool that throws is a defect of the scenario, not the agent's behaviour: no outcome fits it, and the run
-        // stops on it rather than going on with a world it cannot trust.
-        stop(failure(`agent "${agent}"'s "${tool.name}" call failed`, error));
-        throw error;
-      }
-      const { outcome, text, takenFrom, seen, ...perceived } = called;
-      const endedAtMs = performance.now();
-      const sensed = tool.kind === "sensor" && outcome === "success";
-      // An effector call the tool ran is one that read its target; its record keeps the text its agent received.
-      const effected = tool.kind === "effector" && perceived.targetAsSensed !== undefined;
-      executed.set(id, {
-        outcome,
-        startedAtMs,
-        endedAtMs,
-        ...(sensed ? { result: text } : {}),
-        ...(effected ? { text } : {}),
-        ...perceived,
-      });
-      if (sensed) {
-        sensings.record(agent, { tool: tool.name, result: text, ...(takenFrom === undefined ? {} : { takenFrom }), atMs: endedAtMs });
-        changes.sensed(agent);
-      }
-      // What an effector's sight saw is no sensing: the agent's last sensing, and the changes since it, stay as they were.
-      if (seen !== undefined) sensings.sighted(agent, { tool: tool.name, result: seen, atMs: endedAtMs });
+      const { executed: ran, text } = await callTool(world, tool, agent, args, { sensings, changes, stimuli, records, runEnd, stop, clock });
+      executed.set(id, ran);
       // A failure is marked as one: an agent told that a failure succeeded would act on a world it misreads.
-      return { content: [{ type: "text", text }], details: undefined, isError: outcome !== "success" };
+      return { content: [{ type: "text", text }], details: undefined, isError: ran.outcome !== "success" };
     },
   };
+}
+
+/** What a tool call runs in besides the world: its caller's sensings and changes since sensing, the stimuli, the log and the run. */
+export interface CallContext extends Around, Pick<SessionSettings, "runEnd" | "stop" | "clock"> {
+  records: Pick<Records, "start">;
+}
+
+/**
+ * Runs one call of a tool for its caller, an agent or a participant (FR-PARTICIPANT-01), through the world: it gives
+ * the call's outcome and times, as its record keeps them, and the text the caller receives. A sensor's call that
+ * succeeded is the caller's last sensing. A tool that throws stops the run, and the call throws.
+ */
+export async function callTool<State>(
+  world: World<State>,
+  tool: Tool<State>,
+  agent: string,
+  args: Record<string, unknown>,
+  { sensings, changes, stimuli, records, runEnd, stop, clock }: CallContext,
+): Promise<{ executed: Executed; text: string }> {
+  const startedAtMs = performance.now();
+  let called: CallResult;
+  // An effector's start is recorded as it is applied, at the moment the call started (FR-SPACE-03).
+  const started = (change: EffectorStart["change"]) => records.start({ agent, tool: tool.name, atMs: startedAtMs, change });
+  try {
+    // A call that comes after the run has ended is left unrun: it reads no target and applies nothing (FR-CLOCK-02).
+    called = runEnd.aborted
+      ? { outcome: CUT_OFF, text: CUT_OFF }
+      : (undeclared(tool, args) ??
+        refused(world, tool, { agent, arguments: args }) ??
+        (await perform(world, tool, { agent, arguments: args }, { sensings, changes, stimuli }, runEnd, started, clock)));
+  } catch (error) {
+    // A tool that throws is a defect of the scenario, not the agent's behaviour: no outcome fits it, and the run
+    // stops on it rather than going on with a world it cannot trust.
+    stop(failure(`agent "${agent}"'s "${tool.name}" call failed`, error));
+    throw error;
+  }
+  const { outcome, text, takenFrom, seen, ...perceived } = called;
+  const endedAtMs = performance.now();
+  const sensed = tool.kind === "sensor" && outcome === "success";
+  // An effector call the tool ran is one that read its target; its record keeps the text its agent received.
+  const effected = tool.kind === "effector" && perceived.targetAsSensed !== undefined;
+  const executed = {
+    outcome,
+    startedAtMs,
+    endedAtMs,
+    ...(sensed ? { result: text } : {}),
+    ...(effected ? { text } : {}),
+    ...perceived,
+  };
+  if (sensed) {
+    sensings.record(agent, { tool: tool.name, result: text, ...(takenFrom === undefined ? {} : { takenFrom }), atMs: endedAtMs });
+    changes.sensed(agent);
+  }
+  // What an effector's sight saw is no sensing: the agent's last sensing, and the changes since it, stay as they were.
+  if (seen !== undefined) sensings.sighted(agent, { tool: tool.name, result: seen, atMs: endedAtMs });
+  return { executed, text };
 }
 
 /**
@@ -730,7 +752,7 @@ function rejection<State>(tool: Tool<State>, call: { tool: string; arguments: un
 export const CUT_OFF = "cut_off" as const;
 
 /** A call the tool ran: its outcome, when it started and ended, a sensor's result and an effector's target as sensed. */
-type Executed = Pick<ToolCall, "outcome" | "startedAtMs" | "endedAtMs" | "result" | "text" | "targetAsSensed" | "changesSinceSensing" | "changesSinceSensingBy">;
+export type Executed = Pick<ToolCall, "outcome" | "startedAtMs" | "endedAtMs" | "result" | "text" | "targetAsSensed" | "changesSinceSensing" | "changesSinceSensingBy">;
 
 /**
  * What a call gives: its outcome, the text the agent receives, and for an effector's call, its target as sensed and the
