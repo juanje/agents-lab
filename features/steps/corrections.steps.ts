@@ -30,10 +30,13 @@ Given(
   },
 );
 
-/** The organiser's turns that book a venue with these rooms and accept its contract, waiting for each answer. */
+/**
+ * The organiser's turns that book a venue with these rooms, accept its contract and pay its deposit, the run's first
+ * invoice, waiting for each answer: an unpaid deposit would cancel the booking.
+ */
 function accepting(context: Context, venue: string, rooms: string) {
   return organiserTurns(
-    `call "send_mail" to "${venue}" with the act "book", date "day 26", rooms "${rooms}" and hours "08:00-18:00", then wait 1 world hour, then "send_mail" to "${venue}" with the act "accept_contract" and the contract's id, then wait 1 world hour, then "check_time"`,
+    `call "send_mail" to "${venue}" with the act "book", date "day 26", rooms "${rooms}" and hours "08:00-18:00", then wait 1 world hour, then "send_mail" to "${venue}" with the act "accept_contract" and the contract's id, then wait 1 world hour, then "pay" "i-1"`,
     hourMsOf(context),
   );
 }
