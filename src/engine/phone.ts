@@ -61,3 +61,32 @@ export function readPhone(value: TomlValue, calendar: Calendar | undefined, name
     ring,
   };
 }
+
+/** A call as the world keeps it (FR-PHONE-01). */
+export interface PhoneCall {
+  id: string;
+  from: string;
+  to: string;
+  act: string;
+  fields: Readonly<Record<string, string | number | boolean>>;
+  subject?: string;
+  text?: string;
+  /** Ringing; placed but ringing nowhere, until its ring_minutes end; connected; or ended. */
+  status: "ringing" | "unrung" | "connected" | "ended";
+  /** Why a call that rings nowhere fails as its ring_minutes end. */
+  failing?: "busy" | "no_answer";
+  answer?: { act: string; fields: Readonly<Record<string, string | number | boolean>>; text?: string };
+  /** How it ended, once it has. */
+  outcome?: "answered" | "no_answer" | "busy";
+}
+
+/** The phone as the world keeps it: every call of the run, in the order placed. */
+export interface Phone {
+  calls: readonly PhoneCall[];
+}
+
+/** Where a scenario's state keeps the phone (FR-PHONE-01): how to read it, and the state with another phone in it. */
+export interface PhoneKeeper<State> {
+  of(state: State): Phone;
+  with(state: State, phone: Phone): State;
+}
