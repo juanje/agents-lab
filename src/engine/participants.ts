@@ -99,8 +99,11 @@ export interface Perceived {
   result?: { tool: string; outcome: string; text: string };
 }
 
-/** A rule set's next step: a call of one of its participant's tools, or the end, after which it waits for the next stimulus. */
-export type RuleStep = { kind: "call"; tool: string; arguments: Record<string, unknown> } | { kind: "end" };
+/**
+ * A rule set's next step: a call of one of its participant's tools; a wait, in world minutes, which ends early at a
+ * stimulus that reaches it; or the end, after which it waits for the next stimulus.
+ */
+export type RuleStep = { kind: "call"; tool: string; arguments: Record<string, unknown> } | { kind: "wait"; minutes: number } | { kind: "end" };
 
 /** A rule set as it decides one participant in one run: from what the participant perceives only, never the world's state. */
 export interface Rules {
@@ -206,14 +209,21 @@ export class Participants<State> {
 
   /**
    * Runs a rule set's steps from the stimuli that woke it until it ends with none waiting: each call through the
-   * participant's tool, recorded under its name. A call of a tool the participant does not declare stops the run.
+   * participant's tool, recorded under its name, and each wait until its end or a stimulus that reaches the participant.
+   * A call of a tool the participant does not declare stops the run.
    */
   async #act({ name, tools: declared }: ParticipantSettings, rules: Rules): Promise<void> {
     const { world, tools, stimuli, runEnd, call, records } = this.#run;
     try {
       for (let waiting = stimuli.take(name); waiting.length > 0 && !runEnd.aborted; waiting = stimuli.take(name)) {
         let step = rules.next({ stimuli: waiting });
-        while (step.kind === "call") {
+        while (step.kind !== "end") {
+          if (step.kind === "wait") {
+            await this.#wait(name, step.minutes);
+            if (runEnd.aborted) return;
+            step = rules.next({ stimuli: stimuli.take(name) });
+            continue;
+          }
           const { tool: named, arguments: args } = step;
           if (!declared.includes(named)) throw new Error(`participant "${name}"'s rule set called the tool "${named}", which "${name}" does not declare`);
           const tool = tools.find((each) => each.name === named) as Tool<State>;
@@ -225,6 +235,18 @@ export class Participants<State> {
       }
     } catch (error) {
       call.stop(error instanceof Error ? error : new Error(String(error)));
+    }
+  }
+
+  /** A rule set's wait: the world minutes it asked for, from now, or until a stimulus reaches its participant or the run ends first. */
+  async #wait(name: string, minutes: number): Promise<void> {
+    const { clock, stimuli, runEnd } = this.#run;
+    const reached = new AbortController();
+    const unwatch = stimuli.watch(name, () => reached.abort());
+    try {
+      await waitAtLeast(clock.runMsOf({ worldSeconds: minutes * 60 }), AbortSignal.any([runEnd, reached.signal]));
+    } finally {
+      unwatch();
     }
   }
 }
