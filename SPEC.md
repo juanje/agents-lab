@@ -104,7 +104,7 @@ Experiments are written outside this repository, in the experiment language (FR-
 3. FR-PARTICIPANT-01 (participants that perceive and act only through their tools)
 4. FR-PHONE-01 (calls)
 5. FR-CONGRESS-01 (the congress world from materials)
-6. FR-MONEY-01 (ledger, invoices, approvals), not written
+6. FR-MONEY-01 (accounts, invoices, commitments and approvals)
 7. FR-CONGRESS-02 (the actors' rules), not written
 8. FR-POPULATION-01 (attendees and the ticket page), not written
 9. FR-PARTS-01 (parts as held-out keys), not written
@@ -367,7 +367,26 @@ Away from `office`, the mail tools and the ticket page's tools (when they exist)
 **Recorded.** The inventory gives the places and passages with their lengths and `step_free`, each venue's rooms and hours, the variant's draw ranges, each kind's participants' settings, the tools' durations, `away_factor` and the prompt's texts and placement.
 
 **Refusals**, before any model call, with an error that names it: a text that is not valid TOML; a passage between places the city does not declare; a `step_free` that is neither `true` nor a text; a venue whose entrance or hours do not exist; a draw that asks for more templates than a pool has, or for a kind with no pool; a target attendance whose first number is above its second; a `[kinds.<kind>]` for a kind with no pool; a `wait_max_minutes` above 1440; a negative duration or an `away_factor` below 1; two templates or places with the same id.
+**Readings settled after the build (2026-11-13).** The organiser starts in `organiser_place` (`office` by default); the person's first message comes from `task_giver`; the base configuration gives a short `knowledge` and zero durations, which experiments override; a drawn kind without `[kinds.<kind>]` makes no participants; `write_note` answers `Noted.`. FR-CONGRESS-02 makes the base configuration declare `[mail]`, `[phone]` and a `[kinds.<kind>]` for each of its kinds, since a condition cannot add keys the base lacks, and refuses a venue in the pools that the city does not declare.
 *Why:* E1's problem is a congress, and its world is read from materials so that an experiment changes the city, the pools and the draw, not code. Drawing the variant from the replica's seed alone gives every condition the same congress, which is what lets conditions be compared, and lets later experiments run sequences of congresses.
+
+#### FR-MONEY-01: Accounts, invoices, commitments and approvals
+A scenario may declare, from its configuration, money (`[money]`): the agents and participants that hold an account (`[money.accounts.<name>]`, each with an `opening` balance, or `unlimited = true` for a party whose own money the world does not follow) and a `discretionary_limit`. Money changes only through these tools, each an effector or sensor with its duration in world minutes from `[durations]`, given to whoever the configuration gives them:
+- **`issue_invoice`** `to`, `amount`, `due` (`"day <n>"`), `for` (effector): an invoice from the caller's account to another account, unpaid, with an id (`i-<n>`).
+- **`pay`** `invoice` (effector): moves the invoice's amount from the caller's account to its issuer's. It fails, checked in this order, as `no_such_invoice` (none addressed to the caller), `already_paid` or `insufficient_funds` (a balance below the amount; an unlimited account never), and then moves nothing.
+- **`transfer`** `to`, `amount`, `for` (effector): moves money without an invoice, as funds granted; `insufficient_funds` as for `pay`.
+- **`commit`** `with`, `amount`, `for` (effector): records, by the party that accepts a deal (a venue confirming a booking, a caterer an order), that the account `with` is now committed to pay it `amount`, with an id (`k-<n>`); **`release`** `commitment` (effector) ends a commitment the caller recorded (a cancellation), failing as `no_such_commitment` otherwise.
+- **`approve`** `account`, `ceiling` (effector): sets the spending ceiling an account's holder may commit to without asking again.
+- **`ledger`** (sensor): the caller's account, compactly: its balance; the invoices addressed to it (id, issuer, amount, due, what for, paid or not) and those it issued; the commitments it is bound by and those it recorded; its ceiling, if one was approved.
+
+An amount that is not a positive number, an account that does not exist or a `due` that does not follow its format is `invalid_arguments` and takes no time.
+
+**Overruns.** An account's committed total is the sum of its commitments not released. When a commitment takes it above the account's ceiling, or above `discretionary_limit` while no ceiling has been approved, the world records an `unapproved_overrun` fact: the commitment, the committed total and the limit it passed. Nothing is refused: going over is possible, and it is recorded. A ceiling approved later does not remove a fact already recorded.
+
+**Recorded.** Each money event (invoice issued, payment, transfer, commitment, release, approval, overrun) adds a `money` line with its kind, the parties, the amount, the ids and the run time and world time. When the run ends, each account's balance, committed total, ceiling and unpaid invoices are written as a `money_summary` line. The inventory gives the accounts, their openings, the `discretionary_limit` and which tools each party has.
+
+**Refusals**, before any model call, with an error that names the key: `[money]` without a `[calendar]` or without accounts; an account for a name that is no agent or participant; an `opening` that is negative, or an account with both an `opening` and `unlimited`; a `discretionary_limit` that is negative.
+*Why:* a congress is made and lost in its money: deposits, invoices, what the board approved and what was spent beyond it. Whether an organiser asked before committing is read from the world's records, not from what it says it did, and the world lets it overspend, as a real one does, so that asking first is a choice.
 #### FR-METRIC-01: Generic metrics for every run
 At the end of every run the core reports, per agent and in total:
 - activations and model turns;
