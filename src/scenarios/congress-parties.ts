@@ -118,6 +118,14 @@ class Party {
     return JSON.parse((yield* this.call("ledger")).text) as Record<string, unknown>;
   }
 
+  /** Releases each commitment it recorded, as its ledger gives them, whose "for" text matches. */
+  *release(matches: (what: string) => boolean): Generator<RuleStep, void, Perceived> {
+    const ledger = yield* this.ledger();
+    for (const recorded of (ledger.commitments_recorded ?? []) as { id: string; for: string }[]) {
+      if (matches(recorded.for)) yield* this.call("release", { commitment: recorded.id });
+    }
+  }
+
   /**
    * Handles what has reached it: a ring it picks up, with the probability given, is answered by answer_call; its unread
    * mail is answered by mail. Each answer is made, then what it does once it has answered; no answer, nothing is sent.
@@ -260,12 +268,7 @@ export const venueRules: RuleSet = {
       ].join(" ");
     const after = (minutes: number, timer: Omit<Timer, "at">) => timers.push({ at: party.now + minutes, ...timer });
     /** The commitments it recorded for a contract, from its ledger, each released. */
-    function* releaseAll(contract: Contract): Generator<RuleStep, void, Perceived> {
-      const ledger = yield* party.ledger();
-      for (const recorded of (ledger.commitments_recorded ?? []) as { id: string; for: string }[]) {
-        if (recorded.for.startsWith(contract.id)) yield* party.call("release", { commitment: recorded.id });
-      }
-    }
+    const releaseAll = (contract: Contract) => party.release((what) => what.startsWith(contract.id));
     const notAvailable = (what: unknown): Answer => ({ act: "not_available", fields: { what: String(what) } });
     const unavailable = (date: string): Answer => ({ act: "unavailable", fields: { date } });
     const free = (date: string) => statusOf(date) === "free" || statusOf(date) === "held";
@@ -835,10 +838,7 @@ export const catererRules: RuleSet = {
 
     /** Its commitments for the order, released, and the order's new price committed. */
     function* recommit(price: number): Generator<RuleStep, void, Perceived> {
-      const ledger = yield* party.ledger();
-      for (const recorded of (ledger.commitments_recorded ?? []) as { id: string; for: string; released?: boolean }[]) {
-        if (recorded.for === forOrder && recorded.released !== true) yield* party.call("release", { commitment: recorded.id });
-      }
+      yield* party.release((what) => what === forOrder);
       if (price > 0) yield* party.call("commit", { with: caterer.organiser, amount: price, for: forOrder });
     }
 
@@ -975,12 +975,7 @@ export const agencyRules: RuleSet = {
           return {
             act: "cancelled",
             fields: { date: booked },
-            then: function* () {
-              const ledger = yield* party.ledger();
-              for (const recorded of (ledger.commitments_recorded ?? []) as { id: string; for: string; released?: boolean }[]) {
-                if (recorded.for === forBooking && recorded.released !== true) yield* party.call("release", { commitment: recorded.id });
-              }
-            } as () => Script,
+            then: () => party.release((what) => what === forBooking) as Script,
           };
         }
         default:
