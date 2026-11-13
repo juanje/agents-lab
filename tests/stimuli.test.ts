@@ -23,6 +23,19 @@ describe("Stimuli", () => {
     expect(stimuli.take("a")).toEqual([]);
   });
 
+  it("fills each {name} of a channel's stimulus with the value a delivery gives for it, leaving the channel's text as declared", () => {
+    const notice = { name: "mail_notice", source: "mail client", stimulus: "New mail from {from}: {subject}" };
+    const stimuli = new Stimuli([notice, rhythmChannel]);
+
+    stimuli.deliver("a", "mail_notice", { from: "ana", subject: "Friday" });
+    stimuli.deliver("a", "mail_notice");
+
+    expect(stimuli.take("a")).toEqual([
+      { channel: "mail_notice", source: "mail client", content: "New mail from ana: Friday" },
+      { channel: "mail_notice", source: "mail client", content: "New mail from {from}: {subject}" },
+    ]);
+  });
+
   it("keeps a delivered stimulus for its agent until the agent's session takes it, once", () => {
     const stimuli = new Stimuli([bell, rhythmChannel]);
 
