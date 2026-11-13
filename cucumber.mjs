@@ -1,6 +1,8 @@
 const common = {
   import: ["features/support/**/*.ts", "features/steps/**/*.ts"],
   plugin: ["./features/plugins/scenarios-ran.ts"],
+  // Most scenarios wait on world clocks: four workers run them side by side.
+  parallel: 4,
 };
 
 export default {
