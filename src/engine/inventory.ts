@@ -2,6 +2,7 @@ import { type CalendarInventory, calendarInventory } from "./calendar.ts";
 import { type SummaryInstructions, summaryInstructions } from "./compaction.ts";
 import type { Component } from "./components.ts";
 import type { Compaction, Experiment, Limits, ThinkingLevel } from "./experiment.ts";
+import { MAIL_DURATIONS, type MailInventory, mailInventory, mailTools } from "./mail.ts";
 import { type LoadedScenario, type Scenario, loadScenario } from "./scenario.ts";
 import { Stimuli, type Stimulus } from "./stimuli.ts";
 import type { Tool } from "./tools.ts";
@@ -52,6 +53,8 @@ export interface ConditionInventory {
   clock?: { start: string; timeScale: number };
   /** The world's calendar, for a condition whose configuration declares one (FR-CLOCK-03). */
   calendar?: CalendarInventory;
+  /** The mail, for a condition whose configuration declares a [mail] (FR-MESSAGE-01). */
+  mail?: MailInventory;
 }
 
 /** A tool as its agents see it, with its duration as the scenario describes it and the text for each of its outcomes. */
@@ -106,10 +109,13 @@ export function inventory<State>(experiment: Experiment, scenario: Partial<Scena
 function conditionInventory<State>(
   { models, thinkingLevel, compaction, limits }: Experiment,
   condition: string,
-  { scenario, configuration, systemPrompts, channels, firstStimuli, materials, components, calendar }: LoadedScenario<State>,
+  { scenario, configuration, systemPrompts, channels, firstStimuli, materials, components, calendar, mail }: LoadedScenario<State>,
 ): ConditionInventory {
   // Each agent's first wake, as a run's stimuli give it, without the rhythm's stimulus, which every wake starts with.
   const stimuli = new Stimuli(channels, undefined, firstStimuli);
+  // The mail's tools are every agent's, beside the scenario's own, and the mail describes their durations (FR-MESSAGE-01).
+  const mailToolsOf = mail === undefined ? [] : mailTools(mail.settings, mail.keeper);
+  const durationOf = (tool: string) => MAIL_DURATIONS[tool] ?? scenario.describeDuration(configuration, tool);
   return {
     condition,
     agents: [...systemPrompts].map(([name, systemPrompt]) => ({
@@ -118,12 +124,12 @@ function conditionInventory<State>(
       systemPrompt,
       firstStimuli: stimuli.wake(name).slice(1),
     })),
-    tools: scenario.tools.map((tool) => ({
+    tools: [...scenario.tools, ...mailToolsOf].map((tool) => ({
       name: tool.name,
       kind: tool.kind,
       description: tool.description,
       parameters: tool.parameters,
-      duration: scenario.describeDuration(configuration, tool.name),
+      duration: durationOf(tool.name),
       effort: NONE,
       texts: textsOf(tool),
       otherOutcomes: OUTCOME_NAME,
@@ -132,7 +138,10 @@ function conditionInventory<State>(
     channels: channels.map(({ name, source, stimulus }) => ({ name, source, delivers: stimulus })),
     energyModel: NONE,
     environmentProcesses: NONE,
-    informationSpeed: "Every sensor and channel is instant.",
+    informationSpeed:
+      mail === undefined
+        ? "Every sensor and channel is instant."
+        : `Every sensor and channel is instant, but mail, which takes from ${mail.settings.deliveryMinutes.join(" to ")} world minutes to arrive.`,
     models: [...models],
     thinkingLevel,
     compaction: compaction.enabled ? { ...compaction, instructions: summaryInstructions } : { ...compaction },
@@ -142,6 +151,7 @@ function conditionInventory<State>(
     ...(scenario.components === undefined ? {} : { components: components.map(({ name, kind, description }) => ({ name, kind, cycle: description })) }),
     ...(scenario.clock === undefined ? {} : { clock: scenario.clock(configuration) }),
     ...(calendar === undefined ? {} : { calendar: calendarInventory(calendar) }),
+    ...(mail === undefined ? {} : { mail: mailInventory(mail.settings) }),
   };
 }
 
@@ -176,6 +186,7 @@ export function inventoryMarkdown({ experiment, scenario, conditions }: Inventor
       ...(condition.components === undefined ? [] : [componentsMarkdown(condition.components)]),
       ...(condition.clock === undefined ? [] : [clockMarkdown(condition.clock)]),
       ...(condition.calendar === undefined ? [] : [calendarMarkdown(condition.calendar)]),
+      ...(condition.mail === undefined ? [] : [mailMarkdown(condition.mail)]),
     ].join("\n"),
   );
   return [`# Environment inventory of experiment "${experiment}", scenario "${scenario}"\n`, ...sections].join("\n");
@@ -287,6 +298,33 @@ function calendarMarkdown({ start, segments, hours }: CalendarInventory): string
   });
   const named = Object.entries(hours).map(([name, { days, from, to }]) => `- Hours "${name}": ${days.join(", ")}, from ${from} to ${to}`);
   return ["### Calendar\n", `- Start: ${start}`, ...listed, ...named, ""].join("\n");
+}
+
+/** The keys of the mail's durations as a configuration writes them, by the inventory's names. */
+const MAIL_DURATION_KEYS: Readonly<Record<string, string>> = {
+  sendMinutes: "send_minutes",
+  sendMinutesPerField: "send_minutes_per_field",
+  sendWordsPerMinute: "send_words_per_minute",
+  checkMinutes: "check_minutes",
+  readMinutes: "read_minutes",
+  readWordsPerMinute: "read_words_per_minute",
+};
+
+/** The mail, in Markdown: its mailboxes, each recipient's acts with their fields, its delivery delay, its durations and its notice. */
+function mailMarkdown({ mailboxes, acts, deliveryMinutes, durations, notice }: MailInventory): string {
+  const actsOf = Object.entries(acts).map(
+    ([recipient, byAct]) => `- Acts of ${recipient}: ${Object.entries(byAct).map(([act, fields]) => `${act} (${fields.length === 0 ? NONE : fields.join(", ")})`).join(", ")}`,
+  );
+  const given = Object.entries(durations).map(([name, value]) => `${MAIL_DURATION_KEYS[name]} ${value}`);
+  return [
+    "### Mail\n",
+    `- Mailboxes: ${mailboxes.join(", ")}`,
+    ...actsOf,
+    `- Delivery: ${deliveryMinutes.join(" to ")} world minutes`,
+    `- Durations: ${given.join(", ")}`,
+    notice === undefined ? `- Notice: ${NONE}` : `- Notice from ${notice.source}: ${notice.text}`,
+    "",
+  ].join("\n");
 }
 
 /** A text as a fenced block, with a fence longer than any run of backticks in it, so the text is given whole. */

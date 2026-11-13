@@ -224,6 +224,34 @@ function refusalOf(settings: Pick<MailSettings, "mailboxes" | "acts">, { to, act
   return missing === undefined ? undefined : { outcome: "missing_field", reason: `the act "${act}" requires the field "${missing}"` };
 }
 
+/** How each mail tool's duration is computed, for the inventory (FR-INVENTORY-01). */
+export const MAIL_DURATIONS: Readonly<Record<string, string>> = {
+  send_mail: "send_minutes, plus send_minutes_per_field for each field and one minute per send_words_per_minute words of the subject and text, in world minutes",
+  check_mail: "check_minutes, in world minutes",
+};
+
+/** The mail as the inventory gives it (FR-MESSAGE-01): its mailboxes, each recipient's acts, its delivery delay, its durations and its notice. */
+export interface MailInventory {
+  mailboxes: string[];
+  acts: Record<string, Record<string, string[]>>;
+  deliveryMinutes: [number, number];
+  durations: Record<string, number>;
+  notice?: { source: string; text: string };
+}
+
+/** The mail's settings as the inventory gives them. */
+export function mailInventory({ mailboxes, acts, deliveryMinutes, notice, ...settings }: MailSettings): MailInventory {
+  const { sendMinutes, sendMinutesPerField, sendWordsPerMinute, checkMinutes, readMinutes, readWordsPerMinute } = settings;
+  const durations = { sendMinutes, sendMinutesPerField, sendWordsPerMinute, checkMinutes, readMinutes, readWordsPerMinute };
+  return {
+    mailboxes: [...mailboxes],
+    acts: Object.fromEntries(Object.entries(acts).map(([recipient, byAct]) => [recipient, Object.fromEntries(Object.entries(byAct).map(([act, fields]) => [act, [...fields]]))])),
+    deliveryMinutes: [...deliveryMinutes],
+    durations: Object.fromEntries(Object.entries(durations).filter(([, minutes]) => minutes !== undefined)) as Record<string, number>,
+    ...(notice === undefined ? {} : { notice: { ...notice } }),
+  };
+}
+
 /** The agents' mail tools (FR-MESSAGE-01): send_mail and check_mail. */
 export function mailTools<State>(settings: MailSettings, keeper: MailKeeper<State>): Tool<State>[] {
   const sendMail: Effector<State> = {
