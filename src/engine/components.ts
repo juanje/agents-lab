@@ -38,10 +38,14 @@ export type Step<State> =
       action: Action<State, ComponentLanding>;
     }
   | {
-      /** Delivers a channel's stimulus to an agent as the component takes the step, taking no time (FR-STIMULUS-01). */
+      /**
+       * Delivers a channel's stimulus to an agent as the component takes the step, taking no time (FR-STIMULUS-01); with
+       * `held: false`, not held by its recipient's hours or reply delay, as an illness is not (FR-CONGRESS-04).
+       */
       kind: "deliver";
       agent: string;
       channel: string;
+      held?: false;
     }
   /**
    * Sends a message, or reads one of its mailbox, as an agent's send_mail or read_mail does: an action, through the
@@ -129,7 +133,7 @@ export async function runComponent<State>(component: Component<State>, { world, 
       continue;
     }
     if (step.kind === "deliver") {
-      stimuli.deliver(step.agent, step.channel);
+      stimuli.deliver(step.agent, step.channel, {}, step.held === false ? { held: false } : {});
       continue;
     }
     const startedAtMs = performance.now();
