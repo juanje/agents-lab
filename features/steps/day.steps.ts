@@ -46,37 +46,45 @@ function dayRunsOf(context: Context): DayRun[] {
   return runs;
 }
 
+/**
+ * The workplace scenario with the world and situations of FR-WORKPLACE-01, the tools' durations of FR-WORKPLACE-02, and
+ * one duration set to a value, as FR-WORKPLACE-05's background starts.
+ */
+export function workplaceDay(context: Context, key: string, value: number): void {
+  // FR-WORKPLACE-01's background chooses "open-box", which can be in "store" or "yard". The worker wakes at once.
+  context.libraryScenario = withBase(workplaceScenario, {
+    world: WORLD,
+    situations: situations(JSON.stringify(["store", "yard"])),
+    situation_keys: "",
+    chosen_situations: ["open-box"],
+    durations: { ...DURATIONS, [key]: value },
+    rhythm: { min_ms: 0, max_ms: 0 },
+  });
+  // The worker ends its only activation at once unless the scenario scripts its turns.
+  idleModels(context, [MODEL]);
+  // "The run starts" runs it with "lab run"; "the run ends" runs it with the engine, watching its arbiter.
+  context.experimentFile = experimentFileOf({
+    id: "workplace-day",
+    scenario: workplaceScenario.name,
+    models: [MODEL],
+    replicas: 1,
+    seed: SEED,
+    activationsPerAgent: 1,
+    conditions: { base: {} },
+  });
+  context.seed = SEED;
+  context.runInstead = () => runDay(context, context.libraryScenario as typeof workplaceScenario);
+}
+
 Given(
   "the workplace scenario with the world and situations of FR-WORKPLACE-01, the tools' durations of FR-WORKPLACE-02, and {string} {int}",
   function (this: Context, key: string, value: number) {
-    // FR-WORKPLACE-01's background chooses "open-box", which can be in "store" or "yard". The worker wakes at once.
-    this.libraryScenario = withBase(workplaceScenario, {
-      world: WORLD,
-      situations: situations(JSON.stringify(["store", "yard"])),
-      situation_keys: "",
-      chosen_situations: ["open-box"],
-      durations: { ...DURATIONS, [key]: value },
-      rhythm: { min_ms: 0, max_ms: 0 },
-    });
-    // The worker ends its only activation at once unless the scenario scripts its turns.
-    idleModels(this, [MODEL]);
-    // "The run starts" runs it with "lab run"; "the run ends" runs it with the engine, watching its arbiter.
-    this.experimentFile = experimentFileOf({
-      id: "workplace-day",
-      scenario: workplaceScenario.name,
-      models: [MODEL],
-      replicas: 1,
-      seed: SEED,
-      activationsPerAgent: 1,
-      conditions: { base: {} },
-    });
-    this.seed = SEED;
-    this.runInstead = () => runDay(this, this.libraryScenario as typeof workplaceScenario);
+    workplaceDay(this, key, value);
   },
 );
 
 /** Changes the world's text. */
-function editWorld(context: Context, edit: (world: TomlTable) => void): void {
+export function editWorld(context: Context, edit: (world: TomlTable) => void): void {
   editText(context, "world", edit);
 }
 
@@ -88,7 +96,7 @@ function tableOf(world: TomlTable, key: string): TomlTable {
 }
 
 /** Sets the world's key, such as "[day] start", to a clock time and the configuration's key to a time scale. */
-function setClock(context: Context, key: string, start: string, scaleKey: string, scale: number): void {
+export function setClock(context: Context, key: string, start: string, scaleKey: string, scale: number): void {
   const [table, field] = /^\[(\w+)\] (\w+)$/.exec(key)?.slice(1) ?? [];
   assert.ok(table !== undefined && field !== undefined, `the steps do not read the world's key ${key}`);
   editWorld(context, (world) => {

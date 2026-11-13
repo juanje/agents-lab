@@ -200,17 +200,22 @@ function checkClaim(context: Context, { tool, nth, claim }: Claim): void {
   assert.ok(endedAtMs >= arrives && endedAtMs <= arrives + ENDED_WITHIN_MS, `the "${tool}" call arrived ${Math.round(endedAtMs)} ms into the run, not ${arrives}`);
 }
 
-Given(/^the worker's scripted turns ((?:call|wait) .+), then end$/, function (this: Context, turns: string) {
+/** Scripts the worker's turns as the contract writes them, such as `call "look", then wait 130 milliseconds`, then ends. */
+export function scriptWorker(context: Context, turns: string): void {
   const { answers, claims } = answersOf(turns);
-  for (const claim of claims) this.setupChecks.push(() => checkClaim(this, claim));
+  for (const claim of claims) context.setupChecks.push(() => checkClaim(context, claim));
   // FR-WORKPLACE-02 assembles its run around the worker's own model, by the worker's name.
-  if (this.assembleRun !== undefined) {
-    script(this, WORKER, [...answers, { text: "Done.", delayMs: 0 }]);
+  if (context.assembleRun !== undefined) {
+    script(context, WORKER, [...answers, { text: "Done.", delayMs: 0 }]);
     return;
   }
   const model = new ScriptedModel([...answers, { text: "Done.", delayMs: 0 }], MODEL.split("/")[1]);
-  this.models.set(MODEL, model);
-  this.labModels.set(MODEL, model);
+  context.models.set(MODEL, model);
+  context.labModels.set(MODEL, model);
+}
+
+Given(/^the worker's scripted turns ((?:call|wait) .+), then end$/, function (this: Context, turns: string) {
+  scriptWorker(this, turns);
 });
 
 When("the run's first metric sample is taken", async function (this: Context) {

@@ -8,6 +8,9 @@ import type { Sensor } from "../../src/engine/tools.ts";
 import { World } from "../../src/engine/world.ts";
 import type { Slots } from "../../tests/fixtures/slots.ts";
 import type { Context } from "../support/context.ts";
+import { editWorld, setClock, workplaceDay } from "./day.steps.ts";
+import { scriptWorker } from "./measures.steps.ts";
+import { withBase } from "./neighbourhood.steps.ts";
 import { callWithThenEnd, runTheScenario, script } from "./tool.steps.ts";
 
 /** The test scenario's one agent. */
@@ -220,6 +223,21 @@ Given(
 Then("{string} recorded, to the minute, {string}, {string} and {string}", function (this: Context, name: string, first: string, second: string, third: string) {
   assert.deepEqual(recorded.get(this)?.get(name), [first, second, third]);
 });
+
+Given(
+  "the workplace scenario of FR-WORKPLACE-05's first scenario, with {string} {string} and {string} {int}",
+  function (this: Context, startKey: string, start: string, scaleKey: string, scale: number) {
+    // FR-WORKPLACE-05's background, then its first scenario's own setup, with the clock this scenario gives.
+    workplaceDay(this, "ms_per_length", 20);
+    setClock(this, startKey, start, scaleKey, scale);
+    editWorld(this, (world) => {
+      world.porter = { id: "piet", name: "Piet, the porter", description: "The porter, bringing the day's deliveries.", enters: "yard", drops_in: "store", rounds: ["09:10"] };
+      world.things = [...((world.things ?? []) as TomlTable[]), { id: "crate", name: "a wooden crate", arrives: "09:10" }];
+    });
+    this.libraryScenario = withBase(this.libraryScenario, { durations: { check_time_ms: 10 } });
+    scriptWorker(this, 'call "look", then wait 130 milliseconds, then call "check_time"');
+  },
+);
 
 When("the run is attempted", async function (this: Context) {
   try {
