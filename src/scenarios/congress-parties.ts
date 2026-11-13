@@ -131,6 +131,20 @@ class Party {
     }
   }
 
+  /**
+   * Sends a mail of its own, not an answer, at the first moment within its hours (FR-CONGRESS-09): out of them it waits,
+   * keeping what reaches it meanwhile.
+   */
+  *write(to: string, act: string, fields: Readonly<Record<string, unknown>> = {}): Generator<RuleStep, void, Perceived> {
+    yield* this.clock();
+    for (let opens = this.withinHours(this.now); opens > this.now; opens = this.withinHours(this.now)) {
+      const perceived = yield { kind: "wait", minutes: opens - this.now };
+      this.stimuli.push(...perceived.stimuli);
+      yield* this.clock();
+    }
+    yield* this.call("send_mail", { to, act, fields });
+  }
+
   /** Reads the world's time with its own check_time. */
   *clock(): Generator<RuleStep, void, Perceived> {
     const read = minutesOf((yield* this.call("check_time")).text);
@@ -548,21 +562,21 @@ export const venueRules: RuleSet = {
             // A challenged hold ends when the organiser must confirm by, in place of its own end.
             timers.splice(0, timers.length, ...timers.filter(({ kind, date }) => !(kind === "lapse" && date === eventDate)));
             timers.push({ at: confirmBy, kind: "challenge_lapse", date: eventDate });
-            yield* party.call("send_mail", { to: venue.organiser, act: "hold_challenged", fields: { date: eventDate, confirm_by: party.text(confirmBy) } });
+            yield* party.write(venue.organiser, "hold_challenged", { date: eventDate, confirm_by: party.text(confirmBy) });
           }
           scheduleEnquiry();
           return;
         }
         case "reminder":
           if (contract === undefined || statusOf(contract.date) !== "confirmed" || (yield* depositPaid(contract))) return;
-          yield* party.call("send_mail", { to: contract.to, act: "reminder", fields: { contract: contract.id } });
+          yield* party.write(contract.to, "reminder", { contract: contract.id });
           record("reminder", { contract: contract.id });
           timers.push({ at: party.now + 2 * 1440, kind: "unpaid_cancel", contract: contract.id });
           return;
         case "unpaid_cancel": {
           if (contract === undefined || statusOf(contract.date) !== "confirmed" || (yield* depositPaid(contract))) return;
           const cancelled = cancelling(contract, 0);
-          yield* party.call("send_mail", { to: contract.to, act: cancelled.act, fields: cancelled.fields });
+          yield* party.write(contract.to, cancelled.act, cancelled.fields);
           yield* (cancelled.then as () => Script)();
           return;
         }
@@ -575,7 +589,7 @@ export const venueRules: RuleSet = {
             const price = Math.round(booked.price * (1.15 + 0.1 * random.next()));
             booked.change = { kind, price };
             record("price_change", { contract: booked.id, price });
-            yield* party.call("send_mail", { to: booked.to, act: "price_change", fields: { contract: booked.id, old_price: booked.price, price } });
+            yield* party.write(booked.to, "price_change", { contract: booked.id, old_price: booked.price, price });
             return;
           }
           // Only a booking with more than one room loses one; the first stays (FR-CONGRESS-09).
@@ -589,7 +603,7 @@ export const venueRules: RuleSet = {
           booked.change = { kind: "room_lost", room: lost, cut, ...(smaller === undefined ? {} : { smaller: smaller.id }) };
           record("room_lost", { contract: booked.id, room: lost });
           const offer = smaller === undefined ? { offer: "price_cut" } : { offer: "smaller_room", smaller: smaller.id };
-          yield* party.call("send_mail", { to: booked.to, act: "room_lost", fields: { contract: booked.id, room: lost, ...offer, cut } });
+          yield* party.write(booked.to, "room_lost", { contract: booked.id, room: lost, ...offer, cut });
           return;
         }
         case "room_allocation": {
@@ -607,7 +621,7 @@ export const venueRules: RuleSet = {
           if (allocation.every(([from, to]) => from === to)) allocation[allocation.length - 1][1] = `${allocation[allocation.length - 1][0]}-allocated`;
           booked.rooms = allocation.map(([, to]) => to);
           record("rooms_allocated", { contract: booked.id });
-          yield* party.call("send_mail", { to: booked.to, act: "rooms_allocated", fields: { contract: booked.id, allocation: allocation.map(([from, to]) => `${from} -> ${to}`).join("; ") } });
+          yield* party.write(booked.to, "rooms_allocated", { contract: booked.id, allocation: allocation.map(([from, to]) => `${from} -> ${to}`).join("; ") });
           return;
         }
       }
@@ -896,14 +910,14 @@ export const speakerRules: RuleSet = {
     /** Its call to the organiser with an act, then its mail if the call is not answered. */
     function* tell(act: string): Generator<RuleStep, void, Perceived> {
       if ((yield* party.call("call", { to: speaker.organiser, act })).outcome === "success") return;
-      yield* party.call("send_mail", { to: speaker.organiser, act, fields: {} });
+      yield* party.write(speaker.organiser, act);
     }
 
     /** Its cancellation, when an illness reaches it: by mail, or for late_cancel by a call first, then by mail if the call is not answered. */
     function* cancel(channel: string): Generator<RuleStep, void, Perceived> {
       record.cancelled = true;
       if (channel === "late_cancel") yield* tell("cancel");
-      else yield* party.call("send_mail", { to: speaker.organiser, act: "cancel", fields: {} });
+      else yield* party.write(speaker.organiser, "cancel", {});
     }
 
     function* script(): Script {
@@ -927,7 +941,7 @@ export const speakerRules: RuleSet = {
         if (pending && party.now >= WITHDRAW_MINUTES) {
           record.answer = "withdraw";
           for (const session of sessions.values()) if (session.answer === "accept_if") session.answer = "withdraw";
-          yield* party.call("send_mail", { to: speaker.organiser, act: "withdraw", fields: { session: invitation.session as number, condition: speaker.condition as string } });
+          yield* party.write(speaker.organiser, "withdraw", { session: invitation.session as number, condition: speaker.condition as string });
           continue;
         }
         if (party.stimuli.length > 0) continue;
@@ -1256,7 +1270,7 @@ export const sponsorRules: RuleSet = {
 
     /** Reads the programme, and mails condition_missing for each logo or morning slot it agreed to that is not there. */
     function* checkProgramme(): Generator<RuleStep, void, Perceived> {
-      for (const condition of yield* missingFromProgramme()) yield* party.call("send_mail", { to: sponsor.organiser, act: "condition_missing", fields: { condition } });
+      for (const condition of yield* missingFromProgramme()) yield* party.write(sponsor.organiser, "condition_missing", { condition });
     }
 
     /**
@@ -1282,7 +1296,7 @@ export const sponsorRules: RuleSet = {
         // An invoice above what it agreed is disputed, not paid (FR-CONGRESS-05's addition).
         if (invoice.amount > left) {
           settled.add(invoice.id);
-          yield* party.call("send_mail", { to: sponsor.organiser, act: "invoice_disputed", fields: { invoice: invoice.id, amount: sponsor.amount } });
+          yield* party.write(sponsor.organiser, "invoice_disputed", { invoice: invoice.id, amount: sponsor.amount });
           continue;
         }
         const [fewest, most] = sponsor.pay_days;
@@ -1297,7 +1311,7 @@ export const sponsorRules: RuleSet = {
       for (;;) {
         if (party.stimuli.some(({ channel }) => channel === SPONSOR_PERTURBATION) && !record.withdrew) {
           const withdrawn = withdrawing();
-          yield* party.call("send_mail", { to: sponsor.organiser, act: withdrawn.act, fields: withdrawn.fields });
+          yield* party.write(sponsor.organiser, withdrawn.act, withdrawn.fields);
         }
         // An invoice that reaches it after an agreement is paid; a withdrawn sponsor pays nothing more.
         const noticed = party.stimuli.some(({ channel }) => channel === INVOICE_NOTICE);
