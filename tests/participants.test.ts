@@ -8,6 +8,7 @@ import { readCalendar } from "../src/engine/calendar.ts";
 import { type Declared, type Perceived, type RuleSet, readParticipants } from "../src/engine/participants.ts";
 import { type RunSettings, run } from "../src/engine/run.ts";
 import { type Scenario, loadScenario } from "../src/engine/scenario.ts";
+import { Random } from "../src/engine/random.ts";
 import { ScriptedModel } from "../src/engine/scripted-model.ts";
 import type { Tool } from "../src/engine/tools.ts";
 import { type Post, postScenario } from "./fixtures/post.ts";
@@ -231,6 +232,27 @@ describe("run, with a rule set that gives a first step as the run starts (FR-PAR
     const givesNothing: RuleSet = { start: () => ({ atStart: () => undefined, next: (input) => (nothing.push(input), { kind: "end" }), outcome: () => ({}) }) };
     await run(loadScenario(withDesk(givesNothing), 1), [{ name: "ana", model: new ScriptedModel([{ text: "Nothing.", delayMs: 0 }]), activations: 1 }], 1, { ...settings, logDirectory });
     expect(nothing).toEqual([]);
+  });
+});
+
+describe("run, a rule set's own sequence (FR-CONGRESS-02)", () => {
+  it("starts each rule set with a sequence from the seed and its participant's name, the same in every replica with that seed", async () => {
+    const drawn: number[] = [];
+    const drawing: RuleSet = {
+      start: (_params, random) => {
+        drawn.push(random.next());
+        return { next: () => ({ kind: "end" }), outcome: () => ({}) };
+      },
+    };
+    const logDirectory = mkdtempSync(join(tmpdir(), "agents-lab-logs-"));
+    const quiet = () => [{ name: "ana", model: new ScriptedModel([{ text: "No.", delayMs: 0 }]), activations: 1 }];
+
+    await run(loadScenario(withDesk(drawing), 3), quiet(), 3, { ...settings, logDirectory });
+    await run(loadScenario(withDesk(drawing), 3), quiet(), 3, { ...settings, logDirectory });
+
+    expect(drawn).toHaveLength(2);
+    expect(drawn[1]).toBe(drawn[0]);
+    expect(drawn[0]).toBe(Random.derive(3, "rules of desk").next());
   });
 });
 
