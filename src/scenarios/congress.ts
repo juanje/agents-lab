@@ -434,24 +434,43 @@ function actsOf(participants: Readonly<Record<string, TomlTable>>): TomlTable {
   );
 }
 
+/** An act with its required fields, as the directory writes it: the fields marked "?" left out. */
+function requiredText(written: string): string {
+  const [act, fields] = actOf(written);
+  return fields.length === 0 ? act : `${act} (${fields.join(", ")})`;
+}
+
 /**
- * The directory of the drawn parties (FR-CONGRESS-08): a line for each, with its id, its kind, whether it has a mailbox
- * and a line, and the acts its rule set takes with their required fields; in an order drawn from the replica's sequence (FR-CONGRESS-09).
+ * The directory of the drawn parties (FR-CONGRESS-08 and its addition): first, each kind's acts with their required
+ * fields, once per kind; then one line per drawn party, in an order drawn from the replica's sequence (FR-CONGRESS-09),
+ * with its id, its kind, whether it has a mailbox and a line, and what its template says that anyone could know: a
+ * speaker's title and home, an in-house caterer's venue. The partner's speaker is not listed: the board's mail names it.
  */
 function directoryOf(configuration: Configuration, chosenOf: Readonly<Record<string, TomlTable[]>>, templates: readonly TomlTable[], random: Random): string {
   const mailboxes = ((configuration.mail as TomlTable | undefined)?.mailboxes ?? []) as string[];
   const lines = ((configuration.phone as TomlTable | undefined)?.lines ?? []) as string[];
   const settings = (configuration.kinds ?? {}) as TomlTable;
   // The in-house caterers come with their venues, beside the drawn templates.
-  const inHouse = templates.filter(({ kind, in_house_for: venue }) => kind === "caterer" && venue !== undefined).map(({ id }) => ({ id: id as string, kind: "caterer" }));
-  const parties = [...Object.entries(chosenOf).flatMap(([kind, chosen]) => chosen.map(({ id }) => ({ id: id as string, kind }))), ...inHouse];
-  return chooseFrom(parties, parties.length, random)
-    .map(({ id, kind }) => {
-      const has = `with ${mailboxes.includes(id) ? "a mailbox" : "no mailbox"} and ${lines.includes(id) ? "a line" : "no line"}`;
-      const acts = RULE_SET_ACTS[String((settings[kind] as TomlTable | undefined)?.rules)] ?? [];
-      return `- ${id}: ${kind}, ${has}; ${acts.length === 0 ? "takes no act the congress lists" : `takes ${acts.join(", ")}`}`;
-    })
-    .join("\n");
+  const inHouse = templates.filter(({ kind, in_house_for: venue }) => kind === "caterer" && venue !== undefined).map((template) => ({ template, kind: "caterer" }));
+  const parties = [...Object.entries(chosenOf).filter(([kind]) => kind !== "partner").flatMap(([kind, chosen]) => chosen.map((template) => ({ template, kind }))), ...inHouse];
+  const kinds = [...new Set(parties.map(({ kind }) => kind))];
+  const article = (kind: string) => (/^[aeiou]/.test(kind) ? "An" : "A");
+  const actsOfKind = kinds.map((kind) => {
+    const acts = RULE_SET_ACTS[String((settings[kind] as TomlTable | undefined)?.rules)] ?? [];
+    return `${article(kind)} ${kind} takes ${acts.length === 0 ? "no act the congress lists" : acts.map(requiredText).join(", ")}.`;
+  });
+  const known = ({ template, kind }: (typeof parties)[number]): string[] => {
+    if (kind === "speaker") return [...(template.title === undefined ? [] : [`"${String(template.title)}"`]), ...(template.home === undefined ? [] : [template.home === "local" ? "local" : `from ${String(template.home)}`])];
+    if (kind === "caterer" && template.in_house_for !== undefined) return [`in-house for ${String(template.in_house_for)}`];
+    return [];
+  };
+  const partyLines = chooseFrom(parties, parties.length, random).map((party) => {
+    const id = String(party.template.id);
+    const has = `with ${mailboxes.includes(id) ? "a mailbox" : "no mailbox"} and ${lines.includes(id) ? "a line" : "no line"}`;
+    const facts = known(party);
+    return `- ${id}: ${party.kind}, ${has}${facts.length === 0 ? "" : `; ${facts.join(", ")}`}`;
+  });
+  return [...actsOfKind, ...partyLines].join("\n");
 }
 
 /**
