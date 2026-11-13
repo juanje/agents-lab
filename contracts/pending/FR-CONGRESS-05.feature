@@ -95,7 +95,7 @@ Feature: Caterers, sponsors and services
       | day 18 | booked      |
       | day 20 | unavailable |
 
-  Scenario: Train prices rise in the last two weeks
+  Scenario Outline: Train prices rise in the last two weeks
     Given the travel material has a train "t1" from "north" arriving at "station" at "08:10" on any day, with the base price 40
     And the organiser's scripted turns, on "<day>", call "travel_options" from "north" for "day 26", then end
     When the run ends
