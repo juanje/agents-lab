@@ -125,6 +125,21 @@ describe("the congress's speakers and partner (FR-CONGRESS-04)", () => {
     expect(loaded.money?.settings.accounts).toEqual(expect.arrayContaining([{ name: "s1", unlimited: true }]));
   });
 
+  it("gives a venue none of the speakers' perturbations", () => {
+    const loaded = loadScenario(
+      congress((configuration, pools) => {
+        configuration.city = stringify({ places: [{ id: "office" }], venues: [{ id: "v1", entrance: "v1-entrance", hours: "always", rooms: [{ id: "main-hall", seats: 120 }] }], passages: [{ between: ["office", "v1-entrance"], length: 40, step_free: true }] });
+        (configuration.calendar as TomlTable).hours = { always: { days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], from: "00:00", to: "23:59" } };
+        pools.venue = [{ id: "v1", rooms: [{ id: "main-hall", seats: 120 }], access_claim: "step-free", price: 2000, hold_days: 2, deposit_share: 0.25, deposit_due_days: 3, cancellation: [{ share: 0.5 }] }];
+        configuration.draw = stringify({ attendance: [50, 80], venue: 1, speaker: 1, partner: 1, board: 1 });
+        configuration.perturbations = { early_cancel: { between: ["day 9 09:00", "day 9 12:00"] }, late_cancel: { at: "day 23 10:00" }, change: { at: "day 6 09:00" } };
+      }),
+      1,
+    );
+    const v1 = loaded.participants?.find(({ name }) => name === "v1");
+    expect(v1?.decides === "rules" && (v1.params.perturbations as { name: string }[]).map(({ name }) => name)).toEqual(["change"]);
+  });
+
   it("puts the board's mail about the partner's session in the organiser's mailbox at the calendar's start", () => {
     const loaded = loadScenario(congress(), 1);
 
