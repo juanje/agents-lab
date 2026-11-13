@@ -100,7 +100,7 @@ Experiments are written outside this repository, in the experiment language (FR-
 
 **v0.3 build order.** The preparation-only pilot of E1 needs items 1–9. The world and its parts are designed in `agents-lab-experiments/experiments/E1-congress/world.md`; each FR's contract is written from it, one at a time.
 1. FR-CLOCK-03 (a calendar, clock segments and hours)
-2. FR-MESSAGE-01 (structured messages between participants), not written; its contract also gives an effector's action the world's time (FR-CLOCK-03 states it, no scenario checks it yet)
+2. FR-MESSAGE-01 (structured messages between participants); its contract also checks that an effector's action is given the world's time (FR-CLOCK-03)
 3. FR-PARTICIPANT-01 (rule-based participants with an interface), not written
 4. FR-PHONE-01 (calls), not written
 5. FR-CONGRESS-01 (the congress world from materials), not written
@@ -299,6 +299,22 @@ A scenario's configuration may declare a `[calendar]`: its `start` (`"day <n> <w
 
 **Recorded.** The inventory gives the calendar's start, each segment with its scale and the run time it takes (the last: "until the run ends"), and each named set of hours.
 *Why:* an event prepared over weeks and run in a day needs one world clock with different paces, as long waits and a busy day do not fit one scale. Thinking takes world time like any act, so each segment's scale sets how much the world moves while an agent decides. Hours are when the world's parties answer; declaring them once keeps every party's rules on the same calendar.
+
+#### FR-MESSAGE-01: Structured messages between participants
+A scenario may declare, from its configuration, a mail medium (`[mail]`) and which of its agents and components have a mailbox. A message has a sender, a recipient, an `act` (a word), `fields` (named values), an optional `subject` (its act when it has none) and an optional free `text`. Each recipient declares the acts it takes and the fields each act requires (`[mail.acts.<recipient>]`, `<act> = [<field>, …]`); an agent that declares none takes every act.
+
+**Sending.** An agent sends with the effector `send_mail` (`to`, `act`, `fields`, `subject?`, `text?`); a component sends with an action of its cycle. As the call or action starts, a message whose recipient has no mailbox is refused as `unknown_recipient`, one whose act the recipient does not take as `act_not_taken` (its result lists the acts the recipient takes), and one that lacks a field its act requires as `missing_field` (naming the field); a refused message takes no time and is not sent. Otherwise the message is sent when the call's duration ends, with the world's time it was sent (an effector's action is given the world's time, FR-CLOCK-03), and reaches its recipient's mailbox after a delivery delay drawn, in world minutes, between the two numbers of `delivery_minutes`, from a sequence derived from the replica's seed and `mail of <sender>`, so a condition that adds a participant leaves the others' delays as they were (NFR-12). A message still in transit when the run ends is never delivered.
+
+**Receiving.** A delivered message lands in the mailbox unread. When it lands in an agent's mailbox, the agent receives a stimulus through the channel `mail_notice`, whose source and text the configuration gives (`notice_source`, and `notice` with `{from}` and `{subject}` filled in); a configuration without `notice` declares no such channel and sends none. An agent reads its mailbox with the sensors `check_mail` (`unread_only?`), which lists each received message's id, sender, subject and the world's time it was received, oldest first, and `read_mail` (`id`), which gives `From: <sender>. Act: <act>.`, then each field as `<name>: <value>.`, then the text, and marks it read; an id not in the reader's mailbox fails as `no_such_mail`. A component's cycle is given its mailbox's unread messages and may mark them read.
+
+**Durations** are world time (so `[mail]` needs a `[calendar]`): `send_minutes`, plus `send_minutes_per_field` for each field and one minute per `send_words_per_minute` words of the subject and text; `check_minutes`; `read_minutes`, plus one minute per `read_words_per_minute` words of the text. A per-field or per-word duration left out adds nothing.
+
+**Messages at the start.** The configuration may put messages in a mailbox before the run (`[[mail.initial]]`, with `to`, `from`, `act`, `fields`, `subject`, `text` and `received`, a world time at or before the calendar's start). Their sender need not be a participant. They are unread and send no notice.
+
+**Recorded.** Each message sent adds a `message_sent` line (its id, sender, recipient, act, fields, subject, text, and the run time and world time it was sent); each delivery adds a `message_delivered` line (its id, and the run time and world time it landed); a message at the start adds a `message_delivered` line at the run's start with its `received` time. The inventory gives each mailbox, each recipient's acts with their fields, `delivery_minutes`, the durations, and the notice's source and text.
+
+**Refusals**, before any model call, with an error that names the key: `[mail]` without a `[calendar]`; `delivery_minutes` that is not two numbers, the first at least 0 and not above the second; a negative duration; acts for a participant with no mailbox; a field list that is not a list of words; a message at the start for a participant with no mailbox, whose act its recipient does not take or that lacks a required field, or received after the calendar's start; a `notice` without `notice_source`.
+*Why:* in a world of many parties, most of what an agent learns and does goes by mail, and mail takes time. Acts and fields make what a message asks for something a rule-based participant can answer, while its free text stays for an agent; the same message works whether its recipient is a component now or an agent later. A notice says that something came, not what it says: the agent still has to read it.
 #### FR-METRIC-01: Generic metrics for every run
 At the end of every run the core reports, per agent and in total:
 - activations and model turns;
