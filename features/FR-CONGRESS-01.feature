@@ -16,7 +16,8 @@ Feature: The congress world from materials
     Then the "look" result gives the place "office" and the exits "v1-entrance" (40, step-free), "v2-entrance" (60, step-free) and "v3-entrance" (75, step-free)
 
   Scenario: Going to a venue takes its passage's length in world minutes
-    Given the organiser's scripted turns call "go" to "v1-entrance", then "look", then end
+    Given the calendar starts at "day 1 Monday 10:00", within the venue's hours
+    And the organiser's scripted turns call "go" to "v1-entrance", then "look", then end
     When the run ends
     Then the "go" call took 400 milliseconds of the run, within 30
     And the "look" result gives the exits "office" and "foyer"
