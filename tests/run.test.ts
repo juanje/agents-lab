@@ -3,6 +3,7 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { getCurrentSystemPrompt, getCurrentTools } from "@earendil-works/pi-ai";
 import { AgentSession } from "@earendil-works/pi-coding-agent";
+import { stringify } from "smol-toml";
 import { describe, expect, it, vi } from "vitest";
 import type { ToolCall } from "../src/engine/adapter.ts";
 import { type RunSettings, run } from "../src/engine/run.ts";
@@ -2026,6 +2027,29 @@ describe("run, with components", () => {
     const lines = logOf(logDirectory, runId) as Record<string, unknown>[];
     expect(lines.filter((line) => line.type === "slot")).toEqual([{ type: "slot", slot: 2, holder: "crate", atMs: expect.any(Number) }]);
     expect(lines.filter((line) => line.type === "participant_outcome")).toEqual([{ type: "participant_outcome", participant: "porter", outcome: { filled: "crate" } }]);
+  });
+
+  it("evaluates the configuration's parts: each at its world time while the run goes on for it, at the end, and lists those not evaluated (FR-PARTS-01)", async () => {
+    const logDirectory = newLogDirectory();
+    // A world minute is 10 ms of the run; the porter fills slot 2 30 ms in, at 09:03.
+    const calendar = ["[calendar]", 'start = "day 1 Monday 09:00"', "[[calendar.segments]]", "scale = 6000", ""].join("\n");
+    const part = (id: string, evaluate: string) => ({ id, predicate: "slot_filled", params: { slot: 2 }, activation: "always", evaluate_at: evaluate });
+    const parts = [part("p1", "day 1 09:10"), part("p2", "end"), part("p3", "day 2 09:00")];
+    const porter = filler("porter", { slot: 2, thing: "crate", waitMs: () => 0, actionMs: 30 });
+    const loaded = slots({
+      ...agentsNamed(),
+      components: () => [porter],
+      parts: { predicates: { slot_filled: (state, params) => holder(state, params.slot as number) !== null }, events: {}, misapplications: {} },
+      baseConfiguration: `parts = ${JSON.stringify(stringify({ parts }))}\n${slotsScenario.baseConfiguration}\n${calendar}`,
+    });
+
+    const { runId } = await run(loaded, [], seed, { ...settings, logDirectory, timeLimitMs: 500 });
+
+    const lines = logOf(logDirectory, runId) as Record<string, unknown>[];
+    const [p1] = lines.filter((line) => line.type === "part" && line.part === "p1");
+    expect(p1).toMatchObject({ evaluated_at: "day 1 09:10", active: true, held: true, reached_at: "day 1 09:03" });
+    expect(lines.filter((line) => line.type === "part" && line.part === "p2")).toHaveLength(1);
+    expect(lines.filter((line) => line.type === "parts_not_evaluated")).toEqual([{ type: "parts_not_evaluated", parts: ["p3"] }]);
   });
 
   it("gives each component a random sequence from the replica's seed and its name, whatever other components run", async () => {
