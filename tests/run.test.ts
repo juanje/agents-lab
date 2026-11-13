@@ -12,6 +12,7 @@ import { type Rhythm, type Scenario, loadScenario } from "../src/engine/scenario
 import type { Stimuli } from "../src/engine/stimuli.ts";
 import type { AgentCall, Effector, Sensor } from "../src/engine/tools.ts";
 import type { Component } from "../src/engine/components.ts";
+import { postScenario } from "./fixtures/post.ts";
 import { type Slots, emptySlots, filler, holder, rhythmChannel, slotTools, slotsScenario, take } from "./fixtures/slots.ts";
 
 /** A rhythm with no waiting: the agent wakes again as soon as its previous activation ends. */
@@ -632,6 +633,29 @@ describe("run", () => {
     await run(slots({ tools: [stamping] }), [{ name: "a", model, activations: 1 }], seed, settings);
 
     expect(given).toEqual(["none"]);
+  });
+
+  it("offers its agents the mail's tools, records a message sent and its delivery, and ends once the message has landed and its notice is delivered (FR-MESSAGE-01)", async () => {
+    const loaded = loadScenario(postScenario, seed);
+    const logDirectory = newLogDirectory();
+    const ana = new ScriptedModel([
+      { toolCalls: [{ name: "send_mail", arguments: { to: "ben", act: "ask", subject: "Friday" } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+    const ben = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
+
+    const { runId, startedAtMs } = await run(loaded, [{ name: "ana", model: ana, activations: 1 }, { name: "ben", model: ben, activations: 1 }], seed, { ...settings, logDirectory });
+
+    expect(getCurrentTools(ana.received[0]).map(({ name }) => name)).toContain("send_mail");
+    const lines = logOf(logDirectory, runId) as { type: string; atMs: number; agent?: string; channel?: string }[];
+    const sent = lines.find(({ type }) => type === "message_sent");
+    const delivered = lines.find(({ type }) => type === "message_delivered");
+    expect(sent).toMatchObject({ id: "m-1", from: "ana", to: "ben", act: "ask", subject: "Friday" });
+    expect(delivered).toMatchObject({ id: "m-1" });
+    // Sending takes three world minutes and the delivery one, each 100 ms of the run.
+    expect(delivered!.atMs - startedAtMs).toBeGreaterThanOrEqual(400);
+    expect(lines.filter(({ type, channel }) => type === "stimulus" && channel === "mail_notice")).toMatchObject([{ agent: "ben", content: "New mail from ana: Friday" }]);
+    expect(loaded.world.state.mail.mailboxes.ben).toMatchObject([{ id: "m-1", read: false }]);
   });
 
   it("applies an effector the model calls through the arbiter, with the agent and the call's arguments", async () => {

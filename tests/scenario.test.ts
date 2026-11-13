@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Random } from "../src/engine/random.ts";
 import { type Scenario, loadScenario } from "../src/engine/scenario.ts";
+import { postKeeper, postScenario } from "./fixtures/post.ts";
 import { START_HOLDER, type Slots, rhythmChannel, slotsScenario } from "./fixtures/slots.ts";
 
 /** Any seed: the slots test scenario draws nothing from it. */
@@ -19,6 +20,28 @@ const withBase = (baseConfiguration: string): Partial<Scenario<Slots>> => ({
 });
 
 describe("loadScenario", () => {
+  it("reads a configuration's [mail]: it puts the mail in the world where the scenario keeps it, declares the mail notice's channel, and gives the mail's settings (FR-MESSAGE-01)", () => {
+    const loaded = loadScenario(postScenario, seed);
+
+    expect(loaded.world.state).toEqual({ mail: { mailboxes: { ana: [], ben: [], desk: [] }, inTransit: [] } });
+    expect(loaded.channels).toEqual([rhythmChannel, { name: "mail_notice", source: "mail client", stimulus: "New mail from {from}: {subject}" }]);
+    expect(loaded.mail?.settings).toMatchObject({ mailboxes: ["ana", "ben", "desk"], deliveryMinutes: [1, 1] });
+    expect(loaded.mail?.keeper).toBe(postKeeper);
+  });
+
+  it("declares no mail notice's channel for a [mail] without a notice, and no mail for a configuration without [mail]", () => {
+    const quiet = loadScenario({ ...postScenario, baseConfiguration: postScenario.baseConfiguration.replace(/^notice.*\n/gm, "") }, seed);
+    const none = loadScenario(slotsScenario, seed);
+
+    expect(quiet.channels).toEqual([rhythmChannel]);
+    expect(quiet.mail?.settings.notice).toBeUndefined();
+    expect(none.mail).toBeUndefined();
+  });
+
+  it("refuses a [mail] in a scenario that keeps no mail in its state, naming the scenario", () => {
+    expect(() => loadScenario({ ...postScenario, mail: undefined }, seed)).toThrow('Scenario "post" keeps no mail in its state, but its configuration declares a [mail]');
+  });
+
   it("builds the world's initial state from the scenario's base configuration", () => {
     const loaded = loadScenario(withBase("[slots]\ncount = 2\nheld = 1\n"), seed);
 
