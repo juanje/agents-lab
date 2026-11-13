@@ -258,6 +258,11 @@ async function runAgents<State>(
   const notices = channels.some(({ name }) => name === INVOICE_NOTICE) ? { notices: stimuli } : {};
   const book = money === undefined ? undefined : new MoneyBook({ world, ...money, clock, record: (line) => recorder.record(line), ...notices });
   book?.start();
+  // The lines the scenario gives for each change of the world, as the world applies it (FR-POPULATION-01).
+  const logLines = scenario.logLines;
+  if (logLines !== undefined) world.watch((before, after) => {
+    for (const line of logLines(before, after)) recorder.record({ ...line, atMs: performance.now() } as never);
+  });
   // A participant's stimuli are held by its hours and reply delay, and its rule set woken by them (FR-PARTICIPANT-01).
   const parties = new Participants({
     world,
@@ -335,6 +340,8 @@ async function runAgents<State>(
   book?.summarise();
   // Each participant decided by rules gives its outcome record as the run ends (FR-PARTICIPANT-01).
   for (const { participant, outcome } of parties.outcomes()) recorder.record({ type: "participant_outcome", participant, outcome });
+  // So does each component that keeps one, from the world's state (FR-POPULATION-01).
+  for (const component of components) if (component.outcome !== undefined) recorder.record({ type: "participant_outcome", participant: component.name, outcome: component.outcome(world.state) });
   sample();
   return { turns, toolCalls, messages, sensings, startedAtMs };
 }

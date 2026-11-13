@@ -192,7 +192,7 @@ function sendingMinutes(settings: MailSettings, { fields = {}, subject, text }: 
 }
 
 /** The mail with a message sent: numbered after every message sent or received before it, and in transit from now on. */
-function withSent(mail: Mail, from: string, outgoing: Outgoing, sent: WorldTime | undefined): Mail {
+export function withSent(mail: Mail, from: string, outgoing: Outgoing, sent: WorldTime | undefined): Mail {
   if (sent === undefined) throw new Error("a message was sent without the world's time; the mail needs a [calendar]");
   const count = Object.values(mail.mailboxes).reduce((sum, mailbox) => sum + mailbox.length, mail.inTransit.length);
   return { ...mail, inTransit: [...mail.inTransit, { ...messageOf(`m-${count + 1}`, from, outgoing), sent }] };

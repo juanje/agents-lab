@@ -46,6 +46,8 @@ export type Step<State> =
       agent: string;
       channel: string;
       held?: false;
+      /** The values that fill the channel's text, by name (FR-POPULATION-01). */
+      values?: Readonly<Record<string, string>>;
     }
   /**
    * Sends a message, or reads one of its mailbox, as an agent's send_mail or read_mail does: an action, through the
@@ -75,6 +77,8 @@ export interface Component<State> {
   description: string;
   /** Its cycle for one run, drawing any chance from the component's own random sequence. */
   cycle(random: Random): Cycle<State>;
+  /** Its outcome record, read from the world's state as the run ends, for a component that keeps one (FR-POPULATION-01). */
+  outcome?(state: State): Readonly<Record<string, string | number | boolean>>;
 }
 
 /** One action of a component, as the run's log records it (FR-PROCESS-01). */
@@ -133,7 +137,7 @@ export async function runComponent<State>(component: Component<State>, { world, 
       continue;
     }
     if (step.kind === "deliver") {
-      stimuli.deliver(step.agent, step.channel, {}, step.held === false ? { held: false } : {});
+      stimuli.deliver(step.agent, step.channel, step.values ?? {}, step.held === false ? { held: false } : {});
       continue;
     }
     const startedAtMs = performance.now();

@@ -73,6 +73,8 @@ export interface Scenario<State> {
   mail?: MailKeeper<State>;
   /** The rule sets the scenario provides, by name, which its configuration's participants may be decided by (FR-PARTICIPANT-01). */
   ruleSets?: Readonly<Record<string, RuleSet>>;
+  /** The lines of the run's log the scenario gives for a change of its world, each with its type, recorded as the world applies it (FR-POPULATION-01). */
+  logLines?: (before: State, after: State) => readonly ({ type: string } & Readonly<Record<string, unknown>>)[];
   /** The accounts of the world itself, besides its agents' and participants', that its configuration's [money] may give (FR-CONGRESS-05). */
   worldAccounts?: readonly string[];
   /** Where the state keeps the phone, for a scenario whose configuration may declare a [phone] (FR-PHONE-01). */
