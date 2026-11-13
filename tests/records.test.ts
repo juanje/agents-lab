@@ -42,7 +42,7 @@ const tool = (name: string) => congressScenario.tools.find((each) => each.name =
 describe("the congress's records for its parts (FR-CONGRESS-06)", () => {
   it("keeps what its parts read: the event's day, the helpers, the target, the end of preparation, the roles, the no-show cut and the discretionary limit", () => {
     const state = congress().world.state as Congress;
-    expect(state.context).toEqual({ eventDay: 26, helpers: 2, target: 50, endOfPreparation: minutes(26, "06:30"), roles: { venue: { false_claim: ["v1"] } }, noShowCut: 0.05, discretionaryLimit: 300, homes: {}, catering: { v1: {} }, ids: { speakers: ["s1", "s2"], sponsors: [] } });
+    expect(state.context).toEqual({ eventDay: 26, helpers: 2, target: 50, endOfPreparation: minutes(26, "06:30"), roles: { venue: { false_claim: ["v1"] } }, noShowCut: 0.05, discretionaryLimit: 300, homes: {}, catering: { v1: {} }, ids: { speakers: ["s1", "s2"], sponsors: [] }, fees: { s1: 0, s2: 0 } });
   });
 
   it("stamps a travel booking and a programme version with their world times", () => {

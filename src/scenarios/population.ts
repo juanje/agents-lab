@@ -116,7 +116,7 @@ export interface Population {
   /** Each announcement, with its audience, kind and world minutes (FR-CONGRESS-06). */
   announcements?: { audience: string; kind: string; at: number }[];
   /** Each price the page was set to, with its world minutes (FR-CONGRESS-06). */
-  edits?: { price: number; at: number }[];
+  edits?: { at: number; price?: number; open?: boolean; required_fields?: string[] }[];
 }
 
 /** World minutes since day 1's midnight of "day <n> HH:MM". */
@@ -309,8 +309,20 @@ export function populationTools<State extends PopulationWorld>(options: Populati
         withPopulation(state, (population) => ({
           ...population,
           page: { ...population.page, ...Object.fromEntries(Object.entries(args).filter(([key]) => ["open", "price", "cap", "close_date", "required_fields", "info", "waiting_list"].includes(key))) } as Page,
-          // Each price it is set to, with its time (FR-CONGRESS-06).
-          ...(typeof args.price === "number" && world !== undefined ? { edits: [...(population.edits ?? []), { price: args.price, at: nowOf(world) }] } : {}),
+          // Each edit with its time: the price (FR-CONGRESS-06), whether the page is open and the fields it requires (FR-CONGRESS-10).
+          ...(world === undefined
+            ? {}
+            : {
+                edits: [
+                  ...(population.edits ?? []),
+                  {
+                    at: nowOf(world),
+                    ...(typeof args.price === "number" ? { price: args.price } : {}),
+                    ...(typeof args.open === "boolean" ? { open: args.open } : {}),
+                    ...(Array.isArray(args.required_fields) ? { required_fields: args.required_fields as string[] } : {}),
+                  },
+                ],
+              }),
         })),
     },
     texts: { success: "The ticket page is changed.", [INVALID_VALUE]: "invalid_value: the page cannot take that value" },

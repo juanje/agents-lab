@@ -6,12 +6,14 @@ export interface Act {
   tool: string;
   arguments: Readonly<Record<string, unknown>>;
   world: WorldTime;
+  /** The call's outcome, so a pattern can count only acts that succeeded (FR-CONGRESS-10). */
+  outcome?: string;
 }
 
 /** What a scenario provides for parts (FR-PARTS-01): its predicates, its events and its misapplication patterns, by name. */
 export interface PartsProvided<State> {
   /** Whether a part holds in a state, with its params; or that, with the values its line gives (FR-CONGRESS-06). */
-  predicates: Readonly<Record<string, (state: State, params: Readonly<Record<string, unknown>>) => boolean | { holds: boolean; values: Readonly<Record<string, unknown>> }>>;
+  predicates: Readonly<Record<string, (state: State, params: Readonly<Record<string, unknown>>) => boolean | { holds: boolean; values?: Readonly<Record<string, unknown>>; reachedAt?: number }>>;
   /** The world time of an event's first record in a state, with its params; none when it has none. */
   events: Readonly<Record<string, (state: State, params: Readonly<Record<string, unknown>>) => WorldTime | undefined>>;
   /** Whether an act is a misapplication, with its params and the world's state at the act's time (FR-CONGRESS-06). */
@@ -148,11 +150,20 @@ export function readParts<State>(written: readonly Record<string, unknown>[], pr
   });
 }
 
-/** The money the agents paid or committed to a part's actors between two world times, in world minutes (FR-PARTS-01). */
+/**
+ * The money the agents committed or paid to a part's actors between two world times, in world minutes (FR-PARTS-01):
+ * commitments net of their releases, and payments to an actor only when no commitment to it is counted, since those
+ * settle a commitment already counted (FR-CONGRESS-10).
+ */
 export function effortMoney(money: readonly { event: Readonly<Record<string, unknown>>; at: number }[], agents: readonly string[], actors: readonly string[], from: number, until: number): number {
-  return money
-    .filter(({ event, at }) => at >= from && at <= until && agents.includes(String(event.from)) && actors.includes(String(event.to)) && (event.kind === "payment" || event.kind === "commitment"))
-    .reduce((sum, { event }) => sum + Number(event.amount), 0);
+  const counted = money.filter(({ event, at }) => at >= from && at <= until && agents.includes(String(event.from)) && actors.includes(String(event.to)));
+  const committedTo = new Set(counted.filter(({ event }) => event.kind === "commitment").map(({ event }) => String(event.to)));
+  const amount = ({ event }: (typeof counted)[number]) => {
+    if (event.kind === "commitment") return Number(event.amount);
+    if (event.kind === "release") return -Number(event.amount);
+    return event.kind === "payment" && !committedTo.has(String(event.to)) ? Number(event.amount) : 0;
+  };
+  return counted.reduce((sum, entry) => sum + amount(entry), 0);
 }
 
 /** What a parts book works with: the parts, what the scenario provides, the run's level of the kind factor, the agents, the money and the log. */
@@ -285,7 +296,9 @@ export class PartsBook<State> {
     }
     const last = tracked.intervals.filter(({ from }) => from <= at).at(-1);
     const held = last !== undefined && (last.to === undefined || last.to > at);
-    const reachedAt = held ? last.from : undefined;
+    // A predicate may give the moment it was reached; otherwise it is the start of the interval in which it held (FR-CONGRESS-10).
+    const reading = this.#settings.provided.predicates[part.predicate](this.#state as State, part.params);
+    const reachedAt = held ? ((typeof reading === "boolean" ? undefined : reading.reachedAt) ?? last.from) : undefined;
     const until = reachedAt ?? at;
     const from = tracked.activeAt;
     const names = (value: unknown): boolean => (typeof value === "string" ? part.actors.includes(value) : typeof value === "object" && value !== null && Object.values(value).some(names));
@@ -304,7 +317,7 @@ export class PartsBook<State> {
     const traps = part.traps.filter(({ trap, params }) => this.#settings.provided.traps?.[trap](state, params, at) === true).map(({ trap }) => trap);
     // The values a predicate gives besides whether it holds, read at evaluation (FR-CONGRESS-06).
     const given = this.#settings.provided.predicates[part.predicate](state, part.params);
-    const values = typeof given === "boolean" ? {} : { values: given.values };
+    const values = typeof given === "boolean" || given.values === undefined ? {} : { values: given.values };
     this.#settings.record({ ...line, active: true, held, ...(reachedAt === undefined ? {} : { reached_at: timeText({ day: Math.floor(reachedAt / 1440) + 1, weekday: "Monday", seconds: Math.round((reachedAt % 1440) * 60) }) }), effort: { calls, money }, misapplications, ...(part.traps.length === 0 ? {} : { traps }), ...values, ...kind });
   }
 }

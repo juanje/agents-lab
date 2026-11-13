@@ -207,7 +207,7 @@ async function runAgents<State>(
       toolCalls.push(call);
       // An act, as it lands, for the parts' effort and misapplications (FR-PARTS-01).
       const now = clock.worldTime();
-      if (now !== undefined) partsBook?.acted({ agent: call.agent, tool: call.tool, arguments: call.arguments as Record<string, unknown>, world: now });
+      if (now !== undefined) partsBook?.acted({ agent: call.agent, tool: call.tool, arguments: call.arguments as Record<string, unknown>, world: now, outcome: call.outcome });
     },
     retry: (retry) => recorder.record({ type: "rate_limit_retry", ...retry }),
     start: (start) => recorder.record({ type: "effector_start", ...start }),

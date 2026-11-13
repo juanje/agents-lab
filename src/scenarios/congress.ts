@@ -103,6 +103,8 @@ export interface PartsContext {
   homes?: Readonly<Record<string, string>>;
   /** Each chosen venue's catering rule and in-house caterer, by its id. */
   catering?: Readonly<Record<string, { rule?: string; inHouse?: string }>>;
+  /** Each speaker's fee, by its id, against which a fee condition is met (FR-CONGRESS-10). */
+  fees?: Readonly<Record<string, number>>;
   /** The drawn speakers, the partner's among them, and sponsors, by id (FR-CONGRESS-09). */
   ids?: { speakers: readonly string[]; sponsors: readonly string[] };
 }
@@ -852,8 +854,8 @@ function contextOf(configuration: Configuration, discretionaryLimit: number): Pa
   };
 }
 
-/** The travelling speakers' stations, the chosen venues' catering rules and in-house caterers, and the speakers' and sponsors' ids, from the participants. */
-function partiesContext(configuration: Configuration): Pick<PartsContext, "homes" | "catering" | "ids"> {
+/** The travelling speakers' stations and fees, the chosen venues' catering rules and in-house caterers, and the speakers' and sponsors' ids, from the participants. */
+function partiesContext(configuration: Configuration): Pick<PartsContext, "homes" | "catering" | "ids" | "fees"> {
   const parties = Object.entries((configuration.participants ?? {}) as TomlTable).map(([name, participant]) => ({ name, rules: (participant as TomlTable).rules, params: ((participant as TomlTable).params ?? {}) as TomlTable }));
   const homes = Object.fromEntries(parties.filter(({ rules, params }) => rules === "speaker" && typeof params.home === "string" && params.home !== "local").map(({ name, params }) => [name, params.home as string]));
   const catering = Object.fromEntries(
@@ -865,7 +867,8 @@ function partiesContext(configuration: Configuration): Pick<PartsContext, "homes
       }),
   );
   const named = (...rules: string[]) => parties.filter((party) => rules.includes(String(party.rules))).map(({ name }) => name);
-  return { homes, catering, ids: { speakers: named("speaker", "partner"), sponsors: named("sponsor") } };
+  const fees = Object.fromEntries(parties.filter(({ rules, params }) => rules === "speaker" && typeof params.fee === "number").map(({ name, params }) => [name, params.fee as number]));
+  return { homes, catering, ids: { speakers: named("speaker", "partner"), sponsors: named("sponsor") }, fees };
 }
 
 /** The place the organiser is in; in a passage, none. */

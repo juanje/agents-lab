@@ -66,8 +66,13 @@ describe("the congress's records, as its parts read them (FR-CONGRESS-06)", () =
   it("reads the attendance: registrants not cancelled, confirmed speakers, 3 board members and the helpers", () => {
     const state = world({
       mail: [
+        // A confirmed speaker accepted and acknowledged its confirmation (FR-CONGRESS-09).
+        ["s1", "organiser", "accept", { session: 1 }, minutes(4)],
         ["organiser", "s1", "confirm", { time: "09:00", room: "main-hall" }, minutes(5)],
+        ["s1", "organiser", "acknowledged", {}, minutes(5)],
+        ["s2", "organiser", "accept", { session: 2 }, minutes(4)],
         ["organiser", "s2", "confirm", { time: "10:00", room: "main-hall" }, minutes(5)],
+        ["s2", "organiser", "acknowledged", {}, minutes(5)],
         ["s2", "organiser", "cancel", {}, minutes(9)],
       ],
       people: [{ id: "a-1", registered: 0 }, { id: "a-2", registered: 0, cancelled: 10 }, { id: "a-3" }],
@@ -85,6 +90,8 @@ describe("the congress's records, as its parts read them (FR-CONGRESS-06)", () =
         { kind: "commitment", from: "organiser", to: "v1", amount: 6600, commitment: "k-1", at: minutes(4) },
         { kind: "unapproved_overrun", from: "organiser", amount: 6600, commitment: "k-1", limit: 300, at: minutes(4) },
       ],
+      // The agreed amount is due while the logo it agreed to is shown (FR-CONGRESS-10).
+      programme: [{ version: 1, sessions: [], breaks: [], sponsor_slots: [], logos: ["sp1"], published: minutes(12) }],
     });
     expect(balanceOf(state)).toEqual({ balance: 3000 + 2000 + 1500 - 6600, overruns: 1 });
   });

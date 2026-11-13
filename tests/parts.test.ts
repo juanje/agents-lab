@@ -82,7 +82,8 @@ describe("PartsBook (FR-PARTS-01)", () => {
     parts.changed(state({ door: true }), at(1, "10:00"));
     parts.changed(state({ door: false }, [], [{ kind: "payment", from: "ana", to: "shop", amount: 50 }, { kind: "commitment", from: "ana", to: "shop", amount: 30 }, { kind: "payment", from: "ana", to: "zoe", amount: 9 }]), at(1, "11:00"));
     parts.due(state(), at(1, "18:00"));
-    expect(lines[0]).toEqual({ type: "part", part: "p1", evaluated_at: "day 1 18:00", active: true, held: false, effort: { calls: 0, money: 80 }, misapplications: [], kind: "covered" });
+    // The payment to "shop" settles the commitment counted, so only the commitment counts (FR-CONGRESS-10).
+    expect(lines[0]).toEqual({ type: "part", part: "p1", evaluated_at: "day 1 18:00", active: true, held: false, effort: { calls: 0, money: 30 }, misapplications: [], kind: "covered" });
   });
 
   it("activates a part at its event's first record, and records one not active at its evaluation as not active", () => {
