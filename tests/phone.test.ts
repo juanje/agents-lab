@@ -22,9 +22,10 @@ describe("readPhone (FR-PHONE-01)", () => {
   });
 
   it("refuses, naming the key, a phone without a calendar, a line for a name that is no agent or participant, and durations and a ring it cannot follow", () => {
-    const refusing = (changes: Record<string, unknown>, given = calendar) => () => readPhone(phone(changes) as never, given, names);
+    const refusing = (changes: Record<string, unknown>) => () => readPhone(phone(changes) as never, calendar, names);
+    const withoutCalendar = () => readPhone(phone() as never, undefined, names);
 
-    expect(refusing({}, undefined)).toThrow(/phone.*\[calendar\]/);
+    expect(withoutCalendar).toThrow(/phone.*\[calendar\]/);
     expect(refusing({ lines: ["ana", "zoe"] })).toThrow(/phone\.lines.*"zoe"/);
     for (const minutes of [0, -1, "five"]) expect(refusing({ ring_minutes: minutes })).toThrow(/phone\.ring_minutes/);
     for (const minutes of [0, -1, undefined]) expect(refusing({ call_minutes: minutes })).toThrow(/phone\.call_minutes/);
