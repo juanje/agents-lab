@@ -225,6 +225,11 @@ function callOf(written: string): { name: string; arguments: Record<string, unkn
   if (tool === "read_mail" && rest === "the first message") return { name: tool, arguments: { id: FIRST_RECEIVED } };
   if (tool === "read_mail") return { name: tool, arguments: { id: quoted[0] } };
   if (tool === "pay") return { name: tool, arguments: { invoice: quoted[0] } };
+  // An invoice, a travel booking and travel options (FR-CONGRESS-05).
+  const invoice = /^to "(\w+)" for (\d+), due "([^"]+)", for "([^"]+)"$/.exec(rest);
+  if (tool === "issue_invoice" && invoice !== null) return { name: tool, arguments: { to: invoice[1], amount: Number(invoice[2]), due: invoice[3], for: invoice[4] } };
+  if (tool === "book_travel") return { name: tool, arguments: { option: quoted[0], traveller: quoted[1] } };
+  if (tool === "travel_options") return { name: tool, arguments: { from: quoted[0], date: quoted[1] } };
   if (tool === "go") return { name: tool, arguments: { place: /^to "([^"]+)"$/.exec(rest)?.[1] } };
   if (tool === "write_note") return { name: tool, arguments: { title: quoted[0], text: quoted[1] } };
   if (tool === "read_notes") return { name: tool, arguments: quoted.length === 0 ? {} : { title: quoted[0] } };
@@ -243,14 +248,42 @@ const FIRST_RECEIVED = "m-2";
 export const FIRST_CONTRACT = (venue: string) => `${venue}-contract-1`;
 
 /**
- * A message or a call as the contract writes it: `to "<party>" with the act "<act>"`, then its fields, each `name "text"`
- * `name number` or `name true|false`, or "the contract's id"; the act's fields joined by ", " and " and ".
+ * A message or a call as the contract writes it: `to "<party>" with the act "<act>"`, then its fields, joined by ", "
+ * and " and ": each `name "text"`, `name number` or `name true|false`; a list, `name "a" and "b"`, as the text "a, b";
+ * counts, `name "a" 1 and "b" 2`, as the text "a: 1; b: 2"; "a total of <n>" as the counts "standard: <n>"; and
+ * "the contract's id".
  */
 function messageOf(written: string): Record<string, unknown> {
   const [, to, act, rest = ""] = /^to "(\w+)" with the act "(\w+)"(.*)$/.exec(written) ?? [];
   assert.ok(to !== undefined, `the steps do not read the message "${written}"`);
   const fields: Record<string, unknown> = {};
-  for (const [, name, text, number, truth] of rest.matchAll(/(\w+) (?:"([^"]*)"|(-?\d+(?:\.\d+)?)|(true|false)\b)/g)) fields[name] = text ?? (truth === undefined ? Number(number) : truth === "true");
+  // The quoted texts are kept aside, so the commas and "and"s within them do not split the fields.
+  const quoted: string[] = [];
+  const masked = rest.replace(/"([^"]*)"/g, (_, text: string) => `"${quoted.push(text) - 1}"`);
+  const textOf = (mask: string) => quoted[Number(mask)];
+  let last: { name: string; kind: "list" | "counts" } | undefined;
+  for (const segment of masked.split(/,\s+(?:and\s+)?|\s+and\s+/).map((each) => each.trim()).filter((each) => each !== "")) {
+    const total = /^a total of (\d+)$/.exec(segment);
+    const named = /^(\w+) (?:"(\d+)"(?: (-?\d+(?:\.\d+)?))?|(-?\d+(?:\.\d+)?)|(true|false))$/.exec(segment);
+    const more = /^"(\d+)"(?: (-?\d+(?:\.\d+)?))?$/.exec(segment);
+    if (total !== null) fields.counts = `standard: ${total[1]}`;
+    else if (named !== null) {
+      const [, name, text, count, number, truth] = named;
+      if (count !== undefined) {
+        fields[name] = `${textOf(text)}: ${count}`;
+        last = { name, kind: "counts" };
+      } else if (text !== undefined) {
+        fields[name] = textOf(text);
+        last = { name, kind: "list" };
+      } else {
+        fields[name] = truth === undefined ? Number(number) : truth === "true";
+        last = undefined;
+      }
+    } else if (more !== null && last !== undefined) {
+      const [, text, count] = more;
+      fields[last.name] = last.kind === "counts" ? `${String(fields[last.name])}; ${textOf(text)}: ${count}` : `${String(fields[last.name])}, ${textOf(text)}`;
+    } else assert.ok(segment === "the contract's id", `the steps do not read the field "${segment}" of "${written}"`);
+  }
   if (rest.includes("the contract's id")) fields.contract = FIRST_CONTRACT(to);
   return { to, act, ...(Object.keys(fields).length === 0 ? {} : { fields }) };
 }

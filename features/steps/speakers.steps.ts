@@ -40,14 +40,19 @@ const PARTNER: TomlTable = { id: "p1", title: "The partner's soil survey", sessi
 Given(
   "the congress scenario of FR-CONGRESS-02, whose calendar starts at {string} with one segment of scale {int}, so one world hour is {int} milliseconds of the run",
   function (this: Context, start: string, scale: number, hourMs: number) {
-    setUpPartiesCongress(this, start, scale, hourMs);
-    changePools(this, (pool) => {
-      pool.speaker = structuredClone(SPEAKERS);
-      pool.partner = [structuredClone(PARTNER)];
-    });
-    drawing(this, { speaker: 5, partner: 1 });
+    setUpSpeakersCongress(this, start, scale, hourMs);
   },
 );
+
+/** FR-CONGRESS-04's congress: FR-CONGRESS-02's, with the speakers "s1" to "s5" and the partner "p1". */
+export function setUpSpeakersCongress(context: Context, start: string, scale: number, hourMs: number): void {
+  setUpPartiesCongress(context, start, scale, hourMs);
+  changePools(context, (pool) => {
+    pool.speaker = structuredClone(SPEAKERS);
+    pool.partner = [structuredClone(PARTNER)];
+  });
+  drawing(context, { speaker: 5, partner: 1 });
+}
 
 Given('the mail delivers in 1 world minute and every speaker has "reply_minutes" [60, 60], no hours and "pick_up" 1', function (this: Context) {
   change(this, (configuration) => {
@@ -71,7 +76,7 @@ Given("the organiser's account opens at {int}", function (this: Context, opening
 });
 
 /** Changes how many templates of some kinds the draw chooses. */
-function drawing(context: Context, counts: Record<string, number>): void {
+export function drawing(context: Context, counts: Record<string, number>): void {
   change(context, (configuration) => (configuration.draw = stringify({ ...parse(configuration.draw as string), ...counts })));
 }
 
