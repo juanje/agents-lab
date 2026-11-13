@@ -132,11 +132,16 @@ Feature: The congress world from materials
     When the run ends
     Then the perturbation acted on "sp3"
 
-  Scenario: The reference price is the cost-covering price less a drawn gap
-    Given the cheapest fitting venue costs 2000, the caterers' median price per head is 30, the six lowest available fees add up to 600, the board's funds are 1000, the sponsors' amounts add up to 1000, the target attendance is 50, and "price_gap" is [0.5, 0.5]
+  Scenario Outline: The reference price comes from a cheapest feasible plan, less a drawn gap (FR-CONGRESS-11)
+    Given the target attendance is 50, "helpers" is 2, the cheapest venue that seats it costs 2000 <ramp>, the chosen caterers' prices per head are 25 and 30, the agency costs 460, the five lowest-fee accepting available speakers' fees add up to 500 and one of them comes from "north", whose cheapest train costs 40, the budget is 3000, the sponsors outside the role "withdraws" add up to 1000 and the one in it to 500, and "price_gap" is [0.6, 0.6]
     When the variant is drawn
-    Then the cost-covering price is 42, the reference price is 28, and the similar events cost 22.4, 28 and 33.6
-    And the variant line gives both prices and the gap
+    Then the cost-covering price is <covering>, the reference price is <reference>, and the similar events cost <similar>
+    And the variant line gives both prices, the gap and the budget
+
+    Examples:
+      | ramp                                                         | covering | reference | similar        |
+      | and every interior passage is step-free                      | 16       | 10        | 8, 10 and 12   |
+      | and an interior passage has "3 steps", with a "ramp" at 200  | 20       | 12.5      | 10, 12.5 and 15 |
 
   Scenario Outline: A draw by role that cannot be followed is refused before any model call
     Given the configuration is changed so that <change>

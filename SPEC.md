@@ -43,7 +43,7 @@ Experiments are written outside this repository, in the experiment language (FR-
 |:--|:--|:--|:--|
 | v0.1 | E13 micro vs macro (Schelling): three technical pilots, then parked | below | built enough for E13's pilots |
 | v0.2 | E2–E4 in an invented workplace (A19, A20, I4); E1's pilots ran here before E1 moved to the congress | below, in this build order | built for E1's pilots; E2–E4 next |
-| v0.3 | E1 in a congress (A18, A19, A23): instructions, heuristics and character | below, in this build order | next |
+| v0.3 | E1 in a congress (A18, A19, A23): instructions, heuristics and character | below, in this build order | under way: items 1–9 and 11–13 built, two technical runs |
 | v0.4 | E16 model monoculture and vote visibility | not written | later |
 | v0.5 | A single-agent experiment with tools and memory across runs (E15 or E7; the congress world's sequences) | not written | later |
 | v0.6 | World and agent forks | not written | later |
@@ -116,6 +116,7 @@ Experiments are written outside this repository, in the experiment language (FR-
 11. FR-ANALYSIS-04 (parts by kind and condition, light)
 12. FR-CONGRESS-08 (the congress ready for an experiment), before the technical run
 13. FR-CONGRESS-09 and FR-CONGRESS-10 (corrections from the first technical run), with the additions to FR-PARTS-01, FR-CONGRESS-08 and FR-ANALYSIS-04
+14. FR-CONGRESS-11 and FR-CONGRESS-12 (corrections from the second technical run: a fixed budget, solvable draws, speakers, smaller fixes, and the parts read against the budget), before the third technical run
 
 **Small known gaps** (to close when convenient): `lab summarize` prints numbers at full precision; a completed run whose log has no metric sample gives no values without saying so; a run in the index whose log is missing fails with Node's own error. The `wait` tool's description does not state `wait_max_minutes`, so the worker learns the limit only from a refusal; `wait_max_minutes` is not checked when the configuration loads. FR-WORKPLACE-07's scenario whose wait ends `interrupted` "about 50 milliseconds into the run" failed once in a full gate (2026-11-13) and passed on three reruns: it needs more slack. The run test that ends an effector's call early at a stimulus failed once under load (2026-11-13) and passed on reruns, as did one scenario in a full gate the same day.
 
@@ -568,6 +569,50 @@ After an agreement, a sponsor pays any invoice from the organiser for at most it
 
 **Money.** A part's effort money counts commitments net of releases, and payments only when they settle no commitment counted. W4 does not hold when the organiser cancelled the congress, and counts only sponsor money paid or due under conditions met.
 *Why:* the first technical run showed parts that held because nothing happened, patterns that counted every mail, and money counted twice.
+
+#### FR-CONGRESS-11: Corrections to the world from E1's second technical run
+**A fixed budget, no board.** A congress may run with a fixed budget the association gives the organiser, which nobody approves. The draw may give `budget` (two numbers); the variant then draws a whole number between them, and the organiser's account opens with it, with a ceiling equal to it from the start. A money account may give `ceiling` in the configuration, in force from the start (FR-MONEY-01 gains this); a commitment that takes the committed total above it is recorded as an `unapproved_overrun`, as before, and nothing is refused. A draw without a board is allowed: the `board` rule set stays in the library for experiments that want it, and E1 no longer draws one. The texts may name `{budget}` (the budget drawn; refused, naming it and the text, when the draw gives none). With no board drawn, the partner's session mail comes from `association`, a sender with no mailbox and no line, received at the calendar's start. The `variant` line gives the budget.
+
+**Solvable draws.** Each speaker's acceptance is drawn once, by the variant, from the variant's sequence (`accepts`, true with probability `acceptance`), and the speaker answers from it instead of drawing at its first invitation (FR-CONGRESS-09). `[draw.speaker]` may give `min_accepting`: the number of available speakers, not the partner, who accept; the variant redraws the speakers (the whole speaker draw, from the same sequence) until at least that many remain, up to 100 times, and a replica that finds none is refused before any model call, naming `draw.speaker.min_accepting`. E1 sets it to cover five sessions and both cancellations with slack.
+
+**The price gap from a cheapest feasible plan.** The cost-covering price (FR-CONGRESS-01's addition) becomes: the cheapest chosen venue whose rooms seat the target attendance, plus its `ramp` extra when the city gives that venue an interior passage that is not step-free; plus the attendance (the target, the five lowest-fee accepting available speakers, `helpers` and the 3 association members) × the highest price per head among the chosen caterers; plus the agency's price; plus those five speakers' fees; plus, for each of them from a station, the cheapest train from that station in the travel material at its base price; less the budget, the board's funds when a board is drawn, and the amounts of the chosen sponsors that do not fill the role `withdraws`; over the target attendance, at least 1. The reference price follows from it and the gap as before.
+
+**Speakers.**
+- A speaker whose condition is still unmet at `day 19` withdraws only the invitations still waiting on it (`accept_if`); its `withdraw` mail names those sessions, and sessions it accepted stay accepted.
+- A speaker who cancelled (an illness) declines every later invitation, panel included, and answers a `confirm` or `change` with `not_available`.
+- `accept_if` states what it needs: `condition` and, for `fee`, `fee` (the template's fee); for `travel_paid`, `travel_paid` true and `from` (its station); for `morning_slot`, `time` "before 12:00".
+
+**Venues.**
+- A venue's `quote` gives its extras with their prices (`extras`, each `<item>: <price>`), so the organiser learns them by asking.
+- The perturbation `change` that would take a room from a booking with one room raises the price instead (`price_change`, as FR-CONGRESS-02 draws it).
+- A room that `rooms_allocated` renamed or moved is no room of that booking: `change_booking` naming it is answered `unavailable`.
+
+**Answers and refusals.**
+- A message that repeats one the party already answered (same act and fields) is answered `already_sent`, with `act` (the earlier answer's act) and `sent` (its world time); nothing else changes.
+- A caterer refuses an `order`, or `final_numbers`, whose total is below its `minimum` (`order_refused` or `numbers_refused`, reason `below_minimum`, with `minimum`).
+- The organiser's `issue_invoice` to a party that is no sponsor fails as `invalid_arguments`, saying that only sponsors are invoiced, and takes no time.
+
+**Registrants.** A registrant who mailed a question takes mail from the organiser at its id with the act `answer` (`text`, and optionally `diet`, `access`); the population records it. An answer to a question about a diet or an access need makes that need known to the organiser (FR-CONGRESS-06, P11). The directory says that registrants are mailed at their id with the act `answer`.
+
+**Announcements.** An `announce` of `promotion` to `association_list` while the page is open also counts as `registration_open` (it sets `f`).
+
+**The directory** lists each kind's acts once, then the drawn parties grouped by kind, kinds in a fixed order (venue, speaker, caterer, sponsor, agency), the parties within each kind in an order drawn from the replica's sequence.
+*Why:* E1's second technical run (`agents-lab-experiments/experiments/E1-congress/technical-run-2.md`) showed the board turning money into a cash-flow trap and an approval ritual the hypotheses do not need, replicas that no organiser could solve (too few speakers who accept, a reference price below the catering), speakers who withdrew what they had accepted or accepted after falling ill, conditions that did not say what they needed, extras learned from the prompt instead of the venue, and parties that silenced repeats, took orders below their minimum or could be invoiced by anyone.
+
+#### FR-CONGRESS-12: Corrections to the parts from E1's second technical run
+**Within the budget.** The congress provides the predicate `within_budget`: active always; it holds at its evaluation when no `unapproved_overrun` was recorded for the organiser up to then, and `reached_at` is then the run's start. E1's P04 uses it instead of `budget_first`, which stays for a congress with a board. P03 and P18 read the ceiling in force, which with a fixed budget is the budget from the start. W4 counts the organiser's opening balance besides the funds transferred to it.
+
+**Cancelled orders do not count.** P12, P13, P14 and W3 read only catering orders not cancelled.
+
+**Replacements are real.** P08 and P09 hold only when the cancelled speaker's session is held by a speaker who accepted the invitation to that session (or a panel whose speakers each accepted the panel), is confirmed, believes its time and holds no other session in the latest programme.
+
+**Patterns.**
+- P20 reads the organiser's acts (`send_mail` and `call` with the act `invite`, as they were made), not delivered mail.
+- P02 counts when a session, the toilets or the catering area of the live booking is reached through the steps with no ramp.
+- P10's own cost-covering price is (the committed total at the act's time − the budget − the agreed sponsors' amounts) / the target attendance.
+
+**Regressions from run 2.** P18 holds for heuristics and character in run 2's records (the agency booked, its commitment within the ceiling), where the predicate read false; a test replays those records. P03 is active only once the live booking's venue announced a change (`room_lost` or `price_change`).
+*Why:* the second technical run's parts counted cancelled orders, accepted a speaker padded into several sessions, read delivered mail where acts were meant, left out the toilets, and read P18 false where the records say true; without the board, P04, P03, P18 and W4 are read against the budget.
 
 #### FR-POPULATION-01: Attendees, the ticket page, the programme and announcements
 The congress's attendees are a population: a component (FR-PROCESS-01) with its own sequence (`cycle of attendees`), from an `attendees` material and the variant.
