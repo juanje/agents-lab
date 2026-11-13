@@ -47,8 +47,10 @@ export interface Part {
   activation: "always" | PartEvent;
   /** A world time, in world minutes since day 1's midnight; the run's end; or an event and the minutes after it. */
   evaluateAt: { at: number } | "end" | (PartEvent & { afterMinutes: number });
-  /** The part's kind for each level of the kind factor; none for an outcome. */
+  /** The part's kind for each level of the kind factor the experiment runs; none for an outcome. */
   kinds?: Readonly<Record<string, string>>;
+  /** Its group, the same for every condition, which stands for a level's missing kind (FR-PARTS-01's addition). */
+  group?: string;
   actors: readonly string[];
   misapplications: readonly Misapplication[];
   /** The traps to read at evaluation, each with its params (FR-CONGRESS-06). */
@@ -110,16 +112,20 @@ export function readParts<State>(written: readonly Record<string, unknown>[], pr
       if (!(typeof after === "number" && after >= 0)) throw refused(id, "evaluate_at", part.evaluate_at, "its after_minutes is not a number of at least 0");
       evaluateAt = { ...eventOf(part.evaluate_at, id, "evaluate_at", provided), afterMinutes: after };
     }
-    const kinds = part.kinds as Record<string, string> | undefined;
-    if (kinds !== undefined) {
+    const group = part.group as string | undefined;
+    if (group !== undefined && !KINDS.includes(group)) throw refused(id, "group", group, `it is not one of ${KINDS.join(", ")}`);
+    const written = part.kinds as Record<string, string> | undefined;
+    let kinds: Record<string, string> | undefined;
+    if (written !== undefined) {
       const factor = context.kindFactor;
       if (factor?.levels === undefined) throw new Error(`The experiment's kind_factor "${String(factor?.name)}" cannot be followed: it is no factor of the experiment, and part "${id}" has kinds`);
-      const wrong = Object.values(kinds).find((kind) => !KINDS.includes(kind));
-      if (wrong !== undefined) throw refused(id, "kinds", kinds, `"${wrong}" is not one of ${KINDS.join(", ")}`);
-      const missing = factor.levels.find((level) => !Object.hasOwn(kinds, level));
-      if (missing !== undefined) throw refused(id, "kinds", kinds, `they lack the level "${missing}" of ${factor.name}`);
-      const stranger = Object.keys(kinds).find((level) => !factor.levels?.includes(level));
-      if (stranger !== undefined) throw refused(id, "kinds", kinds, `${factor.name} has no level "${stranger}"`);
+      const wrong = Object.values(written).find((kind) => !KINDS.includes(kind));
+      if (wrong !== undefined) throw refused(id, "kinds", written, `"${wrong}" is not one of ${KINDS.join(", ")}`);
+      // Kinds for levels the experiment does not run are ignored, so one parts material serves every experiment over them.
+      kinds = Object.fromEntries(Object.entries(written).filter(([level]) => factor.levels?.includes(level)));
+      // A level the experiment runs needs its kind, unless the group stands for it.
+      const missing = factor.levels.find((level) => !Object.hasOwn(kinds as Record<string, string>, level));
+      if (missing !== undefined && group === undefined) throw refused(id, "kinds", written, `they lack the level "${missing}" of ${factor.name}`);
     }
     // An actor given as role:<role> or kind:<kind> is the parties the replica's draw gave that group (FR-CONGRESS-08).
     const actors = ((part.actors ?? []) as string[]).flatMap((actor) => {
@@ -146,7 +152,7 @@ export function readParts<State>(written: readonly Record<string, unknown>[], pr
       if (!Object.hasOwn(provided.traps ?? {}, trap)) throw refused(id, "traps", written, `the scenario provides no trap "${trap}"`);
       return { trap, params: (written.params ?? {}) as Record<string, unknown> };
     });
-    return { id, predicate, params: (part.params ?? {}) as Record<string, unknown>, activation, evaluateAt, ...(kinds === undefined ? {} : { kinds }), actors, misapplications, traps };
+    return { id, predicate, params: (part.params ?? {}) as Record<string, unknown>, activation, evaluateAt, ...(kinds === undefined ? {} : { kinds }), ...(group === undefined ? {} : { group }), actors, misapplications, traps };
   });
 }
 
@@ -290,8 +296,10 @@ export class PartsBook<State> {
     const { part } = tracked;
     const when = { day: Math.floor(at / 1440) + 1, weekday: "Monday" as const, seconds: Math.round((at % 1440) * 60) };
     const line = { type: "part", part: part.id, evaluated_at: timeText(when) };
+    // The group is in the line whether or not the part was active (FR-PARTS-01's addition).
+    const grouped = part.group === undefined ? {} : { group: part.group };
     if (tracked.activeAt === undefined || tracked.activeAt > at) {
-      this.#settings.record({ ...line, active: false });
+      this.#settings.record({ ...line, active: false, ...grouped });
       return;
     }
     const last = tracked.intervals.filter(({ from }) => from <= at).at(-1);
@@ -312,12 +320,14 @@ export class PartsBook<State> {
         .filter((act) => (beforeAt === undefined || minutesOf(act.world) < beforeAt) && (after === undefined || (afterAt !== undefined && minutesOf(act.world) >= afterAt)))
         .map((act) => ({ tool: act.tool, arguments: act.arguments, at: timeText(act.world) }));
     });
-    const kind = part.kinds === undefined || this.#settings.level === undefined ? {} : { kind: part.kinds[this.#settings.level] };
+    // The level's kind, or the group where the level has none.
+    const levelKind = this.#settings.level === undefined ? undefined : (part.kinds?.[this.#settings.level] ?? part.group);
+    const kind = levelKind === undefined ? {} : { kind: levelKind };
     const state = this.#state as State;
     const traps = part.traps.filter(({ trap, params }) => this.#settings.provided.traps?.[trap](state, params, at) === true).map(({ trap }) => trap);
     // The values a predicate gives besides whether it holds, read at evaluation (FR-CONGRESS-06).
     const given = this.#settings.provided.predicates[part.predicate](state, part.params);
     const values = typeof given === "boolean" || given.values === undefined ? {} : { values: given.values };
-    this.#settings.record({ ...line, active: true, held, ...(reachedAt === undefined ? {} : { reached_at: timeText({ day: Math.floor(reachedAt / 1440) + 1, weekday: "Monday", seconds: Math.round((reachedAt % 1440) * 60) }) }), effort: { calls, money }, misapplications, ...(part.traps.length === 0 ? {} : { traps }), ...values, ...kind });
+    this.#settings.record({ ...line, active: true, held, ...(reachedAt === undefined ? {} : { reached_at: timeText({ day: Math.floor(reachedAt / 1440) + 1, weekday: "Monday", seconds: Math.round((reachedAt % 1440) * 60) }) }), effort: { calls, money }, misapplications, ...(part.traps.length === 0 ? {} : { traps }), ...values, ...grouped, ...kind });
   }
 }
