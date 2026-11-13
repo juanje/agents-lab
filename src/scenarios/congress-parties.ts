@@ -489,6 +489,8 @@ export const venueRules: RuleSet = {
         then: function* () {
           yield* releaseAll(contract);
           if (charge > 0) {
+            // A charge is committed as it is invoiced (FR-CONGRESS-05's addition).
+            yield* party.call("commit", { with: contract.to, amount: charge, for: `cancellation ${contract.id}` });
             yield* party.call("issue_invoice", { to: contract.to, amount: charge, due: `day ${today()}`, for: `cancellation ${contract.id}` });
             counts.invoices_issued += 1;
           }
@@ -723,6 +725,9 @@ const inMorning = (time: unknown) => String(time) < "12:00";
 /** The perturbations that make a speaker cancel, each reaching it on a channel of its own name. */
 export const SPEAKER_PERTURBATIONS = ["early_cancel", "late_cancel"];
 
+/** The perturbation that cancels a speaker's hotel room for the night before the event (FR-CONGRESS-05's addition). */
+const HOTEL_OVERBOOKS = "hotel_overbooks";
+
 /** When a speaker whose condition is not met withdraws: day 19's start, in world minutes since day 1's midnight. */
 const WITHDRAW_MINUTES = 18 * 1440;
 
@@ -842,19 +847,28 @@ export const speakerRules: RuleSet = {
       }
     };
 
+    /** Its call to the organiser with an act, then its mail if the call is not answered. */
+    function* tell(act: string): Generator<RuleStep, void, Perceived> {
+      if ((yield* party.call("call", { to: speaker.organiser, act })).outcome === "success") return;
+      yield* party.call("send_mail", { to: speaker.organiser, act, fields: {} });
+    }
+
     /** Its cancellation, when an illness reaches it: by mail, or for late_cancel by a call first, then by mail if the call is not answered. */
     function* cancel(channel: string): Generator<RuleStep, void, Perceived> {
       record.cancelled = true;
-      if (channel === "late_cancel" && (yield* party.call("call", { to: speaker.organiser, act: "cancel" })).outcome === "success") return;
-      yield* party.call("send_mail", { to: speaker.organiser, act: "cancel", fields: {} });
+      if (channel === "late_cancel") yield* tell("cancel");
+      else yield* party.call("send_mail", { to: speaker.organiser, act: "cancel", fields: {} });
     }
 
     function* script(): Script {
       yield* party.clock();
       for (;;) {
         const ill = party.stimuli.filter(({ channel }) => SPEAKER_PERTURBATIONS.includes(channel));
-        party.stimuli.splice(0, party.stimuli.length, ...party.stimuli.filter((stimulus) => !ill.includes(stimulus)));
+        // A hotel room lost the night before the event is urgent: it phones (FR-CONGRESS-05's addition).
+        const roomless = party.stimuli.some(({ channel }) => channel === HOTEL_OVERBOOKS);
+        party.stimuli.splice(0, party.stimuli.length, ...party.stimuli.filter((stimulus) => !ill.includes(stimulus) && stimulus.channel !== HOTEL_OVERBOOKS));
         for (const { channel } of ill) yield* cancel(channel);
+        if (roomless) yield* tell("no_room");
         yield* party.handle(answer, speaker.pick_up ?? 1, random);
         // A condition not met by day 19 makes it withdraw.
         const pending = record.answer === "accept_if";
@@ -1016,6 +1030,8 @@ export const catererRules: RuleSet = {
             fields: { charge },
             then: function* () {
               yield* recommit(0);
+              // A charge is committed as it is invoiced (FR-CONGRESS-05's addition).
+              if (charge > 0) yield* party.call("commit", { with: caterer.organiser, amount: charge, for: `cancellation ${forOrder}` });
               if (charge > 0) yield* invoice(charge, `day ${today()}`, "cancellation");
             } as () => Script,
           };
@@ -1102,7 +1118,7 @@ export const agencyRules: RuleSet = {
 };
 
 /** The conditions a sponsor may set. */
-export const SPONSOR_CONDITIONS = ["logo", "morning_slot", "table", "attendee_list", "passes"] as const;
+export const SPONSOR_CONDITIONS = ["logo", "morning_slot", "table", "attendee_list", "passes", "consented_list"] as const;
 
 /** The perturbation that makes a sponsor withdraw, reaching it on a channel of its own name. */
 export const SPONSOR_PERTURBATION = "sponsor_withdraws";
@@ -1179,7 +1195,13 @@ export const sponsorRules: RuleSet = {
       yield* party.clock();
       for (const invoice of (ledger.invoices_to_pay ?? []) as { id: string; from: string; amount: number; paid: boolean }[]) {
         const left = sponsor.amount - record.paid - payments.reduce((sum, { amount }) => sum + amount, 0);
-        if (invoice.paid || invoice.from !== sponsor.organiser || settled.has(invoice.id) || invoice.amount > left) continue;
+        if (invoice.paid || invoice.from !== sponsor.organiser || settled.has(invoice.id)) continue;
+        // An invoice above what it agreed is disputed, not paid (FR-CONGRESS-05's addition).
+        if (invoice.amount > left) {
+          settled.add(invoice.id);
+          yield* party.call("send_mail", { to: sponsor.organiser, act: "invoice_disputed", fields: { invoice: invoice.id, amount: sponsor.amount } });
+          continue;
+        }
         const [fewest, most] = sponsor.pay_days;
         settled.add(invoice.id);
         payments.push({ invoice: invoice.id, amount: invoice.amount, at: party.now + (fewest + random.next() * (most - fewest)) * 1440 });

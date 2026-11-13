@@ -1,7 +1,7 @@
 import { type TomlTable, parse } from "smol-toml";
 import { type Calendar, type WorldTime, hoursAt, reachedAfterMs, readCalendar, worldTimeText } from "../engine/calendar.ts";
 import type { Mail } from "../engine/mail.ts";
-import { INVOICE_NOTICE, invoiced } from "../engine/money.ts";
+import { INVOICE_NOTICE, invoiced, withCommitment, withRelease } from "../engine/money.ts";
 import type { Money } from "../engine/money.ts";
 import type { Phone } from "../engine/phone.ts";
 import { type Places, arrive, exits, inSight, layout, leave, put, where } from "../engine/places.ts";
@@ -100,7 +100,7 @@ export interface Congress {
   calendar: Calendar;
   /** The organiser's notes, in the order first written. */
   notes: { title: string; text: string }[];
-  settings: { durations: Record<string, number>; waitMaxMinutes: number; awayFactor: number };
+  settings: { durations: Record<string, number>; waitMaxMinutes: number; awayFactor: number; discretionaryLimit: number };
   mail: Mail;
   phone: Phone;
   /** The money, which the engine puts here as a run starts when the configuration declares [money] (FR-MONEY-01). */
@@ -176,7 +176,9 @@ function settingsOf(configuration: Configuration): Congress["settings"] {
       return [key, minutes];
     }),
   );
-  return { durations, waitMaxMinutes, awayFactor };
+  // A commitment the world records counts toward overruns as the money's own do (FR-CONGRESS-05).
+  const discretionaryLimit = ((configuration.money as TomlTable | undefined)?.discretionary_limit as number | undefined) ?? Infinity;
+  return { durations, waitMaxMinutes, awayFactor, discretionaryLimit };
 }
 
 /** What a replica's variant drew: its topic, its target attendance and each kind's chosen template ids. */
@@ -551,8 +553,11 @@ function perturbationsOf(configuration: Configuration, kinds: Readonly<Record<st
   });
 }
 
-/** The perturbations that are no venue's: the speakers' cancellations and a sponsor's withdrawal. */
-const NOT_A_VENUES = [...SPEAKER_PERTURBATIONS, SPONSOR_PERTURBATION];
+/** The perturbation that cancels the hotel rooms booked for the night before the event (FR-CONGRESS-05's addition). */
+const HOTEL_OVERBOOKS = "hotel_overbooks";
+
+/** The perturbations that are no venue's: the speakers' cancellations, a sponsor's withdrawal and the hotels' overbooking. */
+const NOT_A_VENUES = [...SPEAKER_PERTURBATIONS, SPONSOR_PERTURBATION, HOTEL_OVERBOOKS];
 
 /**
  * What the world adds to a party's parameters, by its rule set: a venue gets the organiser it answers, the event's day,
@@ -922,17 +927,67 @@ function sponsorWithdrawal(declared: Perturbation, calendar: Calendar): Componen
   };
 }
 
+/**
+ * The hotels' overbooking (FR-CONGRESS-05's addition), a perturbation component: at its time, it cancels every hotel room
+ * booked for the night before the event, releasing its commitment, then tells each traveller it hits, not held.
+ */
+function hotelOverbooking(declared: Perturbation, calendar: Calendar, eventDay: number): Component<Congress> {
+  const night = `day ${eventDay - 1}`;
+  const hit = (state: Congress, booking: { option: string }) => state.travel.material.hotels.some(({ id }) => booking.option === `${id} ${night}`);
+  return {
+    name: declared.name,
+    kind: "perturbation",
+    description: `At ${String(declared.at)}, cancels every hotel room booked for the night before the event, and tells each traveller it hits.`,
+    cycle: () => {
+      const time = perturbationMinutes(declared.at) as number;
+      let travellers: string[] | undefined;
+      return {
+        next: (state, _outcome, sinceStartMs, world) => {
+          const now = minutesOfWorld(world as WorldTime);
+          if (travellers === undefined && now < time) return { kind: "wait", ms: reachedAfterMs(calendar, sinceStartMs, (time - now) * 60) };
+          if (travellers === undefined) {
+            travellers = state.travel.booked.filter((booking) => hit(state, booking)).map(({ traveller }) => traveller);
+            return {
+              kind: "action",
+              name: "cancel the rooms of the night before the event",
+              durationMs: 0,
+              action: {
+                precondition: () => ({ holds: true }),
+                effect: (current) => {
+                  const cancelled = current.travel.booked.filter((booking) => hit(current, booking));
+                  const commitments = current.money.commitments.filter((commitment) => !commitment.released && commitment.by === TRAVEL && cancelled.some(({ option, traveller }) => commitment.for === `${option} ${traveller}`));
+                  return {
+                    ...current,
+                    travel: { ...current.travel, booked: current.travel.booked.filter((booking) => !cancelled.includes(booking)) },
+                    money: commitments.reduce((money, { id }) => withRelease(money, id), current.money),
+                  };
+                },
+              },
+            };
+          }
+          const traveller = travellers.shift();
+          return traveller === undefined ? { kind: "end" } : { kind: "deliver", agent: traveller, channel: HOTEL_OVERBOOKS, held: false };
+        },
+      };
+    },
+  };
+}
+
 /** The speakers' cancellations and a sponsor's withdrawal the configuration declares. */
 function components(configuration: Configuration): Component<Congress>[] {
   const declared = Object.entries((configuration.perturbations ?? {}) as TomlTable)
-    .filter(([name]) => SPEAKER_PERTURBATIONS.includes(name) || name === SPONSOR_PERTURBATION)
+    .filter(([name]) => SPEAKER_PERTURBATIONS.includes(name) || name === SPONSOR_PERTURBATION || name === HOTEL_OVERBOOKS)
     .map(([name, written]) => ({ name, ...(written as TomlTable) }) as unknown as Perturbation);
   if (declared.length === 0) return [];
   const calendar = readCalendar(configuration.calendar);
   const speakers = Object.entries((configuration.participants ?? {}) as TomlTable)
     .filter(([, participant]) => (participant as TomlTable).rules === "speaker")
     .map(([name]) => name);
-  return declared.map((each) => (each.name === SPONSOR_PERTURBATION ? sponsorWithdrawal(each, calendar) : cancellation(each, speakers, calendar)));
+  return declared.map((each) => {
+    if (each.name === SPONSOR_PERTURBATION) return sponsorWithdrawal(each, calendar);
+    if (each.name === HOTEL_OVERBOOKS) return hotelOverbooking(each, calendar, configuration.event_day as number);
+    return cancellation(each, speakers, calendar);
+  });
 }
 
 /** The factor by which the organiser's web tools take longer away from the office (FR-CONGRESS-01, FR-CONGRESS-07). */
@@ -957,9 +1012,16 @@ function soldOut(state: Congress, train: Train, date: number, today: number): bo
   return date - today <= SOLD_OUT_DAYS && (state.travel.soldOutDraws[train.id] ?? 1) < state.travel.material.sold_out_probability;
 }
 
-/** The rooms of a hotel left on a night, "<hotel> day <n>", after what was booked. */
-function roomsLeft(state: Congress, hotel: Hotel, option: string): number {
-  return hotel.rooms - state.travel.booked.filter((booking) => booking.option === option).length;
+/** How many days before a night a hotel's rooms start to grow scarce (FR-CONGRESS-05's addition). */
+const SCARCE_DAYS = 14;
+
+/**
+ * The rooms of a hotel left on a night, "<hotel> day <n>", on the world's day: its rooms × days left / 14, rounded down,
+ * in the last 14 days before that night, less those booked.
+ */
+function roomsLeft(state: Congress, hotel: Hotel, option: string, today: number): number {
+  const daysLeft = Math.max(0, dayOfDate(/day \d+$/.exec(option)?.[0]) - today);
+  return Math.max(0, Math.floor((hotel.rooms * Math.min(SCARCE_DAYS, daysLeft)) / SCARCE_DAYS) - state.travel.booked.filter((booking) => booking.option === option).length);
 }
 
 /** The day of a date "day <n>". */
@@ -980,7 +1042,7 @@ const travelOptions: Sensor<Congress> = {
       trains: state.travel.material.trains
         .filter((train) => train.from === from)
         .map((train) => ({ id: train.id, option: `${train.id} day ${day}`, arrives: train.arrives, price: trainPrice(train, day, today), sold_out: soldOut(state, train, day, today) })),
-      hotels: state.travel.material.hotels.map((hotel) => ({ id: hotel.id, near: hotel.near, option: `${hotel.id} ${night}`, rooms_left: roomsLeft(state, hotel, `${hotel.id} ${night}`), price: hotel.price })),
+      hotels: state.travel.material.hotels.map((hotel) => ({ id: hotel.id, near: hotel.near, option: `${hotel.id} ${night}`, rooms_left: roomsLeft(state, hotel, `${hotel.id} ${night}`, today), price: hotel.price })),
     });
   },
 };
@@ -996,7 +1058,7 @@ function optionOf(state: Congress, option: unknown, today: number): { price: num
   const train = state.travel.material.trains.find((each) => each.id === id);
   if (train !== undefined) return { price: trainPrice(train, Number(day), today), full: soldOut(state, train, Number(day), today) };
   const hotel = state.travel.material.hotels.find((each) => each.id === id);
-  if (hotel !== undefined) return { price: hotel.price, full: roomsLeft(state, hotel, String(option)) <= 0 };
+  if (hotel !== undefined) return { price: hotel.price, full: roomsLeft(state, hotel, String(option), today) <= 0 };
   return undefined;
 }
 
@@ -1016,10 +1078,12 @@ const bookTravel: Effector<Congress> = {
     effect: (state, { agent, arguments: { option, traveller }, world }) => {
       const today = (world as WorldTime).day;
       const { price } = optionOf(state, option, today) as { price: number };
+      const what = `${String(option)} ${String(traveller)}`;
       return {
         ...state,
         travel: { ...state.travel, booked: [...state.travel.booked, { option: String(option), traveller: String(traveller), price }] },
-        money: invoiced(state.money, { from: TRAVEL, to: agent, amount: price, due: `day ${today}`, for: `${String(option)} ${String(traveller)}` }),
+        // The travel's account commits the price with the organiser before it invoices it (FR-CONGRESS-05's addition).
+        money: invoiced(withCommitment(state.money, { by: TRAVEL, with: agent, amount: price, for: what }, state.settings.discretionaryLimit), { from: TRAVEL, to: agent, amount: price, due: `day ${today}`, for: what }),
       };
     },
   },
@@ -1180,7 +1244,7 @@ const BASE_CONFIGURATION = [
     `[kinds.${kind}]`,
     `rules = "${kind}"`,
     'tools = ["send_mail", "check_mail", "read_mail", "call", "answer_call", "check_time", "commit", "issue_invoice"]',
-    `channels = ["mail_notice", "phone", ${SPEAKER_PERTURBATIONS.map((name) => `"${name}"`).join(", ")}]`,
+    `channels = ["mail_notice", "phone", ${[...SPEAKER_PERTURBATIONS, HOTEL_OVERBOOKS].map((name) => `"${name}"`).join(", ")}]`,
     "reply_minutes = [0, 0]",
     'account = "unlimited"',
   ]),
@@ -1222,6 +1286,7 @@ export const congressScenario: Scenario<Congress> = {
     // What makes a speaker cancel: an illness, which reaches it on the perturbation's own channel (FR-CONGRESS-04).
     ...SPEAKER_PERTURBATIONS.map((name) => ({ name, source: "illness", stimulus: "You are ill and cannot give your session." })),
     { name: SPONSOR_PERTURBATION, source: "the sponsor's board", stimulus: "Your board withdraws the sponsorship." },
+    { name: HOTEL_OVERBOOKS, source: "the hotel", stimulus: "Your hotel room for the night before the event is cancelled: the hotel is overbooked." },
     // An invoice reaches its recipient from its issuer, as a message does (FR-CONGRESS-05).
     { name: INVOICE_NOTICE, source: "money", stimulus: "New invoice from {from}: {for}" },
   ],

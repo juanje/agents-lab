@@ -85,6 +85,32 @@ export function invoiced(money: Money, invoice: Omit<Invoice, "id" | "paid">): M
   return { ...money, invoices: [...money.invoices, issued], events: [...money.events, { kind: "invoice", from: issued.from, to: issued.to, amount: issued.amount, invoice: issued.id, due: issued.due, for: issued.for }] };
 }
 
+/**
+ * The money with a commitment recorded, numbered after the others, and its event; one that leaves its account's committed
+ * total above its ceiling, or the discretionary limit without one, adds an unapproved overrun, never a refusal: as commit
+ * applies it, and as the world commits from an account of its own (FR-CONGRESS-05).
+ */
+export function withCommitment(money: Money, given: Omit<Commitment, "id" | "released">, discretionaryLimit: number): Money {
+  const commitment: Commitment = { id: `k-${money.commitments.length + 1}`, ...given, released: false };
+  const after = { ...money, commitments: [...money.commitments, commitment] };
+  const committed = committedOf(after, commitment.with);
+  const limit = money.ceilings[commitment.with] ?? discretionaryLimit;
+  const events: MoneyEvent[] = [{ kind: "commitment", from: commitment.with, to: commitment.by, amount: commitment.amount, commitment: commitment.id, for: commitment.for }];
+  if (committed <= limit) return { ...after, events: [...money.events, ...events] };
+  const overrun: Overrun = { commitment: commitment.id, account: commitment.with, committed, limit };
+  return { ...after, overruns: [...money.overruns, overrun], events: [...money.events, ...events, { kind: "unapproved_overrun", from: commitment.with, amount: committed, commitment: commitment.id, limit }] };
+}
+
+/** The money with a commitment released, by its id, and its event: as release applies it, and as the world releases one. */
+export function withRelease(money: Money, id: string): Money {
+  const commitment = money.commitments.find((each) => each.id === id) as Commitment;
+  return {
+    ...money,
+    commitments: money.commitments.map((each) => (each.id === id ? { ...each, released: true } : each)),
+    events: [...money.events, { kind: "release", from: commitment.with, to: commitment.by, amount: commitment.amount, commitment: commitment.id }],
+  };
+}
+
 /** A commitment: its id, who recorded it, the account bound by it, its amount, what it is for, and whether it was released. */
 export interface Commitment {
   id: string;
@@ -244,17 +270,7 @@ export function moneyTools<State>(settings: MoneySettings, keeper: MoneyKeeper<S
     refuses: (_state, call) => refusing(call.arguments.with as string, call.arguments.amount),
     action: acting(
       () => undefined,
-      (money, { agent, arguments: { with: account, amount, for: what } }) => {
-        const commitment: Commitment = { id: `k-${money.commitments.length + 1}`, by: agent, with: account as string, amount: amount as number, for: what as string, released: false };
-        const after = { ...money, commitments: [...money.commitments, commitment] };
-        const committed = committedOf(after, commitment.with);
-        const limit = money.ceilings[commitment.with] ?? settings.discretionaryLimit;
-        const events: MoneyEvent[] = [{ kind: "commitment", from: commitment.with, to: agent, amount: commitment.amount, commitment: commitment.id, for: commitment.for }];
-        // Going over is never refused: the world records it.
-        if (committed <= limit) return { ...after, events: [...money.events, ...events] };
-        const overrun: Overrun = { commitment: commitment.id, account: commitment.with, committed, limit };
-        return { ...after, overruns: [...money.overruns, overrun], events: [...money.events, ...events, { kind: "unapproved_overrun", from: commitment.with, amount: committed, commitment: commitment.id, limit }] };
-      },
+      (money, { agent, arguments: { with: account, amount, for: what } }) => withCommitment(money, { by: agent, with: account as string, amount: amount as number, for: what as string }, settings.discretionaryLimit),
     ),
     texts: { success: "Committed." },
   });
@@ -262,14 +278,7 @@ export function moneyTools<State>(settings: MoneySettings, keeper: MoneyKeeper<S
   const release = effector("release", "End a commitment you recorded, by its id, as when a booking or an order is cancelled.", { commitment: { type: "string" } }, ["commitment"], {
     action: acting(
       (money, call) => (recordedBy(money, call) === undefined ? "no_such_commitment" : undefined),
-      (money, call) => {
-        const commitment = recordedBy(money, call) as Commitment;
-        return {
-          ...money,
-          commitments: money.commitments.map((each) => (each.id === commitment.id ? { ...each, released: true } : each)),
-          events: [...money.events, { kind: "release", from: commitment.with, to: call.agent, amount: commitment.amount, commitment: commitment.id }],
-        };
-      },
+      (money, call) => withRelease(money, (recordedBy(money, call) as Commitment).id),
     ),
     texts: { success: "Released.", no_such_commitment: "no_such_commitment: you recorded no such commitment" },
   });
