@@ -4,7 +4,7 @@ import type { Perceived, RuleStep, Rules } from "../src/engine/participants.ts";
 import { Random } from "../src/engine/random.ts";
 import { type Scenario, loadScenario } from "../src/engine/scenario.ts";
 import type { Stimulus } from "../src/engine/stimuli.ts";
-import { speakerRules } from "../src/scenarios/congress-parties.ts";
+import { partnerRules, speakerRules } from "../src/scenarios/congress-parties.ts";
 import { congressScenario } from "../src/scenarios/congress.ts";
 
 /** A speaker's parameters as the congress gives its rule set: its template and what the world adds. */
@@ -150,5 +150,92 @@ describe("the congress's speakers and partner (FR-CONGRESS-04)", () => {
         configuration.draw = stringify({ attendance: [50, 80], speaker: 1, partner: 2, board: 1 });
       }),
     ).toThrow(/draw\.partner/);
+  });
+});
+
+describe("a speaker's answers after its invitation, and its outcome (FR-CONGRESS-04)", () => {
+  /** A speaker that answers each message in turn, the next message given by `next`, from the time `time` gives. */
+  function conversation(changes: Record<string, unknown>, messages: string[], seed = 1) {
+    const rules = speakerRules.start(params(changes), new Random(seed));
+    let index = 0;
+    const steps: RuleStep[] = [];
+    steps.push(...drive(rules, tools(() => messages[0])));
+    for (index = 0; index < messages.length; index += 1) {
+      const current = messages[index];
+      steps.push(...drive(rules, tools(() => current), [[notice]], true));
+    }
+    return { rules, steps };
+  }
+  const calls = (steps: RuleStep[], tool: string) => steps.flatMap((step) => (step.kind === "call" && step.tool === tool ? [step.arguments] : []));
+  const confirm = "From: organiser. Act: confirm. time: 10:00. room: main-hall. length: 45. travel: none.";
+
+  it("turns an accept_if into accept when its condition is accepted, and into decline when it is not", () => {
+    const accepted = conversation({ home: "north-station", condition: "travel_paid" }, [invite(), "From: organiser. Act: accept_condition."]);
+    expect(mails(accepted.steps).map(({ act }) => act)).toEqual(["accept_if", "accept"]);
+    expect(accepted.rules.outcome()).toMatchObject({ condition: "travel_paid", condition_met: true, answer: "accept" });
+
+    const declined = conversation({ home: "north-station", condition: "travel_paid" }, [invite(), "From: organiser. Act: decline_condition."]);
+    expect(mails(declined.steps).map(({ act }) => act)).toEqual(["accept_if", "decline"]);
+  });
+
+  it("acknowledges a confirmation and a change, and believes the time and room they give", () => {
+    const { rules, steps } = conversation({}, [invite(), confirm, "From: organiser. Act: change. room: room-b."]);
+    expect(mails(steps).map(({ act }) => act)).toEqual(["accept", "acknowledged", "acknowledged"]);
+    expect(rules.outcome()).toMatchObject({ believes_time: "10:00", believes_room: "room-b" });
+    expect(calls(steps, "commit")).toEqual([]);
+  });
+
+  it("commits its agreed fee when it first acknowledges, and claims it when its invitation is withdrawn, recording a broken agreement", () => {
+    const { rules, steps } = conversation({ fee: 300, condition: "fee" }, [invite("10:00", 300), confirm, confirm, "From: organiser. Act: withdraw_invitation."]);
+    expect(mails(steps).map(({ act }) => act)).toEqual(["accept", "acknowledged", "acknowledged", "withdrawn"]);
+    expect(calls(steps, "commit")).toEqual([{ with: "organiser", amount: 300, for: "fee s1" }]);
+    expect(calls(steps, "issue_invoice")).toEqual([{ to: "organiser", amount: 300, due: "day 1", for: "claim s1" }]);
+    expect(rules.outcome()).toMatchObject({ broken_agreement: true, claim: 300 });
+  });
+
+  it("withdrawn before it accepted, it records no broken agreement and claims nothing", () => {
+    const { rules, steps } = conversation({}, ["From: organiser. Act: withdraw_invitation."]);
+    expect(mails(steps).map(({ act }) => act)).toEqual(["withdrawn"]);
+    expect(rules.outcome()).toMatchObject({ broken_agreement: false, claim: 0 });
+  });
+
+  it("sends slides when asked with probability 0.8, and accepts a panel with probability 0.6 when available, from its own sequence", () => {
+    for (let seed = 1; seed <= 20; seed += 1) {
+      const draws = new Random(seed);
+      const slides = conversation({}, ["From: organiser. Act: ask_slides. by: day 5."], seed);
+      expect(mails(slides.steps)).toEqual(draws.next() < 0.8 ? [{ to: "organiser", act: "slides", fields: { title: "Soil life" } }] : []);
+      const panelDraws = new Random(seed);
+      const panel = conversation({}, ["From: organiser. Act: ask_panel. slot: 4."], seed);
+      expect(mails(panel.steps)[0].act).toBe(panelDraws.next() < 0.6 ? "accept" : "decline");
+    }
+    expect(mails(conversation({ available: false }, ["From: organiser. Act: ask_panel. slot: 4."]).steps)[0].act).toBe("decline");
+    expect(mails(conversation({}, ["From: organiser. Act: ask_promote."]).steps)[0].act).toBe("promoting");
+  });
+
+  it("records its invitation, its answer, its condition, what it believes, and no cancellation or broken agreement", () => {
+    const { rules } = conversation({}, [invite(), confirm]);
+    expect(rules.outcome()).toEqual({
+      invitation: JSON.stringify({ session: 2, time: "10:00", fee: 0, travel_paid: false }),
+      answer: "accept",
+      condition: "none",
+      condition_met: false,
+      believes_time: "10:00",
+      believes_room: "main-hall",
+      cancelled: false,
+      broken_agreement: false,
+      claim: 0,
+    });
+  });
+
+  it("as the partner, accepts any session it is given, and takes only confirm, change and ask_slides besides", () => {
+    const partner = partnerRules.start({ id: "p1", title: "Survey", session: 3, organiser: "organiser", event_day: 26 }, new Random(1));
+    const steps = [
+      ...drive(partner, tools(() => invite("15:00"))),
+      ...drive(partner, tools(() => invite("15:00")), [[notice]], true),
+      ...drive(partner, tools(() => confirm), [[notice]], true),
+      ...drive(partner, tools(() => "From: organiser. Act: ask_panel. slot: 4."), [[notice]], true),
+    ];
+    expect(mails(steps).map(({ act }) => act)).toEqual(["accept", "acknowledged", "not_available"]);
+    expect(partner.outcome()).toMatchObject({ believes_time: "10:00", believes_room: "main-hall" });
   });
 });
