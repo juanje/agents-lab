@@ -106,7 +106,7 @@ Experiments are written outside this repository, in the experiment language (FR-
 5. FR-CONGRESS-01 (the congress world from materials)
 6. FR-MONEY-01 (accounts, invoices, commitments and approvals)
 7. FR-CONGRESS-02 (venues and the board)
-7b. FR-CONGRESS-04 (speakers and the partner's session), not written
+7b. FR-CONGRESS-04 (speakers and the partner's session)
 7c. FR-CONGRESS-05 (caterers, sponsors and services), not written
 8. FR-POPULATION-01 (attendees and the ticket page), not written
 9. FR-PARTS-01 (parts as held-out keys), not written
@@ -426,6 +426,29 @@ The congress provides the rule sets `venue` and `board` (FR-PARTICIPANT-01). Eac
 
 **Refusals**, before any model call, with an error that names it: a venue template without rooms, price or `access_claim`; a `deposit_share` outside 0–1; a cancellation schedule whose shares are outside 0–1; a `pick_up` outside 0–1; a perturbation for a party that is no venue, or whose times do not follow the calendar's format; a board without `funds`.
 *Why:* the venues and the board are where the congress's first decisions land: which room, for how much, held or booked, asked or not. Their rules answer only what reaches them, in their hours and at their pace, and they change on their own (other customers, a lost room, a new price), so an organiser meets a market, not a menu.
+
+#### FR-CONGRESS-04: Speakers and the partner's session
+The congress provides the rule set `speaker` (FR-PARTICIPANT-01), with the kind `speaker` in the base configuration and the same ways of answering as a venue (FR-CONGRESS-02: by mail or by a call it picks up with `pick_up`; `not_available` for what it does not have). A speaker's template gives its `title`, `draw` (0–3), `fee` (0 or more), `home` (`local` or a station), whether it is `available` on the event day, a `constraint` (`morning`, `afternoon` or none), `acceptance` (0–1), a `condition` (`travel_paid`, `morning_slot`, `fee` or none) and its `reply_minutes`.
+
+| Act it takes (fields) | Its answer |
+|---|---|
+| `invite` (session, time, fee, travel_paid, reply_by?) | after its reply delay: `decline` when it is not available, or when the time breaks its constraint and it has no condition; otherwise, drawn from its sequence, `decline` with probability `1 − acceptance`; else `accept_if` with its condition when the invitation does not meet it (a fee below its `fee`, travel not paid for a speaker from a station, or a time at or after 12:00 for `morning_slot` or a constraint), and `accept` otherwise. A `reply_by` is not a reason to answer sooner. |
+| `accept_condition` / `decline_condition` | `accept`; or `decline` |
+| `confirm` (time, room, length, travel) | `acknowledged`; the time and room become what the speaker believes. A speaker with a fee `commit`s it with the organiser's account when it first acknowledges. |
+| `change` (time?, room?) | `acknowledged`; its belief follows |
+| `withdraw_invitation` | `withdrawn`; a speaker who had accepted records a broken agreement and, when a fee was committed, `issue_invoice`s it as its claim |
+| `ask_slides` (by) | `slides` before `by` with probability 0.8, else nothing |
+| `ask_panel` (slot) | `accept` with probability 0.6 when available, else `decline` |
+| `ask_promote` | `promoting`; what promoting does to registrations comes with FR-POPULATION-01 |
+
+**Its own cycle.** A speaker whose acceptance waits on a condition not met by `day 19` mails `withdraw`. Its perturbations, declared in the configuration: `early_cancel`, at a time drawn between two times, makes the first confirmed speaker by its sequence mail `cancel` (if none is confirmed yet, the next to be confirmed cancels 2 days after it is); `late_cancel`, at a time, makes another confirmed speaker cancel by a call to the organiser, and by mail if the call is not answered.
+
+**The partner's session.** The variant also draws one template of the kind `partner` (a local speaker with no fee), who takes `confirm`, `change` and `ask_slides` as any speaker and accepts any session it is given. The base configuration puts in the organiser's mailbox at the start a message from the board, with the act `partner_session` and the fields `speaker` and `session` (the session the partner prefers, drawn), received at the calendar's start.
+
+**Outcome.** A speaker's record gives what it was invited to, what it answered, its condition and whether it was met, what it believes about its session's time and room, whether it cancelled, and any broken agreement and claim.
+
+**Refusals**, before any model call, with an error that names it: a speaker template whose `acceptance` or `pick_up` is outside 0–1, whose `draw` is outside 0–3, whose `fee` is negative, or whose `condition` or `constraint` is not one of those above; a perturbation `early_cancel` or `late_cancel` whose times do not follow the calendar's format; a draw of more than one `partner`.
+*Why:* speakers are the programme, and the parts of E1 about filling it come from how they behave: slow answers, conditions, cancellations, and the partner's session that the board settled before the organiser started. Each answers from its own template and sequence, so the same congress meets every condition.
 #### FR-METRIC-01: Generic metrics for every run
 At the end of every run the core reports, per agent and in total:
 - activations and model turns;
