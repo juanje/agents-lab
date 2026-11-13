@@ -133,8 +133,7 @@ Then('"s1" answered "not_available" with what "acceptance", believes nothing abo
   assert.ok(!moneyLines(this, "commitment").some((line) => line.to === "s1"), '"s1" committed');
 });
 
-Given('"s5" answered "accept_if" with the condition "fee" to an invitation with fee 100, and the organiser sent "accept_condition"', function (this: Context) {
-  // Accepting the condition offers its fee, so the condition is met (FR-CONGRESS-09).
+Given('"s5" answered "accept_if" with the condition "fee" to an invitation with fee 100, and the organiser sent "accept_condition" with fee 300', function (this: Context) {
   before(
     this,
     organiserTurns(

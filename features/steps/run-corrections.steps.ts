@@ -227,3 +227,7 @@ Then('the call failed with the outcome "invalid_value", naming "Rosa Ferreira"',
   const result = messages.find((message) => message.role === "toolResult" && message.toolName === "publish_programme");
   assert.match(JSON.stringify(result?.content), /Rosa Ferreira/);
 });
+
+Given('"s1" answered "accept_if" with the condition "fee" to an invitation with fee 0', function (this: Context) {
+  before(this, inviteTurns(this, "s1", 3, "11:00", 0));
+});

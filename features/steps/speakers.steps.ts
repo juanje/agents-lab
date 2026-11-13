@@ -152,7 +152,10 @@ Given('"s2" answered "accept_if" with the condition "travel_paid"', function (th
 });
 
 Then(/^"([sp]\d+)" answered "(\w+)"$/, function (this: Context, speaker: string, act: string) {
-  sentWith(this, speaker, act);
+  // An invitation's answer is the latest; a condition not met is asked again (FR-CONGRESS-09).
+  const answers = sentBy(this, speaker).filter((line) => ["accept", "accept_if", "decline"].includes(String(line.act)));
+  if (act === "accept_if" && answers.length > 1) assert.equal(answers.at(-1)?.act, act, `"${speaker}" answered ${answers.map((line) => line.act).join(", ")}`);
+  else sentWith(this, speaker, act);
 });
 
 Given('"s2" answered "accept_if" with the condition "travel_paid" on {string}', function (this: Context, day: string) {
