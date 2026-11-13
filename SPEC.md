@@ -107,7 +107,7 @@ Experiments are written outside this repository, in the experiment language (FR-
 6. FR-MONEY-01 (accounts, invoices, commitments and approvals)
 7. FR-CONGRESS-02 (venues and the board)
 7b. FR-CONGRESS-04 (speakers and the partner's session)
-7c. FR-CONGRESS-05 (caterers, sponsors and services), not written
+7c. FR-CONGRESS-05 (caterers, sponsors and services)
 8. FR-POPULATION-01 (attendees and the ticket page), not written
 9. FR-PARTS-01 (parts as held-out keys), not written
 10. FR-CONGRESS-03 (the day), after the pilot, not written
@@ -451,6 +451,45 @@ The congress provides the rule set `speaker` (FR-PARTICIPANT-01), with the kind 
 
 **Refusals**, before any model call, with an error that names it: a speaker template whose `acceptance` or `pick_up` is outside 0–1, whose `draw` is outside 0–3, whose `fee` is negative, or whose `condition` or `constraint` is not one of those above; a perturbation `early_cancel` or `late_cancel` whose times do not follow the calendar's format; a draw of more than one `partner`.
 *Why:* speakers are the programme, and the parts of E1 about filling it come from how they behave: slow answers, conditions, cancellations, and the partner's session that the board settled before the organiser started. Each answers from its own template and sequence, so the same congress meets every condition.
+
+#### FR-CONGRESS-05: Caterers, sponsors and services
+The congress provides the rule sets `caterer`, `sponsor` and `agency`, with their kinds in the base configuration, answering as a venue does (FR-CONGRESS-02), and two services the organiser uses as tools.
+
+**A caterer** (`caterer`), from its template: `price_per_head` (lunch and two coffee breaks), the diets it serves with a limit for each (`diets`, a table; no limit when absent), `minimum` people, `final_days` (how many days before the event final numbers are due), `deposit_share`, `deposit_due_days` and a cancellation schedule. A caterer may be a venue's in-house caterer (`in_house_for`, the venue's id); the variant adds the in-house caterer of each chosen venue that has one.
+
+| Act it takes (fields) | Its answer |
+|---|---|
+| `ask_quote` (attendance, diets) | `quote` with the price per head, the diets and their limits, the minimum, the final-numbers date, the deposit and the cancellation schedule |
+| `order` (counts by diet, date) | `order_confirmed`; it `commit`s the price for the total count and `issue_invoice`s the deposit; or `order_refused` naming the diet over its limit, or the minimum not reached |
+| `final_numbers` (counts by diet) | before the final-numbers date: `numbers_accepted`, its commitment following the new total (released and committed again); after it, an increase of at most 5% of the ordered total is `numbers_accepted` with a 10% surcharge on the increase, and anything else is `numbers_refused`; a diet over its limit is refused at any time |
+| `cancel_order` | `cancelled` with its schedule's charge, as a venue's cancellation |
+
+Five days before the event it `issue_invoice`s the balance (price less deposit).
+
+**A sponsor** (`sponsor`), from its template: `amount`, its `conditions` (a list of `logo`, `morning_slot`, `table`, `attendee_list`, `passes`), which of them it `insists` on, `counter_acceptance` (0–1), `pay_days` (two numbers).
+
+| Act it takes (fields) | Its answer |
+|---|---|
+| `ask_conditions` | `conditions` with the amount, the conditions and the payment terms |
+| `accept_sponsorship` (conditions) | `agreement` when the conditions are its own; otherwise as `counter` |
+| `counter` (conditions) | `refused` when a condition it insists on is missing; otherwise, drawn from its sequence, `agreement` on the countered conditions with probability `counter_acceptance`, else `withdraw` |
+| `send_attendee_list` (list) | `received` |
+| `send_evidence` | `acknowledged` |
+
+After an agreement, a sponsor pays any invoice from the organiser for at most its amount, between the two numbers of `pay_days` after it lands, drawn from its sequence; it reads its invoices through its own `ledger`. Its perturbation `sponsor_withdraws`, at a time drawn between two times, for the sponsor the configuration names, is a perturbation component as FR-CONGRESS-04's cancellations are: the sponsor mails `withdraw` and pays nothing more. How a sponsor checks the published programme for its logo and slot comes with FR-POPULATION-01.
+
+**The interpreter agency** (`agency`), from its template: `price`, `notice_days`. `ask_quote` (date) → `quote` with the price and the notice; `book` (date) → `booked` and a commitment of the price when the date is at least `notice_days` away, else `unavailable`; `cancel` → `cancelled` and its commitment released.
+
+**Travel**, a service the organiser uses through two tools, with the travel's options in a `travel` material (stations, trains with their times from each station to the city's `station`, hotels near each venue with rooms, base prices):
+- **`travel_options`** `from`, `date` (sensor): the trains from `from` arriving on `date` with their times and prices, and the hotels with rooms left that night and their prices. A train's price is its base price × (1 + 0.8 × max(0, 14 − days left) / 14); a train may be sold out in the last 2 days, drawn from the travel's own sequence with the probability the material gives.
+- **`book_travel`** `option`, `traveller` (effector): books it and the world's `travel` account `issue_invoice`s it to the organiser; `sold_out` or `no_such_option` otherwise.
+
+**Similar events** (`similar_events`, sensor): the three similar congresses of the topic, from a material, with their prices and sizes. Their median price is the congress's reference price.
+
+**Outcome.** A caterer's record gives its quote, order, final numbers, surcharges and invoices; a sponsor's its conditions, agreement, payments and whether it withdrew; the agency's its booking; the travel's what it booked for whom.
+
+**Refusals**, before any model call, with an error that names it: a negative price, limit, minimum or amount; a `final_days` below 1; a sponsor condition not among those above, or one it insists on that is not among its conditions; a `counter_acceptance` outside 0–1; `pay_days` whose first number is above its second; an `in_house_for` that is no venue in the pools; a travel option that names no station or hotel; a `sponsor_withdraws` for a party that is no sponsor.
+*Why:* food, money from sponsors and the services around a congress are where its numbers and deadlines bite: a caterer's limit on a diet, a final-numbers date before the late registrations, a sponsor that wants what it cannot be given, prices that rise as the day nears. Each answers from its template and its own sequence, the same in every condition.
 #### FR-METRIC-01: Generic metrics for every run
 At the end of every run the core reports, per agent and in total:
 - activations and model turns;
