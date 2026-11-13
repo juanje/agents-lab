@@ -301,10 +301,12 @@ export function populationTools<State extends PopulationWorld>(options: Populati
     durationMs: duration("edit_ticket_page"),
     action: {
       precondition: () => ({ holds: true }),
-      effect: (state, { arguments: args }) =>
+      effect: (state, { arguments: args, world }) =>
         withPopulation(state, (population) => ({
           ...population,
           page: { ...population.page, ...Object.fromEntries(Object.entries(args).filter(([key]) => ["open", "price", "cap", "close_date", "required_fields", "info", "waiting_list"].includes(key))) } as Page,
+          // Each price it is set to, with its time (FR-CONGRESS-06).
+          ...(typeof args.price === "number" && world !== undefined ? { edits: [...(population.edits ?? []), { price: args.price, at: nowOf(world) }] } : {}),
         })),
     },
     texts: { success: "The ticket page is changed.", [INVALID_VALUE]: "invalid_value: the page cannot take that value" },
@@ -386,7 +388,9 @@ export function populationTools<State extends PopulationWorld>(options: Populati
       precondition: () => ({ holds: true }),
       effect: (state, { arguments: { audience, kind, text }, world }) => {
         const now = nowOf(world);
-        let next = withPopulation(state, (population) => {
+        // Each announcement, with its audience, kind and time (FR-CONGRESS-06).
+        const recorded = withPopulation(state, (population) => ({ ...population, announcements: [...(population.announcements ?? []), { audience: String(audience), kind: String(kind), at: now }] }));
+        let next = withPopulation(recorded, (population) => {
           if (audience === "association_list" && kind === "registration_open") return { ...population, announced: true };
           if (audience === "association_list" && kind === "promotion") return { ...population, promotions: [...population.promotions, { start: now, factor: population.material.promotion_factor }] };
           if (audience !== "registrants") return population;

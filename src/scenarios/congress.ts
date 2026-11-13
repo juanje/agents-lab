@@ -26,6 +26,7 @@ import {
   sponsorRules,
   venueRules,
 } from "./congress-parties.ts";
+import { congressParts } from "./congress-parts.ts";
 import { type AttendeesMaterial, type Population, minutesOfTime, populationComponent, populationTools } from "./population.ts";
 import { describeUniformRhythm, rhythmChannels, uniformRhythm } from "./rhythm.ts";
 
@@ -723,7 +724,23 @@ function contextOf(configuration: Configuration, discretionaryLimit: number): Pa
     roles: drawn?.roles ?? {},
     noShowCut: (configuration.no_show_cut as number | undefined) ?? 0,
     discretionaryLimit,
+    ...partiesContext(configuration),
   };
+}
+
+/** The travelling speakers' stations and the chosen venues' catering rules and in-house caterers, from the participants' params. */
+function partiesContext(configuration: Configuration): Pick<PartsContext, "homes" | "catering"> {
+  const parties = Object.entries((configuration.participants ?? {}) as TomlTable).map(([name, participant]) => ({ name, rules: (participant as TomlTable).rules, params: ((participant as TomlTable).params ?? {}) as TomlTable }));
+  const homes = Object.fromEntries(parties.filter(({ rules, params }) => rules === "speaker" && typeof params.home === "string" && params.home !== "local").map(({ name, params }) => [name, params.home as string]));
+  const catering = Object.fromEntries(
+    parties
+      .filter(({ rules }) => rules === "venue")
+      .map(({ name, params }) => {
+        const inHouse = parties.find(({ rules, params: caterer }) => rules === "caterer" && caterer.in_house_for === name)?.name;
+        return [name, { ...(typeof params.catering === "string" ? { rule: params.catering } : {}), ...(inHouse === undefined ? {} : { inHouse }) }];
+      }),
+  );
+  return { homes, catering };
 }
 
 /** The place the organiser is in; in a passage, none. */
@@ -842,7 +859,11 @@ const go: Effector<Congress> = {
       if (at !== undefined && "place" in at) return { holds: false, reason: at.place === call.arguments.place ? ALREADY_THERE : INVALID_TARGET };
       return inSpace(arrive, () => ({ entity: call.agent })).precondition(state, call);
     },
-    effect: (state, call) => inSpace(arrive, () => ({ entity: call.agent })).effect(state, call),
+    // Each place the organiser enters is recorded with its time (FR-CONGRESS-06).
+    effect: (state, call) => ({
+      ...inSpace(arrive, () => ({ entity: call.agent })).effect(state, call),
+      visits: [...(state.visits ?? []), ...(call.world === undefined ? [] : [{ place: String(call.arguments.place), at: minutesOfWorld(call.world) }])],
+    }),
   },
   texts: {
     success: "You have arrived.",
@@ -1456,6 +1477,8 @@ export const congressScenario: Scenario<Congress> = {
   phone: { of: (state) => state.phone, with: (state, phone) => ({ ...state, phone }) },
   money: { of: (state) => state.money, with: (state, money) => ({ ...state, money }) },
   components,
+  // Its parts, read only from the world's records (FR-CONGRESS-06).
+  parts: congressParts,
   worldAccounts: [TRAVEL, "attendees"],
   // Each change of the population is a line of the run's log (FR-POPULATION-01).
   logLines: (before, after) => (after.population?.events ?? []).slice(before.population?.events?.length ?? 0).map((event) => ({ type: "population", ...event })),
