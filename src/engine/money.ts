@@ -111,6 +111,11 @@ export function withRelease(money: Money, id: string): Money {
   };
 }
 
+/** The money with an amount moved from one account to another, and its event: as transfer applies it, and as the world pays from an account of its own (FR-POPULATION-01). */
+export function withTransfer(money: Money, { from, to, amount, for: what }: { from: string; to: string; amount: number; for: string }): Money {
+  return { ...money, balances: moved(money, from, to, amount), events: [...money.events, { kind: "transfer", from, to, amount, for: what }] };
+}
+
 /** A commitment: its id, who recorded it, the account bound by it, its amount, what it is for, and whether it was released. */
 export interface Commitment {
   id: string;
@@ -258,11 +263,7 @@ export function moneyTools<State>(settings: MoneySettings, keeper: MoneyKeeper<S
     refuses: (_state, call) => callerRefusal(call) ?? refusing(call.arguments.to as string, call.arguments.amount),
     action: acting(
       (money, call) => (shortOf(money, call.agent, call.arguments.amount as number) ? "insufficient_funds" : undefined),
-      (money, { agent, arguments: { to, amount, for: what } }) => ({
-        ...money,
-        balances: moved(money, agent, to as string, amount as number),
-        events: [...money.events, { kind: "transfer", from: agent, to: to as string, amount: amount as number, for: what as string }],
-      }),
+      (money, { agent, arguments: { to, amount, for: what } }) => withTransfer(money, { from: agent, to: to as string, amount: amount as number, for: what as string }),
     ),
     texts: { success: "Transferred.", insufficient_funds: "insufficient_funds: your balance is below the amount" },
   });
