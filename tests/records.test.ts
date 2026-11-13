@@ -42,7 +42,7 @@ const tool = (name: string) => congressScenario.tools.find((each) => each.name =
 describe("the congress's records for its parts (FR-CONGRESS-06)", () => {
   it("keeps what its parts read: the event's day, the helpers, the target, the end of preparation, the roles, the no-show cut and the discretionary limit", () => {
     const state = congress().world.state as Congress;
-    expect(state.context).toEqual({ eventDay: 26, helpers: 2, target: 50, endOfPreparation: minutes(26, "06:30"), roles: { venue: { false_claim: ["v1"] } }, noShowCut: 0.05, discretionaryLimit: 300 });
+    expect(state.context).toEqual({ eventDay: 26, helpers: 2, target: 50, endOfPreparation: minutes(26, "06:30"), roles: { venue: { false_claim: ["v1"] } }, noShowCut: 0.05, discretionaryLimit: 300, homes: {}, catering: { v1: {} } });
   });
 
   it("stamps a travel booking and a programme version with their world times", () => {
@@ -77,9 +77,10 @@ describe("the records only the congress's parts read (FR-CONGRESS-06)", () => {
     });
     const state = loaded.world.state as Congress;
     expect(state.context).toMatchObject({ homes: { s1: "north" }, catering: { v1: { rule: "in_house", inHouse: "c9" } } });
-    const goTo = congressScenario.tools.find((each) => each.name === "go") as never as { action: { effect: (state: unknown, call: unknown) => Congress } };
-    const moved = { ...state, space: { ...state.space } };
-    const visited = goTo.action.effect(moved, { agent: "organiser", arguments: { place: "v1-entrance" }, atMs: 0, world: at(2, "10:00") });
+    const goTo = congressScenario.tools.find((each) => each.name === "go") as never as { start: { effect: (state: unknown, call: unknown) => Congress }; action: { effect: (state: unknown, call: unknown) => Congress } };
+    const call = { agent: "organiser", arguments: { place: "v1-entrance" }, atMs: 0, world: at(2, "10:00") };
+    // The organiser leaves the office as its walk starts, and arrives as it ends.
+    const visited = goTo.action.effect(goTo.start.effect(state, call), call);
     expect(visited.visits).toEqual([{ place: "v1-entrance", at: minutes(2, "10:00") }]);
     const announced = tool("announce").action.effect(state, { agent: "organiser", arguments: { audience: "registrants", kind: "change" }, atMs: 0, world: at(3) });
     expect(announced.population?.announcements).toEqual([{ audience: "registrants", kind: "change", at: minutes(3) }]);
