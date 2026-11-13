@@ -100,7 +100,7 @@ Experiments are written outside this repository, in the experiment language (FR-
 
 **v0.3 build order.** The preparation-only pilot of E1 needs items 1–9. The world and its parts are designed in `agents-lab-experiments/experiments/E1-congress/world.md`; each FR's contract is written from it, one at a time.
 1. FR-CLOCK-03 (a calendar, clock segments and hours)
-2. FR-MESSAGE-01 (structured messages between participants), not written
+2. FR-MESSAGE-01 (structured messages between participants), not written; its contract also gives an effector's action the world's time (FR-CLOCK-03 states it, no scenario checks it yet)
 3. FR-PARTICIPANT-01 (rule-based participants with an interface), not written
 4. FR-PHONE-01 (calls), not written
 5. FR-CONGRESS-01 (the congress world from materials), not written
@@ -111,7 +111,7 @@ Experiments are written outside this repository, in the experiment language (FR-
 10. FR-CONGRESS-03 (the day), after the pilot, not written
 11. FR-ANALYSIS-04 (success by kind of part and text length), a light version for the pilot, not written
 
-**Small known gaps** (to close when convenient): `lab summarize` prints numbers at full precision; a completed run whose log has no metric sample gives no values without saying so; a run in the index whose log is missing fails with Node's own error. The `wait` tool's description does not state `wait_max_minutes`, so the worker learns the limit only from a refusal; `wait_max_minutes` is not checked when the configuration loads.
+**Small known gaps** (to close when convenient): `lab summarize` prints numbers at full precision; a completed run whose log has no metric sample gives no values without saying so; a run in the index whose log is missing fails with Node's own error. The `wait` tool's description does not state `wait_max_minutes`, so the worker learns the limit only from a refusal; `wait_max_minutes` is not checked when the configuration loads. FR-WORKPLACE-07's scenario whose wait ends `interrupted` "about 50 milliseconds into the run" failed once in a full gate (2026-11-13) and passed on three reruns: it needs more slack.
 
 **Not yet ordered:** FR-EFFORT-01, FR-METRIC-01, FR-EXPERIMENT-03, FR-RUN-03, FR-ANALYSIS-01.
 
@@ -293,7 +293,7 @@ A scenario's configuration may declare a `[calendar]`: its `start` (`"day <n> <w
 
 **Hours.** The calendar may declare named weekly hours (`[calendar.hours.<name>]`, with `days`, a list of weekdays, and `from` and `to`, `"HH:MM"`). For any world time the engine says whether it is within a named set of hours, and when they next begin.
 
-**The workplace** keeps its `[day] start` and `time_scale` (FR-WORKPLACE-05): they declare a calendar of one segment, and every result the workplace gives stays as before. A workplace configuration with both those keys and a `[calendar]` is refused.
+**The workplace** keeps its own clock, from its `[day] start` and `time_scale` (FR-WORKPLACE-05), and every result it gives stays as before; it has no day number or weekday, so it declares no calendar. A workplace configuration with a `[calendar]` beside those keys is refused.
 
 **Refusals**, before any model call, with an error that names the key: a `start` or an `until` that does not follow its format; a weekday that is not one of the seven English names; a day number below 1; a `scale` that is not a positive number; an `until` at or before the start or the previous segment's `until`; a segment without `until` that is not the last; no segment; hours whose `from` is not before their `to`, or whose `days` is empty or names an unknown weekday.
 
