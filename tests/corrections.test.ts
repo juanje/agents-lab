@@ -1,7 +1,10 @@
+import { type TomlTable, parse, stringify } from "smol-toml";
 import { describe, expect, it } from "vitest";
 import { Random } from "../src/engine/random.ts";
+import { type Scenario, loadScenario } from "../src/engine/scenario.ts";
 import type { Stimulus } from "../src/engine/stimuli.ts";
 import { boardRules, catererRules, speakerRules, venueRules } from "../src/scenarios/congress-parties.ts";
+import { congressScenario } from "../src/scenarios/congress.ts";
 import { calls, conversation, drive, notice, tools } from "./fixtures/rules.ts";
 
 /** "v1"'s parameters: main-hall (120 seats) and room-b (40), the day price 2000, and what the world adds. */
@@ -175,5 +178,44 @@ describe("a missed call returned (FR-CONGRESS-07)", () => {
       expect(calls(back, "call")).toEqual([{ to: "organiser", act: "missed_call" }]);
       expect(calls(back, "send_mail")[0]).toMatchObject({ to: "organiser", act: "quote" });
     }
+  });
+});
+
+describe("what the congress gives its parties for FR-CONGRESS-07", () => {
+  /** The congress with "v1" (in-house catering) and "v2", the caterer "c1", and the venues' reply delay. */
+  function loaded() {
+    const configuration = parse(congressScenario.baseConfiguration);
+    configuration.city = stringify({
+      places: [{ id: "office" }],
+      venues: ["v1", "v2"].map((id) => ({ id, entrance: `${id}-entrance`, hours: "always", rooms: [{ id: `${id}-hall`, seats: 120 }] })),
+      passages: ["v1", "v2"].map((id) => ({ between: ["office", `${id}-entrance`], length: 40, step_free: true })),
+    });
+    (configuration.calendar as TomlTable).hours = { always: { days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], from: "00:00", to: "23:59" } };
+    const template = { rooms: [{ id: "hall", seats: 120 }], access_claim: "step-free", price: 2000, hold_days: 2, deposit_share: 0.25, deposit_due_days: 3, cancellation: [{ share: 0.5 }] };
+    configuration.pools = stringify({
+      topics: ["soil"],
+      venue: [{ id: "v1", ...template, catering: "in_house", reply_minutes: [10, 30] }, { id: "v2", ...template, catering: "outside_fee", outside_fee_per_head: 5 }],
+      board: [],
+      speaker: [],
+      partner: [],
+      caterer: [{ id: "c1", price_per_head: 30, final_days: 7, deposit_share: 0.2, deposit_due_days: 3, cancellation: [{ share: 0.3 }] }],
+      sponsor: [],
+      agency: [],
+    });
+    configuration.draw = stringify({ attendance: [50, 80], venue: 2, caterer: 1 });
+    return loadScenario({ ...(congressScenario as Scenario<unknown>), baseConfiguration: stringify(configuration) }, 1);
+  }
+  const paramsOf = (name: string) => {
+    const participant = loaded().participants?.find((each) => each.name === name);
+    return participant?.decides === "rules" ? participant.params : {};
+  };
+
+  it("gives a caterer each chosen venue's catering rule", () => {
+    expect(paramsOf("c1").venues).toEqual({ v1: { catering: "in_house" }, v2: { catering: "outside_fee" } });
+  });
+
+  it("gives each party the minutes it calls a missed ring back within: from the ring's end to its reply delay after it", () => {
+    expect(paramsOf("v1").call_back_minutes).toEqual([5, 35]);
+    expect(paramsOf("v2").call_back_minutes).toEqual([5, 5]);
   });
 });
