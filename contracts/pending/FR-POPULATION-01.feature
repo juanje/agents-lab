@@ -111,6 +111,12 @@ Feature: Attendees, the ticket page, the programme and announcements
     Then the run's log has a "population" line for each registration and payment
     And the population's "participant_outcome" gives 4 registrations by day and by diet, 4 payments, no cancellations and no waiting list
 
+  Scenario: The world records whose data a sponsor holds, and whether they consented
+    Given the page required "consent_sponsors", the "consent_share" is 0.5, and 4 people registered, 2 of whom consented
+    And the organiser's scripted turns call "send_mail" to "sp2" with the act "send_attendee_list" and list the 4 registrants' ids and "a-99", then end
+    When the run ends
+    Then the world records that "sp2" holds the data of the 4 registrants, 2 with consent and 2 without, and ignores "a-99"
+
   Scenario Outline: An attendees material that cannot be followed is refused before any model call
     Given the attendees material is changed so that <change>
     When the run is attempted
