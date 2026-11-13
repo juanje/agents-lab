@@ -1,7 +1,7 @@
 import { type TomlTable, parse } from "smol-toml";
 import { type Calendar, type WorldTime, hoursAt, reachedAfterMs, readCalendar, worldTimeText } from "../engine/calendar.ts";
 import type { Mail } from "../engine/mail.ts";
-import { invoiced } from "../engine/money.ts";
+import { INVOICE_NOTICE, invoiced } from "../engine/money.ts";
 import type { Money } from "../engine/money.ts";
 import type { Phone } from "../engine/phone.ts";
 import { type Places, arrive, exits, inSight, layout, leave, put, where } from "../engine/places.ts";
@@ -1039,7 +1039,7 @@ const BASE_CONFIGURATION = [
   'account = "funds"',
   ...[
     ["caterer", '["send_mail", "check_mail", "read_mail", "answer_call", "check_time", "ledger", "commit", "release", "issue_invoice"]', '["mail_notice", "phone"]', '"unlimited"'],
-    ["sponsor", '["send_mail", "check_mail", "read_mail", "answer_call", "check_time", "ledger", "pay"]', `["mail_notice", "phone", "${SPONSOR_PERTURBATION}"]`, '"amount"'],
+    ["sponsor", '["send_mail", "check_mail", "read_mail", "answer_call", "check_time", "ledger", "pay"]', `["mail_notice", "phone", "${SPONSOR_PERTURBATION}", "${INVOICE_NOTICE}"]`, '"amount"'],
     ["agency", '["send_mail", "check_mail", "read_mail", "answer_call", "check_time", "ledger", "commit", "release"]', '["mail_notice", "phone"]', '"unlimited"'],
   ].flatMap(([kind, tools, channels, account]) => [`[kinds.${kind}]`, `rules = "${kind}"`, `tools = ${tools}`, `channels = ${channels}`, "reply_minutes = [0, 0]", `account = ${account}`]),
   ...["speaker", "partner"].flatMap((kind) => [
@@ -1088,6 +1088,8 @@ export const congressScenario: Scenario<Congress> = {
     // What makes a speaker cancel: an illness, which reaches it on the perturbation's own channel (FR-CONGRESS-04).
     ...SPEAKER_PERTURBATIONS.map((name) => ({ name, source: "illness", stimulus: "You are ill and cannot give your session." })),
     { name: SPONSOR_PERTURBATION, source: "the sponsor's board", stimulus: "Your board withdraws the sponsorship." },
+    // An invoice reaches its recipient from its issuer, as a message does (FR-CONGRESS-05).
+    { name: INVOICE_NOTICE, source: "money", stimulus: "New invoice from {from}: {for}" },
   ],
   metrics: {},
   firstStimuli: (configuration) => (textsIn(configuration, "person") === "" ? [] : [PERSON_CHANNEL]),
