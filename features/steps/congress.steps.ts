@@ -223,6 +223,7 @@ function callOf(written: string): { name: string; arguments: Record<string, unkn
   // A message or a call to a party, with its act and fields (FR-CONGRESS-02).
   if (tool === "send_mail" || tool === "call") return { name: tool, arguments: messageOf(rest) };
   if (tool === "read_mail" && rest === "the first message") return { name: tool, arguments: { id: FIRST_RECEIVED } };
+  if (tool === "read_mail") return { name: tool, arguments: { id: quoted[0] } };
   if (tool === "pay") return { name: tool, arguments: { invoice: quoted[0] } };
   if (tool === "go") return { name: tool, arguments: { place: /^to "([^"]+)"$/.exec(rest)?.[1] } };
   if (tool === "write_note") return { name: tool, arguments: { title: quoted[0], text: quoted[1] } };
@@ -243,13 +244,13 @@ export const FIRST_CONTRACT = (venue: string) => `${venue}-contract-1`;
 
 /**
  * A message or a call as the contract writes it: `to "<party>" with the act "<act>"`, then its fields, each `name "text"`
- * or `name number`, or "the contract's id"; the act's fields joined by ", " and " and ".
+ * `name number` or `name true|false`, or "the contract's id"; the act's fields joined by ", " and " and ".
  */
 function messageOf(written: string): Record<string, unknown> {
   const [, to, act, rest = ""] = /^to "(\w+)" with the act "(\w+)"(.*)$/.exec(written) ?? [];
   assert.ok(to !== undefined, `the steps do not read the message "${written}"`);
   const fields: Record<string, unknown> = {};
-  for (const [, name, text, number] of rest.matchAll(/(\w+) (?:"([^"]*)"|(-?\d+(?:\.\d+)?))/g)) fields[name] = text ?? Number(number);
+  for (const [, name, text, number, truth] of rest.matchAll(/(\w+) (?:"([^"]*)"|(-?\d+(?:\.\d+)?)|(true|false)\b)/g)) fields[name] = text ?? (truth === undefined ? Number(number) : truth === "true");
   if (rest.includes("the contract's id")) fields.contract = FIRST_CONTRACT(to);
   return { to, act, ...(Object.keys(fields).length === 0 ? {} : { fields }) };
 }

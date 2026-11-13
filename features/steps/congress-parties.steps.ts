@@ -72,9 +72,9 @@ function pools(changes: (pool: { venue: TomlTable[]; board: TomlTable[] }) => vo
 }
 
 /** Changes the pools of the scenario. */
-function changePools(context: Context, changing: (pool: { venue: TomlTable[]; board: TomlTable[] }) => void): void {
+export function changePools(context: Context, changing: (pool: { venue: TomlTable[]; board: TomlTable[] } & Record<string, TomlTable[]>) => void): void {
   change(context, (configuration) => {
-    const pool = parse(configuration.pools as string) as unknown as { topics: string[]; venue: TomlTable[]; board: TomlTable[] };
+    const pool = parse(configuration.pools as string) as unknown as { topics: string[]; venue: TomlTable[]; board: TomlTable[] } & Record<string, TomlTable[]>;
     changing(pool);
     configuration.pools = stringify(pool as unknown as TomlTable);
   });
@@ -88,16 +88,21 @@ function changeV1(context: Context, changing: (v1: TomlTable) => void): void {
 Given(
   "the congress scenario of FR-CONGRESS-01, whose calendar starts at {string} with one segment of scale {int}, so one world hour is {int} milliseconds of the run",
   function (this: Context, start: string, scale: number, hourMs: number) {
-    assert.equal((3600 * 1000) / scale, hourMs);
-    const always = { days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], from: "00:00", to: "23:59" };
-    setUpCongress(this, { start, segments: [{ scale }], hours: { always } });
-    change(this, (configuration) => {
-      configuration.city = stringify(CITY);
-      configuration.pools = pools();
-      configuration.draw = stringify({ attendance: [50, 80], venue: 2, board: 1 });
-    });
+    setUpPartiesCongress(this, start, scale, hourMs);
   },
 );
+
+/** FR-CONGRESS-02's congress: its city, its venues "v1" and "v2" and its board, under a calendar of one segment. */
+export function setUpPartiesCongress(context: Context, start: string, scale: number, hourMs: number): void {
+  assert.equal((3600 * 1000) / scale, hourMs);
+  const always = { days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], from: "00:00", to: "23:59" };
+  setUpCongress(context, { start, segments: [{ scale }], hours: { always } });
+  change(context, (configuration) => {
+    configuration.city = stringify(CITY);
+    configuration.pools = pools();
+    configuration.draw = stringify({ attendance: [50, 80], venue: 2, board: 1 });
+  });
+}
 
 Given('the mail delivers in 1 world minute and the parties have no hours, no reply delay and "pick_up" 1', function (this: Context) {
   change(this, (configuration) => {
@@ -133,14 +138,14 @@ Given("the congress is on {string}", function (this: Context, day: string) {
 });
 
 /** The world minutes since day 1's midnight of a world time written "day <n> [<weekday>] HH:MM". */
-function minutesOf(time: string): number {
+export function minutesOf(time: string): number {
   const [, day, hours, minutes] = /^day (\d+)(?: \w+)? (\d\d):(\d\d)$/.exec(time) ?? [];
   assert.ok(day !== undefined, `"${time}" is no world time`);
   return (Number(day) - 1) * 1440 + Number(hours) * 60 + Number(minutes);
 }
 
 /** The world minutes since day 1's midnight of a world time as the engine gives it. */
-function minutesOfWorld(worldTime: unknown): number {
+export function minutesOfWorld(worldTime: unknown): number {
   const { day, seconds } = worldTime as { day: number; seconds: number };
   return (day - 1) * 1440 + seconds / 60;
 }
@@ -169,14 +174,14 @@ function accepting(context: Context, rooms: string, pays: boolean) {
 }
 
 /** Adds turns to those the organiser takes first, and scripts them, ending at once. */
-function before(context: Context, turns: { toolCalls: never; delayMs: number }[]): void {
+export function before(context: Context, turns: { toolCalls: never; delayMs: number }[]): void {
   const all = [...(turnsBefore.get(context) ?? []), ...turns];
   turnsBefore.set(context, all);
   script(context, ORGANISER, [...all, { text: "Done.", delayMs: 0 }]);
 }
 
 /** Delays the organiser's next turn until a world time, after the turns it takes first. */
-function untilTime(context: Context, time: string): void {
+export function untilTime(context: Context, time: string): void {
   const all = turnsBefore.get(context) ?? [];
   const spentMs = all.reduce((sum, { delayMs }) => sum + delayMs, 0);
   const targetMs = ((minutesOf(time) - startMinutes(context)) / 60) * hourMsOf(context);
@@ -226,25 +231,25 @@ When("the run's time limit passes at {string}", { timeout: 60_000 }, async funct
 });
 
 /** The log's lines of the run, which must not have stopped. */
-function ranLines(context: Context): Record<string, unknown>[] {
+export function ranLines(context: Context): Record<string, unknown>[] {
   assert.equal(context.runError, undefined, `the run stopped: ${context.runError?.message}`);
   return linesOf(context, `${context.runId}.jsonl`).map((line) => JSON.parse(line) as Record<string, unknown>);
 }
 
 /** The messages a party sent, as the log gives them, in order. */
-function sentBy(context: Context, party: string): Record<string, unknown>[] {
+export function sentBy(context: Context, party: string): Record<string, unknown>[] {
   return ranLines(context).filter((line) => line.type === "message_sent" && line.from === party);
 }
 
 /** The one message a party sent with an act. */
-function sentWith(context: Context, party: string, act: string): Record<string, unknown> {
+export function sentWith(context: Context, party: string, act: string): Record<string, unknown> {
   const sent = sentBy(context, party).filter((line) => line.act === act);
   assert.equal(sent.length, 1, `"${party}" sent ${sent.length} messages with the act "${act}"; it sent ${sentBy(context, party).map((line) => line.act).join(", ")}`);
   return sent[0];
 }
 
 /** A message's fields. */
-const fieldsOf = (line: Record<string, unknown>) => line.fields as Record<string, string | number | boolean>;
+export const fieldsOf = (line: Record<string, unknown>) => line.fields as Record<string, string | number | boolean>;
 
 Then(
   /^the\ message\ from\ "v1"\ has\ the\ act\ "quote",\ the\ rooms\ "main\-hall"\ \(120\)\ and\ "room\-b"\ \(40\),\ access\ "step\-free\ access\ throughout",\ the\ price\ 2000,\ hold\ days\ 2,\ deposit\ share\ 0\.25\ due\ in\ 3\ days,\ the\ cancellation\ schedule,\ and\ rooms\ indicative$/,
@@ -275,7 +280,7 @@ Then('"v1" answered "held" until {string}, within one world hour', function (thi
 });
 
 /** A party's outcome record, as the run's end wrote it. */
-function outcomeOf(context: Context, party: string): Record<string, unknown> {
+export function outcomeOf(context: Context, party: string): Record<string, unknown> {
   const lines = ranLines(context).filter((line) => line.type === "participant_outcome" && line.participant === party);
   assert.equal(lines.length, 1, `the log has ${lines.length} outcomes for "${party}"`);
   return lines[0].outcome as Record<string, unknown>;
@@ -317,7 +322,7 @@ Then('the "ledger" result gives a commitment to "v1" of 2000 and an unpaid invoi
 });
 
 /** The money lines of the run of a kind, in order. */
-function moneyLines(context: Context, kind: string): Record<string, unknown>[] {
+export function moneyLines(context: Context, kind: string): Record<string, unknown>[] {
   return ranLines(context).filter((line) => line.type === "money" && line.kind === kind);
 }
 
@@ -328,7 +333,7 @@ Then('the world recorded an "unapproved_overrun" for that commitment, with the l
 });
 
 /** The day of a line's world time. */
-const dayOf = (line: Record<string, unknown>) => (line.worldTime as { day: number }).day;
+export const dayOf = (line: Record<string, unknown>) => (line.worldTime as { day: number }).day;
 
 Then('"v1" mailed the organiser a "reminder" on {string}', function (this: Context, day: string) {
   const reminder = sentWith(this, "v1", "reminder");
@@ -412,7 +417,7 @@ Given('the configuration declares the perturbation "room_allocation" at {string}
 });
 
 /** Checks that a line's world time falls between two world times, written "day <n> HH:MM". */
-function assertBetween(line: Record<string, unknown>, from: string, to: string): void {
+export function assertBetween(line: Record<string, unknown>, from: string, to: string): void {
   const at = minutesOfWorld(line.worldTime);
   assert.ok(at >= minutesOf(from) && at <= minutesOf(to) + 1, `it came at day ${dayOf(line)}, ${Math.floor((at % 1440) / 60)}:${String(Math.floor(at % 60)).padStart(2, "0")}`);
 }
