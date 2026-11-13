@@ -77,7 +77,7 @@ Feature: Speakers and the partner's session
     And the organiser does not answer calls
     When the run's time limit passes at "day 24 Saturday 09:00"
     Then a confirmed speaker other than the early cancellation's called the organiser at "day 23 10:00" with the act "cancel"
-    And, the call not answered, mailed "cancel" after it
+    And the call was not answered, and it mailed "cancel" after it
 
   Scenario: The board's mail about the partner's session is in the organiser's mailbox at the start
     Given the organiser's scripted turns call "check_mail", then "read_mail" "m-1", then end
