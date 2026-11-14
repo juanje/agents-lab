@@ -557,7 +557,7 @@ function requiredText(written: string): string {
  * fields, once per kind, and how registrants are mailed (FR-CONGRESS-11); then one line per drawn party, grouped by kind,
  * each kind in an order drawn from the replica's sequence (FR-CONGRESS-09, FR-CONGRESS-11),
  * with its id, its kind, whether it has a mailbox and a line, and what its template says that anyone could know: a
- * speaker's title and home, an in-house caterer's venue. The partner's speaker is not listed: the board's mail names it.
+ * speaker's or the partner's title and home (FR-CONGRESS-15), an in-house caterer's venue.
  */
 function directoryOf(configuration: Configuration, chosenOf: Readonly<Record<string, TomlTable[]>>, templates: readonly TomlTable[], random: Random): string {
   const mailboxes = ((configuration.mail as TomlTable | undefined)?.mailboxes ?? []) as string[];
@@ -565,7 +565,7 @@ function directoryOf(configuration: Configuration, chosenOf: Readonly<Record<str
   const settings = (configuration.kinds ?? {}) as TomlTable;
   // The in-house caterers come with their venues, beside the drawn templates.
   const inHouse = templates.filter(({ kind, in_house_for: venue }) => kind === "caterer" && venue !== undefined).map((template) => ({ template, kind: "caterer" }));
-  const parties = [...Object.entries(chosenOf).filter(([kind]) => kind !== "partner").flatMap(([kind, chosen]) => chosen.map((template) => ({ template, kind }))), ...inHouse];
+  const parties = [...Object.entries(chosenOf).flatMap(([kind, chosen]) => chosen.map((template) => ({ template, kind }))), ...inHouse];
   const kinds = [...new Set(parties.map(({ kind }) => kind))];
   const article = (kind: string) => (/^[aeiou]/.test(kind) ? "An" : "A");
   const actsOfKind = kinds.map((kind) => {
@@ -573,7 +573,7 @@ function directoryOf(configuration: Configuration, chosenOf: Readonly<Record<str
     return `${article(kind)} ${kind} takes ${acts.length === 0 ? "no act the congress lists" : acts.map(requiredText).join(", ")}.`;
   });
   const known = ({ template, kind }: (typeof parties)[number]): string[] => {
-    if (kind === "speaker") return [...(template.title === undefined ? [] : [`"${String(template.title)}"`]), ...(template.home === undefined ? [] : [template.home === "local" ? "local" : `from ${String(template.home)}`])];
+    if (kind === "speaker" || kind === "partner") return [...(template.title === undefined ? [] : [`"${String(template.title)}"`]), ...(template.home === undefined ? [] : [template.home === "local" ? "local" : `from ${String(template.home)}`])];
     if (kind === "caterer" && template.in_house_for !== undefined) return [`in-house for ${String(template.in_house_for)}`];
     return [];
   };
@@ -594,8 +594,8 @@ function directoryOf(configuration: Configuration, chosenOf: Readonly<Record<str
   return [...actsOfKind, ...registrants, ...partyLines].join("\n");
 }
 
-/** The kinds the directory lists, in this order (FR-CONGRESS-11). */
-const DIRECTORY_KINDS = ["venue", "speaker", "caterer", "sponsor", "agency"];
+/** The kinds the directory lists, in this order (FR-CONGRESS-11, FR-CONGRESS-15). */
+const DIRECTORY_KINDS = ["venue", "speaker", "partner", "caterer", "sponsor", "agency"];
 
 /**
  * The configuration with its texts filled with what the replica drew (FR-CONGRESS-08): {topic}, {target}, {event_day},
