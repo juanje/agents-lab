@@ -937,6 +937,8 @@ function worldOf(rules: unknown, id: string, configuration: Configuration, city:
     floor_plan: city.passages.filter(({ between }) => between.every((place) => inside.includes(place))).map(({ between, step_free: stepFree }) => ({ between, step_free: stepFree })),
     // Its rooms' allocation only: the venue change is the world's (FR-CONGRESS-13).
     perturbations: perturbations.filter((each) => each.name === ROOM_ALLOCATION && (each.for === undefined || each.for === id)) as unknown as TomlTable[],
+    // The mail's delivery delay, from which its change's answer_by counts (FR-CONGRESS-16).
+    ...((configuration.mail as TomlTable | undefined)?.delivery_minutes === undefined ? {} : { mail_delivery_minutes: (configuration.mail as TomlTable).delivery_minutes }),
   };
 }
 

@@ -147,14 +147,15 @@ class Party {
    * Sends a mail of its own, not an answer, at the first moment within its hours (FR-CONGRESS-09): out of them it waits,
    * keeping what reaches it meanwhile.
    */
-  *write(to: string, act: string, fields: Readonly<Record<string, unknown>> = {}): Generator<RuleStep, void, Perceived> {
+  *write(to: string, act: string, fields: Readonly<Record<string, unknown>> | (() => Readonly<Record<string, unknown>>) = {}): Generator<RuleStep, void, Perceived> {
     yield* this.clock();
     for (let opens = this.withinHours(this.now); opens > this.now; opens = this.withinHours(this.now)) {
       const perceived = yield { kind: "wait", minutes: opens - this.now };
       this.stimuli.push(...perceived.stimuli);
       yield* this.clock();
     }
-    yield* this.call("send_mail", { to, act, fields });
+    // Fields given as a function are written as it sends, at the time it sends (FR-CONGRESS-16).
+    yield* this.call("send_mail", { to, act, fields: typeof fields === "function" ? fields() : fields });
   }
 
   /** Reads the world's time with its own check_time. */
@@ -301,6 +302,8 @@ interface VenueParams {
   event_day: number;
   floor_plan: { between: [string, string]; step_free: true | string }[];
   perturbations: { name: string; kind?: string; between?: [string, string]; at?: string }[];
+  /** The mail's delivery delay, its fewest and most world minutes, so a change's answer_by counts from its delivery (FR-CONGRESS-16). */
+  mail_delivery_minutes?: [number, number];
 }
 
 /** A venue's cancellation schedule as a text: "more than 14 days: 0.1; 14 days or fewer: 0.5". */
@@ -327,9 +330,15 @@ interface Contract {
   confirmed: boolean;
   /** Cancelled: never accepted again; the date is booked again as a new contract (FR-CONGRESS-15). */
   cancelled?: boolean;
-  /** A change the venue announced and awaits an answer on. */
-  change?: { kind: "price_change"; price: number } | { kind: "room_lost"; room: string; smaller?: string; cut: number };
+  /**
+   * A change the venue announced and awaits an answer on, with the fields its mail gave and the world minute of its
+   * answer_by once mailed (FR-CONGRESS-16).
+   */
+  change?: ({ kind: "price_change"; price: number } | { kind: "room_lost"; room: string; smaller?: string; cut: number }) & { mailed?: Fields; answerBy?: number };
 }
+
+/** How long a venue waits for the answer to its change: 72 world hours after its mail is delivered (FR-CONGRESS-16). */
+const CHANGE_ANSWER_MINUTES = 72 * 60;
 
 /** The options a change offers: none for a price change; for a lost room, its smaller room when it has one, and a price cut. */
 function offered(change: NonNullable<Contract["change"]>): string[] {
@@ -340,7 +349,7 @@ function offered(change: NonNullable<Contract["change"]>): string[] {
 /** Something a venue does at a world time of its own. */
 interface Timer {
   at: number;
-  kind: "lapse" | "challenge_lapse" | "reminder" | "unpaid_cancel" | "enquiry" | "room_allocation";
+  kind: "lapse" | "challenge_lapse" | "reminder" | "unpaid_cancel" | "enquiry" | "room_allocation" | "change_lapse";
   date?: string;
   contract?: string;
 }
@@ -414,8 +423,17 @@ export const venueRules: RuleSet = {
       } as () => Script;
     }
 
+    /** A customer's contracted or confirmed booking. */
+    const bookingOf = (customer: string) => contracts.find((each) => each.to === customer && ["contracted", "confirmed"].includes(statusOf(each.date)));
+    /** A change pending on a booking holds it: what would change it is answered change_pending, with the change's fields (FR-CONGRESS-16). */
+    const pending = (contract: Contract | undefined): Answer | undefined => (contract?.change === undefined ? undefined : { act: "change_pending", fields: { kind: contract.change.kind, ...contract.change.mailed } });
+
     const answer = ({ from, act, fields }: Received): Answer => {
       const date = String(fields.date ?? eventDate);
+      if (act === "change_booking" || act === "request_extra" || act === "accept_extra") {
+        const held = pending(bookingOf(from));
+        if (held !== undefined) return held;
+      }
       switch (act) {
         case "ask_quote":
           if (!free(date)) return unavailable(date);
@@ -515,11 +533,14 @@ export const venueRules: RuleSet = {
           return { act: "extra_confirmed", fields: { item, price, ...permit, ...(offer?.room === undefined ? {} : { room: offer.room }) }, then: function* () { yield* party.call("commit", { with: from, amount: price, for: `${contract.id} extra ${item}` }); } as () => Script };
         }
         case "change_booking": {
-          const contract = contracts.find((each) => each.to === from && ["contracted", "confirmed"].includes(statusOf(each.date)));
+          const contract = bookingOf(from);
           if (contract === undefined) return notAvailable("booking");
           const rooms = String(fields.rooms ?? "").split(/,\s*/).filter((room) => room !== "");
           const lost = lostRooms.get(contract.date) ?? new Set<string>();
-          if (rooms.length === 0 || rooms.some((room) => !venue.rooms.some(({ id }) => id === room) || lost.has(room))) return unavailable(contract.date);
+          // A room lost to a change or an allocation is named, without the date (FR-CONGRESS-16).
+          const named = rooms.find((room) => lost.has(room));
+          if (named !== undefined) return { act: "unavailable", fields: { room: named } };
+          if (rooms.length === 0 || rooms.some((room) => !venue.rooms.some(({ id }) => id === room))) return unavailable(contract.date);
           const added = rooms.filter((room) => !contract.rooms.includes(room)).reduce((sum, room) => sum + roomPrice(room), 0);
           const dropped = contract.rooms.filter((room) => !rooms.includes(room)).reduce((sum, room) => sum + roomPrice(room), 0);
           contract.rooms = rooms;
@@ -643,6 +664,26 @@ export const venueRules: RuleSet = {
           yield* (cancelled.then as () => Script)();
           return;
         }
+        case "change_lapse": {
+          // A change still unanswered at its answer_by (FR-CONGRESS-16).
+          const change = contract?.change;
+          if (contract === undefined || change?.answerBy === undefined) return;
+          contract.change = undefined;
+          if (change.kind === "price_change") {
+            // Declined: cancelled with no charge, as on decline_change.
+            const cancelled = cancelling(contract, 0);
+            yield* party.write(contract.to, cancelled.act, { ...cancelled.fields, reason: "change_unanswered" });
+            yield* (cancelled.then as () => Script)();
+            return;
+          }
+          // Its price cut taken: the lost room gone, the commitment down by the cut.
+          contract.rooms = contract.rooms.filter((room) => room !== change.room);
+          const then = repriced(contract, contract.to, contract.price - change.cut);
+          record("change_applied", { contract: contract.id, rooms: contract.rooms.join(", "), price: contract.price });
+          yield* party.write(contract.to, "change_applied", { contract: contract.id, room: change.room, cut: change.cut });
+          yield* then();
+          return;
+        }
         case "room_allocation": {
           const booked = live();
           if (booked === undefined || venue.indicative !== true) return;
@@ -679,7 +720,7 @@ export const venueRules: RuleSet = {
         const price = Math.round(booked.price * (1.15 + 0.1 * random.next()));
         booked.change = { kind, price };
         record("price_change", { contract: booked.id, price });
-        yield* party.write(booked.to, "price_change", { contract: booked.id, old_price: booked.price, price });
+        yield* party.write(booked.to, "price_change", awaiting(booked, { contract: booked.id, old_price: booked.price, price }));
         return;
       }
       const lost = booked.rooms.at(-1) as string;
@@ -690,8 +731,22 @@ export const venueRules: RuleSet = {
       const cut = roomPrice(lost);
       booked.change = { kind: "room_lost", room: lost, cut, ...(smaller === undefined ? {} : { smaller: smaller.id }) };
       record("room_lost", { contract: booked.id, room: lost });
-      const offer = smaller === undefined ? { offer: "price_cut" } : { offer: "smaller_room", smaller: smaller.id };
-      yield* party.write(booked.to, "room_lost", { contract: booked.id, room: lost, ...offer, cut });
+      const offer: Fields = smaller === undefined ? { offer: "price_cut" } : { offer: "smaller_room", smaller: smaller.id };
+      yield* party.write(booked.to, "room_lost", awaiting(booked, { contract: booked.id, room: lost, ...offer, cut }));
+    }
+
+    /**
+     * A change's fields as its mail gives them as it is sent, with answer_by 72 world hours after the mail is delivered;
+     * the change lapses at its first working moment after it (FR-CONGRESS-16).
+     */
+    function awaiting(booked: Contract, fields: Fields): () => Fields {
+      return () => {
+        const answerBy = party.now + (venue.mail_delivery_minutes?.[1] ?? 0) + CHANGE_ANSWER_MINUTES;
+        const mailed = { ...fields, answer_by: party.text(answerBy) };
+        Object.assign(booked.change as NonNullable<Contract["change"]>, { mailed, answerBy });
+        timers.push({ at: party.withinHours(answerBy), kind: "change_lapse", contract: booked.id });
+        return mailed;
+      };
     }
 
     /** The next other customer's enquiry, after an interval drawn from its sequence at enquiries_per_day. */
