@@ -123,7 +123,9 @@ const ANSWERS = ["accept", "accept_if", "decline", "withdraw"];
 
 /** A speaker's latest answer to the organiser's invitation for one session; an answer to a panel or another session does not count (FR-CONGRESS-10). */
 export function answerFor(state: Congress, speaker: string, session: number | string): string | undefined {
-  return messagesOf(state).filter(({ from, act, fields }) => from === speaker && ANSWERS.includes(act) && String(fields.session) === String(session)).at(-1)?.act;
+  // A withdrawal names its sessions (FR-CONGRESS-11).
+  const names = (fields: Message["fields"]) => (fields.sessions === undefined ? [String(fields.session)] : listOf(fields.sessions));
+  return messagesOf(state).filter(({ from, act, fields }) => from === speaker && ANSWERS.includes(act) && names(fields).includes(String(session))).at(-1)?.act;
 }
 
 /** The sessions the organiser invited a speaker to, by their numbers. */
