@@ -6,7 +6,7 @@ import type { Context } from "../support/context.ts";
 import * as congressParts from "../../src/scenarios/congress-parts.ts";
 import type { Congress } from "../../src/scenarios/congress.ts";
 import { change, congressChanges, hourMsOf, organiserTurns, setupOf } from "./congress.steps.ts";
-import { assertBetween, before, changePools, minutesOf, moneyLines, ranLines, sentBy, sentWith, untilTime } from "./congress-parties.steps.ts";
+import { assertBetween, before, changePools, fieldsOf, minutesOf, moneyLines, ranLines, sentBy, sentWith, untilTime } from "./congress-parties.steps.ts";
 import { CITY, V1 } from "./run-corrections.steps.ts";
 import { drawnVariant } from "./roles.steps.ts";
 import { organiserSummary } from "./services.steps.ts";
@@ -403,4 +403,81 @@ Then('the call failed with the outcome "invalid_arguments", saying the invoice w
   assert.equal(call.durationMs ?? 0, 0);
   assert.equal(moneyLines(this, "payment").filter((line) => line.from === ORGANISER).length, 0);
   assert.equal(organiserSummary(this).balance, 1500);
+});
+
+// Caterers' held orders.
+Given('"c1" confirmed the organiser\'s order for 40 people on "day 26"', function (this: Context) {
+  before(this, organiserTurns('call "send_mail" to "c1" with the act "order", counts "standard: 40", date "day 26" and venue "v1", then wait 1 world hour, then "check_time"', hourMsOf(this)));
+});
+
+Then('"c1" answered "order_refused" with the reason "order_held" and the counts "standard: 40", and the organiser\'s commitments with "c1" are unchanged', function (this: Context) {
+  const answers = sentBy(this, "c1").map((line) => [line.act, line.fields]);
+  assert.deepEqual(answers, [
+    ["order_confirmed", { total: 40, price: 1200 }],
+    ["order_refused", { reason: "order_held", counts: "standard: 40" }],
+  ]);
+  const commitments = moneyLines(this, "commitment").filter((line) => line.to === "c1");
+  assert.deepEqual(
+    commitments.map((line) => line.amount),
+    [1200],
+  );
+  assert.equal(moneyLines(this, "release").filter((line) => line.to === "c1").length, 0);
+});
+
+// Repeats.
+Given(
+  'the organiser\'s confirmed contract with "v1" has "hall-a" and "hall-b", whose rooms are indicative, and "v1" answered "confirmed" to the organiser\'s "change_booking" with rooms "hall-a, hall-b" and hours "08:00-18:00"',
+  function (this: Context) {
+    // "annex", a room of "v1" no booking has, seats "hall-b"'s audience.
+    changePools(this, (pool) => Object.assign(pool.venue[0], { indicative: true, rooms: [...(pool.venue[0].rooms as TomlTable[]), { id: "annex", seats: 50, equipment: [] }] }));
+    change(this, (configuration) => {
+      const city = parse(configuration.city as string);
+      const [v1] = city.venues as TomlTable[];
+      v1.rooms = [...(v1.rooms as TomlTable[]), { id: "annex", seats: 50 }];
+      city.passages = [...(city.passages as TomlTable[]), { between: ["v1-entrance", "annex"], length: 1, step_free: true }];
+      configuration.city = stringify(city);
+    });
+    before(this, [
+      ...booking(this, "v1", "hall-a, hall-b"),
+      ...organiserTurns('call "send_mail" to "v1" with the act "change_booking", rooms "hall-a, hall-b" and hours "08:00-18:00", then wait 1 world hour, then "check_time"', hourMsOf(this)),
+    ]);
+  },
+);
+
+Given('then "rooms_allocated" moved "hall-b" to "annex"', function (this: Context) {
+  change(this, (configuration) => ((configuration.perturbations as TomlTable).room_allocation = { at: "day 1 13:00" }));
+  untilTime(this, "day 1 14:00");
+  // The run ends 3 world hours after the repeat.
+  this.timeLimitMs = 8 * hourMsOf(this);
+});
+
+Given('the organiser\'s scripted turns call "send_mail" to "v1" with the same "change_booking" again, then end', function (this: Context) {
+  before(this, organiserTurns('call "send_mail" to "v1" with the act "change_booking", rooms "hall-a, hall-b" and hours "08:00-18:00", then wait 1 world hour, then "check_time"', hourMsOf(this)));
+});
+
+Then('"v1" answered "unavailable", not "already_sent"', function (this: Context) {
+  assert.equal(fieldsOf(sentWith(this, "v1", "rooms_allocated")).allocation, "hall-a -> hall-a; hall-b -> annex");
+  const after = sentBy(this, "v1").filter((line) => Number(line.atMs) > Number(sentWith(this, "v1", "rooms_allocated").atMs));
+  assert.deepEqual(
+    after.map((line) => line.act),
+    ["unavailable"],
+  );
+});
+
+// A speaker who falls ill.
+Given('"s1" accepted session 2 with fee 300, the commitment of 300 stands, and "s1" cancelled at the perturbation "early_cancel"', function (this: Context) {
+  before(this, [
+    ...organiserTurns('call "send_mail" to "s1" with the act "invite", session 2, time "11:00", fee 300 and travel_paid false, then wait 1 world hour, then "check_time"', hourMsOf(this)),
+    ...organiserTurns('call "send_mail" to "s1" with the act "confirm", time "11:00", room "hall-a", length 45 and travel "none", then wait 1 world hour, then "check_time"', hourMsOf(this)),
+  ]);
+  change(this, (configuration) => ((configuration.perturbations as TomlTable).early_cancel = { at: "day 1 12:00" }));
+});
+
+Then('the commitment of "s1"\'s fee is released, and the organiser\'s committed total fell by 300', function (this: Context) {
+  sentWith(this, "s1", "cancel");
+  const [fee] = moneyLines(this, "commitment").filter((line) => line.for === "fee s1");
+  assert.equal(fee?.amount, 300);
+  const released = moneyLines(this, "release").filter((line) => line.commitment === fee.commitment);
+  assert.equal(released.length, 1, "the fee's commitment was not released");
+  assert.equal(organiserSummary(this).committed, 0);
 });

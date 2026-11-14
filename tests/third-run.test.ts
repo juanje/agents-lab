@@ -7,8 +7,8 @@ import * as parts from "../src/scenarios/congress-parts.ts";
 import type { Congress } from "../src/scenarios/congress.ts";
 import { Random } from "../src/engine/random.ts";
 import { type Scenario, loadScenario } from "../src/engine/scenario.ts";
-import { catererRules, venueRules } from "../src/scenarios/congress-parties.ts";
-import { calls, conversation, drive, tools, venueChange } from "./fixtures/rules.ts";
+import { catererRules, speakerRules, venueRules } from "../src/scenarios/congress-parties.ts";
+import { calls, conversation, drive, notice, tools, venueChange } from "./fixtures/rules.ts";
 import { congressScenario } from "../src/scenarios/congress.ts";
 
 // FR-CONGRESS-13: the world's corrections from E1's third technical run.
@@ -252,5 +252,73 @@ describe("cancellations settle their money (FR-CONGRESS-13)", () => {
       ledgerWith("i-2", "deposit order c1", false),
     );
     expect(calls(steps, "void_invoice")).toEqual([{ invoice: "i-2" }]);
+  });
+});
+
+describe("a caterer's held order (FR-CONGRESS-13)", () => {
+  it("refuses an order from a customer that holds one with it for the date, giving the held order's counts", () => {
+    const caterer = { id: "c1", price_per_head: 30, diets: {}, minimum: 30, final_days: 7, deposit_share: 0.2, deposit_due_days: 3, cancellation: [{ share: 0.3 }], pick_up: 1, organiser: "organiser", event_day: 26 };
+    const { steps } = conversation(catererRules.start(caterer, new Random(1)), [
+      ["day 2 Tuesday 09:00", "From: organiser. Act: order. counts: standard: 40. date: day 26. venue: v1."],
+      ["day 2 Tuesday 10:00", "From: organiser. Act: order. counts: standard: 45. date: day 26. venue: v1."],
+    ]);
+    expect(calls(steps, "send_mail").map(({ act, fields }) => ({ act, fields }))).toEqual([
+      { act: "order_confirmed", fields: { total: 40, price: 1200 } },
+      { act: "order_refused", fields: { reason: "order_held", counts: "standard: 40" } },
+    ]);
+    expect(calls(steps, "commit")).toHaveLength(1);
+  });
+});
+
+describe("repeats answered already_sent only when nothing changed (FR-CONGRESS-13)", () => {
+  const venue = { id: "v1", rooms: [{ id: "hall-a", seats: 80 }, { id: "hall-b", seats: 40 }, { id: "annex", seats: 50 }], access_claim: "step-free", price: 2000, extras: {}, hold_days: 2, deposit_share: 0.25, deposit_due_days: 3, cancellation: [{ share: 0.5 }], indicative: true, pick_up: 1, organiser: "organiser", event_day: 26, floor_plan: [], perturbations: [{ name: "room_allocation", at: "day 1 12:00" }] };
+  const ask = "From: organiser. Act: ask_quote. date: day 26. attendance: 60.";
+  const answered = (steps: ReturnType<typeof drive>) => calls(steps, "send_mail").map(({ act }) => act);
+
+  it("handles a repeat afresh once any act reached the party since its earlier answer, from any sender", () => {
+    const { steps } = conversation(venueRules.start(venue, new Random(1)), [
+      ["day 1 Monday 10:01", ask],
+      ["day 1 Monday 10:30", "From: v9. Act: ask_quote. date: day 27. attendance: 20."],
+      ["day 1 Monday 11:01", ask],
+    ]);
+    expect(answered(steps)).toEqual(["quote", "quote", "quote"]);
+  });
+
+  it("handles a repeat afresh once its own state changed since its earlier answer, as by an allocation", () => {
+    const rules = venueRules.start(venue, new Random(1));
+    const change = "From: organiser. Act: change_booking. rooms: hall-a, hall-b. hours: 08:00-18:00.";
+    const first = conversation(rules, [
+      ["day 1 Monday 09:01", "From: organiser. Act: book. date: day 26. rooms: hall-a, hall-b. hours: 08:00-18:00."],
+      ["day 1 Monday 09:02", "From: organiser. Act: accept_contract. contract: v1-contract-1."],
+      ["day 1 Monday 09:03", change],
+    ]);
+    expect(answered(first.steps).at(-1)).toBe("contract_changed");
+    const allocated = drive(rules, tools(() => "", () => "day 1 Monday 12:00"), [[]], true);
+    expect(answered(allocated)).toEqual(["rooms_allocated"]);
+    const repeat = drive(rules, tools(() => change, () => "day 1 Monday 13:00"), [[notice]], true);
+    expect(answered(repeat)).toEqual(["unavailable"]);
+  });
+
+  it("still answers already_sent when nothing reached it and nothing of its own changed", () => {
+    const { steps } = conversation(venueRules.start(venue, new Random(1)), [
+      ["day 1 Monday 10:01", ask],
+      ["day 1 Monday 11:01", ask],
+    ]);
+    expect(answered(steps)).toEqual(["quote", "already_sent"]);
+  });
+});
+
+describe("a speaker who falls ill (FR-CONGRESS-13)", () => {
+  it("releases the commitment of its fee as it cancels", () => {
+    const params = { id: "s1", fee: 300, home: "local", available: true, acceptance: 1, condition: "fee", organiser: "organiser", event_day: 26 };
+    const rules = speakerRules.start(params, new Random(1));
+    conversation(rules, [
+      ["day 2 Tuesday 10:00", "From: organiser. Act: invite. session: 2. time: 11:00. fee: 300. travel_paid: false."],
+      ["day 2 Tuesday 11:00", "From: organiser. Act: confirm. time: 11:00. room: hall-a. length: 45. travel: none."],
+    ]);
+    const ledger = () => ({ commitments_recorded: [{ id: "k-1", with: "organiser", amount: 300, for: "fee s1" }] });
+    const steps = drive(rules, tools(() => "", () => "day 3 Wednesday 10:00", ledger), [[{ channel: "early_cancel", source: "illness", content: "You are ill." }]], true);
+    expect(calls(steps, "send_mail").map(({ act }) => act)).toEqual(["cancel"]);
+    expect(calls(steps, "release")).toEqual([{ commitment: "k-1" }]);
   });
 });
