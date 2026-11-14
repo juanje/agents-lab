@@ -119,6 +119,13 @@ When("the variant is drawn", function (this: Context) {
   loads.set(this, loadScenario(congressOf(setupOf(this)), this.seed));
 });
 
+/** The variant the scenario drew, as its variant line gives it. */
+export function drawnVariant(context: Context): Record<string, unknown> {
+  const loaded = loads.get(context);
+  assert.ok(loaded !== undefined, "the variant was not drawn");
+  return loaded.variant as Record<string, unknown>;
+}
+
 /** A chosen party's parameters, as the loaded congress gives them. */
 function paramsOf(context: Context, name: string): Record<string, unknown> {
   const participant = loads.get(context)?.participants?.find((each) => each.name === name);
