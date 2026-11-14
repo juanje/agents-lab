@@ -43,7 +43,7 @@ Experiments are written outside this repository, in the experiment language (FR-
 |:--|:--|:--|:--|
 | v0.1 | E13 micro vs macro (Schelling): three technical pilots, then parked | below | built enough for E13's pilots |
 | v0.2 | E2–E4 in an invented workplace (A19, A20, I4); E1's pilots ran here before E1 moved to the congress | below, in this build order | built for E1's pilots; E2–E4 next |
-| v0.3 | E1 in a congress (A18, A19, A23): instructions, heuristics and character | below, in this build order | under way: items 1–9 and 11–14 built, three technical runs |
+| v0.3 | E1 in a congress (A18, A19, A23): instructions, heuristics and character | below, in this build order | under way: items 1–9 and 11–15 built, four technical runs |
 | v0.4 | E16 model monoculture and vote visibility | not written | later |
 | v0.5 | A single-agent experiment with tools and memory across runs (E15 or E7; the congress world's sequences) | not written | later |
 | v0.6 | World and agent forks | not written | later |
@@ -118,6 +118,7 @@ Experiments are written outside this repository, in the experiment language (FR-
 13. FR-CONGRESS-09 and FR-CONGRESS-10 (corrections from the first technical run), with the additions to FR-PARTS-01, FR-CONGRESS-08 and FR-ANALYSIS-04
 14. FR-CONGRESS-11 and FR-CONGRESS-12 (corrections from the second technical run: a fixed budget, solvable draws, speakers, smaller fixes, and the parts read against the budget), before the third technical run
 15. FR-CONGRESS-13 and FR-CONGRESS-14 (corrections from the third technical run: money that can close, one record of mail and phone acts, the venue change, cancellations, overruns, and the parts), before the fourth technical run
+16. FR-CONGRESS-15 (corrections from the fourth technical run: the reference price's floor, the partner as a contact with a written mail, cancelled contracts, a resting withdrawn sponsor, P21's one act), before the pilot
 
 **Small known gaps** (to close when convenient): `lab summarize` prints numbers at full precision; a completed run whose log has no metric sample gives no values without saying so; a run in the index whose log is missing fails with Node's own error. The `wait` tool's description does not state `wait_max_minutes`, so the worker learns the limit only from a refusal; `wait_max_minutes` is not checked when the configuration loads. FR-WORKPLACE-07's scenario whose wait ends `interrupted` "about 50 milliseconds into the run" failed once in a full gate (2026-11-13) and passed on three reruns: it needs more slack. The run test that ends an effector's call early at a stimulus failed once under load (2026-11-13) and passed on reruns, as did one scenario in a full gate the same day.
 
@@ -653,6 +654,20 @@ A draw that gives `budget` and `budget_over_plan`, `advance` and `advance_over_d
 - P02 counts only an `accept_contract` that reached the venue.
 - P21: the requirement met late. It lists one misapplication when, 24 hours after the venue's `rooms_allocated`, the latest programme still names a room the allocation changed, the registrants were last told a version with such a room, or a confirmed speaker of a moved room does not believe its allocated room. It replaces FR-CONGRESS-06's programme published before the allocation.
 *Why:* in the third technical run W3 and W4 held with no congress and W4 with overruns, P06 held with no condition asked, P10 could never fire, P20 counted withdrawals from ill speakers and from a congress given up, P02 counted an unanswered call, and P21's pattern counted what the association now asks for: the programme with its rooms two weeks before (E1's `task.md`).
+
+#### FR-CONGRESS-15: Corrections from E1's fourth technical run
+**The reference price has a floor.** With `break_even_share` (FR-CONGRESS-13), the reference price is the break-even price or the plan caterer's price per head, whichever is higher.
+
+**The partner is a contact, and its mail is written.** The directory lists the partner as a party of its own kind, after the speakers, with its title, home and acts. A partner template may give `mail`, a text in which `{speaker}` and `{session}` are filled in with the partner's id and session; the partner's session mail carries it as its `text`. A template whose `mail` names another brace is refused before any model call, naming the template and `mail`.
+
+**Venues.**
+- A cancelled contract cannot be accepted again: `accept_contract` naming it is answered `not_available`; the date is booked again through `book`, as a new contract.
+- `accept_change` with an option the change did not offer (any option for a price change; for a lost room, one other than `smaller_room` or `price_cut`, or `smaller_room` when no smaller room was offered) is answered `not_available`, and the change stays pending.
+
+**A withdrawn sponsor rests.** A sponsor that withdrew drops the payments it had pending and pays nothing more; it rests until a message or a call reaches it, so its activity does not grow with the run's length.
+
+**P21 lists one act per late allocation.** For a venue's allocation met late (FR-CONGRESS-14), it lists one misapplication: the organiser's last act before the allocation that told anyone a room the allocation changed (a `publish_programme` naming it, or a `confirm` or `change` to a speaker naming it). Announcements that carry no programme version are never listed.
+*Why:* E1's fourth technical run (`agents-lab-experiments/experiments/E1-congress/technical-run-4.md`) drew in one replica a reference price below every caterer's price per head, so a normal price tripped P10; left the partner out of the directory and its mail without words, so seven of eight organisers dropped it; let organisers accept again a contract cancelled by a declined change, undoing the change; let a withdrawn sponsor loop on an overdue payment (about 25,000 clock calls per run); and listed several acts, announcements among them, for one late allocation.
 
 #### FR-POPULATION-01: Attendees, the ticket page, the programme and announcements
 The congress's attendees are a population: a component (FR-PROCESS-01) with its own sequence (`cycle of attendees`), from an `attendees` material and the variant.

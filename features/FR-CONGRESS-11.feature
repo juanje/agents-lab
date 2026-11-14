@@ -127,5 +127,5 @@ Feature: Corrections to the world from E1's second technical run
 
   Scenario: The directory groups the parties by kind and draws their order within each kind
     When two replicas run with the seeds 1 and 2
-    Then each directory lists each kind's acts once, then the venues, the speakers, the caterers, the sponsors and the agency in that order
+    Then each directory lists each kind's acts once, then the venues, the speakers, the partner, the caterers, the sponsors and the agency in that order
     And within each kind the parties are in an order drawn from the replica's seed
