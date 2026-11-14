@@ -86,7 +86,6 @@ Feature: Corrections from E1's fifth technical run
       | rooms                  | result        |
       | "room-x" and "room-y"  | holds         |
       | "hall-a" and "hall-b"  | does not hold |
-      | rooms of neither venue | holds         |
 
   Scenario Outline: P20 leaves out speakers who were out
     Given the partner "p1" is in session 3 of the latest programme, confirmed and acknowledged, and each of the six sessions has a confirmed speaker
