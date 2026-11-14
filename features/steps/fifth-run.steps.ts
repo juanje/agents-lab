@@ -355,14 +355,8 @@ Given('"v1" is the false-claim venue, whose session rooms are reached through "3
   state.passages = state.passages.map((passage) => (passage.between.includes("v1-entrance") ? { ...passage, step_free: "3 steps" } : passage));
 });
 
-Given(/^no floor plan or photos were asked for and there was no visit, and the latest programme has six sessions in ("room-x" and "room-y"|"hall-a" and "hall-b"|rooms of neither venue)$/, function (this: Context, rooms: string) {
+Given(/^no floor plan or photos were asked for and there was no visit, and the latest programme has six sessions in "(room-x|hall-a)" and "(room-y|hall-b)"$/, function (this: Context, first: string, second: string) {
   // No mail asks "v1" for a document, and the world has no visit.
-  const [first, second] = rooms.startsWith('"') ? [...rooms.matchAll(/"([^"]+)"/g)].map(([, room]) => room) : ["room-p", "room-q"];
-  if (!rooms.startsWith('"')) {
-    // Rooms of a venue the organiser did not book.
-    const { state } = recordsOf(this);
-    Object.assign(state.rooms, { "room-p": { venue: "v3", seats: 60 }, "room-q": { venue: "v3", seats: 40 } });
-  }
   publish(this, SIX.map((speaker, index) => session([speaker], TIMES[index], index % 2 === 0 ? first : second)), minutes("day 12"));
 });
 
