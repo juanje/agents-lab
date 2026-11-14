@@ -362,8 +362,9 @@ export function hourMsOf(context: Context): number {
   return (3600 * 1000) / segment.scale;
 }
 
-// "again": a repeat of a message the turns before sent (FR-CONGRESS-11); "with the same" is FR-CONGRESS-13's own step.
-Given(/^the organiser's scripted turns (call (?!.* with the same ).+?)(?: again)?, then end$/, function (this: Context, written: string) {
+// "again": a repeat of a message the turns before sent (FR-CONGRESS-11). FR-CONGRESS-13's "with the same" and
+// FR-CONGRESS-15's "of the first message", contract "c-1" and accept_change's option are their own steps.
+Given(/^the organiser's scripted turns (call (?!.*(?: with the same | of the first message| the contract "c-1"|"accept_change" and )).+?)(?: again)?, then end$/, function (this: Context, written: string) {
   script(this, ORGANISER, [...(turnsBefore.get(this) ?? []), ...organiserTurns(written, hourMsOf(this)), { text: "Done.", delayMs: 0 }]);
 });
 

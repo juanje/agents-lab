@@ -438,7 +438,7 @@ Then("registration counts as announced from that moment, and a promotion runs fo
 });
 
 // The directory.
-Then("each directory lists each kind's acts once, then the venues, the speakers, the caterers, the sponsors and the agency in that order", function (this: Context) {
+Then("each directory lists each kind's acts once, then the venues, the speakers, the partner, the caterers, the sponsors and the agency in that order", function (this: Context) {
   for (const seed of [1, 2]) {
     const lines = directoryOf(this, seed).split("\n");
     const acts = lines.filter((line) => / takes /.test(line));
@@ -446,7 +446,9 @@ Then("each directory lists each kind's acts once, then the venues, the speakers,
     assert.equal(lines.indexOf(acts.at(-1) as string) < lines.indexOf(parties[0]), true);
     assert.equal(new Set(acts.map((line) => line.split(" ")[1])).size, acts.length);
     const kinds = parties.map((line) => (/^- [\w-]+: (\w+)/.exec(line) as RegExpExecArray)[1]);
-    const order = ["venue", "speaker", "caterer", "sponsor", "agency"];
+    const order = ["venue", "speaker", "partner", "caterer", "sponsor", "agency"];
+    // The partner is listed (FR-CONGRESS-15).
+    assert.ok(kinds.includes("partner"), kinds.join(", "));
     assert.deepEqual(kinds, [...kinds].sort((one, other) => order.indexOf(one) - order.indexOf(other)), kinds.join(", "));
   }
 });
