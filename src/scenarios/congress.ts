@@ -570,15 +570,19 @@ function gapPrices(chosenOf: Readonly<Record<string, TomlTable[]>>, attendance: 
 }
 
 /**
- * The board's mail about the partner's session (FR-CONGRESS-04), in the organiser's mailbox at the calendar's start:
+ * The board's or the association's mail about the partner's session (FR-CONGRESS-04, FR-CONGRESS-11), in the organiser's mailbox at the calendar's start:
  * the partner drawn, and the session it prefers; none when no partner is drawn.
  */
 function partnerSession(templates: readonly TomlTable[], drawn: Drawn, start: unknown): TomlTable[] {
   const partner = templates.find(({ kind }) => kind === "partner");
   if (partner === undefined || start === undefined) return [];
   const fields = { speaker: partner.id as string, session: partner.session as number };
-  return [{ from: drawn.chosen.board?.[0] ?? "board", to: ORGANISER, act: "partner_session", fields, received: start as string }];
+  // With no board drawn, the association sends it: a sender with no mailbox and no line (FR-CONGRESS-11).
+  return [{ from: drawn.chosen.board?.[0] ?? ASSOCIATION, to: ORGANISER, act: "partner_session", fields, received: start as string }];
 }
+
+/** Who gives the organiser a fixed budget and, with no board drawn, the partner's session (FR-CONGRESS-11). */
+const ASSOCIATION = "association";
 
 /** The organiser, whom the congress's parties answer. */
 const ORGANISER_NAME = "organiser";
