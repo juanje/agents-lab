@@ -64,4 +64,4 @@ Feature: The congress ready for an experiment
     When the run ends
     Then the organiser's system prompt gives the speakers' acts once
     And the lines "ana-ruiz", a speaker, "Soil and water", from "north"; "ben-ott", a speaker, "Village shops", local; and "library-cafe", a caterer, in-house for "old-library"
-    And no line for "lena-ford"
+    And the line "lena-ford", a partner, after "ben-ott" and before "library-cafe"
