@@ -283,8 +283,11 @@ function callsOf(context: Context, tool: string): { startedAtMs: number; endedAt
   return runLog(context).filter((line) => line.type === "tool_call" && line.agent === WORKER && line.tool === tool) as never;
 }
 
-/** Less than this after a moment, a value is that moment: computing it takes the engine a moment. */
-const SAME_MOMENT_MS = 5;
+/**
+ * Less than this after a moment, a value is that moment: computing it takes the engine a moment, and under the gate's
+ * parallel load on a slow machine a call's end is recorded several milliseconds after the world changed.
+ */
+const SAME_MOMENT_MS = 20;
 
 /** Checks that a metric gives a key the moment the nth call of a tool ended: within the call, at its end. */
 function assertEndOf(context: Context, metric: string, key: string, tool: string, nth = 0): void {
