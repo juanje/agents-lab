@@ -1288,10 +1288,9 @@ const wait: Effector<Congress> = {
 /** World minutes since day 1's midnight of a world time. */
 const minutesOfWorld = ({ day, seconds }: WorldTime) => (day - 1) * 1440 + seconds / 60;
 
-/** Whether a speaker has cancelled, by mail or by a call to the organiser, as the world's mail and phone hold it. */
+/** Whether a speaker has cancelled, by mail or on an answered call to the organiser, as the record of acts gives it (FR-CONGRESS-13). */
 function hasCancelled(state: Congress, speaker: string): boolean {
-  const mailed = [...(state.mail.mailboxes[ORGANISER] ?? []), ...state.mail.inTransit].some(({ from, act }) => from === speaker && act === "cancel");
-  return mailed || state.phone.calls.some(({ from, to, act }) => from === speaker && to === ORGANISER && act === "cancel");
+  return recordedActs(state).some(({ from, to, act }) => from === speaker && to === ORGANISER && act === "cancel");
 }
 
 /**

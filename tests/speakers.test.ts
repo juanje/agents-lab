@@ -399,7 +399,8 @@ describe("the cancellations, perturbations that find their speaker in the world'
     expect(fired(cycle, world({ ...both, organiser: [...acknowledged, s1Cancelled] }), undefined, 0, at(23, "10:00"))).toEqual({ kind: "deliver", agent: "s4", channel: "late_cancel", held: false });
 
     const called = late.cycle(new Random(3));
-    const s4Called = { id: "c-1", from: "s4", to: "organiser", act: "cancel", fields: {}, status: "ended" };
+    // An answered call: only an answered call passes its act (FR-CONGRESS-13).
+    const s4Called = { id: "c-1", from: "s4", to: "organiser", act: "cancel", fields: {}, status: "ended", outcome: "answered", answer: { act: "noted", fields: {} }, endedAt: at(22, "10:00") };
     expect(called.next(world({ ...both, organiser: [...acknowledged, s1Cancelled] }, [s4Called]), undefined, 0, at(23, "10:00"))).toEqual({ kind: "end" });
   });
 
