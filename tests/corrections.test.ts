@@ -91,7 +91,8 @@ describe("a venue's catering rule, rooms and lost rooms (FR-CONGRESS-07)", () =>
       return { changed: calls(changed, "send_mail"), chosen };
     };
     const smaller = lost("smaller_room");
-    expect(smaller.changed).toEqual([{ to: "organiser", act: "room_lost", fields: { contract: "v1-contract-1", room: "room-b", offer: "smaller_room", smaller: "room-c", cut: 300 } }]);
+    // With answer_by, 72 world hours after the mail is delivered, here at once (FR-CONGRESS-16).
+    expect(smaller.changed).toEqual([{ to: "organiser", act: "room_lost", fields: { contract: "v1-contract-1", room: "room-b", offer: "smaller_room", smaller: "room-c", cut: 300, answer_by: "day 4 Thursday 12:00" } }]);
     expect(calls(smaller.chosen, "send_mail")).toEqual([{ to: "organiser", act: "confirmed", fields: { contract: "v1-contract-1", price: 2000, rooms: "main-hall, room-c" } }]);
     const cut = lost("price_cut");
     expect(calls(cut.chosen, "send_mail")).toEqual([{ to: "organiser", act: "confirmed", fields: { contract: "v1-contract-1", price: 1700, rooms: "main-hall" } }]);
@@ -153,12 +154,14 @@ describe("a venue's bookings and lost rooms (FR-CONGRESS-09)", () => {
     // A booking with one room has its price raised instead (FR-CONGRESS-11).
     expect(losing("main-hall").changed.map(({ act }) => act)).toEqual(["price_change"]);
 
+    // The change answered first: a pending change holds the booking (FR-CONGRESS-16).
     const { changed, later } = losing("main-hall, room-b", [
+      ["day 1 Monday 12:30", "From: organiser. Act: accept_change. option: price_cut."],
       ["day 1 Monday 13:00", "From: organiser. Act: change_booking. rooms: main-hall. hours: 08:00-18:00."],
       ["day 1 Monday 14:00", "From: organiser. Act: change_booking. rooms: main-hall, room-b. hours: 08:00-18:00."],
     ]);
     expect(changed).toMatchObject([{ act: "room_lost", fields: { room: "room-b", cut: 500 } }]);
-    expect(later.map(({ act }) => act)).toEqual(["contract_changed", "unavailable"]);
+    expect(later.map(({ act }) => act)).toEqual(["confirmed", "contract_changed", "unavailable"]);
   });
 });
 

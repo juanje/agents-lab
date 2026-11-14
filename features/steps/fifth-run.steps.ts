@@ -176,8 +176,10 @@ Then('the "price_change" mail gave "answer_by" "day 11 10:01"', function (this: 
   const announced = sentWith(this, "v1", "price_change");
   assertBetween(announced, "day 8 10:00", "day 8 10:00", LATE);
   const answerBy = minutesOf(String(fieldsOf(announced).answer_by));
-  // 72 world hours after the mail is delivered, a world minute after it was sent, to the minute it was sent in.
-  assert.ok(Math.abs(answerBy - (minutesOfWorld(announced.worldTime) + 1 + 72 * 60)) <= 1, String(fieldsOf(announced).answer_by));
+  // 72 world hours after the mail is delivered, a world minute after it was sent: from the venue's clock as it sent it,
+  // which the send itself may pass by a few world minutes.
+  const delivered = minutesOfWorld(announced.worldTime) + 1;
+  assert.ok(answerBy <= delivered + 72 * 60 && answerBy >= delivered + 72 * 60 - LATE, `${String(fieldsOf(announced).answer_by)}, delivered at ${delivered}`);
   assert.ok(answerBy >= minutesOf("day 11 10:01") && answerBy <= minutesOf("day 11 10:01") + LATE, String(fieldsOf(announced).answer_by));
 });
 
