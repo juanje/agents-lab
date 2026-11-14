@@ -715,14 +715,16 @@ function cheapestPlan(chosenOf: Readonly<Record<string, TomlTable[]>>, target: n
 
 /**
  * The board's or the association's mail about the partner's session (FR-CONGRESS-04, FR-CONGRESS-11), in the organiser's mailbox at the calendar's start:
- * the partner drawn, and the session it prefers; none when no partner is drawn.
+ * the partner drawn, and the session it prefers, with its template's mail as text (FR-CONGRESS-15); none when no partner is drawn.
  */
 function partnerSession(templates: readonly TomlTable[], drawn: Drawn, start: unknown): TomlTable[] {
   const partner = templates.find(({ kind }) => kind === "partner");
   if (partner === undefined || start === undefined) return [];
   const fields = { speaker: partner.id as string, session: partner.session as number };
+  // Its text is the template's mail, {speaker} and {session} filled in (FR-CONGRESS-15).
+  const text = typeof partner.mail === "string" ? partner.mail.replace(/\{(speaker|session)\}/g, (_written, name: "speaker" | "session") => String(fields[name])) : undefined;
   // With no board drawn, the association sends it: a sender with no mailbox and no line (FR-CONGRESS-11).
-  return [{ from: drawn.chosen.board?.[0] ?? ASSOCIATION, to: ORGANISER, act: "partner_session", fields, received: start as string }];
+  return [{ from: drawn.chosen.board?.[0] ?? ASSOCIATION, to: ORGANISER, act: "partner_session", fields, ...(text === undefined ? {} : { text }), received: start as string }];
 }
 
 /** Who gives the organiser a fixed budget and, with no board drawn, the partner's session (FR-CONGRESS-11). */
@@ -766,7 +768,7 @@ function assertParties(kinds: Readonly<Record<string, TomlTable[]>>, settings: T
 /**
  * Refuses, naming it, a speaker template the speaker rule set cannot follow (FR-CONGRESS-04): an acceptance or pick_up
  * outside 0 to 1, a draw outside 0 to 3, a negative fee, a condition or constraint it does not know. A partner has no
- * acceptance of its own.
+ * acceptance of its own, and its mail may name only {speaker} and {session} (FR-CONGRESS-15).
  */
 function assertSpeaker(template: TomlTable, rules: "speaker" | "partner", naming: (key: string, why: string) => Error): void {
   if ((rules === "speaker" || template.acceptance !== undefined) && !isShare(template.acceptance)) throw naming("acceptance", "it is not a probability from 0 to 1");
@@ -775,7 +777,15 @@ function assertSpeaker(template: TomlTable, rules: "speaker" | "partner", naming
   if (template.fee !== undefined && !(typeof template.fee === "number" && template.fee >= 0)) throw naming("fee", "it is not an amount of at least 0");
   if (template.condition !== undefined && !(SPEAKER_CONDITIONS as readonly unknown[]).includes(template.condition)) throw naming("condition", `it is none of ${SPEAKER_CONDITIONS.join(", ")}`);
   if (template.constraint !== undefined && !(SPEAKER_CONSTRAINTS as readonly unknown[]).includes(template.constraint)) throw naming("constraint", `it is none of ${SPEAKER_CONSTRAINTS.join(", ")}`);
+  if (rules === "partner" && template.mail !== undefined) {
+    if (typeof template.mail !== "string") throw naming("mail", "it is not a text");
+    const other = [...template.mail.matchAll(/\{(\w*)\}/g)].find(([, name]) => !PARTNER_MAIL_NAMES.includes(name));
+    if (other !== undefined) throw naming("mail", `it names ${other[0]}, which is none of {${PARTNER_MAIL_NAMES.join("}, {")}}`);
+  }
 }
+
+/** What a partner's mail may name, in braces (FR-CONGRESS-15). */
+const PARTNER_MAIL_NAMES = ["speaker", "session"];
 
 /** Whether a value is an amount of at least 0. */
 const isAmount = (value: unknown) => typeof value === "number" && value >= 0;
