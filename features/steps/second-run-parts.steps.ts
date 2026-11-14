@@ -226,6 +226,8 @@ Given(
     state.passages = [...state.passages, { between: ["foyer", "toilets"], length: 1, step_free: toilets.startsWith("reached") ? "3 steps" : true }, { between: ["foyer", "catering-area"], length: 1, step_free: true }];
     booked(this, "main-hall");
     publish(this, [session(["s1"], "10:00")], minutes("day 12"));
+    // The acceptance reached the venue (FR-CONGRESS-14).
+    mail(this, "organiser", "v1", "accept_contract", { contract: "v1-contract-1" }, minutes("day 3"));
     act(this, "send_mail", { to: "v1", act: "accept_contract", fields: { contract: "v1-contract-1" } }, minutes("day 3"));
   },
 );

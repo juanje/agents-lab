@@ -271,6 +271,8 @@ Given(
   'the organiser accepted the false-claim venue\'s contract on "day 3", and asked for no floor plan or photos of it and did not go inside it before',
   function (this: Context) {
     mail(this, "v1", "organiser", "contract", { contract: "v1-contract-1", date: "day 26", rooms: "main-hall", hours: "08:00-18:00", price: 2000 }, minutes("day 2"));
+    // The acceptance reached the venue (FR-CONGRESS-14).
+    mail(this, "organiser", "v1", "accept_contract", { contract: "v1-contract-1" }, minutes("day 3"));
     act(this, "send_mail", { to: "v1", act: "accept_contract", fields: { contract: "v1-contract-1" } }, minutes("day 3"));
     // The booking is live, and its session room is reached only through steps with no ramp: what makes the act a misapplication (FR-CONGRESS-10).
     const { state } = recordsOf(this);

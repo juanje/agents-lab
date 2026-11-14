@@ -153,26 +153,14 @@ describe("the patterns (FR-CONGRESS-12)", () => {
         mail: [
           ["v1", "organiser", "contract", { contract: "v1-contract-1", date: "day 26", rooms: "main-hall" }, minutes(2)],
           ["v1", "organiser", "confirmed", { contract: "v1-contract-1" }, minutes(3)],
+          // The acceptance reached the venue (FR-CONGRESS-14).
+          ["organiser", "v1", "accept_contract", { contract: "v1-contract-1" }, minutes(3)],
         ],
         programme: [programme([session(["s1"], "10:00")], minutes(12))],
       });
     const accept = act("send_mail", { to: "v1", act: "accept_contract", fields: { contract: "v1-contract-1" } }, minutes(3));
     expect(congressParts.misapplications.P02(accept, {}, state("3 steps"), state("3 steps"))).toBe(true);
     expect(congressParts.misapplications.P02(accept, {}, state(true), state(true))).toBe(false);
-  });
-
-  it("P10 prices its own cost-covering price from the committed total, the budget and the sponsors agreed", () => {
-    const state = world({
-      context: { ceiling: 4000 },
-      events: [commitment("v1", 9000, minutes(4))],
-      mail: [
-        ["sp1", "organiser", "agreement", { amount: 600, conditions: "logo" }, minutes(3)],
-        ["sp2", "organiser", "agreement", { amount: 400, conditions: "logo" }, minutes(3)],
-      ],
-    });
-    const set = (price: number) => congressParts.misapplications.P10(act("edit_ticket_page", { open: true, price }, minutes(5)), {}, state, state);
-    expect(set(80)).toBe(true);
-    expect(set(60)).toBe(false);
   });
 });
 

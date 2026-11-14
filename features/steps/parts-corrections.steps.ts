@@ -155,6 +155,8 @@ Given(
   'the board\'s partner mail was in the inbox, the organiser invited first choices for sessions 1 to 6 by "day 2", re-invited 3 speakers after declines, and withdrew "s6" after it accepted, twice',
   function (this: Context) {
     mail(this, "board", "organiser", "partner_session", { speaker: "p1", session: 3 }, minutes("day 1 09:00"));
+    // A congress with a live booking, from whose withdrawals P20 counts (FR-CONGRESS-14).
+    booked(this, "main-hall");
     const invite = (speaker: string, sessionNumber: number, at: number) => {
       const fields = { session: sessionNumber, time: TIMES[sessionNumber - 1], fee: 0, travel_paid: false };
       mail(this, "organiser", speaker, "invite", fields, at);

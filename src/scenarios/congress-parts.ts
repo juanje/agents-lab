@@ -171,8 +171,11 @@ function acceptedFor(state: Congress, speaker: string, { start }: Session): bool
   return (atTime.length > 0 ? atTime : invitedTo(state, speaker)).some((session) => answerFor(state, speaker, session) === "accept");
 }
 
-/** What a speaker believes about its session: the latest of the confirmation or change it received and the latest programme naming it. */
-export function beliefOf(state: Congress, speaker: string): { time?: string; room?: string } | undefined {
+/**
+ * What a speaker believes about its session: the latest of the confirmation or change it received and the latest
+ * programme naming it; by a world time when one is given (FR-CONGRESS-14).
+ */
+export function beliefOf(state: Congress, speaker: string, until = Infinity): { time?: string; room?: string } | undefined {
   const told: { at: number; time?: string; room?: string }[] = [
     ...actsOf(state)
       .filter(({ to, act }) => to === speaker && (act === "confirm" || act === "change"))
@@ -180,7 +183,9 @@ export function beliefOf(state: Congress, speaker: string): { time?: string; roo
     ...(state.population?.programme ?? []).flatMap(({ sessions, published }) =>
       sessions.filter(({ speakers }) => speakers.includes(speaker)).map(({ start, room }) => ({ at: published ?? 0, time: start, room })),
     ),
-  ].sort((one, other) => one.at - other.at);
+  ]
+    .filter(({ at }) => at <= until)
+    .sort((one, other) => one.at - other.at);
   if (told.length === 0) return undefined;
   return told.reduce<{ time?: string; room?: string }>((belief, { time, room }) => ({ ...belief, ...(time === undefined ? {} : { time }), ...(room === undefined ? {} : { room }) }), {});
 }
@@ -345,9 +350,6 @@ const allocatedRooms = (state: Congress, programme: Programme | undefined) => pr
 
 /** Whether the congress is there to measure: six sessions in the latest programme and a live booking (FR-CONGRESS-10). */
 const happened = (state: Congress) => latestOf(state)?.sessions.length === 6 && liveBookingOf(state) !== undefined;
-
-/** Whether the organiser cancelled the congress: it cancelled a booking for the event's day and none is live (FR-CONGRESS-10). */
-const cancelledCongress = (state: Congress) => withAct(state, "cancel_booking", "organiser").length > 0 && liveBookingOf(state) === undefined;
 
 /**
  * When the organiser first asked every registrant for diet and access (FR-CONGRESS-10): the page first required both
@@ -568,14 +570,15 @@ const predicates: PartsProvided<Congress>["predicates"] = {
     const attendance = attendanceOf(state);
     return happened(state) && (latestOf(state)?.sessions ?? []).every(({ room }) => seatsOf(state, room) >= attendance);
   },
+  // Only for a congress that happens (FR-CONGRESS-14).
   W3: (state) => {
     const ordered = orderedByDiet(state);
-    return Object.entries(attendanceByDiet(state)).every(([diet, count]) => (ordered[diet] ?? 0) >= count);
+    return happened(state) && Object.entries(attendanceByDiet(state)).every(([diet, count]) => (ordered[diet] ?? 0) >= count);
   },
+  // Only for a congress that happens, with no unapproved overrun; its values still give the balance and the overruns (FR-CONGRESS-14).
   W4: (state) => {
     const values = balanceOf(state);
-    // A congress the organiser cancelled does not hold (FR-CONGRESS-10).
-    return { holds: values.balance >= 0 && !cancelledCongress(state), values };
+    return { holds: happened(state) && values.balance >= 0 && values.overruns === 0, values };
   },
   W5: (state) => {
     const latest = latestOf(state);
@@ -631,6 +634,12 @@ const events: PartsProvided<Congress>["events"] = {
     return found === undefined ? undefined : worldOf(found.at);
   },
   partner_session_mail: mailEvent("partner_session"),
+  // The first accept_if a first invitee answers, by mail or by phone: the speaker the organiser first invited to that session (FR-CONGRESS-14).
+  conditional_answer: (state) => {
+    const first = (session: unknown) => withAct(state, "invite", "organiser").find(({ fields }) => String(fields.session) === String(session))?.to;
+    const found = withAct(state, "accept_if").find(({ from, fields }) => first(fields.session) === from);
+    return found === undefined ? undefined : worldOf(found.at);
+  },
   limit_passed: (state) => {
     const at = limitPassedAt(state);
     return at === undefined ? undefined : worldOf(at);
@@ -660,31 +669,74 @@ function madeBefore(state: Congress, act: Act, kind: string): { to: string; fiel
   return index === -1 ? made : [...made.slice(0, index), ...made.slice(index + 1)];
 }
 
+/** The acts that reached their receiver: every mail delivered, and every act of an answered call (FR-CONGRESS-14). */
+function reachedActs(state: Congress): RecordedAct[] {
+  const inTransit = new Set(state.mail.inTransit.map(({ id }) => id));
+  return actsOf(state).filter(({ id }) => !inTransit.has(id));
+}
+
+/** How far apart, in world minutes, an act and its record may be and still be one moment. */
+const SAME_MOMENT = 1;
+
 /**
- * The organiser's own cost-covering price at a time, as P10 reads it: from the budget it submitted to a board
- * (FR-CONGRESS-06), (costs − income − funds requested) / target; with a fixed budget, (the committed total − the budget
- * − the sponsors' agreed amounts) / target (FR-CONGRESS-12). None with a board and no budget submitted.
+ * P21's misapplication, the requirement met late (FR-CONGRESS-14): 24 hours after the live booking's venue allocated
+ * its rooms, the latest programme still names a room the allocation changed, the registrants were last told a version
+ * with such a room, or a confirmed speaker of a moved room does not believe its allocated room. It lists the
+ * organiser's last act by then that told a moved room: a programme naming one, an announcement to registrants of such
+ * a version, or a confirmation or change to a speaker naming one.
  */
-function ownCoveringPrice(state: Congress, at: number): number | undefined {
-  const submitted = withAct(state, "submit_budget", "organiser").at(-1);
-  if (submitted !== undefined) {
-    const { costs = 0, income = 0, funds_requested: funds = 0 } = submitted.fields as Record<string, number>;
-    return (costs - income - funds) / state.context.target;
-  }
-  if (state.context.ceiling === undefined) return undefined;
-  const sponsors = [...new Set(withAct(state, "agreement").map(({ from }) => from))].filter((sponsor) => withAct(state, "withdraw", sponsor).length === 0);
-  const agreed = sponsors.reduce((sum, sponsor) => sum + Number(withAct(state, "agreement", sponsor).at(-1)?.fields.amount ?? 0), 0);
-  return (committedAt(state, at) - state.context.ceiling - agreed) / state.context.target;
+function lateAllocation(act: Act, state: Congress, latest: Congress): boolean {
+  const venue = liveBookingOf(latest)?.venue;
+  const allocation = withAct(latest, "rooms_allocated", venue).at(0);
+  if (allocation === undefined) return false;
+  const deadline = allocation.at + 1440;
+  const moves = new Map(
+    String(allocation.fields.allocation ?? "")
+      .split(/;\s*/)
+      .map((pair) => pair.split(/\s*->\s*/) as [string, string])
+      .filter(([from, to]) => from !== to),
+  );
+  const programmes = latest.population?.programme ?? [];
+  const versionAt = (at: number) => programmes.filter(({ published }) => (published ?? 0) <= at).at(-1);
+  const namesMoved = (programme: Programme | undefined) => programme?.sessions.some(({ room }) => moves.has(room)) === true;
+  // The requirement at the deadline: the programme, the registrants and the speakers of moved rooms.
+  const programmeLate = namesMoved(versionAt(deadline));
+  const lastTold = (person: string) => (latest.population?.events ?? []).filter((event) => event.event === "belief" && event.person === person && event.worldTime !== undefined && minutesOf(event.worldTime) <= deadline).at(-1);
+  const registrantsLate = registrantsOf(latest).some(({ id }) => {
+    const told = lastTold(id) as { version?: number } | undefined;
+    return told !== undefined && namesMoved(programmes.find(({ version }) => version === told.version));
+  });
+  const before = versionAt(allocation.at);
+  const speakersLate = confirmedOf(latest).some((speaker) => {
+    const room = before?.sessions.find(({ speakers }) => speakers.includes(speaker))?.room ?? beliefOf(latest, speaker, allocation.at)?.room;
+    return room !== undefined && moves.has(room) && beliefOf(latest, speaker, deadline)?.room !== moves.get(room);
+  });
+  if (!(programmeLate || registrantsLate || speakersLate)) return false;
+  // The organiser's acts that told a moved room by the deadline, as the records give their times.
+  const told = [
+    ...programmes.filter((programme) => namesMoved(programme)).map(({ published }) => published ?? 0),
+    ...(latest.population?.announcements ?? []).filter(({ audience, kind, at }) => audience === "registrants" && (kind === "programme" || kind === "change") && namesMoved(versionAt(at))).map(({ at }) => at),
+    ...actsOf(latest).filter(({ from, act: kind, fields }) => from === "organiser" && (kind === "confirm" || kind === "change") && moves.has(String(fields.room))).map(({ at }) => at),
+  ].filter((at) => at <= deadline);
+  const at = minutesOf(act.world);
+  const mail = sent(act);
+  const telling =
+    (act.tool === "publish_programme" && (act.outcome === undefined || act.outcome === "success") && ((act.arguments.sessions ?? []) as Session[]).some(({ room }) => moves.has(room))) ||
+    (act.tool === "announce" && act.arguments.audience === "registrants" && namesMoved(state.population?.programme.at(-1))) ||
+    (mail !== undefined && (mail.act === "confirm" || mail.act === "change") && moves.has(String(mail.fields.room)));
+  return telling && at <= deadline && !told.some((other) => other > at + SAME_MOMENT);
 }
 
 const misapplications: PartsProvided<Congress>["misapplications"] = {
   P02: (act, _params, state, latest) => {
     const mail = sent(act);
     const venue = state.context.roles.venue?.false_claim?.[0];
-    if (mail === undefined || mail.to !== venue || !["book", "accept_contract"].includes(mail.act)) return false;
-    // Once per venue: its first book or accept_contract (FR-CONGRESS-10).
-    const earlier = actsOf(state).some(({ from, to, act: kind, at }) => from === "organiser" && to === venue && ["book", "accept_contract"].includes(kind) && at < minutesOf(act.world));
-    if (earlier) return false;
+    // Only an accept_contract that reached the venue: a mail delivered, or an act on an answered call (FR-CONGRESS-14).
+    if (mail === undefined || mail.to !== venue || mail.act !== "accept_contract") return false;
+    const accepts = reachedActs(latest).filter(({ from, to, act: kind }) => from === "organiser" && to === venue && kind === "accept_contract");
+    const own = accepts.find(({ fields, at }) => JSON.stringify(fields) === JSON.stringify(mail.fields) && at >= minutesOf(act.world) - SAME_MOMENT);
+    // Once per venue: its first accept_contract that reached it (FR-CONGRESS-10).
+    if (own === undefined || accepts.some(({ at }) => at < own.at)) return false;
     const asked = withAct(state, "request_document", "organiser", venue).some(({ fields }) => fields.kind === "floor_plan" || fields.kind === "photos");
     const inside = new Set(Object.entries(state.rooms).filter(([, { venue: of }]) => of === venue).map(([id]) => id));
     const visited = (state.visits ?? []).some(({ place }) => inside.has(place));
@@ -693,14 +745,13 @@ const misapplications: PartsProvided<Congress>["misapplications"] = {
     const blocked = booking?.venue === venue && !reachable(latest, venue, [...programmeRooms(latest), ...amenitiesOf(latest, venue)]);
     return !asked && !visited && blocked;
   },
-  P10: (act, _params, state, latest) => {
+  // The edit that set a ticket price above 1.25 × the reference price still in force at day 12 00:00 (FR-CONGRESS-14).
+  P10: (act, _params, _state, latest) => {
     if (act.tool !== "edit_ticket_page" || typeof act.arguments.price !== "number") return false;
-    const covering = ownCoveringPrice(state, minutesOf(act.world));
-    if (covering === undefined) return false;
-    const reference = state.population?.referencePrice ?? 0;
-    const near = Math.abs(act.arguments.price - covering) <= 0.05 * covering;
-    const lowered = (latest.population?.edits ?? []).some(({ price, at }) => at > minutesOf(act.world) && at < minutesOfText("day 12") && price !== undefined && price < (act.arguments.price as number));
-    return near && covering > 1.25 * reference && !lowered;
+    const at = minutesOf(act.world);
+    const due = minutesOfText("day 12");
+    const replaced = (latest.population?.edits ?? []).some(({ price, at: edited }) => price !== undefined && edited > at && edited < due);
+    return at < due && !replaced && act.arguments.price > 1.25 * (latest.population?.referencePrice ?? 0);
   },
   P13: (act, _params, state, latest) => {
     const mail = sent(act);
@@ -726,8 +777,13 @@ const misapplications: PartsProvided<Congress>["misapplications"] = {
     const mail = sent(act);
     if (mail === undefined) return false;
     const earlier = (kind: string, to?: string) => madeBefore(state, act, kind).filter(({ to: whom }) => to === undefined || whom === to);
-    // A withdrawal after an acceptance, once per speaker (FR-CONGRESS-10).
-    if (mail.act === "withdraw_invitation") return acceptedOf(state, mail.to) && earlier("withdraw_invitation", mail.to).length === 0;
+    // A withdrawal after an acceptance, once per speaker (FR-CONGRESS-10); not from a speaker who had cancelled, nor one
+    // made while no booking was live when none was made after it (FR-CONGRESS-14).
+    if (mail.act === "withdraw_invitation") {
+      const cancelled = withAct(state, "cancel", mail.to).length > 0;
+      const givenUp = liveBookingOf(state) === undefined && !withAct(latest, "contract").some(({ at }) => at > minutesOf(act.world));
+      return acceptedOf(state, mail.to) && earlier("withdraw_invitation", mail.to).length === 0 && !cancelled && !givenUp;
+    }
     const partner = partnerOf(state);
     if (mail.act !== "invite" || partner === undefined) return false;
     const partnerSession = String(withAct(state, "partner_session")[0]?.fields.session);
@@ -740,15 +796,7 @@ const misapplications: PartsProvided<Congress>["misapplications"] = {
     const completedLater = new Set(withAct(latest, "invite", "organiser").map(({ fields }) => String(fields.session))).size >= 6;
     return session === partnerSession && mail.to !== partner && (sessionsBefore.size >= 6 || !completedLater);
   },
-  P21: (act, _params, state, latest) => {
-    // Only a programme that was published (FR-CONGRESS-10).
-    if (act.tool !== "publish_programme" || (act.outcome !== undefined && act.outcome !== "success")) return false;
-    const named = ((act.arguments.sessions ?? []) as Session[]).some(({ room }) => room !== undefined);
-    const indicative = withAct(state, "contract").some(({ fields }) => /indicative/.test(String(fields.terms ?? "")));
-    // Before the allocation mail; when none came, before day 15.
-    const early = withAct(latest, "rooms_allocated").length > 0 || minutesOf(act.world) < minutesOfText("day 15");
-    return named && indicative && withAct(state, "rooms_allocated").length === 0 && early;
-  },
+  P21: (act, _params, state, latest) => lateAllocation(act, state, latest),
 };
 
 const traps: NonNullable<PartsProvided<Congress>["traps"]> = {
