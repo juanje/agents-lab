@@ -344,7 +344,7 @@ describe("a withdrawal's sessions, as the parts read them (FR-CONGRESS-11)", () 
   it("counts a withdraw for each session it names, and for no other", () => {
     const received = (at: number) => ({ day: 1, weekday: "Monday" as const, seconds: at * 60 });
     const message = (act: string, fields: Record<string, unknown>, at: number) => ({ id: `m-${at}`, from: "s1", to: "organiser", act, fields, subject: act, received: received(at), read: true });
-    const state = { mail: { mailboxes: { organiser: [message("accept", { session: 2 }, 1), message("accept_if", { session: 5, condition: "fee" }, 2), message("withdraw", { sessions: "5", condition: "fee" }, 3)] }, inTransit: [] } } as never;
+    const state = { mail: { mailboxes: { organiser: [message("accept", { session: 2 }, 1), message("accept_if", { session: 5, condition: "fee" }, 2), message("withdraw", { sessions: "5", condition: "fee" }, 3)] }, inTransit: [] }, phone: { calls: [] } } as never;
     expect([answerFor(state, "s1", 2), answerFor(state, "s1", 5)]).toEqual(["accept", "withdraw"]);
   });
 });

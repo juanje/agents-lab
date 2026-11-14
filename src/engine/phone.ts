@@ -89,6 +89,8 @@ export interface PhoneCall {
   answer?: { act: string; fields: Fields; text?: string };
   /** How it ended, once it has. */
   outcome?: "answered" | "no_answer" | "busy";
+  /** The world's time an answered call ended, for a run with a calendar: when its acts have passed (FR-CONGRESS-13). */
+  endedAt?: WorldTime;
 }
 
 /** The phone as the world keeps it: every call of the run, in the order placed. */
@@ -272,7 +274,7 @@ export function phoneTools<State>({ settings, keeper, acts, inHours }: PhoneOf<S
     action: {
       precondition: (state, { arguments: args }) =>
         keeper.of(state).calls.some(({ id, status }) => id === args.call && status === "connected") ? { holds: true } : { holds: false, reason: "no_such_call" },
-      effect: (state, { arguments: args }) => keeper.with(state, withCall(keeper.of(state), args.call as string, { status: "ended", outcome: "answered" })),
+      effect: (state, { arguments: args, world }) => keeper.with(state, withCall(keeper.of(state), args.call as string, { status: "ended", outcome: "answered", ...(world === undefined ? {} : { endedAt: world }) })),
     },
     texts: { success: "The call has ended.", no_such_call: "no_such_call: no such call is ringing for you" },
     readTarget: () => "not_sensed",
@@ -287,7 +289,7 @@ export interface CallMoment {
 }
 
 /** The line of the run's log a call adds as it ends (FR-PHONE-01). */
-export type CallLine = { type: "call" } & Omit<PhoneCall, "status" | "failing" | "outcome"> & {
+export type CallLine = { type: "call" } & Omit<PhoneCall, "status" | "failing" | "outcome" | "endedAt"> & {
     outcome: "answered" | "no_answer" | "busy" | "cut_off";
     rang?: CallMoment;
     answered?: CallMoment;
@@ -397,7 +399,7 @@ export class PhoneExchange<State> {
     applyCounted(world, changes, PHONE, ringingOut, undefined);
   }
 
-  #ended({ status: _status, failing: _failing, outcome: _outcome, ...call }: PhoneCall, outcome: CallLine["outcome"]): void {
+  #ended({ status: _status, failing: _failing, outcome: _outcome, endedAt: _endedAt, ...call }: PhoneCall, outcome: CallLine["outcome"]): void {
     if (this.#recorded.has(call.id)) return;
     this.#recorded.add(call.id);
     this.#run.record({ type: "call", ...call, outcome, ...this.#moments.get(call.id), ended: this.#now() });

@@ -26,7 +26,7 @@ import {
   sponsorRules,
   venueRules,
 } from "./congress-parties.ts";
-import { congressParts } from "./congress-parts.ts";
+import { actsOf as recordedActs, congressParts } from "./congress-parts.ts";
 import { type AttendeesMaterial, type Population, minutesOfTime, populationComponent, populationTools } from "./population.ts";
 import { describeUniformRhythm, rhythmChannels, uniformRhythm } from "./rhythm.ts";
 
@@ -1287,14 +1287,14 @@ function hasCancelled(state: Congress, speaker: string): boolean {
 }
 
 /**
- * When a speaker was confirmed, in world minutes: when the organiser's confirm reached it, once it has accepted a
- * session and acknowledged its confirmation (FR-CONGRESS-09); none until then.
+ * When a speaker was confirmed, in world minutes: when the organiser's confirm reached it, by mail or on a call, once it
+ * has accepted a session and acknowledged its confirmation (FR-CONGRESS-09, FR-CONGRESS-13); none until then.
  */
 function confirmedAt(state: Congress, speaker: string): number | undefined {
-  const sent = (state.mail.mailboxes[ORGANISER] ?? []).filter(({ from }) => from === speaker);
+  const acts = recordedActs(state);
+  const sent = acts.filter(({ from, to }) => from === speaker && to === ORGANISER);
   if (!sent.some(({ act }) => act === "accept") || !sent.some(({ act }) => act === "acknowledged")) return undefined;
-  const confirm = (state.mail.mailboxes[speaker] ?? []).find(({ from, act }) => from === ORGANISER && act === "confirm");
-  return confirm === undefined ? undefined : minutesOfWorld(confirm.received);
+  return acts.find(({ from, to, act }) => from === ORGANISER && to === speaker && act === "confirm")?.at;
 }
 
 /** How long two days are after a speaker is confirmed when early_cancel found none confirmed at its time. */

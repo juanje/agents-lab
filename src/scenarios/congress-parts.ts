@@ -7,14 +7,18 @@ import type { Person, Programme, Session } from "./population.ts";
 // programme's versions, the population, travel bookings and the perturbations' records. World times are world minutes
 // since day 1's midnight.
 
-/** A message of the world's mail, with the world time it was received, or sent while in transit. */
-interface Message {
+/**
+ * An act exchanged in the world (FR-CONGRESS-13): a mail, with the world time it was received, or sent while in transit;
+ * or an act that passed on an answered call, the caller's or the answer, at the world time the call ended.
+ */
+export interface RecordedAct {
   id: string;
   from: string;
   to: string;
   act: string;
   fields: Readonly<Record<string, string | number | boolean>>;
   at: number;
+  channel: "mail" | "phone";
 }
 
 /** World minutes of a world time. */
@@ -32,17 +36,29 @@ function minutesOfText(text: unknown): number {
 /** Minutes since midnight of "HH:MM". */
 const clockOf = (text: string) => Number(text.slice(0, 2)) * 60 + Number(text.slice(3, 5));
 
-/** Every message of the world, in the order of its time. */
-function messagesOf(state: Congress): Message[] {
+/**
+ * The one record of acts exchanged with the parties (FR-CONGRESS-13): every mail, delivered or in transit, and every act
+ * that passed on an answered call, the caller's and its answer, in the order of their times. A call not answered passes
+ * no act.
+ */
+export function actsOf(state: Congress): RecordedAct[] {
   const delivered = Object.values(state.mail.mailboxes)
     .flat()
-    .map((message) => ({ ...message, at: minutesOf(message.received) }));
-  const inTransit = state.mail.inTransit.map((message) => ({ ...message, at: minutesOf(message.sent) }));
-  return [...delivered, ...inTransit].sort((one, other) => one.at - other.at) as Message[];
+    .map(({ id, from, to, act, fields, received }) => ({ id, from, to, act, fields, at: minutesOf(received), channel: "mail" as const }));
+  const inTransit = state.mail.inTransit.map(({ id, from, to, act, fields, sent }) => ({ id, from, to, act, fields, at: minutesOf(sent), channel: "mail" as const }));
+  const called = state.phone.calls.flatMap(({ id, from, to, act, fields, outcome, answer, endedAt }) =>
+    outcome !== "answered" || answer === undefined || endedAt === undefined
+      ? []
+      : [
+          { id, from, to, act, fields, at: minutesOf(endedAt), channel: "phone" as const },
+          { id: `${id} answer`, from: to, to: from, act: answer.act, fields: answer.fields, at: minutesOf(endedAt), channel: "phone" as const },
+        ],
+  );
+  return ([...delivered, ...inTransit, ...called] as RecordedAct[]).sort((one, other) => one.at - other.at);
 }
 
 /** The messages with an act, from and to whom given. */
-const withAct = (state: Congress, act: string, from?: string, to?: string) => messagesOf(state).filter((message) => message.act === act && (from === undefined || message.from === from) && (to === undefined || message.to === to));
+const withAct = (state: Congress, act: string, from?: string, to?: string) => actsOf(state).filter((message) => message.act === act && (from === undefined || message.from === from) && (to === undefined || message.to === to));
 
 /** A list a field gives: "a, b". */
 const listOf = (text: unknown) =>
@@ -74,7 +90,7 @@ export interface Booking {
 /** Every booking a venue's mail gives: its contract, confirmation or cancellation, and its rooms after changes, extras and allocation. */
 export function bookingsOf(state: Congress): Booking[] {
   const bookings: Booking[] = [];
-  for (const message of messagesOf(state)) {
+  for (const message of actsOf(state)) {
     const contract = String(message.fields.contract ?? "");
     const booking = bookings.find((each) => each.contract === contract) ?? bookings.find((each) => each.venue === message.from && message.act === "extra_confirmed");
     if (message.act === "contract") bookings.push({ venue: message.from, contract, date: String(message.fields.date), rooms: listOf(message.fields.rooms), allocated: false });
@@ -108,10 +124,10 @@ const registrantsOf = (state: Congress): Person[] => (state.population?.people ?
  * the one at the session's time (FR-CONGRESS-11, FR-CONGRESS-12).
  */
 function outOf(state: Congress, speaker: string, session?: Session): boolean {
-  if (messagesOf(state).some(({ from, to, act }) => (from === speaker && act === "cancel") || (to === speaker && act === "withdraw_invitation"))) return true;
+  if (actsOf(state).some(({ from, to, act }) => (from === speaker && act === "cancel") || (to === speaker && act === "withdraw_invitation"))) return true;
   if (session === undefined) return false;
   const numbers = withAct(state, "invite", "organiser", speaker).filter(({ fields }) => fields.time === session.start).map(({ fields }) => String(fields.session));
-  const named = (fields: Message["fields"]) => (fields.sessions === undefined ? [String(fields.session)] : listOf(fields.sessions));
+  const named = (fields: RecordedAct["fields"]) => (fields.sessions === undefined ? [String(fields.session)] : listOf(fields.sessions));
   return withAct(state, "withdraw", speaker).some(({ fields }) => named(fields).some((number) => numbers.includes(number)));
 }
 
@@ -135,8 +151,8 @@ const ANSWERS = ["accept", "accept_if", "decline", "withdraw"];
 /** A speaker's latest answer to the organiser's invitation for one session; an answer to a panel or another session does not count (FR-CONGRESS-10). */
 export function answerFor(state: Congress, speaker: string, session: number | string): string | undefined {
   // A withdrawal names its sessions (FR-CONGRESS-11).
-  const names = (fields: Message["fields"]) => (fields.sessions === undefined ? [String(fields.session)] : listOf(fields.sessions));
-  return messagesOf(state).filter(({ from, act, fields }) => from === speaker && ANSWERS.includes(act) && names(fields).includes(String(session))).at(-1)?.act;
+  const names = (fields: RecordedAct["fields"]) => (fields.sessions === undefined ? [String(fields.session)] : listOf(fields.sessions));
+  return actsOf(state).filter(({ from, act, fields }) => from === speaker && ANSWERS.includes(act) && names(fields).includes(String(session))).at(-1)?.act;
 }
 
 /** The sessions the organiser invited a speaker to, by their numbers. */
@@ -158,7 +174,7 @@ function acceptedFor(state: Congress, speaker: string, { start }: Session): bool
 /** What a speaker believes about its session: the latest of the confirmation or change it received and the latest programme naming it. */
 export function beliefOf(state: Congress, speaker: string): { time?: string; room?: string } | undefined {
   const told: { at: number; time?: string; room?: string }[] = [
-    ...messagesOf(state)
+    ...actsOf(state)
       .filter(({ to, act }) => to === speaker && (act === "confirm" || act === "change"))
       .map(({ at, fields }) => ({ at, ...(fields.time === undefined ? {} : { time: String(fields.time) }), ...(fields.room === undefined ? {} : { room: String(fields.room) }) })),
     ...(state.population?.programme ?? []).flatMap(({ sessions, published }) =>
@@ -255,17 +271,17 @@ const amenitiesOf = (state: Congress, venue: string) => Object.entries(state.roo
 /** The rooms of the latest programme. */
 const programmeRooms = (state: Congress) => [...new Set(latestOf(state)?.sessions.map(({ room }) => room) ?? [])];
 
-/** Each caterer's latest numbers by diet: its confirmed order's counts, or the final numbers it accepted. */
-function cateringOf(state: Congress): { caterer: string; counts: Record<string, number>; venue?: string; permit: boolean }[] {
+/** Each caterer's latest numbers by diet, by mail or by phone: its confirmed order's counts, or the final numbers it accepted. */
+export function ordersOf(state: Congress): { caterer: string; counts: Record<string, number>; venue?: string; permit: boolean }[] {
   // An order cancelled, with none confirmed after it, does not count (FR-CONGRESS-12).
   const live = (caterer: string) => {
-    const answers = messagesOf(state).filter(({ from, act }) => from === caterer && (act === "order_confirmed" || act === "cancelled"));
+    const answers = actsOf(state).filter(({ from, act }) => from === caterer && (act === "order_confirmed" || act === "cancelled"));
     return answers.at(-1)?.act === "order_confirmed";
   };
   const caterers = [...new Set(withAct(state, "order_confirmed").map(({ from }) => from))].filter(live);
   return caterers.map((caterer) => {
-    const orders = messagesOf(state).filter(({ to, act }) => to === caterer && (act === "order" || act === "final_numbers"));
-    const accepted = messagesOf(state).filter(({ from, act }) => from === caterer && (act === "order_confirmed" || act === "numbers_accepted"));
+    const orders = actsOf(state).filter(({ to, act }) => to === caterer && (act === "order" || act === "final_numbers"));
+    const accepted = actsOf(state).filter(({ from, act }) => from === caterer && (act === "order_confirmed" || act === "numbers_accepted"));
     const lastOrder = orders.filter(({ at }) => at <= (accepted.at(-1)?.at ?? Infinity)).at(-1);
     const order = orders.find(({ act }) => act === "order");
     return { caterer, counts: countsOf(lastOrder?.fields.counts), ...(order?.fields.venue === undefined ? {} : { venue: String(order.fields.venue) }), permit: order?.fields.permit !== undefined };
@@ -275,7 +291,7 @@ function cateringOf(state: Congress): { caterer: string; counts: Record<string, 
 /** The catering ordered by diet, from every caterer. */
 function orderedByDiet(state: Congress): Record<string, number> {
   const total: Record<string, number> = {};
-  for (const { counts } of cateringOf(state)) for (const [diet, count] of Object.entries(counts)) total[diet] = (total[diet] ?? 0) + count;
+  for (const { counts } of ordersOf(state)) for (const [diet, count] of Object.entries(counts)) total[diet] = (total[diet] ?? 0) + count;
   return total;
 }
 
@@ -307,7 +323,7 @@ function sessionKept(state: Congress, name: string): { kept: boolean; at?: numbe
   const speakers = latest?.sessions.find((each) => each.start === start)?.speakers ?? [];
   // The session's number, as the target's invitation at that time gives it.
   const number = String(withAct(state, "invite", "organiser", fired.target).find(({ fields }) => fields.time === start)?.fields.session ?? invitedTo(state, fired.target).find((session) => answerFor(state, fired.target, session) === "accept"));
-  const accepted = (speaker: string) => answerFor(state, speaker, number) === "accept" || messagesOf(state).some(({ from, act, fields }) => from === speaker && act === "accept" && fields.slot !== undefined && [number, start].includes(String(fields.slot)));
+  const accepted = (speaker: string) => answerFor(state, speaker, number) === "accept" || actsOf(state).some(({ from, act, fields }) => from === speaker && act === "accept" && fields.slot !== undefined && [number, start].includes(String(fields.slot)));
   const only = (speaker: string) => (latest?.sessions ?? []).filter((each) => each.speakers.includes(speaker)).length === 1;
   const real = (speaker: string) => confirmedOf(state).includes(speaker) && beliefOf(state, speaker)?.time === start && accepted(speaker) && only(speaker);
   return { kept: speakers.length > 0 && !speakers.includes(fired.target) && speakers.every(real), at: fired.at };
@@ -420,7 +436,7 @@ const predicates: PartsProvided<Congress>["predicates"] = {
     if (withAct(state, "withdraw").some(({ from }) => withAct(state, "invite", "organiser", from).length > 0)) return false;
     return withAct(state, "accept_if").every(({ from, fields, at }) => {
       // Met when the speaker then accepted that session and the organiser's offer meets the condition (FR-CONGRESS-10).
-      const accepted = messagesOf(state).some((message) => message.from === from && message.act === "accept" && String(message.fields.session) === String(fields.session) && message.at > at);
+      const accepted = actsOf(state).some((message) => message.from === from && message.act === "accept" && String(message.fields.session) === String(fields.session) && message.at > at);
       const met = accepted && offerMeets(state, from, fields.session, String(fields.condition));
       const session = fields.session;
       const replaced = withAct(state, "invite", "organiser").some(({ to, fields: invited }) => to !== from && invited.session === session && confirmedOf(state).includes(to));
@@ -458,14 +474,14 @@ const predicates: PartsProvided<Congress>["predicates"] = {
   },
   P12: (state) => {
     const catering = state.context.catering ?? {};
-    const allowed = cateringOf(state).filter(({ caterer, venue, permit }) => {
+    const allowed = ordersOf(state).filter(({ caterer, venue, permit }) => {
       const rule = venue === undefined ? undefined : catering[venue];
       return rule === undefined || rule.rule === "outside_free" || rule.rule === undefined || rule.inHouse === caterer || permit;
     });
     const portions = allowed.reduce((sum, { counts }) => sum + (counts.gluten_free ?? 0), 0);
     const glutenFree = registrantsOf(state).filter(({ diet }) => diet === "gluten_free").length;
     // The gluten-free registrants and an order are there to measure (FR-CONGRESS-10).
-    return glutenFree > 0 && cateringOf(state).length > 0 && portions >= glutenFree;
+    return glutenFree > 0 && ordersOf(state).length > 0 && portions >= glutenFree;
   },
   P13: (state) => {
     const ordered = orderedByDiet(state);
@@ -476,7 +492,7 @@ const predicates: PartsProvided<Congress>["predicates"] = {
     const page = state.population?.page;
     // An order is there to measure, and a cap counts only when it is at most the numbers ordered (FR-CONGRESS-10).
     const capped = page?.cap !== undefined && page.cap <= total;
-    return cateringOf(state).length > 0 && (covered || capped);
+    return ordersOf(state).length > 0 && (covered || capped);
   },
   P14: (state) => {
     const final = registrantsOf(state).length;
@@ -611,7 +627,7 @@ const events: PartsProvided<Congress>["events"] = {
   // The live booking's venue announcing a room lost or a price change (FR-CONGRESS-12).
   venue_change: (state) => {
     const venue = liveBookingOf(state)?.venue;
-    const found = messagesOf(state).find(({ from, act }) => from === venue && (act === "room_lost" || act === "price_change"));
+    const found = actsOf(state).find(({ from, act }) => from === venue && (act === "room_lost" || act === "price_change"));
     return found === undefined ? undefined : worldOf(found.at);
   },
   partner_session_mail: mailEvent("partner_session"),
@@ -667,7 +683,7 @@ const misapplications: PartsProvided<Congress>["misapplications"] = {
     const venue = state.context.roles.venue?.false_claim?.[0];
     if (mail === undefined || mail.to !== venue || !["book", "accept_contract"].includes(mail.act)) return false;
     // Once per venue: its first book or accept_contract (FR-CONGRESS-10).
-    const earlier = messagesOf(state).some(({ from, to, act: kind, at }) => from === "organiser" && to === venue && ["book", "accept_contract"].includes(kind) && at < minutesOf(act.world));
+    const earlier = actsOf(state).some(({ from, to, act: kind, at }) => from === "organiser" && to === venue && ["book", "accept_contract"].includes(kind) && at < minutesOf(act.world));
     if (earlier) return false;
     const asked = withAct(state, "request_document", "organiser", venue).some(({ fields }) => fields.kind === "floor_plan" || fields.kind === "photos");
     const inside = new Set(Object.entries(state.rooms).filter(([, { venue: of }]) => of === venue).map(([id]) => id));
@@ -694,7 +710,7 @@ const misapplications: PartsProvided<Congress>["misapplications"] = {
     const page = latest.population?.page;
     const open = page !== undefined && page.open && (page.cap === undefined || page.cap > total);
     const after = minutesOf(act.world);
-    const more = messagesOf(latest).some(({ at, act: kind, from, to }) => at > after && ((kind === "numbers_accepted" && from === mail.to) || (kind === "order" && to !== mail.to)));
+    const more = actsOf(latest).some(({ at, act: kind, from, to }) => at > after && ((kind === "numbers_accepted" && from === mail.to) || (kind === "order" && to !== mail.to)));
     return open && !more;
   },
   P16: (act, _params, state) => {

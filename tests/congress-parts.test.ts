@@ -12,6 +12,7 @@ function world({ mail = [], events = [], people = [], programme = [] }: { mail?:
   return {
     rooms: { "main-hall": { venue: "v1", seats: 120 }, "room-b": { venue: "v1", seats: 30 }, "room-d": { venue: "v1", seats: 80 } },
     mail: { mailboxes, inTransit: [] },
+    phone: { calls: [] },
     money: { balances: {}, invoices: [], commitments: [], ceilings: {}, overruns: [], events },
     population: { people, programme, events: [] },
     context: { helpers: 2, discretionaryLimit: 300 },
