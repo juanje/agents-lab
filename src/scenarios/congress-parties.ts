@@ -313,7 +313,7 @@ function shareCharged(schedule: readonly CancellationStep[], daysLeft: number): 
   return (schedule.find(({ more_than_days: days }) => days === undefined || daysLeft > days) ?? { share: 0 }).share;
 }
 
-/** A contract a venue offered: its id, date, rooms, hours, price, extras, and whether it is confirmed. */
+/** A contract a venue offered: its id, date, rooms, hours, price, extras, and whether it is confirmed or cancelled. */
 interface Contract {
   id: string;
   to: string;
@@ -323,8 +323,16 @@ interface Contract {
   price: number;
   extras: Record<string, number>;
   confirmed: boolean;
+  /** Cancelled: never accepted again; the date is booked again as a new contract (FR-CONGRESS-15). */
+  cancelled?: boolean;
   /** A change the venue announced and awaits an answer on. */
   change?: { kind: "price_change"; price: number } | { kind: "room_lost"; room: string; smaller?: string; cut: number };
+}
+
+/** The options a change offers: none for a price change; for a lost room, its smaller room when it has one, and a price cut. */
+function offered(change: NonNullable<Contract["change"]>): string[] {
+  if (change.kind === "price_change") return [];
+  return [...(change.smaller === undefined ? [] : ["smaller_room"]), "price_cut"];
 }
 
 /** Something a venue does at a world time of its own. */
@@ -456,7 +464,7 @@ export const venueRules: RuleSet = {
         }
         case "accept_contract": {
           const contract = contractOf(fields.contract);
-          if (contract === undefined || contract.confirmed || contract.to !== from) return notAvailable(fields.contract);
+          if (contract === undefined || contract.confirmed || contract.cancelled === true || contract.to !== from) return notAvailable(fields.contract);
           contract.confirmed = true;
           dates.set(contract.date, "confirmed");
           counts.confirmations += 1;
@@ -530,6 +538,8 @@ export const venueRules: RuleSet = {
           const contract = contracts.find((each) => each.to === from && each.change !== undefined);
           if (contract?.change === undefined) return notAvailable("change");
           const change = contract.change;
+          // Only an option the change offered; any other leaves it pending (FR-CONGRESS-15).
+          if (act === "accept_change" && fields.option !== undefined && !offered(change).includes(String(fields.option))) return notAvailable(fields.option);
           contract.change = undefined;
           if (act === "decline_change") return cancelling(contract, 0);
           let newPrice = contract.price;
@@ -556,6 +566,7 @@ export const venueRules: RuleSet = {
     function cancelling(contract: Contract, charge: number): Answer {
       dates.set(contract.date, "free");
       contract.confirmed = false;
+      contract.cancelled = true;
       counts.cancellations += 1;
       record("cancelled", { contract: contract.id, charge });
       return {
