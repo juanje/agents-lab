@@ -175,3 +175,42 @@ describe("the patterns (FR-CONGRESS-12)", () => {
     expect(set(60)).toBe(false);
   });
 });
+
+describe("a withdrawal takes a speaker out only of the sessions it names (FR-CONGRESS-11, FR-CONGRESS-12)", () => {
+  const times = ["09:30", "10:30", "11:30", "14:00", "15:00", "16:00"];
+  /** Six sessions, each with a confirmed speaker s1 to s6 who believes its time; s1's session is 1. */
+  const six = (more: Mailed[] = []) => {
+    const mail: Mailed[] = ["s1", "s2", "s3", "s4", "s5", "s6"].flatMap((speaker, index): Mailed[] => [
+      ["organiser", speaker, "invite", { session: index + 1, time: times[index] }, minutes(3)],
+      [speaker, "organiser", "accept", { session: index + 1 }, minutes(4)],
+      ["organiser", speaker, "confirm", { time: times[index], room: "main-hall" }, minutes(5)],
+      [speaker, "organiser", "acknowledged", {}, minutes(5, "01:00")],
+    ]);
+    return world({
+      mail: [...mail, ...more],
+      programme: [programme(times.map((time, index) => session([`s${index + 1}`], time)), minutes(12), { sponsor_slots: [{ sponsor: "sp1", start: "09:00" }], logos: ["sp1"] })],
+      context: { roles: { venue: { false_claim: ["v1"] }, sponsor: { slot: ["sp1"] } } },
+    });
+  };
+  // s1 also answered accept_if to session 5 at 15:00, and withdrew it at day 19.
+  const pending: Mailed[] = [
+    ["organiser", "s1", "invite", { session: 5, time: "15:00" }, minutes(6)],
+    ["s1", "organiser", "accept_if", { session: 5, condition: "fee" }, minutes(7)],
+    ["s1", "organiser", "withdraw", { sessions: "5", condition: "fee" }, minutes(19)],
+  ];
+
+  it("keeps P05 and W1 holding when a speaker withdrew a session other than the one it holds", () => {
+    expect([congressParts.predicates.P05(six(), {}), congressParts.predicates.W1(six(), {})]).toEqual([true, true]);
+    expect(congressParts.predicates.P05(six(pending), {})).toBe(true);
+    expect(congressParts.predicates.W1(six(pending), {})).toBe(true);
+  });
+
+  it("still takes a speaker out entirely when it cancels or its invitation is withdrawn", () => {
+    expect(congressParts.predicates.P05(six([["s1", "organiser", "cancel", {}, minutes(20)]]), {})).toBe(false);
+    expect(congressParts.predicates.P05(six([["organiser", "s1", "withdraw_invitation", {}, minutes(20)]]), {})).toBe(false);
+  });
+
+  it("takes it out of a session its withdrawal names", () => {
+    expect(congressParts.predicates.P05(six([["s1", "organiser", "withdraw", { sessions: "1", condition: "fee" }, minutes(19)]]), {})).toBe(false);
+  });
+});
