@@ -428,7 +428,9 @@ Then(
   '"v1" mailed the organiser "room_lost" naming "room-b" between {string} and {string}, offering a smaller room or a price cut',
   function (this: Context, from: string, to: string) {
     const lost = sentWith(this, "v1", "room_lost");
-    assertBetween(lost, from, to);
+    // Within the few world minutes its own tools and wake take, as FR-CONGRESS-13's steps allow: one world minute is one
+    // millisecond of this run.
+    assertBetween(lost, from, to, 5);
     const fields = fieldsOf(lost);
     assert.equal(fields.room, "room-b");
     assert.ok(["smaller_room", "price_cut"].includes(String(fields.offer)), `it offered ${String(fields.offer)}`);
