@@ -1893,9 +1893,13 @@ export const congressScenario: Scenario<Congress> = {
   ruleSets: { venue: venueRules, board: boardRules, speaker: speakerRules, partner: partnerRules, caterer: catererRules, sponsor: sponsorRules, agency: agencyRules },
   variant,
   slowedBy: awayFactorOf,
-  // The organiser invoices only sponsors (FR-CONGRESS-11).
-  refuses: (state, call, tool) =>
-    tool === "issue_invoice" && call.agent === ORGANISER && !(state.context.ids?.sponsors ?? []).includes(String(call.arguments.to)) ? { outcome: "invalid_arguments", reason: "only sponsors are invoiced" } : undefined,
+  // The organiser invoices only sponsors (FR-CONGRESS-11); outside catering is quoted only for an attendance (FR-CONGRESS-16).
+  refuses: (state, call, tool) => {
+    if (tool === "issue_invoice" && call.agent === ORGANISER && !(state.context.ids?.sponsors ?? []).includes(String(call.arguments.to))) return { outcome: "invalid_arguments", reason: "only sponsors are invoiced" };
+    const { to, act, fields = {} } = call.arguments as { to?: unknown; act?: unknown; fields?: Record<string, unknown> };
+    const outsideCatering = (tool === "send_mail" || tool === "call") && act === "request_extra" && fields.item === "outside_catering" && state.venues[String(to)] !== undefined;
+    return outsideCatering && !Object.hasOwn(fields, "attendance") ? { outcome: "missing_field", reason: 'the act "request_extra" with the item "outside_catering" requires the field "attendance"' } : undefined;
+  },
   worldInventory,
   baseConfiguration: BASE_CONFIGURATION,
   // An experiment adds hours and perturbations the base does not have (FR-CONGRESS-08).
