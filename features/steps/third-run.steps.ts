@@ -9,6 +9,8 @@ import { change, congressChanges, hourMsOf, organiserTurns, setupOf } from "./co
 import { assertBetween, before, changePools, minutesOf, moneyLines, ranLines, sentBy, sentWith, untilTime } from "./congress-parties.steps.ts";
 import { CITY, V1 } from "./run-corrections.steps.ts";
 import { drawnVariant } from "./roles.steps.ts";
+import { organiserSummary } from "./services.steps.ts";
+import { modelOf } from "./tool.steps.ts";
 
 // FR-CONGRESS-13: the world's corrections from E1's third technical run, on FR-CONGRESS-09's congress with a fixed
 // budget, no board, and the venues "v1" and "v2".
@@ -323,4 +325,82 @@ Given('the organiser has no contracted or confirmed booking at "day 8 10:00", wh
 Then("no venue announced a change", function (this: Context) {
   assert.deepEqual([...announced(this, "v1"), ...announced(this, "v2")], []);
   assert.deepEqual(finalState(this).perturbations, []);
+});
+
+// Cancellations settle their money.
+/** The organiser's turns that book "v1", accept its contract and, when it is to be paid, pay its deposit, the first invoice. */
+const confirmedV1 = (context: Context, paid: boolean) =>
+  organiserTurns(
+    [
+      'call "send_mail" to "v1" with the act "book", date "day 26", rooms "hall-a" and hours "08:00-18:00"',
+      "wait 1 world hour",
+      '"send_mail" to "v1" with the act "accept_contract" and the contract\'s id',
+      "wait 1 world hour",
+      paid ? '"pay" "i-1"' : '"check_time"',
+    ].join(", then "),
+    hourMsOf(context),
+  );
+
+Given(/^the organiser's contract with "v1" is confirmed at 2000 and its deposit invoice of 600 is (paid|unpaid)$/, function (this: Context, deposit: string) {
+  changePools(this, (pool) => Object.assign(pool.venue[0], { price: 2000, deposit_share: 0.3 }));
+  before(this, confirmedV1(this, deposit === "paid"));
+});
+
+/** The organiser's turn that cancels its booking with "v1", then waits for the answer. */
+const cancelling = (context: Context) => organiserTurns('call "send_mail" to "v1" with the act "cancel_booking", then wait 1 world hour, then "check_time"', hourMsOf(context));
+
+Given("the organiser cancels within the venue's free cancellation window", function (this: Context) {
+  // Free with more than 14 days left; the event is 25 days away.
+  changePools(this, (pool) => Object.assign(pool.venue[0], { cancellation: [{ more_than_days: 14, share: 0 }, { share: 0.5 }] }));
+  before(this, cancelling(this));
+});
+
+Given('"v1" raised its price and the organiser declined the change', function (this: Context) {
+  change(this, (configuration) => ((configuration.perturbations as TomlTable).change = { at: "day 1 12:00", kind: "price_change" }));
+  untilTime(this, "day 1 13:00");
+  before(this, organiserTurns('call "send_mail" to "v1" with the act "decline_change", then wait 1 world hour, then "check_time"', hourMsOf(this)));
+});
+
+Given("the organiser cancels when the venue's terms charge 25% of the price", function (this: Context) {
+  changePools(this, (pool) => Object.assign(pool.venue[0], { cancellation: [{ share: 0.25 }] }));
+  before(this, cancelling(this));
+});
+
+/** The money's invoices as the world left them. */
+const invoicesOf = (context: Context) => finalState(context).money.invoices as unknown as readonly (Record<string, unknown> & { id: string; for: string; paid: boolean })[];
+
+Then(/^the deposit invoice is no longer due, the organiser's account got back (\d+), and (no charge was invoiced|a charge of 500 was committed and invoiced)$/, function (this: Context, returned: string, charge: string) {
+  const deposit = invoicesOf(this).find((invoice) => invoice.for === "deposit v1-contract-1");
+  assert.ok(deposit !== undefined, "v1 issued no deposit invoice");
+  assert.equal(deposit.amount, 600);
+  assert.ok(deposit.paid || deposit.voided === true, `the deposit invoice is still due: ${JSON.stringify(deposit)}`);
+  assert.ok(!(organiserSummary(this).unpaid as string[]).includes(deposit.id), "the organiser's summary lists the deposit as unpaid");
+  const refunds = moneyLines(this, "refund").filter((line) => line.from === "v1" && line.to === ORGANISER);
+  assert.equal(refunds.reduce((sum, line) => sum + Number(line.amount), 0), Number(returned));
+  const charges = invoicesOf(this).filter((invoice) => invoice.for === "cancellation v1-contract-1");
+  const committed = moneyLines(this, "commitment").filter((line) => line.for === "cancellation v1-contract-1");
+  if (charge.startsWith("no charge")) assert.deepEqual([charges.length, committed.length], [0, 0]);
+  else assert.deepEqual([charges.map(({ amount }) => amount), committed.map(({ amount }) => amount)], [[500], [500]]);
+});
+
+Given('"v1" cancelled the organiser\'s contract, voiding its unpaid deposit invoice "i-1"', function (this: Context) {
+  // The deposit is due the day the contract is accepted: its reminder comes 5 days later, and the cancellation 2 days after that.
+  changePools(this, (pool) => Object.assign(pool.venue[0], { deposit_due_days: 0 }));
+  before(this, confirmedV1(this, false));
+  untilTime(this, "day 9 09:00");
+  this.timeLimitMs = ((minutesOf("day 9 12:00") - minutesOf("day 1 09:00")) / 60) * hourMsOf(this);
+});
+
+// "the organiser's scripted turns call "pay" for "i-1", then end" is FR-CONGRESS-11's step, after the turns before.
+
+Then('the call failed with the outcome "invalid_arguments", saying the invoice was voided, and took no time, and the organiser\'s balance did not change', function (this: Context) {
+  sentWith(this, "v1", "cancelled");
+  const call = ranLines(this).find((line) => line.type === "tool_call" && line.agent === ORGANISER && line.tool === "pay");
+  assert.ok(call !== undefined, "the organiser made no pay call");
+  assert.equal(call.outcome, "invalid_arguments");
+  const messages = modelOf(this, ORGANISER).received.at(-1) ?? [];
+  assert.match(JSON.stringify(messages.filter((message) => message.role === "toolResult" && message.toolName === "pay").map((message) => message.content)), /voided/);
+  assert.equal(call.durationMs ?? 0, 0);
+  assert.equal(moneyLines(this, "payment").filter((line) => line.from === ORGANISER).length, 0);
+  assert.equal(organiserSummary(this).balance, 1500);
 });

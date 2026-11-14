@@ -1,13 +1,13 @@
 import { type TomlTable, parse, stringify } from "smol-toml";
 import { describe, expect, it } from "vitest";
-import { startingMoney, withCommitment, withRelease } from "../src/engine/money.ts";
+import { type Money, moneyTools, startingMoney, withCommitment, withRelease } from "../src/engine/money.ts";
 import { type Phone, phoneTools } from "../src/engine/phone.ts";
-import type { Effector } from "../src/engine/tools.ts";
+import type { Effector, Sensor } from "../src/engine/tools.ts";
 import * as parts from "../src/scenarios/congress-parts.ts";
 import type { Congress } from "../src/scenarios/congress.ts";
 import { Random } from "../src/engine/random.ts";
 import { type Scenario, loadScenario } from "../src/engine/scenario.ts";
-import { venueRules } from "../src/scenarios/congress-parties.ts";
+import { catererRules, venueRules } from "../src/scenarios/congress-parties.ts";
 import { calls, conversation, drive, tools, venueChange } from "./fixtures/rules.ts";
 import { congressScenario } from "../src/scenarios/congress.ts";
 
@@ -196,5 +196,61 @@ describe("the venue change, once per replica, to the live booking (FR-CONGRESS-1
     ]);
     const steps = drive(rules, tools(() => "", () => "day 8 Monday 10:00"), [[venueChange()]], true);
     expect(calls(steps, "send_mail").map(({ act }) => act)).toEqual(["price_change"]);
+  });
+});
+
+describe("cancellations settle their money (FR-CONGRESS-13)", () => {
+  const settings = { accounts: [{ name: "ana", opening: 1000 }, { name: "v1", unlimited: true as const, tools: ["void_invoice"] }], discretionaryLimit: 300, durations: {} };
+  const keeper = { of: (state: { money: Money }) => state.money, with: (_state: { money: Money }, money: Money) => ({ money }) };
+  const tool = (name: string) => moneyTools(settings, keeper).find((each) => each.name === name) as Effector<{ money: Money }>;
+  const land = (state: { money: Money }, name: string, agent: string, args: Record<string, unknown>) => tool(name).action?.effect(state, { agent, arguments: args, atMs: 0 }) as { money: Money };
+  const issued = () => land({ money: startingMoney(settings) }, "issue_invoice", "v1", { to: "ana", amount: 600, due: "day 4", for: "deposit v1-contract-1" });
+
+  it("voids an unpaid invoice its issuer voids: no longer due, and its pay refused as invalid_arguments, saying it was voided, before it takes any time", () => {
+    const voided = land(issued(), "void_invoice", "v1", { invoice: "i-1" });
+    expect(voided.money.invoices[0]).toMatchObject({ id: "i-1", paid: false, voided: true });
+    expect(voided.money.events.at(-1)).toMatchObject({ kind: "void", from: "v1", to: "ana", invoice: "i-1", amount: 600 });
+    expect(voided.money.balances.ana).toBe(1000);
+    expect(tool("pay").refuses?.(voided, { agent: "ana", arguments: { invoice: "i-1" } })).toEqual({ outcome: "invalid_arguments", reason: expect.stringContaining("voided") });
+    const ledger = JSON.parse((moneyTools(settings, keeper).find(({ name }) => name === "ledger") as Sensor<{ money: Money }>).sense(voided, "ana", {}, 0));
+    expect(ledger.invoices_to_pay).toEqual([]);
+  });
+
+  it("returns what was paid against an invoice its issuer voids to whom paid it", () => {
+    const paid = land(issued(), "pay", "ana", { invoice: "i-1" });
+    expect(paid.money.balances.ana).toBe(400);
+    const voided = land(paid, "void_invoice", "v1", { invoice: "i-1" });
+    expect(voided.money.balances.ana).toBe(1000);
+    expect(voided.money.events.at(-1)).toMatchObject({ kind: "refund", from: "v1", to: "ana", invoice: "i-1", amount: 600 });
+  });
+
+  /** A party's ledger with one invoice it issued for a contract or an order. */
+  const ledgerWith = (id: string, what: string, paid: boolean) => () => ({ invoices_issued: [{ id, to: "organiser", amount: 600, due: "day 4", for: what, paid }] });
+
+  it("a venue voids its contract's invoices as the contract is cancelled, by either side", () => {
+    const venue = { id: "v1", rooms: [{ id: "hall-a", seats: 80 }], access_claim: "step-free", price: 2000, extras: {}, hold_days: 2, deposit_share: 0.3, deposit_due_days: 3, cancellation: [{ more_than_days: 14, share: 0 }, { share: 0.5 }], pick_up: 1, organiser: "organiser", event_day: 26, floor_plan: [], perturbations: [] };
+    const { steps } = conversation(
+      venueRules.start(venue, new Random(1)),
+      [
+        ["day 1 Monday 09:01", "From: organiser. Act: book. date: day 26. rooms: hall-a. hours: 08:00-18:00."],
+        ["day 1 Monday 09:02", "From: organiser. Act: accept_contract. contract: v1-contract-1."],
+        ["day 1 Monday 10:00", "From: organiser. Act: cancel_booking."],
+      ],
+      ledgerWith("i-1", "deposit v1-contract-1", true),
+    );
+    expect(calls(steps, "void_invoice")).toEqual([{ invoice: "i-1" }]);
+  });
+
+  it("a caterer voids its order's invoices as the order is cancelled", () => {
+    const caterer = { id: "c1", price_per_head: 30, diets: {}, minimum: 30, final_days: 7, deposit_share: 0.2, deposit_due_days: 3, cancellation: [{ share: 0 }], pick_up: 1, organiser: "organiser", event_day: 26 };
+    const { steps } = conversation(
+      catererRules.start(caterer, new Random(1)),
+      [
+        ["day 2 Tuesday 09:00", "From: organiser. Act: order. counts: standard: 40. date: day 26."],
+        ["day 3 Wednesday 09:00", "From: organiser. Act: cancel_order."],
+      ],
+      ledgerWith("i-2", "deposit order c1", false),
+    );
+    expect(calls(steps, "void_invoice")).toEqual([{ invoice: "i-2" }]);
   });
 });
