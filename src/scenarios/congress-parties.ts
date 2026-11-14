@@ -900,6 +900,9 @@ const HOTEL_OVERBOOKS = "hotel_overbooks";
 /** When a speaker whose condition is not met withdraws: day 19's start, in world minutes since day 1's midnight. */
 const WITHDRAW_MINUTES = 18 * 1440;
 
+/** How long after a conditional answer a speaker waits at least before it withdraws: two world days (FR-CONGRESS-16). */
+const LATE_CONDITION_MINUTES = 2 * 1440;
+
 /** The acts the partner's speaker takes. */
 const PARTNER_ACTS = ["invite", "confirm", "change", "ask_slides"];
 
@@ -926,8 +929,11 @@ export const speakerRules: RuleSet = {
       claim: 0,
     };
     let invitation: Fields = {};
-    /** Its answer to each session's invitation, by the session, with the offer it answered (FR-CONGRESS-09). */
-    const sessions = new Map<string, { offer: Fields; answer: string }>();
+    /**
+     * Its answer to each session's invitation, by the session, with the offer it answered (FR-CONGRESS-09), and when it
+     * last answered accept_if (FR-CONGRESS-16).
+     */
+    const sessions = new Map<string, { offer: Fields; answer: string; conditionalAt?: number }>();
     /** Whether it would accept, drawn once, the first time it needs it (FR-CONGRESS-09). */
     let wouldAccept: boolean | undefined;
     /** The fee it agreed to, and whether it has committed it. */
@@ -958,7 +964,7 @@ export const speakerRules: RuleSet = {
     const answering = (act: string, fields: Fields = {}): Answer => {
       record.answer = act;
       const key = String(invitation.session);
-      sessions.set(key, { offer: invitation, answer: act });
+      sessions.set(key, { offer: invitation, answer: act, ...(act === "accept_if" ? { conditionalAt: party.now } : {}) });
       if (act === "accept") agreedFee = Number(invitation.fee ?? 0) > 0 ? Number(invitation.fee) : 0;
       return { act, fields: { session: invitation.session as number, ...fields } };
     };
@@ -1077,19 +1083,21 @@ export const speakerRules: RuleSet = {
         for (const { channel } of ill) yield* cancel(channel);
         if (roomless) yield* tell("no_room");
         yield* party.handle(answer, speaker.pick_up ?? 1, random);
-        // A condition not met by day 19 makes it withdraw.
-        const pending = anyAnswered("accept_if");
-        if (pending) yield* party.clock();
-        if (pending && party.now >= WITHDRAW_MINUTES) {
+        // A condition not met by day 19, or two world days after its conditional answer when later, makes it withdraw
+        // (FR-CONGRESS-16).
+        const waitingOn = [...sessions.entries()].filter(([, session]) => session.answer === "accept_if");
+        const deadline = ([, session]: (typeof waitingOn)[number]) => Math.max(WITHDRAW_MINUTES, (session.conditionalAt ?? 0) + LATE_CONDITION_MINUTES);
+        if (waitingOn.length > 0) yield* party.clock();
+        const due = waitingOn.filter((entry) => deadline(entry) <= party.now).map(([key]) => key);
+        if (due.length > 0) {
           // Only the invitations still waiting on its condition; those it accepted stay accepted (FR-CONGRESS-11).
-          const waiting = [...sessions.entries()].filter(([, session]) => session.answer === "accept_if").map(([key]) => key);
           record.answer = "withdraw";
-          for (const key of waiting) (sessions.get(key) as { answer: string }).answer = "withdraw";
-          yield* party.write(speaker.organiser, "withdraw", { sessions: waiting.join(", "), condition: speaker.condition as string });
+          for (const key of due) (sessions.get(key) as { answer: string }).answer = "withdraw";
+          yield* party.write(speaker.organiser, "withdraw", { sessions: due.join(", "), condition: speaker.condition as string });
           continue;
         }
         if (party.stimuli.length > 0) continue;
-        yield* party.rest(pending ? WITHDRAW_MINUTES - party.now : undefined);
+        yield* party.rest(waitingOn.length > 0 ? Math.min(...waitingOn.map(deadline)) - party.now : undefined);
       }
     }
 
