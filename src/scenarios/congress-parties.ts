@@ -1062,6 +1062,9 @@ export const catererRules: RuleSet = {
       record.invoices_issued += 1;
     }
 
+    /** Why an order or final numbers below its minimum are refused (FR-CONGRESS-11). */
+    const belowMinimum = (): Fields => ({ reason: "below_minimum", minimum: caterer.minimum as number });
+
     const answer = ({ act, fields }: Received): Answer => {
       switch (act) {
         case "ask_quote":
@@ -1087,7 +1090,7 @@ export const catererRules: RuleSet = {
           const counts = countsIn(fields.counts);
           const over = overLimit(counts);
           if (over !== undefined) return { act: "order_refused", fields: { diet: over } };
-          if (total(counts) < (caterer.minimum ?? 0)) return { act: "order_refused", fields: { minimum: caterer.minimum as number } };
+          if (total(counts) < (caterer.minimum ?? 0)) return { act: "order_refused", fields: belowMinimum() };
           const price = total(counts) * caterer.price_per_head;
           order = { total: total(counts), price, deposit: Math.round(price * caterer.deposit_share), balanced: false };
           record.order = String(fields.counts);
@@ -1108,6 +1111,7 @@ export const catererRules: RuleSet = {
           if (order === undefined) return { act: "not_available", fields: { what: "order" } };
           if (over !== undefined) return { act: "numbers_refused", fields: { diet: over } };
           const asked = total(counts);
+          if (asked < (caterer.minimum ?? 0)) return { act: "numbers_refused", fields: belowMinimum() };
           const increase = asked - order.total;
           const late = today() >= finalDay;
           if (late && !(increase >= 0 && increase <= order.total * LATE_INCREASE)) return { act: "numbers_refused", fields: { total: asked } };

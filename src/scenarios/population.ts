@@ -193,7 +193,7 @@ export function registrationProbability({ population }: { population?: Populatio
 
 /** A change the population's world went through, for the run's log (FR-POPULATION-01). */
 export interface PopulationEvent {
-  event: "registration" | "payment" | "waiting_list" | "cancellation" | "cancel_draw" | "belief";
+  event: "registration" | "payment" | "waiting_list" | "cancellation" | "cancel_draw" | "belief" | "answer";
   person?: string;
   worldTime?: WorldTime;
   [key: string]: unknown;
@@ -423,7 +423,8 @@ export function populationTools<State extends PopulationWorld>(options: Populati
         const recorded = withPopulation(state, (population) => ({ ...population, announcements: [...(population.announcements ?? []), { audience: String(audience), kind: String(kind), at: now }] }));
         let next = withPopulation(recorded, (population) => {
           if (audience === "association_list" && kind === "registration_open") return { ...population, announced: true };
-          if (audience === "association_list" && kind === "promotion") return { ...population, promotions: [...population.promotions, { start: now, factor: population.material.promotion_factor }] };
+          // A promotion while the page is open also opens registration (FR-CONGRESS-11).
+          if (audience === "association_list" && kind === "promotion") return { ...population, announced: population.announced || population.page.open, promotions: [...population.promotions, { start: now, factor: population.material.promotion_factor }] };
           if (audience !== "registrants") return population;
           if (kind === "request_needs") return { ...population, needsRequested: now };
           if (kind === "request_cancel_if_not_coming") return { ...population, cancelRequested: now };
@@ -530,6 +531,23 @@ export function populationComponent<State extends PopulationWorld>(options: Popu
               const start = sent;
               const factor = population.material.promotion_factor * (1 + 0.25 * population.draws[message.from]);
               changes.push((current, money, mail) => ({ population: { ...current, promotions: [...current.promotions, { start, factor }] }, money, mail }));
+            }
+            // The organiser's answer to a registrant: one to a question about a diet or an access need makes it known (FR-CONGRESS-11).
+            if (message.act === "answer" && message.from === options.organiser && population.people.some(({ id }) => id === message.to)) {
+              const asked = [...state.mail.inTransit, ...Object.values(state.mail.mailboxes).flat()].filter(({ from, act }) => from === message.to && act === "question").map(({ fields }) => String(fields.about));
+              changes.push((current, money, mail, landing) => {
+                const person = current.people.find(({ id }) => id === message.to) as Person;
+                const known = Object.fromEntries((["diet", "access"] as const).filter((need) => asked.includes(need)).map((need) => [need, person[need]]));
+                return {
+                  population: {
+                    ...current,
+                    people: current.people.map((each) => (each.id === person.id ? { ...each, given: { ...each.given, ...known } } : each)),
+                    events: [...(current.events ?? []), { event: "answer", person: person.id, known, ...(landing === undefined ? {} : { worldTime: landing }) }],
+                  },
+                  money,
+                  mail,
+                };
+              });
             }
             if (message.act === "send_attendee_list" && message.from === options.organiser) {
               const listed = String(message.fields.list ?? "").split(/,\s*/);

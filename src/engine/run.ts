@@ -243,7 +243,9 @@ async function runAgents<State>(
     ...(money === undefined ? [] : moneyTools(money.settings, money.keeper)),
   ];
   const slowedBy = scenario.slowedBy;
-  const tools = [...scenario.tools, ...(slowedBy === undefined ? engineTools : engineTools.map((tool) => slowed(tool, slowedBy)))];
+  const refusedBy = scenario.refuses;
+  const scenarioTools = slowedBy === undefined ? engineTools : engineTools.map((tool) => slowed(tool, slowedBy));
+  const tools = [...scenario.tools, ...(refusedBy === undefined ? scenarioTools : scenarioTools.map((tool) => refused(tool, refusedBy)))];
   const opening = await Promise.allSettled(
     agents.map((agent) =>
       openSession(world, toolsOf(tools, participants, agent.name, money?.settings), agent, runtime, { ...sessionSettings, systemPrompt: systemPromptOf(systemPrompts, agent.name) }, parallelism, records, stimuli, sensings, changes).catch((error: unknown) => {
@@ -389,6 +391,12 @@ async function sampleEvery(intervalMs: number, sample: () => void, signal: Abort
     if (signal.aborted) return;
     sample();
   }
+}
+
+/** An engine's tool that also fails, before its own refusal, at each call the scenario refuses (FR-CONGRESS-11). */
+function refused<State>(tool: Tool<State>, refusedBy: NonNullable<Scenario<State>["refuses"]>): Tool<State> {
+  if (tool.kind !== "effector") return tool;
+  return { ...tool, refuses: (state, call, world) => refusedBy(state, call, tool.name) ?? tool.refuses?.(state, call, world) };
 }
 
 /** An engine's tool whose every duration is the factor the scenario gives for the caller and the state times its own (FR-CONGRESS-01). */

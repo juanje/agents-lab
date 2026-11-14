@@ -274,7 +274,7 @@ describe("the congress's corrections to the world (FR-CONGRESS-09)", () => {
     expect(loaded.mail?.settings.acts.chair).toEqual({ submit_budget: ["costs", "income", "contingency", "funds_requested"], request_approval: ["amount", "reason"], report: [] });
   });
 
-  it("orders the directory by a draw from the replica's seed, not by the pools' kinds", () => {
+  it("orders the directory by a draw from the replica's seed within each kind (FR-CONGRESS-11)", () => {
     const orderOf = (seed: number) => {
       const loaded = loadScenario(
         ((scenario: Scenario<unknown>) => ({ ...scenario, ruleSets: { ...congressScenario.ruleSets, ...scenario.ruleSets } }))(
@@ -292,7 +292,8 @@ describe("the congress's corrections to the world (FR-CONGRESS-09)", () => {
 
     for (const order of orders) expect([...order].sort()).toEqual(["s1", "s2", "s3", "s4", "s5", "s6", "v1", "v2"]);
     expect(new Set(orders.map((order) => order.join())).size).toBeGreaterThan(1);
-    expect(orders.some((order) => order.slice(0, 2).sort().join() !== "v1,v2")).toBe(true);
+    // Grouped by kind, the venues first (FR-CONGRESS-11).
+    for (const order of orders) expect(order.slice(0, 2).sort()).toEqual(["v1", "v2"]);
   });
 });
 

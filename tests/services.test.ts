@@ -100,7 +100,7 @@ describe("the caterer's rules (FR-CONGRESS-05)", () => {
     expect(calls(steps, "issue_invoice")).toEqual([{ to: "organiser", amount: 360, due: "day 4", for: "deposit order c1" }]);
 
     expect(calls(conversation([["day 1 Monday 09:01", order("standard: 50; gluten_free: 9")]]).steps, "send_mail")).toEqual([{ to: "organiser", act: "order_refused", fields: { diet: "gluten_free" } }]);
-    expect(calls(conversation([["day 1 Monday 09:01", order("standard: 10")]]).steps, "send_mail")).toEqual([{ to: "organiser", act: "order_refused", fields: { minimum: 20 } }]);
+    expect(calls(conversation([["day 1 Monday 09:01", order("standard: 10")]]).steps, "send_mail")).toEqual([{ to: "organiser", act: "order_refused", fields: { reason: "below_minimum", minimum: 20 } }]);
   });
 
   it("takes final numbers before their date, its commitment following the total; after it, an increase of at most 5% with a 10% surcharge, and nothing else", () => {

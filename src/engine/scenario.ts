@@ -10,7 +10,7 @@ import { PHONE_CHANNEL, type PhoneKeeper, type PhoneSettings, assertAnswering, p
 import { type Material, type MaterialReference, type Materials, materialReference } from "./materials.ts";
 import { Random } from "./random.ts";
 import { type Channel, RHYTHM_CHANNEL } from "./stimuli.ts";
-import type { Tool } from "./tools.ts";
+import type { Refusal, Tool } from "./tools.ts";
 import { World } from "./world.ts";
 
 /** A resolved configuration: the scenario's base configuration with the condition's change over it. */
@@ -94,6 +94,11 @@ export interface Scenario<State> {
    * as a call starts, for a scenario where that changes (FR-CONGRESS-01); 1 when it does not say.
    */
   slowedBy?: (state: State, agent: string, tool: string) => number;
+  /**
+   * A call of one of the engine's own tools (the mail's, the phone's, the money's) the scenario refuses, from the state as
+   * it starts, before the tool's own refusal, for a scenario that refuses some (FR-CONGRESS-11): the call fails at once.
+   */
+  refuses?: (state: State, call: { agent: string; arguments: Record<string, unknown> }, tool: string) => Refusal | undefined;
   /** What the inventory gives of the scenario's world, from the resolved configuration, for a scenario that says (FR-CONGRESS-01). */
   worldInventory?: (configuration: Configuration) => Readonly<Record<string, unknown>>;
   /** The tables of its base configuration, by dotted path, to which a condition may add keys the base lacks (FR-CONGRESS-08). */

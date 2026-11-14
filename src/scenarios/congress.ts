@@ -416,10 +416,10 @@ function variant(configuration: Configuration, random: Random): { configuration:
       : {
           mail: {
             ...mail,
-            mailboxes: [...((mail.mailboxes ?? []) as string[]), ...names],
+            mailboxes: [...((mail.mailboxes ?? []) as string[]), ...names, ...registrantIds(configuration, drawn.attendance)],
             initial: [...((mail.initial ?? []) as TomlTable[]), ...partnerSession(templates, drawn, (configuration.calendar as TomlTable | undefined)?.start)],
             // Each party takes its rule set's acts, so a wrong act or a missing field fails at once (FR-CONGRESS-09).
-            acts: { ...((mail.acts ?? {}) as TomlTable), ...actsOf(participants) },
+            acts: { ...((mail.acts ?? {}) as TomlTable), ...actsOf(participants), ...Object.fromEntries(registrantIds(configuration, drawn.attendance).map((id) => [id, Object.fromEntries([actOf(REGISTRANT_ACT)])])) },
           },
         }),
     ...(phone === undefined ? {} : { phone: { ...phone, lines: [...((phone.lines ?? []) as string[]), ...names] } }),
@@ -439,6 +439,22 @@ function organiserAccount(money: TomlTable, drawn: Drawn): TomlTable {
   if (drawn.budget === undefined && drawn.advance === undefined) return {};
   const configured = (((money.accounts ?? {}) as TomlTable)[ORGANISER] ?? {}) as TomlTable;
   return { [ORGANISER]: { ...configured, ...(drawn.advance === undefined ? {} : { opening: drawn.advance }), ...(drawn.budget === undefined ? {} : { ceiling: drawn.budget }) } };
+}
+
+/** The act a registrant takes from the organiser, at its id (FR-CONGRESS-11). */
+const REGISTRANT_ACT = "answer (text, diet?, access?)";
+
+/**
+ * The ids every person of the population may have (FR-CONGRESS-11): the pool's, a-1 onwards, the fixed people's, and
+ * the group's largest size after them; none without an attendees material.
+ */
+function registrantIds(configuration: Configuration, target: number): string[] {
+  const material = attendeesOf(configuration);
+  if (material === undefined) return [];
+  const pool = Math.round(material.pool_factor * target);
+  const fixed = (material.fixed ?? []).map(({ id }) => id);
+  const group = material.group === undefined ? 0 : material.group.size[1];
+  return [...Array.from({ length: pool }, (_, index) => `a-${index + 1}`), ...fixed, ...Array.from({ length: group }, (_, index) => `a-${pool + fixed.length + index + 1}`)].filter((id, index, ids) => ids.indexOf(id) === index);
 }
 
 /** The weekdays, in order from Monday. */
@@ -488,7 +504,8 @@ function requiredText(written: string): string {
 
 /**
  * The directory of the drawn parties (FR-CONGRESS-08 and its addition): first, each kind's acts with their required
- * fields, once per kind; then one line per drawn party, in an order drawn from the replica's sequence (FR-CONGRESS-09),
+ * fields, once per kind, and how registrants are mailed (FR-CONGRESS-11); then one line per drawn party, grouped by kind,
+ * each kind in an order drawn from the replica's sequence (FR-CONGRESS-09, FR-CONGRESS-11),
  * with its id, its kind, whether it has a mailbox and a line, and what its template says that anyone could know: a
  * speaker's title and home, an in-house caterer's venue. The partner's speaker is not listed: the board's mail names it.
  */
@@ -510,14 +527,25 @@ function directoryOf(configuration: Configuration, chosenOf: Readonly<Record<str
     if (kind === "caterer" && template.in_house_for !== undefined) return [`in-house for ${String(template.in_house_for)}`];
     return [];
   };
-  const partyLines = chooseFrom(parties, parties.length, random).map((party) => {
+  // Grouped by kind in a fixed order, the kinds it does not name after them; within each kind, an order drawn from the
+  // replica's sequence (FR-CONGRESS-11).
+  const order = (kind: string) => (DIRECTORY_KINDS.includes(kind) ? DIRECTORY_KINDS.indexOf(kind) : DIRECTORY_KINDS.length + kinds.indexOf(kind));
+  const grouped = [...kinds].sort((one, other) => order(one) - order(other)).flatMap((kind) => {
+    const ofKind = parties.filter((party) => party.kind === kind);
+    return chooseFrom(ofKind, ofKind.length, random);
+  });
+  const partyLines = grouped.map((party) => {
     const id = String(party.template.id);
     const has = `with ${mailboxes.includes(id) ? "a mailbox" : "no mailbox"} and ${lines.includes(id) ? "a line" : "no line"}`;
     const facts = known(party);
     return `- ${id}: ${party.kind}, ${has}${facts.length === 0 ? "" : `; ${facts.join(", ")}`}`;
   });
-  return [...actsOfKind, ...partyLines].join("\n");
+  const registrants = attendeesOf(configuration) === undefined ? [] : [`Registrants are mailed at their id with the act ${requiredText(REGISTRANT_ACT)}.`];
+  return [...actsOfKind, ...registrants, ...partyLines].join("\n");
 }
+
+/** The kinds the directory lists, in this order (FR-CONGRESS-11). */
+const DIRECTORY_KINDS = ["venue", "speaker", "caterer", "sponsor", "agency"];
 
 /**
  * The configuration with its texts filled with what the replica drew (FR-CONGRESS-08): {topic}, {target}, {event_day},
@@ -1706,6 +1734,9 @@ export const congressScenario: Scenario<Congress> = {
   ruleSets: { venue: venueRules, board: boardRules, speaker: speakerRules, partner: partnerRules, caterer: catererRules, sponsor: sponsorRules, agency: agencyRules },
   variant,
   slowedBy: awayFactorOf,
+  // The organiser invoices only sponsors (FR-CONGRESS-11).
+  refuses: (state, call, tool) =>
+    tool === "issue_invoice" && call.agent === ORGANISER && !(state.context.ids?.sponsors ?? []).includes(String(call.arguments.to)) ? { outcome: "invalid_arguments", reason: "only sponsors are invoiced" } : undefined,
   worldInventory,
   baseConfiguration: BASE_CONFIGURATION,
   // An experiment adds hours and perturbations the base does not have (FR-CONGRESS-08).

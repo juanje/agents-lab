@@ -260,9 +260,11 @@ Then("each directory lists the same parties, in an order drawn from its seed, no
   const grouped = ["chair", "v1", "s1", "s2", "sp1"];
   assert.deepEqual([...first].sort(), [...grouped].sort());
   assert.deepEqual([...second].sort(), [...grouped].sort());
-  assert.notDeepEqual(first, second, `both seeds list ${first.join(", ")}`);
-  const byKind = (order: string[]) => ["chair", "v1", "s", "sp1"].map((kind) => order.filter((id) => id === kind || (kind === "s" && /^s\d$/.test(id)))).flat();
-  assert.ok(first.join() !== byKind(first).join() || second.join() !== byKind(second).join(), `the directories are grouped by kind: ${first.join(", ")}; ${second.join(", ")}`);
+  // Grouped by kind since FR-CONGRESS-11, each kind in an order drawn from the seed: the two speakers' order changes across seeds.
+  const scenario = this.inventoryScenario?.();
+  assert.ok(scenario !== undefined, "the scenario set up no congress");
+  const speakers = [1, 2, 3, 4, 5, 6].map((seed) => [...(loadScenario(scenario, seed).systemPrompts.get(ORGANISER) ?? "").matchAll(/^- (s\d):/gm)].map(([, id]) => id).join());
+  assert.ok(new Set(speakers).size > 1, `every seed lists the speakers ${speakers[0]}`);
 });
 
 /** The organiser's turns that book "v1" for "day 26" with these rooms and accept its contract. */

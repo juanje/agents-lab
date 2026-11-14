@@ -9,6 +9,7 @@ import { ATTENDEES, V1, setUpCorrectionsCongress } from "./run-corrections.steps
 import { Random } from "../../src/engine/random.ts";
 import { speakerRules } from "../../src/scenarios/congress-parties.ts";
 import { calls, conversation } from "../../tests/fixtures/rules.ts";
+import { modelOf } from "./tool.steps.ts";
 
 // FR-CONGRESS-11: the world's corrections from E1's second technical run, on FR-CONGRESS-09's congress with a fixed
 // budget and no board.
@@ -379,7 +380,9 @@ Then('the call failed with the outcome "invalid_arguments", saying that only spo
   const call = ranLines(this).find((line) => line.type === "tool_call" && line.agent === ORGANISER && line.tool === "issue_invoice");
   assert.ok(call !== undefined, "the organiser made no issue_invoice call");
   assert.equal(call.outcome, "invalid_arguments");
-  assert.match(String(call.result ?? call.text ?? call.reason), /only sponsors are invoiced/);
+  // The reason reaches the organiser's model as its call's result.
+  const messages = modelOf(this, ORGANISER).received.at(-1) ?? [];
+  assert.match(JSON.stringify(messages.filter((message) => message.role === "toolResult" && message.toolName === "issue_invoice").map((message) => message.content)), /only sponsors are invoiced/);
   assert.equal(call.durationMs ?? 0, 0);
   assert.equal(moneyLines(this, "invoice").filter((line) => line.from === ORGANISER).length, 0);
 });
