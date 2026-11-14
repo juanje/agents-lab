@@ -313,11 +313,18 @@ Then(
     // The room is lost at 13:00; then the organiser asks to have both rooms.
     before(this, bookingTurns(this, "hall-a, hall-b"));
     untilTime(this, "day 1 13:30");
-    before(this, organiserTurns('call "send_mail" to "v1" with the act "change_booking", rooms "hall-a, hall-b" and hours "08:00-18:00", then wait 1 world hour, then "check_time"', hourMsOf(this)));
-    this.timeLimitMs = 6 * hourMsOf(this);
+    // The change settled first with its price cut: a pending change holds the booking (FR-CONGRESS-16).
+    before(
+      this,
+      organiserTurns(
+        'call "send_mail" to "v1" with the act "accept_change" and option "price_cut", then wait 1 world hour, then "send_mail" to "v1" with the act "change_booking", rooms "hall-a, hall-b" and hours "08:00-18:00", then wait 1 world hour, then "check_time"',
+        hourMsOf(this),
+      ),
+    );
+    this.timeLimitMs = 7 * hourMsOf(this);
     await runTheScenario(this);
     assert.equal(fieldsOf(sentWith(this, "v1", "room_lost")).room, "hall-b");
-    assert.equal(sentAll(this, "v1", "unavailable").length, 1, `"v1" sent ${sentBy(this, "v1").map((line) => line.act).join(", ")}`);
+    assert.deepEqual(fieldsOf(sentWith(this, "v1", "unavailable")), { room: "hall-b" }, `"v1" sent ${sentBy(this, "v1").map((line) => line.act).join(", ")}`);
   },
 );
 
