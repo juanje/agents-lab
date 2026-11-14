@@ -487,7 +487,7 @@ Given(/^(no hotel was booked, so "hotel_overbooks" hit nobody|"hotel_overbooks" 
 });
 
 /** The event that activates a part, as the parts material gives it. */
-const ACTIVATION: Record<string, string> = { P17: "sponsor_withdraws", P19: "hotel_overbooks" };
+const ACTIVATION: Record<string, string> = { P03: "venue_change", P17: "sponsor_withdraws", P19: "hotel_overbooks" };
 
 Then("it was not active", function (this: Context) {
   const { state, part } = recordsOf(this);

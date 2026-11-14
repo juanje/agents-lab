@@ -1,0 +1,18 @@
+{"type":"money","kind":"approval","from":"chair-ines-berg","to":"organiser","amount":6500,"at":3438.2333333333336,"worldTime":{"day":3,"weekday":"Wednesday","seconds":33494}}
+{"type":"money","kind":"commitment","from":"organiser","to":"harvest-catering","amount":2800,"commitment":"k-1","for":"order harvest-catering","at":6307.733333333334,"worldTime":{"day":5,"weekday":"Friday","seconds":32864}}
+{"type":"money","kind":"commitment","from":"organiser","to":"mill-house","amount":2889,"commitment":"k-2","for":"mill-house-contract-1","at":6601.15,"worldTime":{"day":5,"weekday":"Friday","seconds":50469}}
+{"type":"money","kind":"approval","from":"chair-ines-berg","to":"organiser","amount":7000,"at":10634.533333333333,"worldTime":{"day":8,"weekday":"Monday","seconds":33272}}
+{"type":"money","kind":"commitment","from":"organiser","to":"travel","amount":45,"commitment":"k-3","for":"ev-0620 day 26 hugo-mendes","at":10940,"worldTime":{"day":8,"weekday":"Monday","seconds":51600}}
+{"type":"money","kind":"release","from":"organiser","to":"mill-house","amount":2889,"commitment":"k-2","at":13511.416666666666,"worldTime":{"day":10,"weekday":"Wednesday","seconds":33085}}
+{"type":"money","kind":"commitment","from":"organiser","to":"mill-house","amount":1667,"commitment":"k-4","for":"mill-house-contract-1","at":13511.466666666667,"worldTime":{"day":10,"weekday":"Wednesday","seconds":33088}}
+{"type":"message_sent","id":"m-138","from":"organiser","to":"signbridge","act":"ask_quote","fields":{"date":"day 26"},"subject":"Interpreter for registered attendee","worldTime":{"day":14,"weekday":"Sunday","seconds":49542}}
+{"type":"message_sent","id":"m-173","from":"organiser","to":"signbridge","act":"book","fields":{"date":"day 26"},"subject":"book","worldTime":{"day":16,"weekday":"Tuesday","seconds":48209}}
+{"type":"message_sent","id":"m-179","from":"signbridge","to":"organiser","act":"booked","fields":{"date":"day 26","price":380},"subject":"booked","worldTime":{"day":17,"weekday":"Wednesday","seconds":32875}}
+{"type":"money","kind":"commitment","from":"organiser","to":"signbridge","amount":380,"commitment":"k-5","for":"interpreting signbridge","at":23588.116666666665,"worldTime":{"day":17,"weekday":"Wednesday","seconds":32887}}
+{"type":"money","kind":"release","from":"organiser","to":"harvest-catering","amount":2800,"commitment":"k-1","at":24102.883333333335,"worldTime":{"day":17,"weekday":"Wednesday","seconds":63774}}
+{"type":"money","kind":"commitment","from":"organiser","to":"harvest-catering","amount":140,"commitment":"k-6","for":"order harvest-catering","at":24103.083333333332,"worldTime":{"day":17,"weekday":"Wednesday","seconds":63785}}
+{"type":"money","kind":"release","from":"organiser","to":"harvest-catering","amount":140,"commitment":"k-6","at":30792.433333333334,"worldTime":{"day":22,"weekday":"Monday","seconds":33146}}
+{"type":"money","kind":"commitment","from":"organiser","to":"harvest-catering","amount":70,"commitment":"k-7","for":"cancellation order harvest-catering","at":30792.55,"worldTime":{"day":22,"weekday":"Monday","seconds":33153}}
+{"type":"money","kind":"commitment","from":"organiser","to":"brightside-kitchen","amount":1140,"commitment":"k-8","for":"order brightside-kitchen","at":32228.233333333334,"worldTime":{"day":23,"weekday":"Tuesday","seconds":32894}}
+{"type":"money","kind":"release","from":"organiser","to":"brightside-kitchen","amount":1140,"commitment":"k-8","at":35327.71666666667,"worldTime":{"day":25,"weekday":"Thursday","seconds":46064}}
+{"type":"money","kind":"commitment","from":"organiser","to":"brightside-kitchen","amount":1140,"commitment":"k-9","for":"order brightside-kitchen","at":35328.083333333336,"worldTime":{"day":25,"weekday":"Thursday","seconds":46085}}
