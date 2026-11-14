@@ -369,7 +369,11 @@ function variant(configuration: Configuration, random: Random): { configuration:
       if (fitted.has(template.id as string) && fitting.length > 0) template.price = Math.round(Math.min(...fitting) * (lowest + random.next() * (highest - lowest)));
     }
   }
-  if (priceGap !== undefined) Object.assign(drawn, gapPrices(chosenOf, drawn.attendance, priceGap as [number, number], random));
+  if (priceGap !== undefined) {
+    const city = cityOf(configuration, configuration.calendar === undefined ? undefined : readCalendar(configuration.calendar));
+    const plan = { city, travel: travelOf(configuration, city), helpers: (configuration.helpers as number | undefined) ?? 0, withdraws: drawn.roles?.sponsor?.withdraws ?? [], advance: drawn.advance ?? 0 };
+    Object.assign(drawn, gapPrices(chosenOf, drawn.attendance, plan, priceGap as [number, number], random));
+  }
   for (const [kind, chosen] of Object.entries(chosenOf)) if (Object.hasOwn(settings, kind)) templates.push(...chosen.map((template) => ({ ...template, kind })));
   if (Object.hasOwn(settings, "caterer")) {
     const venues = drawn.chosen.venue ?? [];
@@ -598,28 +602,61 @@ function partyGroups(configuration: Configuration): Readonly<Record<string, read
   return groups;
 }
 
-/** The sixth: the six lowest fees of the available speakers count toward the cost-covering price. */
-const LOWEST_FEES = 6;
+/** The speakers a cheapest feasible plan pays for: the five lowest-fee accepting available ones (FR-CONGRESS-11). */
+const PLAN_SPEAKERS = 5;
+
+/** The association's members the attendance counts (FR-CONGRESS-06, FR-CONGRESS-11). */
+const ASSOCIATION_MEMBERS = 3;
 
 /** The similar events' prices, as shares of the reference price, when the draw gives a price_gap. */
 const SIMILAR_SHARES = [0.8, 1, 1.2];
 
+/** What a cheapest feasible plan reads besides the chosen templates: the city, the travel, the helpers, the sponsors that withdraw and the advance. */
+interface Plan {
+  city: City;
+  travel: Travel;
+  helpers: number;
+  withdraws: readonly string[];
+  advance: number;
+}
+
 /**
- * The cost-covering price (FR-CONGRESS-01's addition): the cheapest chosen venue that seats the target, plus the target
- * attendance × the chosen caterers' median price per head, plus the six lowest fees of the available chosen speakers,
- * less the chosen board's funds and sponsors' amounts, over the target attendance, at least 1; and the reference price,
- * that price over one plus a gap drawn in price_gap.
+ * The cost-covering price from a cheapest feasible plan (FR-CONGRESS-11): the cheapest chosen venue that seats the
+ * target, plus its ramp extra when an interior passage of it is not step-free; the attendance (the target, the five
+ * lowest-fee accepting available speakers, the helpers and the association's 3 members) × the highest price per head of
+ * the chosen caterers; the cheapest chosen agency's price; those five speakers' fees and, for each from a station, the
+ * cheapest train from it at its base price; less the advance, the chosen board's funds and the amounts of the chosen
+ * sponsors that do not withdraw; over the target attendance, at least 1. The reference price is that price over one
+ * plus a gap drawn in price_gap.
  */
-function gapPrices(chosenOf: Readonly<Record<string, TomlTable[]>>, attendance: number, [lowest, highest]: [number, number], random: Random) {
+function gapPrices(chosenOf: Readonly<Record<string, TomlTable[]>>, attendance: number, plan: Plan, [lowest, highest]: [number, number], random: Random) {
   const sum = (values: number[]) => values.reduce((total, value) => total + value, 0);
-  const fitting = (chosenOf.venue ?? []).filter((template) => seatsOf(template) >= attendance).map(({ price }) => price as number);
-  const perHead = (chosenOf.caterer ?? []).map(({ price_per_head: price }) => price as number).sort((one, other) => one - other);
-  const middle = Math.floor(perHead.length / 2);
-  const median = perHead.length === 0 ? 0 : perHead.length % 2 === 1 ? perHead[middle] : (perHead[middle - 1] + perHead[middle]) / 2;
-  const fees = (chosenOf.speaker ?? []).filter(({ available }) => available === true).map(({ fee = 0 }) => fee as number).sort((one, other) => one - other).slice(0, LOWEST_FEES);
+  const venueCost = (template: TomlTable) => {
+    const venue = plan.city.venues.find(({ id }) => id === template.id);
+    const inside = venue === undefined ? [] : [venue.entrance, ...venue.rooms.map(({ id }) => id)];
+    const steps = plan.city.passages.some(({ between, step_free: stepFree }) => stepFree !== true && between.every((place) => inside.includes(place)));
+    return (template.price as number) + (steps ? (((template.extras ?? {}) as Record<string, number>).ramp ?? 0) : 0);
+  };
+  const fitting = (chosenOf.venue ?? []).filter((template) => seatsOf(template) >= attendance).map(venueCost);
+  const perHead = Math.max(0, ...(chosenOf.caterer ?? []).map(({ price_per_head: price }) => price as number));
+  const speakers = (chosenOf.speaker ?? [])
+    .filter(({ available, accepts }) => available === true && accepts === true)
+    .sort((one, other) => ((one.fee as number | undefined) ?? 0) - ((other.fee as number | undefined) ?? 0))
+    .slice(0, PLAN_SPEAKERS);
+  const fees = sum(speakers.map(({ fee = 0 }) => fee as number));
+  const trains = sum(
+    speakers.map(({ home }) => {
+      const prices = plan.travel.trains.filter(({ from }) => from === home).map(({ price }) => price);
+      return home === undefined || home === "local" || prices.length === 0 ? 0 : Math.min(...prices);
+    }),
+  );
+  const agencies = (chosenOf.agency ?? []).map(({ price }) => price as number);
+  const agency = agencies.length === 0 ? 0 : Math.min(...agencies);
+  const heads = attendance + speakers.length + plan.helpers + ASSOCIATION_MEMBERS;
   const funds = sum((chosenOf.board ?? []).map(({ funds: given = 0 }) => given as number));
-  const amounts = sum((chosenOf.sponsor ?? []).map(({ amount = 0 }) => amount as number));
-  const covering = Math.max(1, ((fitting.length === 0 ? 0 : Math.min(...fitting)) + attendance * median + sum(fees) - funds - amounts) / attendance);
+  const amounts = sum((chosenOf.sponsor ?? []).filter(({ id }) => !plan.withdraws.includes(id as string)).map(({ amount = 0 }) => amount as number));
+  const costs = (fitting.length === 0 ? 0 : Math.min(...fitting)) + heads * perHead + agency + fees + trains;
+  const covering = Math.max(1, (costs - plan.advance - funds - amounts) / attendance);
   const gap = lowest + random.next() * (highest - lowest);
   return { cost_covering_price: covering, reference_price: covering / (1 + gap), price_gap: gap };
 }
