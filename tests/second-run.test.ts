@@ -7,6 +7,7 @@ import { Random } from "../src/engine/random.ts";
 import type { Tool } from "../src/engine/tools.ts";
 import { catererRules, speakerRules, venueRules } from "../src/scenarios/congress-parties.ts";
 import { type Population, type PopulationWorld, populationComponent, populationTools } from "../src/scenarios/population.ts";
+import { answerFor } from "../src/scenarios/congress-parts.ts";
 import { congressScenario } from "../src/scenarios/congress.ts";
 import { calls, conversation, drive, notice, tools } from "./fixtures/rules.ts";
 
@@ -336,5 +337,14 @@ describe("the price gap from a cheapest feasible plan (FR-CONGRESS-11)", () => {
   it("prices the cheapest venue that seats the target, its ramp when its interior has steps, the attendance at the highest price per head, the agency, five speakers' fees and trains, less the advance and the sponsors that stay", () => {
     expect(loadScenario(plan(true), 1).variant).toMatchObject({ cost_covering_price: 16, reference_price: 10, price_gap: 0.6, budget: 5000, advance: 3000 });
     expect(loadScenario(plan("3 steps"), 1).variant).toMatchObject({ cost_covering_price: 20, reference_price: 12.5 });
+  });
+});
+
+describe("a withdrawal's sessions, as the parts read them (FR-CONGRESS-11)", () => {
+  it("counts a withdraw for each session it names, and for no other", () => {
+    const received = (at: number) => ({ day: 1, weekday: "Monday" as const, seconds: at * 60 });
+    const message = (act: string, fields: Record<string, unknown>, at: number) => ({ id: `m-${at}`, from: "s1", to: "organiser", act, fields, subject: act, received: received(at), read: true });
+    const state = { mail: { mailboxes: { organiser: [message("accept", { session: 2 }, 1), message("accept_if", { session: 5, condition: "fee" }, 2), message("withdraw", { sessions: "5", condition: "fee" }, 3)] }, inTransit: [] } } as never;
+    expect([answerFor(state, "s1", 2), answerFor(state, "s1", 5)]).toEqual(["accept", "withdraw"]);
   });
 });
