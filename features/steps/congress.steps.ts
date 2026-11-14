@@ -304,9 +304,11 @@ function fieldsIn(rest: string, written: string): Record<string, unknown> {
   const masked = rest.replace(/"([^"]*)"/g, (_, text: string) => `"${quoted.push(text) - 1}"`);
   const textOf = (mask: string) => quoted[Number(mask)];
   let last: { name: string; kind: "list" | "counts" } | undefined;
-  for (const segment of masked.split(/,\s+(?:and\s+)?|\s+and\s+/).map((each) => each.trim()).filter((each) => each !== "")) {
+  // An "and" may follow a quoted text with no space, as an outline's example joins it (FR-CONGRESS-16).
+  for (const segment of masked.split(/,\s+(?:and\s+)?|\s+and\s+|(?<=")and\s+/).map((each) => each.trim()).filter((each) => each !== "")) {
     const total = /^a total of (\d+)$/.exec(segment);
-    const named = /^(\w+) (?:"(\d+)"(?: (-?\d+(?:\.\d+)?))?|(-?\d+(?:\.\d+)?)|(true|false))$/.exec(segment);
+    // A field may be written with "the" before its name: the item "outside_catering" (FR-CONGRESS-16).
+    const named = /^(?:the )?(\w+) (?:"(\d+)"(?: (-?\d+(?:\.\d+)?))?|(-?\d+(?:\.\d+)?)|(true|false))$/.exec(segment);
     const more = /^"(\d+)"(?: (-?\d+(?:\.\d+)?))?$/.exec(segment);
     // A text a message carries as its field "text" (FR-CONGRESS-11).
     const text = /^the text "(\d+)"$/.exec(segment);
@@ -363,8 +365,9 @@ export function hourMsOf(context: Context): number {
 }
 
 // "again": a repeat of a message the turns before sent (FR-CONGRESS-11). FR-CONGRESS-13's "with the same" and
-// FR-CONGRESS-15's "of the first message", contract "c-1" and accept_change's option are their own steps.
-Given(/^the organiser's scripted turns (call (?!.*(?: with the same | of the first message| the contract "c-1"|"accept_change" and (?:the option|no option))).+?)(?: again)?, then end$/, function (this: Context, written: string) {
+// FR-CONGRESS-15's "of the first message", contract "c-1" and accept_change's option, and FR-CONGRESS-16's call on or
+// at a day, are their own steps.
+Given(/^the organiser's scripted turns (call (?!.*(?: with the same | of the first message| the contract "c-1"|"accept_change" and (?:the option|no option)| (?:on|at) "day [^"]+", then end$)).+?)(?: again)?, then end$/, function (this: Context, written: string) {
   script(this, ORGANISER, [...(turnsBefore.get(this) ?? []), ...organiserTurns(written, hourMsOf(this)), { text: "Done.", delayMs: 0 }]);
 });
 
