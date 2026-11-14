@@ -253,10 +253,11 @@ Given(
   'the organiser\'s scripted turns then send "s4" "ask_panel" for slot "16:00", "invite" to session 4 at "11:00", and "confirm" for session 3, then end',
   function (this: Context) {
     untilTime(this, "day 1 13:00");
+    // The confirmation names another room, so it is no repeat of the first, which a repeat's answer would only recall.
     before(
       this,
       organiserTurns(
-        'call "send_mail" to "s4" with the act "ask_panel" and slot "16:00", then "send_mail" to "s4" with the act "invite", session 4, time "11:00", fee 0 and travel_paid false, then "send_mail" to "s4" with the act "confirm", time "10:00", room "hall-a", length 45 and travel "none", then wait 1 world hour, then "check_time"',
+        'call "send_mail" to "s4" with the act "ask_panel" and slot "16:00", then "send_mail" to "s4" with the act "invite", session 4, time "11:00", fee 0 and travel_paid false, then "send_mail" to "s4" with the act "confirm", time "10:00", room "hall-b", length 45 and travel "none", then wait 1 world hour, then "check_time"',
         hourMsOf(this),
       ),
     );

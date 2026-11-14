@@ -82,9 +82,9 @@ describe("a speaker's answer to an invitation (FR-CONGRESS-04)", () => {
   });
 
   it("asks for its condition when the invitation does not meet it", () => {
-    expect(answerTo(invite(), { home: "north-station", condition: "travel_paid" })).toEqual([{ to: "organiser", act: "accept_if", fields: { session: 2, condition: "travel_paid" } }]);
+    expect(answerTo(invite(), { home: "north-station", condition: "travel_paid" })).toEqual([{ to: "organiser", act: "accept_if", fields: { session: 2, condition: "travel_paid", travel_paid: true, from: "north-station" } }]);
     expect(answerTo(invite("10:00", 0, true), { home: "north-station", condition: "travel_paid" })).toEqual([{ to: "organiser", act: "accept", fields: { session: 2 } }]);
-    expect(answerTo(invite("10:00", 100), { fee: 300, condition: "fee" })).toEqual([{ to: "organiser", act: "accept_if", fields: { session: 2, condition: "fee" } }]);
+    expect(answerTo(invite("10:00", 100), { fee: 300, condition: "fee" })).toEqual([{ to: "organiser", act: "accept_if", fields: { session: 2, condition: "fee", fee: 300 } }]);
     expect(answerTo(invite("10:00", 300), { fee: 300, condition: "fee" })).toEqual([{ to: "organiser", act: "accept", fields: { session: 2 } }]);
     expect(answerTo(invite("12:00"), { condition: "morning_slot" })).toEqual([{ to: "organiser", act: "accept_if", fields: { session: 2, condition: "morning_slot", time: "before 12:00" } }]);
     // A constraint is hard, whatever the condition (FR-CONGRESS-07).

@@ -827,6 +827,13 @@ export const speakerRules: RuleSet = {
       return true;
     };
 
+    /** What its condition needs, as its accept_if states it (FR-CONGRESS-11). */
+    const needs = (): Fields => {
+      if (speaker.condition === "fee") return { condition: "fee", fee };
+      if (speaker.condition === "travel_paid") return { condition: "travel_paid", travel_paid: true, from: speaker.home ?? "local" };
+      return { condition: speaker.condition as string, time: "before 12:00" };
+    };
+
     /** Its answer to a session's invitation, or to its condition's answer, as it records it; an acceptance agrees to the fee offered. */
     const answering = (act: string, fields: Fields = {}): Answer => {
       record.answer = act;
@@ -841,6 +848,9 @@ export const speakerRules: RuleSet = {
 
     const answer = ({ act, fields }: Received): Answer | undefined => {
       if (speaker.partner === true && !PARTNER_ACTS.includes(act)) return { act: "not_available", fields: { what: act } };
+      // Once ill, it declines every invitation and panel, and takes no confirmation or change (FR-CONGRESS-11).
+      if (record.cancelled && (act === "invite" || act === "ask_panel")) return act === "invite" && sessions.has(String(fields.session)) ? undefined : { act: "decline", fields: act === "invite" ? { session: fields.session as number } : { slot: fields.slot as number } };
+      if (record.cancelled && (act === "confirm" || act === "change")) return { act: "not_available", fields: { what: "acceptance" } };
       switch (act) {
         case "invite": {
           // A second invitation to a session it has answered changes nothing (FR-CONGRESS-09).
@@ -853,7 +863,7 @@ export const speakerRules: RuleSet = {
           // Whether it would accept is drawn once, with the variant (FR-CONGRESS-11), or by itself when not given (FR-CONGRESS-09).
           wouldAccept ??= speaker.accepts ?? !(random.next() < 1 - (speaker.acceptance ?? 1));
           if (!wouldAccept) return answering("decline");
-          if (speaker.condition !== undefined && !meetsCondition(fields)) return answering("accept_if", { condition: speaker.condition });
+          if (speaker.condition !== undefined && !meetsCondition(fields)) return answering("accept_if", needs());
           return answering("accept");
         }
         case "accept_condition":
@@ -865,7 +875,7 @@ export const speakerRules: RuleSet = {
           if (act === "decline_condition") return answering("decline");
           // The condition is checked on the invitation's offer as accept_condition updates it (FR-CONGRESS-09).
           const offer = { ...invitation, ...fields, session: invitation.session as number };
-          if (!meetsCondition(offer)) return answering("accept_if", { condition: speaker.condition as string });
+          if (!meetsCondition(offer)) return answering("accept_if", needs());
           invitation = offer;
           record.condition_met = true;
           return answering("accept");
@@ -947,9 +957,11 @@ export const speakerRules: RuleSet = {
         const pending = anyAnswered("accept_if");
         if (pending) yield* party.clock();
         if (pending && party.now >= WITHDRAW_MINUTES) {
+          // Only the invitations still waiting on its condition; those it accepted stay accepted (FR-CONGRESS-11).
+          const waiting = [...sessions.entries()].filter(([, session]) => session.answer === "accept_if").map(([key]) => key);
           record.answer = "withdraw";
-          for (const session of sessions.values()) if (session.answer === "accept_if") session.answer = "withdraw";
-          yield* party.write(speaker.organiser, "withdraw", { session: invitation.session as number, condition: speaker.condition as string });
+          for (const key of waiting) (sessions.get(key) as { answer: string }).answer = "withdraw";
+          yield* party.write(speaker.organiser, "withdraw", { sessions: waiting.join(", "), condition: speaker.condition as string });
           continue;
         }
         if (party.stimuli.length > 0) continue;
