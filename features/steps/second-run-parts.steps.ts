@@ -4,7 +4,7 @@ import { Given, Then, When } from "@cucumber/cucumber";
 import { congressParts } from "../../src/scenarios/congress-parts.ts";
 import type { Congress } from "../../src/scenarios/congress.ts";
 import type { Context } from "../support/context.ts";
-import { END, act, booked, emptyWorld, eventAt, evaluate, held, mail, minutes, misapplied, money, publish, records, recordsOf, register, session } from "./congress-parts.steps.ts";
+import { END, SIX, TIMES, act, booked, emptyWorld, eventAt, evaluate, held, mail, minutes, misapplied, money, publish, records, recordsOf, register, session } from "./congress-parts.steps.ts";
 
 // FR-CONGRESS-12: the parts' corrections from E1's second technical run, read on world records the steps set directly.
 
@@ -120,13 +120,16 @@ Given(
 
 // W4.
 Given(
-  "the organiser's account opened with 4000, ticket income was 2000 net, sponsors paid 1000 under conditions met, and costs committed or paid were 6500",
+  "a live booking and six sessions in the latest programme, the organiser's account opened with 4000, ticket income was 2000 net, sponsors paid 1000 under conditions met, and costs committed or paid were 6500",
   function (this: Context) {
     const { state } = recordsOf(this);
     state.context = { ...state.context, opening: 4000 };
+    // A congress that happens (FR-CONGRESS-14): "v1"'s booking from its mail, and six sessions.
+    mail(this, "v1", "organiser", "contract", { contract: "v1-contract-1", date: "day 26", rooms: "main-hall", hours: "08:00-18:00", price: 2000 }, minutes("day 2"));
+    mail(this, "v1", "organiser", "confirmed", { contract: "v1-contract-1" }, minutes("day 3"));
     money(this, { kind: "transfer", from: "attendees", to: "organiser", amount: 2000, for: "tickets" }, minutes("day 10"));
     mail(this, "sp1", "organiser", "agreement", { amount: 1000, conditions: "logo" }, minutes("day 5"));
-    publish(this, [], minutes("day 12"), { logos: ["sp1"] });
+    publish(this, SIX.map((speaker, index) => session([speaker], TIMES[index])), minutes("day 12"), { logos: ["sp1"] });
     money(this, { kind: "payment", from: "sp1", to: "organiser", amount: 1000, invoice: "i-9" }, minutes("day 14"));
     money(this, { kind: "commitment", from: "organiser", to: "v1", amount: 6500, commitment: "k-1", for: "v1-contract-1" }, minutes("day 4"));
   },

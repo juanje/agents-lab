@@ -203,7 +203,9 @@ const EVALUATED_AT: Record<string, (state: Congress) => number | undefined> = {
 
 /** An event's first time, in world minutes, as the congress provides it. */
 export function eventAt(state: Congress, event: string, params: Record<string, unknown> = {}): number | undefined {
-  const found = congressParts.events[event](state, params);
+  const provided = congressParts.events[event];
+  assert.ok(provided !== undefined, `the congress provides no event ${event}`);
+  const found = provided(state, params);
   return found === undefined ? undefined : (found.day - 1) * 1440 + found.seconds / 60;
 }
 
@@ -487,7 +489,7 @@ Given(/^(no hotel was booked, so "hotel_overbooks" hit nobody|"hotel_overbooks" 
 });
 
 /** The event that activates a part, as the parts material gives it. */
-const ACTIVATION: Record<string, string> = { P03: "venue_change", P17: "sponsor_withdraws", P19: "hotel_overbooks" };
+const ACTIVATION: Record<string, string> = { P03: "venue_change", P06: "conditional_answer", P17: "sponsor_withdraws", P19: "hotel_overbooks" };
 
 Then("it was not active", function (this: Context) {
   const { state, part } = recordsOf(this);
@@ -565,14 +567,17 @@ Then('it lists the trap "hold_lapsed"', function (this: Context) {
 });
 
 // The outcome proxies.
-Given(/^(6 sessions in the latest programme, each with a confirmed speaker who believes its time and room, and S1's slot|a session in "room-b" \(30 seats\) whose expected audience is 45|45 attendance with 4 vegan, and catering ordered for 45 with 4 vegan|funds 3000, ticket income 2000 net, sponsors agreed 1500, costs committed 6600, and no overrun|S1's conditions in the programme, S2's logo missing|the wheelchair user registered, every programme room step-free, and the deaf registrant's interpreter booked)$/, function (this: Context, state: string) {
+Given(/^(6 sessions in the latest programme, each with a confirmed speaker who believes its time and room, and S1's slot|a session in "room-b" \(30 seats\) whose expected audience is 45|a live booking, six sessions in the latest programme, 45 attendance with 4 vegan, and catering ordered for 45 with 4 vegan|funds 3000, ticket income 2000 net, sponsors agreed 1500, costs committed 6600, and no overrun|S1's conditions in the programme, S2's logo missing|the wheelchair user registered, every programme room step-free, and the deaf registrant's interpreter booked)$/, function (this: Context, state: string) {
   if (state.startsWith("6 sessions")) {
     SIX.forEach((speaker, index) => confirmed(this, speaker, TIMES[index]));
     publish(this, SIX.map((speaker, index) => session([speaker], TIMES[index])), minutes("day 12"), { sponsor_slots: [{ sponsor: "sp1", start: "09:15", end: "09:30" }], logos: ["sp1"] });
   } else if (state.startsWith("a session in")) {
     register(this, 40);
     publish(this, [session(["s1"], "10:00", "room-b")], minutes("day 12"));
-  } else if (state.startsWith("45 attendance")) {
+  } else if (state.startsWith("a live booking, six sessions")) {
+    // A congress that happens (FR-CONGRESS-14): its six speakers are not confirmed, so the attendance is 45.
+    liveBooking(this);
+    publish(this, SIX.map((speaker, index) => session([speaker], TIMES[index])), minutes("day 12"));
     register(this, 36);
     register(this, 4, { diet: "vegan", given: { diet: "vegan", access: "none" } });
     mail(this, "c1", "organiser", "order_confirmed", { total: 45, price: 1350 }, minutes("day 10"));
