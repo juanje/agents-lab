@@ -300,7 +300,7 @@ The recorder writes a line per event. The inventory and the run's setup go first
 
 **Configuration**
 - A configuration's `[money]`, read by `loadScenario` (`readMoney`) and refused there, naming the key; it needs a `[calendar]`.
-- Accounts are `[money.accounts.<name>]` with `opening` or `unlimited = true` (a balance the world does not follow, kept as `null`).
+- Accounts are `[money.accounts.<name>]` with `opening` or `unlimited = true` (a balance the world does not follow, kept as `null`), and optionally `ceiling` (at least 0), in force from the start (FR-CONGRESS-11).
 - For an agent, accounts also have `tools` (the money tools its session is offered; a participant has its own `tools`).
 - Each money tool takes `[durations].<tool>` world minutes (0 when not given).
 
@@ -541,7 +541,7 @@ The recorder writes a line per event. The inventory and the run's setup go first
 - A perturbation's `for_role` resolves to the template that filled the role, and the completed configuration gives the resolved perturbations.
 
 **Prices (`draw.price_gap`)**
-- `draw.price_gap` gives `cost_covering_price` (cheapest fitting venue + target × caterers' median price per head + six lowest available fees − board funds − sponsors' amounts, over the target, at least 1).
+- `draw.price_gap` gives `cost_covering_price`, from a cheapest feasible plan since FR-CONGRESS-11.
 - It gives `price_gap` (drawn last) and `reference_price` = covering / (1 + gap).
 - The topic's first three similar events then cost the reference × 0.8, 1 and 1.2.
 
@@ -613,7 +613,7 @@ The recorder writes a line per event. The inventory and the run's setup go first
 - It gives first a line per kind, `A|An <kind> takes <act (required fields)>, ….`
 - Then a line per drawn party, `- <id>: <kind>, with a mailbox|no mailbox and a line|no line[; <what anyone could know>]`: a speaker's `"<title>"` and `local` or `from <station>`, an in-house caterer's `in-house for <venue>`.
 - The partner's speaker is not listed.
-- The parties' order is the variant's last draw (FR-CONGRESS-09).
+- The parties are grouped by kind, each kind's order drawn from the replica's sequence (FR-CONGRESS-11).
 - The acts table marks a field an act may leave out with `?`; the directory and the mail leave it out.
 
 **Groups, wakes and the inventory**
@@ -642,8 +642,32 @@ The recorder writes a line per event. The inventory and the run's setup go first
 **Hours, payments and answers**
 - Each party's params carry `keeps`, its hours; its own mail (`Party.write`) waits for them.
 - A sponsor pays `pay_days` after the invoice's `issued` time (the ledger gives it), within its hours, only while its programme conditions stand from day 19.
-- A party gives no second answer to a message with the same sender, act and fields.
+- A party answers a repeated message (same sender, act and fields) with `already_sent` (FR-CONGRESS-11).
 - Each registrant asks a question with the material's `question_share`, within three days of registering.
+
+### Corrections to the world from E1's second technical run (FR-CONGRESS-11)
+
+**A fixed budget**
+- The draw may give `budget` and `advance` (two numbers each); the variant draws a whole number in each and gives both in the `variant` line.
+- The organiser's account opens with the advance, its ceiling the budget from the start; the texts may name `{budget}` and `{advance}` (refused, naming it and the text, when not drawn).
+- With no board drawn, the partner's `partner_session` comes from `association` (no mailbox, no line).
+- `Scenario.refuses` refuses a call of an engine tool (mail, phone, money) before the tool's own refusal; the congress refuses the organiser's `issue_invoice` to a party that is no sponsor, as `invalid_arguments`.
+
+**Draws**
+- Each chosen speaker gets `accepts` from the variant's sequence (true with its `acceptance`); the variant line gives `accepts`, and the speaker answers from it. A speaker given none (unit tests) still draws once at its first invitation.
+- `[draw.speaker] min_accepting`: the whole speaker draw is redrawn until that many available speakers accept, up to 100 times, else refused naming `draw.speaker.min_accepting`.
+- The cost-covering price: the cheapest chosen venue seating the target (+ its `ramp` extra when an interior passage of it in the city is not step-free), the attendance (target + 5 lowest-fee accepting available speakers + `helpers` + 3) × the highest caterer's price per head, the cheapest chosen agency's price, those speakers' fees and cheapest trains from their stations, less the advance, the board's funds and the sponsors not in the role `withdraws`; over the target, at least 1.
+
+**Parties**
+- A speaker's `accept_if` states its need (`fee`; `travel_paid` true and `from`; `time` "before 12:00"); at day 19 its `withdraw` names in `sessions` only the sessions still waiting; once ill it declines invitations and panels and answers `confirm`/`change` with `not_available`.
+- A venue's `quote` gives `extras` (`<item>: <price>; …`); a `room_lost` on a one-room booking becomes a `price_change`; rooms an allocation moved away are lost for the date, so `change_booking` naming one is `unavailable`.
+- A party answers a repeat (same sender, act and fields) with `already_sent` (`act`, `sent`: its first answer's act and world time); it reads the time once per batch of mail it answers.
+- A caterer refuses `order` and `final_numbers` below its minimum with `reason` `below_minimum` and `minimum`.
+
+**Registrants, announcements, directory**
+- Every possible registrant id (the pool's `a-<n>`, the fixed people, the group's largest size after them) gets a mailbox taking `answer (text)`; the population records an `answer` line, and an answer to a question about a diet or access makes that need known (`known`).
+- A `promotion` to `association_list` while the page is open also sets `announced`.
+- `{directory}` says how registrants are mailed, then lists parties grouped by kind (venue, speaker, caterer, sponsor, agency, then other kinds), each kind in an order drawn from the replica's sequence.
 
 ### The population (FR-POPULATION-01, `src/scenarios/population.ts`)
 
