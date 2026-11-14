@@ -313,3 +313,28 @@ describe("the population's answers and promotions (FR-CONGRESS-11)", () => {
     expect((after.population as Population).promotions).toHaveLength(1);
   });
 });
+
+describe("the price gap from a cheapest feasible plan (FR-CONGRESS-11)", () => {
+  /** FR-CONGRESS-01's gap scenario, with the venue's interior step-free or through steps. */
+  const plan = (interior: true | string) =>
+    congress({ venue: 1, speaker: 7, caterer: 2, agency: 1, sponsor: { count: 2, roles: { withdraws: 1 } }, advance: [3000, 3000], budget: [5000, 5000], price_gap: [0.6, 0.6] }, (configuration) => {
+      const pools = parse(configuration.pools as string);
+      pools.speaker = [0, 50, 100, 150, 200, 400].map((fee, index) => ({ id: `s${index + 1}`, fee, home: index === 1 ? "north" : "local", available: true, acceptance: 1 }));
+      // Not available, and available but not accepting: neither counts, whatever its fee.
+      (pools.speaker as TomlTable[]).push({ id: "s7", fee: 0, available: false, acceptance: 1 });
+      pools.caterer = [25, 30].map((price, index) => ({ id: `c${index + 1}`, price_per_head: price, final_days: 7, deposit_share: 0.2, deposit_due_days: 3, cancellation: [{ share: 0.3 }] }));
+      pools.agency = [{ id: "a1", price: 460, notice_days: 7 }];
+      pools.sponsor = [600, 400, 500].map((amount, index) => ({ id: `sp${index + 1}`, amount, conditions: ["logo"], pay_days: [2, 2], ...(index === 2 ? { roles: ["withdraws"] } : {}) }));
+      configuration.pools = stringify(pools);
+      configuration.helpers = 2;
+      configuration.travel = stringify({ stations: ["north"], trains: [{ id: "t1", from: "north", arrives: "08:30", price: 40 }, { id: "t2", from: "north", arrives: "09:00", price: 60 }], hotels: [], sold_out_probability: 0 });
+      const city = parse(configuration.city as string);
+      city.passages = (city.passages as TomlTable[]).map((passage) => ((passage.between as string[]).includes("hall-a") ? { ...passage, step_free: interior } : passage));
+      configuration.city = stringify(city);
+    });
+
+  it("prices the cheapest venue that seats the target, its ramp when its interior has steps, the attendance at the highest price per head, the agency, five speakers' fees and trains, less the advance and the sponsors that stay", () => {
+    expect(loadScenario(plan(true), 1).variant).toMatchObject({ cost_covering_price: 16, reference_price: 10, price_gap: 0.6, budget: 5000, advance: 3000 });
+    expect(loadScenario(plan("3 steps"), 1).variant).toMatchObject({ cost_covering_price: 20, reference_price: 12.5 });
+  });
+});

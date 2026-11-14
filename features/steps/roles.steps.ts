@@ -145,37 +145,49 @@ Then('the perturbation acted on "sp3"', function (this: Context) {
 });
 
 Given(
-  'the cheapest fitting venue costs 2000, the caterers\' median price per head is 30, the six lowest available fees add up to 600, the board\'s funds are 1000, the sponsors\' amounts add up to 1000, the target attendance is 50, and "price_gap" is [0.5, 0.5]',
-  function (this: Context) {
+  /^the target attendance is 50, "helpers" is 2, the cheapest venue that seats it costs 2000 (and every interior passage is step-free|and an interior passage has "3 steps", with a "ramp" at 200), the chosen caterers' prices per head are 25 and 30, the agency costs 460, the five lowest-fee accepting available speakers' fees add up to 500 and one of them comes from "north", whose cheapest train costs 40, the advance is 3000, the sponsors outside the role "withdraws" add up to 1000 and the one in it to 500, and "price_gap" is \[0\.6, 0\.6\]$/,
+  function (this: Context, interior: string) {
     changePools(this, (pools) => {
       const venue = (id: string) => pools.venue.find((template) => template.id === id) as TomlTable;
-      Object.assign(venue("v1"), priced(2000, 60));
+      Object.assign(venue("v1"), priced(2000, 60), { extras: { ramp: 200 } });
       Object.assign(venue("v2"), priced(3000, 100));
       // A cheaper venue that does not seat the target.
       Object.assign(venue("v3"), priced(500, 30));
-      pools.caterer = [20, 30, 45].map((price, index) => ({ id: `c${index + 1}`, price_per_head: price, final_days: 7, deposit_share: 0.2, deposit_due_days: 3, cancellation: [{ share: 0.3 }] }));
-      // Seven available speakers whose six lowest fees add up to 600, and one not available with a lower fee.
-      pools.speaker = [0, 50, 100, 100, 150, 200, 400].map((fee, index) => ({ id: `s${index + 1}`, fee, available: true, acceptance: 1 }));
-      pools.speaker.push({ id: "s8", fee: 0, available: false, acceptance: 1 });
-      pools.board = [{ id: "board", funds: 1000 }];
-      pools.sponsor = [{ id: "sp1", amount: 600, conditions: ["logo"], pay_days: [2, 2] }, { id: "sp2", amount: 400, conditions: ["logo"], pay_days: [2, 2] }];
+      pools.caterer = [25, 30].map((price, index) => ({ id: `c${index + 1}`, price_per_head: price, final_days: 7, deposit_share: 0.2, deposit_due_days: 3, cancellation: [{ share: 0.3 }] }));
+      pools.agency = [{ id: "a1", price: 460, notice_days: 7 }];
+      // Five accepting available speakers whose fees add up to 500, one from "north", a dearer one, one not available and one that does not accept.
+      pools.speaker = [0, 50, 100, 150, 200, 400].map((fee, index) => ({ id: `s${index + 1}`, fee, home: index === 2 ? "north" : "local", available: true, acceptance: 1 }));
+      pools.speaker.push({ id: "s7", fee: 0, home: "local", available: false, acceptance: 1 }, { id: "s8", fee: 0, home: "local", available: true, acceptance: 0 });
+      pools.sponsor = [600, 400, 500].map((amount, index) => ({ id: `sp${index + 1}`, amount, conditions: ["logo"], pay_days: [2, 2], ...(index === 2 ? { roles: ["withdraws"] } : {}) }));
     });
-    changeDraw(this, (draw) => Object.assign(draw, { attendance: [50, 50], venue: 3, speaker: 8, caterer: 3, board: 1, sponsor: 2, price_gap: [0.5, 0.5] }));
-    change(this, (configuration) => (configuration.similar_events = stringify({ events: ["soil", "rivers", "bees"].flatMap((topic) => [1, 2, 3].map((n) => ({ topic, name: `${topic} ${n}`, price: 100 * n, size: 50 * n }))) })));
+    changeDraw(this, (draw) => Object.assign(draw, { attendance: [50, 50], venue: 3, speaker: 8, caterer: 2, agency: 1, sponsor: { count: 2, roles: { withdraws: 1 } }, advance: [3000, 3000], budget: [5000, 5000], price_gap: [0.6, 0.6] }));
+    change(this, (configuration) => {
+      configuration.helpers = 2;
+      configuration.travel = stringify({ stations: ["north"], trains: [{ id: "t1", from: "north", arrives: "08:30", price: 40 }, { id: "t2", from: "north", arrives: "09:30", price: 55 }], hotels: [], sold_out_probability: 0 });
+      configuration.similar_events = stringify({ events: ["soil", "rivers", "bees"].flatMap((topic) => [1, 2, 3].map((n) => ({ topic, name: `${topic} ${n}`, price: 100 * n, size: 50 * n }))) });
+      // The Background's "v1" has "foyer" to "main-hall" through "3 steps".
+      if (interior.startsWith("and every")) {
+        const city = parse(configuration.city as string);
+        city.passages = (city.passages as TomlTable[]).map((passage) => ({ ...passage, step_free: true }));
+        configuration.city = stringify(city);
+      }
+    });
   },
 );
 
-Then("the cost-covering price is {int}, the reference price is {int}, and the similar events cost {float}, {int} and {float}", function (this: Context, covering: number, reference: number, low: number, middle: number, high: number) {
+Then(/^the cost-covering price is (\d+), the reference price is ([\d.]+), and the similar events cost ([\d.]+), ([\d.]+) and ([\d.]+)$/, function (this: Context, covering: string, reference: string, low: string, middle: string, high: string) {
   const loaded = loads.get(this);
   const variant = loaded?.variant as Record<string, unknown>;
-  assert.deepEqual({ covering: variant.cost_covering_price, reference: variant.reference_price }, { covering, reference });
+  assert.deepEqual({ covering: variant.cost_covering_price, reference: variant.reference_price }, { covering: Number(covering), reference: Number(reference) });
   const similar = (loaded?.world.state as { similar: { price: number }[] }).similar.map(({ price }) => Math.round(price * 100) / 100);
-  assert.deepEqual(similar, [low, middle, high]);
+  assert.deepEqual(similar, [Number(low), Number(middle), Number(high)]);
 });
 
-Then("the variant line gives both prices and the gap", function (this: Context) {
+Then("the variant line gives both prices, the gap, the budget and the advance", function (this: Context) {
   const variant = loads.get(this)?.variant as Record<string, unknown>;
-  assert.deepEqual({ covering: variant.cost_covering_price, reference: variant.reference_price, gap: variant.price_gap }, { covering: 42, reference: 28, gap: 0.5 });
+  assert.deepEqual({ gap: variant.price_gap, budget: variant.budget, advance: variant.advance }, { gap: 0.6, budget: 5000, advance: 3000 });
+  assert.equal(typeof variant.cost_covering_price, "number");
+  assert.equal(typeof variant.reference_price, "number");
 });
 
 // The changes the addition's refusals make, beside FR-CONGRESS-01's.
