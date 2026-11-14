@@ -229,6 +229,10 @@ interface Drawn {
   /** The spending limit and the money the association advances the organiser, when the draw gives them (FR-CONGRESS-11). */
   budget?: number;
   advance?: number;
+  /** The cheapest feasible plan's cost at the target and its early deposits, and the share of the target the reference price breaks even at (FR-CONGRESS-13). */
+  plan_cost?: number;
+  early_deposits?: number;
+  break_even_share?: number;
   /** Whether each chosen speaker accepts, drawn with the variant (FR-CONGRESS-11). */
   accepts?: Record<string, boolean>;
 }
@@ -324,8 +328,21 @@ function variant(configuration: Configuration, random: Random): { configuration:
   const kinds = templatesOf(pools);
   const settings = (configuration.kinds ?? {}) as TomlTable;
   for (const kind of Object.keys(settings)) if (!Object.hasOwn(kinds, kind)) throw refused(`kinds.${kind}`, settings[kind], `the pools have no template of the kind "${kind}"`);
-  const { attendance = [0, 0], price_gap: priceGap, budget, advance, ...counts } = draw;
+  const { attendance = [0, 0], price_gap: priceGap, budget, advance, budget_over_plan: budgetOverPlan, advance_over_deposits: advanceOverDeposits, break_even_share: breakEvenShare, ...counts } = draw;
   if (priceGap !== undefined && !isRange(priceGap)) throw refused("draw.price_gap", priceGap, "it is not two numbers above 0, the first not above the second");
+  // The money a draw may give from the cheapest feasible plan, in place of the numbers themselves (FR-CONGRESS-13).
+  for (const [key, value, replaced, bounds] of [
+    ["budget_over_plan", budgetOverPlan, ["budget", budget], "two numbers, the first at least 1 and not above the second"],
+    ["advance_over_deposits", advanceOverDeposits, ["advance", advance], "two numbers, the first at least 1 and not above the second"],
+    ["break_even_share", breakEvenShare, ["price_gap", priceGap], "two numbers from 0 to 1, the first not above the second"],
+  ] as const) {
+    if (value === undefined) continue;
+    if (replaced[1] !== undefined) throw refused(`draw.${key}`, value, `the draw gives "${replaced[0]}" too, which it replaces`);
+    const lowest = key === "break_even_share" ? 0 : 1;
+    const highest = key === "break_even_share" ? 1 : Infinity;
+    const fits = Array.isArray(value) && value.length === 2 && value.every((each) => typeof each === "number" && each >= lowest && each <= highest) && (value[0] as number) <= (value[1] as number);
+    if (!fits) throw refused(`draw.${key}`, value, `it is not ${bounds}`);
+  }
   const [fewest, most] = attendance as number[];
   if (!(typeof fewest === "number" && typeof most === "number" && fewest <= most)) throw refused("draw.attendance", attendance, "it is not two numbers, the first not above the second");
   const topics = (pools.topics ?? []) as string[];
@@ -378,10 +395,28 @@ function variant(configuration: Configuration, random: Random): { configuration:
       if (fitted.has(template.id as string) && fitting.length > 0) template.price = Math.round(Math.min(...fitting) * (lowest + random.next() * (highest - lowest)));
     }
   }
-  if (priceGap !== undefined) {
+  if ([priceGap, budgetOverPlan, advanceOverDeposits, breakEvenShare].some((given) => given !== undefined)) {
     const city = cityOf(configuration, configuration.calendar === undefined ? undefined : readCalendar(configuration.calendar));
-    const plan = { city, travel: travelOf(configuration, city), helpers: (configuration.helpers as number | undefined) ?? 0, withdraws: drawn.roles?.sponsor?.withdraws ?? [], advance: drawn.advance ?? 0 };
-    Object.assign(drawn, gapPrices(chosenOf, drawn.attendance, plan, priceGap as [number, number], random));
+    const plan = cheapestPlan(chosenOf, drawn.attendance, { city, travel: travelOf(configuration, city), helpers: (configuration.helpers as number | undefined) ?? 0, withdraws: drawn.roles?.sponsor?.withdraws ?? [] });
+    const share = ([lowest, highest]: [number, number]) => lowest + random.next() * (highest - lowest);
+    drawn.plan_cost = plan.costAt(drawn.attendance);
+    drawn.early_deposits = plan.earlyDeposits;
+    // The budget and the advance as shares of the plan's cost and early deposits, rounded to whole numbers (FR-CONGRESS-13).
+    if (budgetOverPlan !== undefined) drawn.budget = Math.round(drawn.plan_cost * share(budgetOverPlan as [number, number]));
+    if (advanceOverDeposits !== undefined) drawn.advance = Math.round(drawn.early_deposits * share(advanceOverDeposits as [number, number]));
+    const covering = plan.coveringPrice(drawn.attendance, drawn.attendance, drawn.advance ?? 0, 0);
+    drawn.cost_covering_price = covering;
+    if (priceGap !== undefined) {
+      const gap = share(priceGap as [number, number]);
+      Object.assign(drawn, { reference_price: covering / (1 + gap), price_gap: gap });
+    }
+    if (breakEvenShare !== undefined) {
+      // The plan's break-even price at a share of the target paying, net of the attendees' payment fees (FR-CONGRESS-13).
+      const drawnShare = share(breakEvenShare as [number, number]);
+      const paying = Math.max(1, Math.ceil(drawnShare * drawn.attendance));
+      const feeShare = attendeesOf(configuration)?.payment_fee_share ?? 0;
+      Object.assign(drawn, { reference_price: plan.coveringPrice(paying, paying, drawn.advance ?? 0, feeShare), break_even_share: drawnShare });
+    }
   }
   for (const [kind, chosen] of Object.entries(chosenOf)) if (Object.hasOwn(settings, kind)) templates.push(...chosen.map((template) => ({ ...template, kind })));
   if (Object.hasOwn(settings, "caterer")) {
@@ -620,25 +655,25 @@ const ASSOCIATION_MEMBERS = 3;
 /** The similar events' prices, as shares of the reference price, when the draw gives a price_gap. */
 const SIMILAR_SHARES = [0.8, 1, 1.2];
 
-/** What a cheapest feasible plan reads besides the chosen templates: the city, the travel, the helpers, the sponsors that withdraw and the advance. */
+/** What a cheapest feasible plan reads besides the chosen templates: the city, the travel, the helpers and the sponsors that withdraw. */
 interface Plan {
   city: City;
   travel: Travel;
   helpers: number;
   withdraws: readonly string[];
-  advance: number;
 }
 
 /**
- * The cost-covering price from a cheapest feasible plan (FR-CONGRESS-11): the cheapest chosen venue that seats the
- * target, plus its ramp extra when an interior passage of it is not step-free; the attendance (the target, the five
- * lowest-fee accepting available speakers, the helpers and the association's 3 members) × the highest price per head of
- * the chosen caterers; the cheapest chosen agency's price; those five speakers' fees and, for each from a station, the
- * cheapest train from it at its base price; less the advance, the chosen board's funds and the amounts of the chosen
- * sponsors that do not withdraw; over the target attendance, at least 1. The reference price is that price over one
- * plus a gap drawn in price_gap.
+ * The cheapest feasible plan (FR-CONGRESS-11, FR-CONGRESS-13): the cheapest chosen venue that seats the target, plus its
+ * ramp extra when an interior passage of it is not step-free; the attendance (the attendees, the five lowest-fee
+ * accepting available speakers, the helpers and the association's 3 members) × the highest price per head of the chosen
+ * caterers; the cheapest chosen agency's price; those five speakers' fees and, for each from a station, the cheapest
+ * train from it at its base price. Its early deposits are its venue's deposit_share of the venue's cost and its
+ * caterer's deposit_share of the catering at the target. Its covering price for so many attendees, so many of them
+ * paying, is its cost less the advance, the chosen board's funds and the amounts of the chosen sponsors that do not
+ * withdraw, over the paying attendees net of a payment fee share, at least 1.
  */
-function gapPrices(chosenOf: Readonly<Record<string, TomlTable[]>>, attendance: number, plan: Plan, [lowest, highest]: [number, number], random: Random) {
+function cheapestPlan(chosenOf: Readonly<Record<string, TomlTable[]>>, target: number, plan: Plan) {
   const sum = (values: number[]) => values.reduce((total, value) => total + value, 0);
   const venueCost = (template: TomlTable) => {
     const venue = plan.city.venues.find(({ id }) => id === template.id);
@@ -646,8 +681,9 @@ function gapPrices(chosenOf: Readonly<Record<string, TomlTable[]>>, attendance: 
     const steps = plan.city.passages.some(({ between, step_free: stepFree }) => stepFree !== true && between.every((place) => inside.includes(place)));
     return (template.price as number) + (steps ? (((template.extras ?? {}) as Record<string, number>).ramp ?? 0) : 0);
   };
-  const fitting = (chosenOf.venue ?? []).filter((template) => seatsOf(template) >= attendance).map(venueCost);
-  const perHead = Math.max(0, ...(chosenOf.caterer ?? []).map(({ price_per_head: price }) => price as number));
+  const venue = (chosenOf.venue ?? []).filter((template) => seatsOf(template) >= target).sort((one, other) => venueCost(one) - venueCost(other))[0];
+  const caterer = [...(chosenOf.caterer ?? [])].sort((one, other) => (other.price_per_head as number) - (one.price_per_head as number))[0];
+  const perHead = (caterer?.price_per_head as number | undefined) ?? 0;
   const speakers = (chosenOf.speaker ?? [])
     .filter(({ available, accepts }) => available === true && accepts === true)
     .sort((one, other) => ((one.fee as number | undefined) ?? 0) - ((other.fee as number | undefined) ?? 0))
@@ -661,13 +697,17 @@ function gapPrices(chosenOf: Readonly<Record<string, TomlTable[]>>, attendance: 
   );
   const agencies = (chosenOf.agency ?? []).map(({ price }) => price as number);
   const agency = agencies.length === 0 ? 0 : Math.min(...agencies);
-  const heads = attendance + speakers.length + plan.helpers + ASSOCIATION_MEMBERS;
+  const heads = (attendees: number) => attendees + speakers.length + plan.helpers + ASSOCIATION_MEMBERS;
   const funds = sum((chosenOf.board ?? []).map(({ funds: given = 0 }) => given as number));
   const amounts = sum((chosenOf.sponsor ?? []).filter(({ id }) => !plan.withdraws.includes(id as string)).map(({ amount = 0 }) => amount as number));
-  const costs = (fitting.length === 0 ? 0 : Math.min(...fitting)) + heads * perHead + agency + fees + trains;
-  const covering = Math.max(1, (costs - plan.advance - funds - amounts) / attendance);
-  const gap = lowest + random.next() * (highest - lowest);
-  return { cost_covering_price: covering, reference_price: covering / (1 + gap), price_gap: gap };
+  const venuePrice = venue === undefined ? 0 : venueCost(venue);
+  const costAt = (attendees: number) => venuePrice + heads(attendees) * perHead + agency + fees + trains;
+  const earlyDeposits = ((venue?.deposit_share as number | undefined) ?? 0) * venuePrice + ((caterer?.deposit_share as number | undefined) ?? 0) * heads(target) * perHead;
+  return {
+    costAt,
+    earlyDeposits,
+    coveringPrice: (attendees: number, paying: number, advance: number, feeShare: number) => Math.max(1, (costAt(attendees) - advance - funds - amounts) / (paying * (1 - feeShare))),
+  };
 }
 
 /**
@@ -928,7 +968,7 @@ function similarOf(configuration: Configuration): Congress["similar"] {
   const drawn = configuration.drawn as unknown as Drawn | undefined;
   return similarEvents(configuration, drawn?.topic ?? "").map(({ name, price, size }, index) => ({
     name,
-    price: drawn?.price_gap === undefined || drawn.reference_price === undefined ? price : drawn.reference_price * (SIMILAR_SHARES[index] ?? 1),
+    price: (drawn?.price_gap === undefined && drawn?.break_even_share === undefined) || drawn.reference_price === undefined ? price : drawn.reference_price * (SIMILAR_SHARES[index] ?? 1),
     size,
   }));
 }

@@ -89,8 +89,9 @@ export function invoiced(money: Money, invoice: Omit<Invoice, "id" | "paid">): M
 
 /**
  * The money with a commitment recorded, numbered after the others, and its event; one that leaves its account's committed
- * total above its ceiling, or the discretionary limit without one, adds an unapproved overrun, never a refusal: as commit
- * applies it, and as the world commits from an account of its own (FR-CONGRESS-05).
+ * total above its ceiling, or the discretionary limit without one, and above every committed total the account had
+ * before it (FR-CONGRESS-13), adds an unapproved overrun, never a refusal: as commit applies it, and as the world commits
+ * from an account of its own (FR-CONGRESS-05).
  */
 export function withCommitment(money: Money, given: Omit<Commitment, "id" | "released">, discretionaryLimit: number): Money {
   const commitment: Commitment = { id: `k-${money.commitments.length + 1}`, ...given, released: false };
@@ -98,7 +99,7 @@ export function withCommitment(money: Money, given: Omit<Commitment, "id" | "rel
   const committed = committedOf(after, commitment.with);
   const limit = money.ceilings[commitment.with] ?? discretionaryLimit;
   const events: MoneyEvent[] = [{ kind: "commitment", from: commitment.with, to: commitment.by, amount: commitment.amount, commitment: commitment.id, for: commitment.for }];
-  if (committed <= limit) return { ...after, events: [...money.events, ...events] };
+  if (committed <= limit || committed <= highestCommitted(money, commitment.with)) return { ...after, events: [...money.events, ...events] };
   const overrun: Overrun = { commitment: commitment.id, account: commitment.with, committed, limit };
   return { ...after, overruns: [...money.overruns, overrun], events: [...money.events, ...events, { kind: "unapproved_overrun", from: commitment.with, amount: committed, commitment: commitment.id, limit }] };
 }
@@ -173,6 +174,18 @@ export function startingMoney(settings: MoneySettings): Money {
   const balances = Object.fromEntries(settings.accounts.map((account) => [account.name, "unlimited" in account ? null : account.opening]));
   const ceilings = Object.fromEntries(settings.accounts.flatMap(({ name, ceiling }) => (ceiling === undefined ? [] : [[name, ceiling]])));
   return { balances, invoices: [], commitments: [], ceilings, overruns: [], events: [] };
+}
+
+/** The highest committed total an account has had, from its commitments' and releases' events in the order applied. */
+function highestCommitted(money: Money, account: string): number {
+  let total = 0;
+  let highest = 0;
+  for (const { kind, from, amount } of money.events) {
+    if (from !== account || (kind !== "commitment" && kind !== "release")) continue;
+    total += kind === "commitment" ? Number(amount) : -Number(amount);
+    highest = Math.max(highest, total);
+  }
+  return highest;
 }
 
 /** An account's committed total: the sum of its commitments not released. */
