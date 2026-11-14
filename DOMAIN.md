@@ -282,6 +282,7 @@ The recorder writes a line per event. The inventory and the run's setup go first
 - `call`'s start places the call through the arbiter (an `effector_start` line).
 - It lasts until its call ends (duration `Infinity`, which `waitAtLeast` waits out only on its signal), ending early with the outcome the world gives (`EarlyEnd.outcomeOf`): `success` with `Answer from <callee>. Act: <act>.`, its fields and text, or `no_answer` / `busy`.
 - `answer_call` is refused as `no_such_call` unless the call is ringing for its caller.
+- An answered call keeps `endedAt`, the world time its `answer_call` landed (FR-CONGRESS-13); the call line does not repeat it beside its `ended` moment.
 - Its start connects the call, it lasts `call_minutes` plus the words of both texts, and its action ends the call `answered`, which ends the caller's `call` at the same moment.
 - Its success text is `The call has ended.`
 
@@ -309,11 +310,12 @@ The recorder writes a line per event. The inventory and the run's setup go first
 - The state holds balances, invoices (`i-<n>`), commitments (`k-<n>`, recorded `by` the caller `with` an account), ceilings, overruns and every event.
 
 **Tools and refusals**
-- `issue_invoice`, `pay`, `transfer`, `commit`, `release` and `approve` are effectors.
+- `issue_invoice`, `void_invoice`, `pay`, `transfer`, `commit`, `release` and `approve` are effectors.
+- `void_invoice` voids an invoice its caller issued (FR-CONGRESS-13): unpaid, it is `voided` and no longer due (event `void`); paid, its amount goes back to whom paid it (event `refund`). `pay` refuses a voided invoice as `invalid_arguments`, with no time.
 - Invalid arguments (an amount not positive, an unknown account, a `due` not `day <n>`, a caller without an account) are refused as `invalid_arguments` with no time.
 - `pay` fails at landing as `no_such_invoice`, `already_paid` or `insufficient_funds`, `transfer` as `insufficient_funds`, `release` as `no_such_commitment`.
-- A commitment that leaves its account's committed total above its ceiling, or `discretionary_limit` without one, adds an `unapproved_overrun` (never refused).
-- `ledger` is a sensor giving JSON (`balance`, `invoices_to_pay`, `invoices_issued`, `commitments_bound`, `commitments_recorded`, `ceiling`).
+- A commitment that leaves its account's committed total above its ceiling, or `discretionary_limit` without one, and above every committed total the account had before it, adds an `unapproved_overrun` (never refused); the highest total is read from the account's commitment and release events (FR-CONGRESS-13).
+- `ledger` is a sensor giving JSON (`balance`, `invoices_to_pay`, `invoices_issued`, `commitments_bound`, `commitments_recorded`, `ceiling`); a voided invoice is not among `invoices_to_pay` nor a summary's `unpaid`, and is marked `voided` among `invoices_issued`.
 
 **What is recorded**
 - The run's `MoneyBook` writes a `money` line for each event (`kind`, `from`, `to`, `amount`, ids, `atMs`, `worldTime`) and, as the run ends, a `money_summary` per account.
@@ -421,11 +423,12 @@ The recorder writes a line per event. The inventory and the run's setup go first
 - It declares `[mail]`, `[phone]`, `[money]` (the organiser's account), `[kinds.venue]` and `[kinds.board]` (with `account`: `"unlimited"`, or the template key giving the opening, here `funds`), `event_day` and `[perturbations]`.
 
 **A venue's params**
-- The variant gives each venue's params its template plus `id`, `organiser`, `event_day`, its interior's true `floor_plan` from the city and the perturbations for it.
+- The variant gives each venue's params its template plus `id`, `organiser`, `event_day`, its interior's true `floor_plan` from the city and its `room_allocation` perturbation; the venue change is the world's (FR-CONGRESS-13).
 - Perturbations are `[perturbations.<name>]` with `between` or `at` as `"day <n> HH:MM"`, `kind`, optional `for`.
 
 **What a venue keeps**
-- Its dates (`free`, `held`, `contracted`, `confirmed`, `other`), contracts (`<venue>-contract-<n>`) and timers (hold lapse, challenge lapse, deposit reminder and cancellation, enquiries at `enquiries_per_day`, perturbations).
+- Its dates (`free`, `held`, `contracted`, `confirmed`, `other`), contracts (`<venue>-contract-<n>`) and timers (hold lapse, challenge lapse, deposit reminder and cancellation, enquiries at `enquiries_per_day`, room allocation).
+- The venue change reaches it on the channel `venue_change`, its text the declared `kind` or empty (then drawn), and changes its contracted or confirmed booking.
 - A challenged hold ends at its `confirm_by`.
 - Commitments and invoices carry `for` texts (`<contract>`, `<contract> extra <item>`, `deposit <contract>`, `cancellation <contract>`) by which it finds them again in its ledger.
 
@@ -436,7 +439,7 @@ The recorder writes a line per event. The inventory and the run's setup go first
 
 **Rule sets and configuration**
 - The rule sets `speaker` and `partner` (the speaker's, with `partner: true`: it accepts any invitation and takes only `invite`, `confirm`, `change` and `ask_slides`).
-- `[kinds.speaker]` and `[kinds.partner]` are in the base configuration (account `"unlimited"`, the tools of mail, phone, `check_time`, `commit` and `issue_invoice`, the channels `mail_notice`, `phone`, `early_cancel` and `late_cancel`).
+- `[kinds.speaker]` and `[kinds.partner]` are in the base configuration (account `"unlimited"`, the tools of mail, phone, `check_time`, `ledger`, `commit`, `release` and `issue_invoice`, the channels `mail_notice`, `phone`, `early_cancel` and `late_cancel`).
 - A template's `reply_minutes` and `hours` are its participant's, in place of its kind's.
 - A speaker's params are its template plus `organiser` and `event_day`.
 
@@ -452,6 +455,7 @@ The recorder writes a line per event. The inventory and the run's setup go first
 
 **Cancellations**
 - An illness on `early_cancel` makes it mail `cancel`; on `late_cancel` it calls the organiser with `cancel` and mails it when the call does not succeed.
+- As it cancels it releases its `fee <id>` commitment (FR-CONGRESS-13).
 
 **Outcome**
 - `invitation` (JSON), `answer`, `condition`, `condition_met`, `believes_time`, `believes_room`, `cancelled`, `broken_agreement`, `claim`.
@@ -462,7 +466,7 @@ The recorder writes a line per event. The inventory and the run's setup go first
 **The `early_cancel` and `late_cancel` components**
 - `early_cancel` and `late_cancel` are components of the kind `perturbation` (`Scenario.components`), on the speakers of the rule set `speaker`.
 - Each draws its time and an order of them from `cycle of <name>`, and waits by `reachedAfterMs`.
-- At its time it takes the first in its order whom a `confirm` from the organiser has reached (by its time) and who has not cancelled (a `cancel` from it in the organiser's mailbox, in transit, or a call).
+- At its time it takes the first in its order whom a `confirm` from the organiser has reached (by its time) and who has not cancelled, both read from the record of acts, mail and answered calls (FR-CONGRESS-13).
 - `early_cancel` with none looks again each world hour for the next confirm and fires 2 days after it was received.
 - It delivers on its own channel (source `illness`) with `held: false`, which a component's `deliver` step may give so that hours and reply delays do not hold it.
 - Venues get none of these perturbations.
@@ -543,6 +547,7 @@ The recorder writes a line per event. The inventory and the run's setup go first
 **Prices (`draw.price_gap`)**
 - `draw.price_gap` gives `cost_covering_price`, from a cheapest feasible plan since FR-CONGRESS-11.
 - It gives `price_gap` (drawn last) and `reference_price` = covering / (1 + gap).
+- `draw.break_even_share` gives the reference price instead: the plan's break-even price at that share of the target paying (FR-CONGRESS-13); the similar events follow it the same way.
 - The topic's first three similar events then cost the reference × 0.8, 1 and 1.2.
 
 **Commitments**
@@ -597,7 +602,7 @@ The recorder writes a line per event. The inventory and the run's setup go first
 - Answers are read per session (`answerFor`).
 - An act carries its `outcome`; P21 counts only published programmes, P20 and P02 the act meant, once.
 - `effortMoney` counts commitments net of releases, and payments only to an actor with no commitment counted.
-- W4 does not hold for a cancelled congress, and counts sponsor money only under conditions met.
+- W4 counts sponsor money only under conditions met; since FR-CONGRESS-14 it needs a congress that happens and no overrun.
 
 ### The congress ready for an experiment (FR-CONGRESS-08)
 
@@ -642,7 +647,7 @@ The recorder writes a line per event. The inventory and the run's setup go first
 **Hours, payments and answers**
 - Each party's params carry `keeps`, its hours; its own mail (`Party.write`) waits for them.
 - A sponsor pays `pay_days` after the invoice's `issued` time (the ledger gives it), within its hours, only while its programme conditions stand from day 19.
-- A party answers a repeated message (same sender, act and fields) with `already_sent` (FR-CONGRESS-11).
+- A party answers a repeated message (same sender, act and fields) with `already_sent` (FR-CONGRESS-11) while nothing changed since its first answer (FR-CONGRESS-13).
 - Each registrant asks a question with the material's `question_share`, within three days of registering.
 
 ### Corrections to the world from E1's second technical run (FR-CONGRESS-11)
@@ -677,8 +682,37 @@ The recorder writes a line per event. The inventory and the run's setup go first
 - The event `venue_change`: the live booking's venue's first `room_lost` or `price_change`; E1's parts material activates P03 on it.
 - W4 counts `opening`. Catering orders whose caterer last answered `cancelled` are left out (P12, P13, W3); P14 counts a cancellation that leaves less than the final registrations as a cut.
 - P08 and P09 need each replacement to have accepted that session's invitation (or the panel for its slot), be confirmed, believe its time and hold no other session.
-- P20 reads the organiser's invitations as made (mail delivered or in transit, by sent time, and calls) from the world after the act, less the act itself; P02 counts toilets and the catering area; P10 uses the submitted budget with a board, else (committed − `ceiling` − sponsors agreed) / target.
+- P20 reads the organiser's invitations as made (mail delivered or in transit, by sent time, and calls) from the world after the act, less the act itself; P02 counts toilets and the catering area. (P10's own cost-covering price was replaced by FR-CONGRESS-14.)
 - `answerFor` reads a withdrawal for each session in its `sessions`; `outOf` takes a speaker out of a programme session only when its withdrawal names that session's invitation, and entirely only for `cancel` or `withdraw_invitation` (P05 and W1 read it per session).
+
+### Corrections to the world from E1's third technical run (FR-CONGRESS-13)
+
+**Money that can close**
+- `cheapestPlan` (congress.ts) gives the plan's cost for a number of attendees, its early deposits (its venue's `deposit_share` of the venue with its ramp, its caterer's of the catering at the target) and a covering price for so many paying, net of a payment fee share.
+- The draw may give `budget_over_plan`, `advance_over_deposits` (first number at least 1) and `break_even_share` (0 to 1) in place of `budget`, `advance` and `price_gap`; each share is drawn after the speakers, in that order, and the budget and the advance are rounded to whole numbers.
+- The variant line gives `plan_cost` and `early_deposits` whenever any of those keys or `price_gap` is given. A key beside the one it replaces, or a range outside its bounds, is refused naming it.
+
+**One record of acts**
+- `actsOf` (congress-parts.ts) is the one record: every mail (delivered, at `received`; in transit, at `sent`) and, for each answered call, the caller's act and its answer at the call's `endedAt`, each with `channel` `mail` or `phone`. An unanswered call passes no act.
+- The parts, `confirmedAt` and `hasCancelled` read it; `ordersOf` gives the catering orders from it.
+
+**Venues, cancellations and caterers**
+- Every declared venue perturbation other than `room_allocation` is the venue change: a component (`venueChange`) that draws its time once, records itself in `state.perturbations` for the venue holding the organiser's live booking (contracted or confirmed, from `bookingsOf`) and delivers `venue_change` to it; with no live booking it ends.
+- A venue's or caterer's cancellation voids its contract's or order's invoices (`Party.voidInvoices`, the tool `void_invoice`) before any charge is committed and invoiced.
+- A caterer refuses an `order` for a date it holds an order for with `order_refused`, `reason` `order_held` and the held order's `counts`.
+
+**Repeats**
+- A party counts each act that reaches it (each mail it reads, each ring) and each change of its own (`Party.changed`: a venue's timers and its change). A repeat is answered `already_sent` only while that count is what it was when it answered the first; otherwise it is handled afresh.
+
+### Corrections to the parts from E1's third technical run (FR-CONGRESS-14)
+
+- W3 and W4 need a congress that happens (six sessions and a live booking); W4 also no `unapproved_overrun`, its `values` unchanged.
+- W1's confirmations are the organiser's own, by mail or by phone, through the record of acts.
+- The event `conditional_answer`: the first `accept_if` from the speaker the organiser first invited to that session; E1's parts material is to activate P06 on it.
+- P10 lists the `edit_ticket_page` that set a price above 1.25 × the reference price when no later edit set a price before `day 12 00:00`.
+- P20 does not count a `withdraw_invitation` to a speaker that had cancelled, nor one made with no live booking when no `contract` came after it.
+- P02 counts only an `accept_contract` that reached the venue (a delivered mail or an answered call), its first one.
+- P21's pattern (`lateAllocation`): 24 hours after the live booking's venue's `rooms_allocated`, the programme then, the registrants' last `belief` by then, or a confirmed speaker of a moved room's belief by then still has a moved room; it lists the organiser's last act by then that told a moved room (a programme naming one, an announcement to registrants of such a version, a `confirm` or `change` naming one).
 
 ### The population (FR-POPULATION-01, `src/scenarios/population.ts`)
 
