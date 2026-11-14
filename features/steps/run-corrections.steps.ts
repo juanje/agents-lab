@@ -21,7 +21,7 @@ const HOURS = {
 };
 
 /** The Background's city: an office and the venue "v1" with its rooms "hall-a" and "hall-b". */
-const CITY = {
+export const CITY = {
   places: [{ id: "office" }],
   venues: [{ id: "v1", entrance: "v1-entrance", hours: "always", rooms: [{ id: "hall-a", seats: 80 }, { id: "hall-b", seats: 40 }] }],
   passages: [
@@ -32,7 +32,7 @@ const CITY = {
 };
 
 /** The venue "v1" of the Background. */
-const V1: TomlTable = {
+export const V1: TomlTable = {
   id: "v1",
   rooms: [
     { id: "hall-a", seats: 80, equipment: [] },
@@ -59,7 +59,7 @@ const SPEAKERS: TomlTable[] = [
 ];
 
 /** The attendees material of the Background: a ticket page, and nobody who comes to it. */
-const ATTENDEES = {
+export const ATTENDEES = {
   pool_factor: 1,
   base_per_day: 0,
   unannounced: 0,
@@ -80,17 +80,22 @@ const SP1: TomlTable = { id: "sp1", amount: 1200, conditions: ["logo", "morning_
 Given(
   "the congress scenario of FR-CONGRESS-08, whose calendar starts at {string} with one segment of scale {int}, so one world hour is {int} milliseconds of the run",
   function (this: Context, start: string, scale: number, hourMs: number) {
-    assert.equal((3600 * 1000) / scale, hourMs);
-    setUpCongress(this, { start, segments: [{ scale }], hours: HOURS });
-    change(this, (configuration) => {
-      configuration.city = stringify(CITY);
-      // A population with a ticket page and no one who registers unless a scenario says so.
-      configuration.attendees = stringify(ATTENDEES);
-    });
-    // The run ends 5 world hours in, unless a scenario says when.
-    this.timeLimitMs = 5 * hourMs;
+    setUpCorrectionsCongress(this, start, scale, hourMs);
   },
 );
+
+/** FR-CONGRESS-09's congress: its city with "v1", a ticket page nobody comes to, and a run that ends 5 world hours in. */
+export function setUpCorrectionsCongress(context: Context, start: string, scale: number, hourMs: number): void {
+  assert.equal((3600 * 1000) / scale, hourMs);
+  setUpCongress(context, { start, segments: [{ scale }], hours: HOURS });
+  change(context, (configuration) => {
+    configuration.city = stringify(CITY);
+    // A population with a ticket page and no one who registers unless a scenario says so.
+    configuration.attendees = stringify(ATTENDEES);
+  });
+  // The run ends 5 world hours in, unless a scenario says when.
+  context.timeLimitMs = 5 * hourMs;
+}
 
 Given('the mail delivers in 1 world minute and every party has no hours, no reply delay and "pick_up" 1, unless a scenario says otherwise', function (this: Context) {
   // The base configuration's mail delivers in 1 world minute, and its kinds keep no hours and reply at once; each template picks up.
