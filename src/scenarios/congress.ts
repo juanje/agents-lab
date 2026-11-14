@@ -1786,7 +1786,7 @@ const BASE_CONFIGURATION = [
   'tools = ["ledger", "pay", "issue_invoice"]',
   "[kinds.venue]",
   'rules = "venue"',
-  'tools = ["send_mail", "check_mail", "read_mail", "call", "answer_call", "check_time", "ledger", "commit", "release", "issue_invoice"]',
+  'tools = ["send_mail", "check_mail", "read_mail", "call", "answer_call", "check_time", "ledger", "commit", "release", "issue_invoice", "void_invoice"]',
   `channels = ["mail_notice", "phone", "${VENUE_CHANGE}"]`,
   "reply_minutes = [0, 0]",
   'account = "unlimited"',
@@ -1797,7 +1797,7 @@ const BASE_CONFIGURATION = [
   "reply_minutes = [0, 0]",
   'account = "funds"',
   ...[
-    ["caterer", '["send_mail", "check_mail", "read_mail", "call", "answer_call", "check_time", "ledger", "commit", "release", "issue_invoice"]', '["mail_notice", "phone"]', '"unlimited"'],
+    ["caterer", '["send_mail", "check_mail", "read_mail", "call", "answer_call", "check_time", "ledger", "commit", "release", "issue_invoice", "void_invoice"]', '["mail_notice", "phone"]', '"unlimited"'],
     ["sponsor", '["send_mail", "check_mail", "read_mail", "call", "answer_call", "check_time", "ledger", "pay", "read_programme"]', `["mail_notice", "phone", "${SPONSOR_PERTURBATION}", "${INVOICE_NOTICE}"]`, '"amount"'],
     ["agency", '["send_mail", "check_mail", "read_mail", "call", "answer_call", "check_time", "ledger", "commit", "release"]', '["mail_notice", "phone"]', '"unlimited"'],
   ].flatMap(([kind, tools, channels, account]) => [`[kinds.${kind}]`, `rules = "${kind}"`, `tools = ${tools}`, `channels = ${channels}`, "reply_minutes = [0, 0]", `account = ${account}`]),

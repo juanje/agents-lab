@@ -175,6 +175,14 @@ class Party {
     return JSON.parse((yield* this.call("ledger")).text) as Record<string, unknown>;
   }
 
+  /** Voids each invoice it issued that stands, as its ledger gives them, whose "for" text matches (FR-CONGRESS-13). */
+  *voidInvoices(matches: (what: string) => boolean): Generator<RuleStep, void, Perceived> {
+    const ledger = yield* this.ledger();
+    for (const issued of (ledger.invoices_issued ?? []) as { id: string; for: string; voided?: boolean }[]) {
+      if (issued.voided !== true && matches(issued.for)) yield* this.call("void_invoice", { invoice: issued.id });
+    }
+  }
+
   /** Releases each commitment it recorded, as its ledger gives them, whose "for" text matches. */
   *release(matches: (what: string) => boolean): Generator<RuleStep, void, Perceived> {
     const ledger = yield* this.ledger();
@@ -527,7 +535,10 @@ export const venueRules: RuleSet = {
       }
     };
 
-    /** A cancellation with its charge: it releases the contract's commitments and invoices the charge when above 0. */
+    /**
+     * A cancellation with its charge: it releases the contract's commitments, voids its invoices (FR-CONGRESS-13) and
+     * invoices the charge when above 0.
+     */
     function cancelling(contract: Contract, charge: number): Answer {
       dates.set(contract.date, "free");
       contract.confirmed = false;
@@ -538,6 +549,7 @@ export const venueRules: RuleSet = {
         fields: { contract: contract.id, charge },
         then: function* () {
           yield* releaseAll(contract);
+          yield* party.voidInvoices((what) => what.endsWith(contract.id));
           if (charge > 0) {
             // A charge is committed as it is invoiced (FR-CONGRESS-05's addition).
             yield* party.call("commit", { with: contract.to, amount: charge, for: `cancellation ${contract.id}` });
@@ -1144,6 +1156,7 @@ export const catererRules: RuleSet = {
             fields: { charge },
             then: function* () {
               yield* recommit(0);
+              yield* party.voidInvoices((what) => what.endsWith(forOrder));
               // A charge is committed as it is invoiced (FR-CONGRESS-05's addition).
               if (charge > 0) yield* party.call("commit", { with: caterer.organiser, amount: charge, for: `cancellation ${forOrder}` });
               if (charge > 0) yield* invoice(charge, `day ${today()}`, "cancellation");

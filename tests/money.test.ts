@@ -38,7 +38,8 @@ describe("readMoney (FR-MONEY-01)", () => {
         { name: "board", opening: 5000 },
       ],
       discretionaryLimit: 300,
-      durations: { issue_invoice: 0, pay: 5, transfer: 0, commit: 0, release: 0, approve: 0, ledger: 3 },
+      // void_invoice is a money tool since FR-CONGRESS-13.
+      durations: { issue_invoice: 0, void_invoice: 0, pay: 5, transfer: 0, commit: 0, release: 0, approve: 0, ledger: 3 },
     });
   });
 

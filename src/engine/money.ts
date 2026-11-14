@@ -18,7 +18,7 @@ export interface MoneySettings {
 }
 
 /** The money tools, in the order the inventory lists them. */
-export const MONEY_TOOLS = ["issue_invoice", "pay", "transfer", "commit", "release", "approve", "ledger"] as const;
+export const MONEY_TOOLS = ["issue_invoice", "void_invoice", "pay", "transfer", "commit", "release", "approve", "ledger"] as const;
 
 /** A key of the money that cannot be followed: an error that names it, its value and why. */
 function refused(key: string, value: unknown, why: string): Error {
@@ -67,7 +67,7 @@ export function readMoney(value: TomlValue, calendar: Calendar | undefined, name
   return { accounts, discretionaryLimit: limit, durations: minutes };
 }
 
-/** An invoice: its id, issuer, addressee, amount, due day, what it is for, and whether it was paid. */
+/** An invoice: its id, issuer, addressee, amount, due day, what it is for, whether it was paid, and whether its issuer voided it. */
 export interface Invoice {
   id: string;
   from: string;
@@ -76,6 +76,7 @@ export interface Invoice {
   due: string;
   for: string;
   paid: boolean;
+  voided?: boolean;
 }
 
 /**
@@ -102,6 +103,18 @@ export function withCommitment(money: Money, given: Omit<Commitment, "id" | "rel
   if (committed <= limit || committed <= highestCommitted(money, commitment.with)) return { ...after, events: [...money.events, ...events] };
   const overrun: Overrun = { commitment: commitment.id, account: commitment.with, committed, limit };
   return { ...after, overruns: [...money.overruns, overrun], events: [...money.events, ...events, { kind: "unapproved_overrun", from: commitment.with, amount: committed, commitment: commitment.id, limit }] };
+}
+
+/**
+ * The money with an invoice voided by its issuer, as when its contract or order is cancelled (FR-CONGRESS-13): unpaid, it
+ * is no longer due; paid, its amount goes back from the issuer to whom paid it. Its event is a void or a refund.
+ */
+export function withVoid(money: Money, id: string): Money {
+  const invoice = money.invoices.find((each) => each.id === id) as Invoice;
+  const invoices = money.invoices.map((each) => (each.id === id ? { ...each, voided: true } : each));
+  const event = { from: invoice.from, to: invoice.to, amount: invoice.amount, invoice: invoice.id };
+  if (!invoice.paid) return { ...money, invoices, events: [...money.events, { kind: "void", ...event }] };
+  return { ...money, invoices, balances: moved(money, invoice.from, invoice.to, invoice.amount), events: [...money.events, { kind: "refund", ...event }] };
 }
 
 /** The money with a commitment released, by its id, and its event: as release applies it, and as the world releases one. */
@@ -148,7 +161,7 @@ export interface Overrun {
 }
 
 /** A money event as the log gives it (FR-MONEY-01): its kind, its parties, amount and ids. */
-export type MoneyEvent = { kind: "invoice" | "payment" | "transfer" | "commitment" | "release" | "approval" | "unapproved_overrun" } & Readonly<Record<string, string | number>>;
+export type MoneyEvent = { kind: "invoice" | "void" | "refund" | "payment" | "transfer" | "commitment" | "release" | "approval" | "unapproved_overrun" } & Readonly<Record<string, string | number>>;
 
 /** The money as the world keeps it (FR-MONEY-01). */
 export interface Money {
@@ -263,13 +276,31 @@ export function moneyTools<State>(settings: MoneySettings, keeper: MoneyKeeper<S
       texts: { success: "Invoice sent." },
     },
   );
+  const issuedBy = (money: Money, call: AgentCall) => money.invoices.find(({ id, from, voided }) => id === call.arguments.invoice && from === call.agent && voided !== true);
+  const voidInvoice = effector(
+    "void_invoice",
+    "Void an invoice you issued, by its id, as when its contract or order is cancelled: unpaid, it is no longer due; paid, its amount goes back to whom paid it.",
+    { invoice: { type: "string" } },
+    ["invoice"],
+    {
+      refuses: (_state, call) => callerRefusal(call),
+      action: acting(
+        (money, call) => (issuedBy(money, call) === undefined ? "no_such_invoice" : undefined),
+        (money, call) => withVoid(money, (issuedBy(money, call) as Invoice).id),
+      ),
+      texts: { success: "Voided.", no_such_invoice: "no_such_invoice: you issued no such invoice that stands" },
+    },
+  );
   const invoiceFor = (money: Money, call: AgentCall) => money.invoices.find(({ id, to }) => id === call.arguments.invoice && to === call.agent);
+  // A voided invoice is no longer due: paying it is refused before it takes any time (FR-CONGRESS-13).
+  const voidedRefusal = (state: State, call: AgentCall) => (invoiceFor(moneyOf(state), call)?.voided === true ? invalid("the invoice was voided: it is no longer due") : undefined);
   const pay = effector("pay", "Pay an invoice addressed to you, by its id.", { invoice: { type: "string" } }, ["invoice"], {
-    refuses: (_state, call) => callerRefusal(call),
+    refuses: (state, call) => callerRefusal(call) ?? voidedRefusal(state, call),
     action: acting(
       (money, call) => {
         const invoice = invoiceFor(money, call);
         if (invoice === undefined) return "no_such_invoice";
+        if (invoice.voided === true) return "voided";
         if (invoice.paid) return "already_paid";
         return shortOf(money, call.agent, invoice.amount) ? "insufficient_funds" : undefined;
       },
@@ -283,7 +314,7 @@ export function moneyTools<State>(settings: MoneySettings, keeper: MoneyKeeper<S
         };
       },
     ),
-    texts: { success: "Paid.", no_such_invoice: "no_such_invoice: no invoice with that id is addressed to you", already_paid: "already_paid: that invoice is paid", insufficient_funds: "insufficient_funds: your balance is below the amount" },
+    texts: { success: "Paid.", no_such_invoice: "no_such_invoice: no invoice with that id is addressed to you", voided: "voided: that invoice was voided and is no longer due", already_paid: "already_paid: that invoice is paid", insufficient_funds: "insufficient_funds: your balance is below the amount" },
   });
   const transfer = effector("transfer", "Move money from your account to another, without an invoice: to whom, the amount and what it is for.", { to: { type: "string" }, amount: { type: "number" }, for: { type: "string" } }, ["to", "amount", "for"], {
     refuses: (_state, call) => callerRefusal(call) ?? refusing(call.arguments.to as string, call.arguments.amount),
@@ -329,7 +360,7 @@ export function moneyTools<State>(settings: MoneySettings, keeper: MoneyKeeper<S
     durationMs: minutesOf(settings, "ledger"),
     sense: (state, agent) => JSON.stringify(ledgerOf(moneyOf(state), agent)),
   };
-  return [issueInvoice, pay, transfer, commit, release, approve, ledger];
+  return [issueInvoice, voidInvoice, pay, transfer, commit, release, approve, ledger];
 }
 
 /** An account as its ledger shows it to its holder. */
@@ -342,12 +373,13 @@ function ledgerOf(money: Money, account: string): Record<string, unknown> {
     const two = (value: number) => String(Math.floor(value)).padStart(2, "0");
     return { issued: `day ${day + 1} ${two((at - day * 1440) / 60)}:${two(at % 60)}` };
   };
-  const invoice = (other: "from" | "to") => ({ id, from, to, amount, due, for: what, paid }: Invoice) => ({ id, [other]: other === "from" ? from : to, amount, due, for: what, paid, ...issuedOf(id) });
+  const invoice = (other: "from" | "to") => ({ id, from, to, amount, due, for: what, paid, voided }: Invoice) => ({ id, [other]: other === "from" ? from : to, amount, due, for: what, paid, ...(voided === true ? { voided } : {}), ...issuedOf(id) });
   const commitment = (other: "by" | "with") => ({ id, by, with: account2, amount, for: what }: Commitment) => ({ id, [other]: other === "by" ? by : account2, amount, for: what });
   const balance = money.balances[account];
   return {
     balance: balance === null ? "unlimited" : (balance ?? 0),
-    invoices_to_pay: money.invoices.filter(({ to }) => to === account).map(invoice("from")),
+    // A voided invoice is no longer listed as one to pay (FR-CONGRESS-13).
+    invoices_to_pay: money.invoices.filter(({ to, voided }) => to === account && voided !== true).map(invoice("from")),
     invoices_issued: money.invoices.filter(({ from }) => from === account).map(invoice("to")),
     commitments_bound: money.commitments.filter(({ with: bound, released }) => bound === account && !released).map(commitment("by")),
     commitments_recorded: money.commitments.filter(({ by, released }) => by === account && !released).map(commitment("with")),
@@ -407,7 +439,7 @@ export class MoneyBook<State> {
         balance: balance === null ? "unlimited" : balance,
         committed: committedOf(money, name),
         ceiling: money.ceilings[name] ?? null,
-        unpaid: money.invoices.filter(({ to, paid }) => to === name && !paid).map(({ id }) => id),
+        unpaid: money.invoices.filter(({ to, paid, voided }) => to === name && !paid && voided !== true).map(({ id }) => id),
       });
     }
   }
