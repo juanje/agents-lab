@@ -669,6 +669,17 @@ The recorder writes a line per event. The inventory and the run's setup go first
 - A `promotion` to `association_list` while the page is open also sets `announced`.
 - `{directory}` says how registrants are mailed, then lists parties grouped by kind (venue, speaker, caterer, sponsor, agency, then other kinds), each kind in an order drawn from the replica's sequence.
 
+### Corrections to the parts from E1's second technical run (FR-CONGRESS-12)
+
+- `PartsContext` gives the organiser's `ceiling` and `opening` from its account and the run's `start`.
+- The ceiling in force is the latest approval's `amount` (the money records the approved ceiling there), else `ceiling`, else the discretionary limit; P03 and P18 read it. Run 2's P18 read false because the approval was read as `ceiling`.
+- `within_budget` holds while no `unapproved_overrun` was recorded for the organiser, reached at `start`; `limit_passed` is the first commitment above `ceiling` (or the discretionary limit).
+- The event `venue_change`: the live booking's venue's first `room_lost` or `price_change`; E1's parts material activates P03 on it.
+- W4 counts `opening`. Catering orders whose caterer last answered `cancelled` are left out (P12, P13, W3); P14 counts a cancellation that leaves less than the final registrations as a cut.
+- P08 and P09 need each replacement to have accepted that session's invitation (or the panel for its slot), be confirmed, believe its time and hold no other session.
+- P20 reads the organiser's invitations as made (mail delivered or in transit, by sent time, and calls) from the world after the act, less the act itself; P02 counts toilets and the catering area; P10 uses the submitted budget with a board, else (committed − `ceiling` − sponsors agreed) / target.
+- `answerFor` reads a withdrawal for each session in its `sessions`.
+
 ### The population (FR-POPULATION-01, `src/scenarios/population.ts`)
 
 **Material and refusals**
