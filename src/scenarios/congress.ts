@@ -416,7 +416,8 @@ function variant(configuration: Configuration, random: Random): { configuration:
       const drawnShare = share(breakEvenShare as [number, number]);
       const paying = Math.max(1, Math.ceil(drawnShare * drawn.attendance));
       const feeShare = attendeesOf(configuration)?.payment_fee_share ?? 0;
-      Object.assign(drawn, { reference_price: plan.coveringPrice(paying, paying, drawn.advance ?? 0, feeShare), break_even_share: drawnShare });
+      // At least the plan caterer's price per head (FR-CONGRESS-15).
+      Object.assign(drawn, { reference_price: Math.max(plan.coveringPrice(paying, paying, drawn.advance ?? 0, feeShare), plan.perHead), break_even_share: drawnShare });
     }
   }
   for (const [kind, chosen] of Object.entries(chosenOf)) if (Object.hasOwn(settings, kind)) templates.push(...chosen.map((template) => ({ ...template, kind })));
@@ -672,7 +673,7 @@ interface Plan {
  * train from it at its base price. Its early deposits are its venue's deposit_share of the venue's cost and its
  * caterer's deposit_share of the catering at the target. Its covering price for so many attendees, so many of them
  * paying, is its cost less the advance, the chosen board's funds and the amounts of the chosen sponsors that do not
- * withdraw, over the paying attendees net of a payment fee share, at least 1.
+ * withdraw, over the paying attendees net of a payment fee share, at least 1. Its price per head is its caterer's.
  */
 function cheapestPlan(chosenOf: Readonly<Record<string, TomlTable[]>>, target: number, plan: Plan) {
   const sum = (values: number[]) => values.reduce((total, value) => total + value, 0);
@@ -707,6 +708,7 @@ function cheapestPlan(chosenOf: Readonly<Record<string, TomlTable[]>>, target: n
   return {
     costAt,
     earlyDeposits,
+    perHead,
     coveringPrice: (attendees: number, paying: number, advance: number, feeShare: number) => Math.max(1, (costAt(attendees) - advance - funds - amounts) / (paying * (1 - feeShare))),
   };
 }
