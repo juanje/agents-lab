@@ -427,6 +427,14 @@ Then(
   },
 );
 
-Then('no line for "lena-ford"', function (this: Context) {
-  assert.ok(!systemPrompt(this).includes("lena-ford"), "the directory names the partner");
+// The partner is listed after the speakers and before the caterers (FR-CONGRESS-15).
+Then('the line "lena-ford", a partner, after "ben-ott" and before "library-cafe"', function (this: Context) {
+  const lines = systemPrompt(this).split("\n");
+  const indexOf = (id: string) => {
+    const found = lines.findIndex((line) => line.startsWith(`- ${id}: `));
+    assert.ok(found >= 0, `no line for "${id}": ${lines.join("\n")}`);
+    return found;
+  };
+  assert.match(lines[indexOf("lena-ford")], /^- lena-ford: partner\b/);
+  assert.ok(indexOf("ben-ott") < indexOf("lena-ford") && indexOf("lena-ford") < indexOf("library-cafe"), lines.join("\n"));
 });
