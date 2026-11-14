@@ -207,11 +207,6 @@ Feature: The congress's parts
       | the latest programme uses "room-d", every speaker believes it, and registrants were told that version | holds       |
       | the latest programme uses "room-d" and registrants were told, but "s1" believes "room-b"             | does not hold |
 
-  Scenario: P21's misapplication is a programme with rooms published before the allocation
-    Given "v1"'s contract with the indicative-rooms term arrived on "day 4", and the organiser published a programme naming rooms on "day 12"
-    When "P21" is evaluated
-    Then it lists one misapplication: that "publish_programme"
-
   Scenario: A hold that lapsed with no booking is P01's trap
     Given the organiser held "v1" on "day 2" and the hold lapsed on "day 4" with no contract accepted
     When "P01" is evaluated
@@ -226,7 +221,7 @@ Feature: The congress's parts
       | outcome | state                                                                                                    | result        |
       | W1      | 6 sessions in the latest programme, each with a confirmed speaker who believes its time and room, and S1's slot | holds  |
       | W2      | a session in "room-b" (30 seats) whose expected audience is 45                                            | does not hold |
-      | W3      | 45 attendance with 4 vegan, and catering ordered for 45 with 4 vegan                                      | holds         |
+      | W3      | a live booking, six sessions in the latest programme, 45 attendance with 4 vegan, and catering ordered for 45 with 4 vegan | holds |
       | W4      | funds 3000, ticket income 2000 net, sponsors agreed 1500, costs committed 6600, and no overrun            | does not hold, with the balance -100 and 0 overruns |
       | W5      | S1's conditions in the programme, S2's logo missing                                                       | does not hold |
       | W6      | the wheelchair user registered, every programme room step-free, and the deaf registrant's interpreter booked | holds      |

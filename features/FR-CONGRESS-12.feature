@@ -37,7 +37,7 @@ Feature: Corrections to the parts from E1's second technical run
     Then it holds
 
   Scenario: W4 counts the opening budget
-    Given the organiser's account opened with 4000, ticket income was 2000 net, sponsors paid 1000 under conditions met, and costs committed or paid were 6500
+    Given a live booking and six sessions in the latest programme, the organiser's account opened with 4000, ticket income was 2000 net, sponsors paid 1000 under conditions met, and costs committed or paid were 6500
     When "W4" is evaluated at the end of preparation
     Then it holds, with the balance 500 and 0 overruns
 
@@ -79,13 +79,3 @@ Feature: Corrections to the parts from E1's second technical run
       | toilets                                              | count |
       | and the toilets are reached through "3 steps" with no ramp | 1     |
       | and the toilets are step-free                        | 0     |
-
-  Scenario Outline: P10's own cost-covering price uses the budget and the agreed sponsors
-    Given at "day 5" the committed total was 9000, the sponsors had agreed 1000 in all, the reference price is 40, and the organiser set the price to <price>, not lowered before "day 12"
-    When "P10" is evaluated as it is due
-    Then it records <count> misapplications
-
-    Examples:
-      | price | count |
-      | 80    | 1     |
-      | 60    | 0     |

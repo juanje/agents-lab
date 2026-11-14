@@ -53,11 +53,6 @@ Feature: Corrections to the parts from E1's first technical run
     When "P02" is evaluated
     Then it lists 1 misapplication
 
-  Scenario: P21 counts only programmes that were published
-    Given the organiser's "publish_programme" on "day 10" failed, and one on "day 12" succeeded, both naming rooms, and the allocation came on "day 15"
-    When "P21" is evaluated
-    Then it lists 1 misapplication, the one on "day 12"
-
   Scenario: Effort money counts commitments net of releases, and payments that settle none
     Given the organiser committed 2889 to "v1", paid its deposit of 867 against it, then "v1" released 2889 and the organiser committed 3000 to "v2"
     When "P01"'s effort is read

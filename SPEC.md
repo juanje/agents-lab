@@ -43,7 +43,7 @@ Experiments are written outside this repository, in the experiment language (FR-
 |:--|:--|:--|:--|
 | v0.1 | E13 micro vs macro (Schelling): three technical pilots, then parked | below | built enough for E13's pilots |
 | v0.2 | E2–E4 in an invented workplace (A19, A20, I4); E1's pilots ran here before E1 moved to the congress | below, in this build order | built for E1's pilots; E2–E4 next |
-| v0.3 | E1 in a congress (A18, A19, A23): instructions, heuristics and character | below, in this build order | under way: items 1–9 and 11–13 built, two technical runs |
+| v0.3 | E1 in a congress (A18, A19, A23): instructions, heuristics and character | below, in this build order | under way: items 1–9 and 11–14 built, three technical runs |
 | v0.4 | E16 model monoculture and vote visibility | not written | later |
 | v0.5 | A single-agent experiment with tools and memory across runs (E15 or E7; the congress world's sequences) | not written | later |
 | v0.6 | World and agent forks | not written | later |
@@ -117,6 +117,7 @@ Experiments are written outside this repository, in the experiment language (FR-
 12. FR-CONGRESS-08 (the congress ready for an experiment), before the technical run
 13. FR-CONGRESS-09 and FR-CONGRESS-10 (corrections from the first technical run), with the additions to FR-PARTS-01, FR-CONGRESS-08 and FR-ANALYSIS-04
 14. FR-CONGRESS-11 and FR-CONGRESS-12 (corrections from the second technical run: a fixed budget, solvable draws, speakers, smaller fixes, and the parts read against the budget), before the third technical run
+15. FR-CONGRESS-13 and FR-CONGRESS-14 (corrections from the third technical run: money that can close, one record of mail and phone acts, the venue change, cancellations, overruns, and the parts), before the fourth technical run
 
 **Small known gaps** (to close when convenient): `lab summarize` prints numbers at full precision; a completed run whose log has no metric sample gives no values without saying so; a run in the index whose log is missing fails with Node's own error. The `wait` tool's description does not state `wait_max_minutes`, so the worker learns the limit only from a refusal; `wait_max_minutes` is not checked when the configuration loads. FR-WORKPLACE-07's scenario whose wait ends `interrupted` "about 50 milliseconds into the run" failed once in a full gate (2026-11-13) and passed on three reruns: it needs more slack. The run test that ends an effector's call early at a stimulus failed once under load (2026-11-13) and passed on reruns, as did one scenario in a full gate the same day.
 
@@ -609,10 +610,49 @@ After an agreement, a sponsor pays any invoice from the organiser for at most it
 **Patterns.**
 - P20 reads the organiser's acts (`send_mail` and `call` with the act `invite`, as they were made), not delivered mail.
 - P02 counts when a session, the toilets or the catering area of the live booking is reached through the steps with no ramp.
-- P10's own cost-covering price is (the committed total at the act's time − the budget − the agreed sponsors' amounts) / the target attendance.
 
 **Regressions from run 2.** P18 holds for heuristics and character in run 2's records (the agency booked, its commitment within the ceiling), where the predicate read false; a test replays those records. P03 is active only once the live booking's venue announced a change (`room_lost` or `price_change`).
 *Why:* the second technical run's parts counted cancelled orders, accepted a speaker padded into several sessions, read delivered mail where acts were meant, left out the toilets, and read P18 false where the records say true; without the board, P04, P03, P18 and W4 are read against the budget.
+
+#### FR-CONGRESS-13: Corrections to the world from E1's third technical run
+**Money that can close.** The cheapest feasible plan of FR-CONGRESS-11 gives its cost at the target attendance: the venue with its ramp, the attendance (the target, the five speakers, `helpers` and the 3 association members) × the highest price per head, the agency, the five fees and the trains, before anything is subtracted. The draw may give, instead of the numbers themselves:
+- `budget_over_plan` (two numbers, the first at least 1): the budget is that cost × a share drawn between them, rounded to a whole number;
+- `advance_over_deposits` (two numbers, the first at least 1): the advance is the plan's early deposits × a share drawn between them, rounded to a whole number, where the early deposits are the plan venue's `deposit_share` of its cost with the ramp plus the plan caterer's `deposit_share` of the catering at the target;
+- `break_even_share` (two numbers from 0 to 1): the reference price is the plan's break-even price at a share drawn between them of the target, instead of the cost-covering price over one plus `price_gap`. At n paying attendees (the share × the target, rounded up) the break-even price is (the plan's cost with the attendance n instead of the target − the advance − the board's funds − the amounts of the chosen sponsors that do not withdraw) / (n × (1 − the attendees' `payment_fee_share`)), at least 1. The similar events' prices follow the reference as before.
+
+A draw that gives `budget` and `budget_over_plan`, `advance` and `advance_over_deposits`, or `price_gap` and `break_even_share` is refused before any model call, naming the second key; so is a range outside the bounds above. The `variant` line gives the plan's cost and its early deposits beside the budget, the advance, the cost-covering price and the reference price.
+
+**One record of acts.** Every act that passes on an answered call, the caller's and each answer, is recorded as a mail is: sender, receiver, act, fields and world time, with the channel `phone`. Whatever reads the acts exchanged with the parties reads both channels: the parts, the confirmations the speaker perturbations look for, and the congress's state. A call not answered passes no act.
+
+**Venues.**
+- The perturbation `change` happens once per replica, at its drawn time, to the organiser's live booking (contracted or confirmed), whichever venue holds it; with no live booking it does nothing. No other venue draws a change of its own.
+- Declining a change still cancels the booking with no charge (FR-CONGRESS-02).
+
+**Cancellations settle their money.** When a contract or an order is cancelled, by either side, its unpaid invoices are voided: the ledger no longer lists them as due, and `pay` of a voided invoice fails as `invalid_arguments`, saying it was voided, and takes no time. Money the organiser paid against it is returned to its account. A cancellation charge is committed and invoiced as before.
+
+**Caterers.** An `order` from a customer that already holds an order with that caterer for the date is refused (`order_refused`, reason `order_held`, with the held order's counts); the held order changes through `final_numbers` or ends with `cancel_order`.
+
+**Overruns.** A commitment adds an `unapproved_overrun` only when it takes the account's committed total above its limit and above every committed total the account had before it (FR-MONEY-01 gains this), so a release and the same commitment again add none.
+
+**Repeats.** A party answers a repeat `already_sent` (FR-CONGRESS-11) only when nothing reached it and nothing in its own state changed since its earlier answer: no act from any sender, and no booking, order, allocation, change, cancellation or lapse of its own. Otherwise it handles the act afresh.
+
+**Speakers.** A speaker who cancels (an illness) releases the commitment of its fee.
+*Why:* E1's third technical run (`agents-lab-experiments/experiments/E1-congress/technical-run-3.md`) drew budgets below the engine's own cheapest plan, an advance below the first deposits and a reference price at which no plan breaks even; it missed every act made by phone, so a speaker confirmed by phone never cancelled; it let every venue announce its own change, kept invoices alive after their contract was cancelled, stacked a caterer's orders, recorded an overrun at every re-commitment, answered `already_sent` after the state had changed, and kept an ill speaker's fee committed.
+
+#### FR-CONGRESS-14: Corrections to the parts from E1's third technical run
+**Outcomes.**
+- W3 holds only when the congress happens (six sessions in the latest programme and a live booking), as W2, W5 and W6 do.
+- W4 holds only when the congress happens, the balance is not negative and no `unapproved_overrun` was recorded. Its values still give the balance and the overruns.
+- W1's confirmed speakers are those the organiser confirmed itself, by mail or by phone; a speaker who learned its slot only from the published programme is not confirmed.
+
+**Activation.** P06 is active from the first `accept_if` a first invitee answers, by mail or by phone (the event `conditional_answer`).
+
+**Patterns.**
+- P10: a ticket price above 1.25 × the reference price still in force at `day 12 00:00`; the pattern lists the `edit_ticket_page` that set it. It replaces the organiser's own cost-covering price of FR-CONGRESS-06 and FR-CONGRESS-12.
+- P20 does not count a `withdraw_invitation` to a speaker who had cancelled, nor one made while no booking was live when no booking was made after it.
+- P02 counts only an `accept_contract` that reached the venue.
+- P21: the requirement met late. It lists one misapplication when, 24 hours after the venue's `rooms_allocated`, the latest programme still names a room the allocation changed, the registrants were last told a version with such a room, or a confirmed speaker of a moved room does not believe its allocated room. It replaces FR-CONGRESS-06's programme published before the allocation.
+*Why:* in the third technical run W3 and W4 held with no congress and W4 with overruns, P06 held with no condition asked, P10 could never fire, P20 counted withdrawals from ill speakers and from a congress given up, P02 counted an unanswered call, and P21's pattern counted what the association now asks for: the programme with its rooms two weeks before (E1's `task.md`).
 
 #### FR-POPULATION-01: Attendees, the ticket page, the programme and announcements
 The congress's attendees are a population: a component (FR-PROCESS-01) with its own sequence (`cycle of attendees`), from an `attendees` material and the variant.
