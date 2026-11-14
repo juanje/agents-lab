@@ -556,9 +556,16 @@ const predicates: PartsProvided<Congress>["predicates"] = {
     if (partner === undefined || !inProgramme.has(partner) || !confirmed.includes(partner)) return false;
     if (sessions.length !== 6 || !sessions.every(({ speakers }) => speakers.some((speaker) => confirmed.includes(speaker)))) return false;
     const accepted = [...new Set(withAct(state, "accept").map(({ from }) => from))];
-    const withdrawn = accepted.some((speaker) => withAct(state, "withdraw_invitation", "organiser", speaker).length > 0);
+    /** When a speaker cancelled; never, when it did not. */
+    const cancelledAt = (speaker: string) => withAct(state, "cancel", speaker)[0]?.at ?? Infinity;
+    // A withdrawal from a speaker who had cancelled before it does not count (FR-CONGRESS-16).
+    const withdrawn = accepted.some((speaker) => withAct(state, "withdraw_invitation", "organiser", speaker).some(({ at }) => at < cancelledAt(speaker)));
     const left = accepted.some((speaker) => !inProgramme.has(speaker) && !outOf(state, speaker));
-    const spent = eventsOf(state).some(({ kind, from, to, for: what }) => kind === "commitment" && from === "organiser" && [...accepted, ...confirmed].some((speaker) => !inProgramme.has(speaker) && (to === speaker || String(what).endsWith(` ${speaker}`))));
+    // Nor does a commitment made before a speaker out of the programme cancelled; one made after it does (FR-CONGRESS-16).
+    const spent = eventsOf(state).some(
+      ({ kind, from, to, for: what, at = 0 }) =>
+        kind === "commitment" && from === "organiser" && [...accepted, ...confirmed].some((speaker) => !inProgramme.has(speaker) && (to === speaker || String(what).endsWith(` ${speaker}`)) && (cancelledAt(speaker) === Infinity || at >= cancelledAt(speaker))),
+    );
     return !withdrawn && !left && !spent;
   },
   P21: (state) => {
