@@ -204,8 +204,9 @@ class Party {
   /**
    * Handles what has reached it: a ring it picks up, with the probability given, is answered by answer_call; its unread
    * mail is answered by mail. Each answer is made, then what it does once it has answered; no answer, nothing is sent.
+   * A repeat is answered already_sent, unless `afresh` says the party answers that message afresh.
    */
-  *handle(answer: (received: Received) => Answer | undefined, pickUp: number, random: Random): Generator<RuleStep, void, Perceived> {
+  *handle(answer: (received: Received) => Answer | undefined, pickUp: number, random: Random, afresh: (received: Received) => boolean = () => false): Generator<RuleStep, void, Perceived> {
     let mail = false;
     this.#answer = answer;
     while (this.stimuli.length > 0) {
@@ -238,8 +239,9 @@ class Party {
       const key = JSON.stringify([message.from, message.act, message.fields]);
       const earlier = this.#answered.get(key);
       // A repeat of a message it answered, while nothing reached it and nothing of its own changed since: what it
-      // answered and when, and nothing else (FR-CONGRESS-11, FR-CONGRESS-13).
-      if (earlier !== undefined && earlier.version === this.#version) {
+      // answered and when, and nothing else (FR-CONGRESS-11, FR-CONGRESS-13); unless the party answers it afresh
+      // (FR-CONGRESS-16).
+      if (earlier !== undefined && earlier.version === this.#version && !afresh(message)) {
         yield* this.call("send_mail", { to: message.from, act: "already_sent", fields: { act: earlier.act, sent: earlier.sent } });
         continue;
       }
@@ -1331,8 +1333,13 @@ export const sponsorRules: RuleSet = {
       if (missing.length > 0) return { act: "refused", fields: { missing: missing.join(", ") } };
       return random.next() < (sponsor.counter_acceptance ?? 0) ? agreed(conditions) : withdrawing();
     };
-    const answer = ({ act, fields }: Received): Answer => {
+    /** Whether it has agreed, and the organiser's act is one that its agreement answers (FR-CONGRESS-16). */
+    const keepsAgreement = ({ act }: Received) => record.agreement !== "none" && !record.withdrew && (act === "accept_sponsorship" || act === "counter");
+    const answer = (received: Received): Answer => {
+      const { act, fields } = received;
       if (record.withdrew) return { act: "not_available", fields: { what: act } };
+      // Once agreed, a repeat of its terms or a counter is answered with the agreement in force, drawing nothing (FR-CONGRESS-16).
+      if (keepsAgreement(received)) return { act: "agreement", fields: { amount: sponsor.amount, conditions: record.agreement } };
       switch (act) {
         case "ask_conditions":
           return { act: "conditions", fields: { amount: sponsor.amount, conditions: record.conditions, pay_days: `${sponsor.pay_days[0]} to ${sponsor.pay_days[1]}` } };
@@ -1414,7 +1421,7 @@ export const sponsorRules: RuleSet = {
         const noticed = party.stimuli.some(({ channel }) => channel === INVOICE_NOTICE);
         party.stimuli.splice(0, party.stimuli.length, ...party.stimuli.filter(({ channel }) => channel !== SPONSOR_PERTURBATION && channel !== INVOICE_NOTICE));
         if (noticed && record.agreement !== "none") yield* readInvoices();
-        yield* party.handle(answer, sponsor.pick_up ?? 1, random);
+        yield* party.handle(answer, sponsor.pick_up ?? 1, random, keepsAgreement);
         const checking = record.agreement !== "none" && !record.withdrew && checks.length > 0;
         if (payments.length > 0 || checking) yield* party.clock();
         // On days 19 and 25 it reads the programme for the logo and slot it agreed to (FR-POPULATION-01).
