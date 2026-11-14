@@ -108,8 +108,19 @@ export function bookingsOf(state: Congress): Booking[] {
   return bookings.map(({ cancelledAt, confirmedAt, ...rest }) => ({ ...rest, ...(confirmedAt === undefined ? {} : { confirmedAt }), ...(cancelledAt === undefined ? {} : { cancelledAt }) }));
 }
 
-/** The booking for the event's day confirmed and not cancelled, if one. */
-const liveBookingOf = (state: Congress) => bookingsOf(state).find(({ date, confirmedAt, cancelledAt }) => date === `day ${state.context.eventDay}` && confirmedAt !== undefined && cancelledAt === undefined);
+/**
+ * The live booking, if one: a booking for the event's day confirmed and not cancelled. Of several, the one whose venue's
+ * rooms the latest programme names; when it names the rooms of none of them, or of several, the one confirmed last
+ * (FR-CONGRESS-16).
+ */
+export function liveBookingOf(state: Congress): Booking | undefined {
+  const live = bookingsOf(state)
+    .filter(({ date, confirmedAt, cancelledAt }) => date === `day ${state.context.eventDay}` && confirmedAt !== undefined && cancelledAt === undefined)
+    .sort((one, other) => (one.confirmedAt as number) - (other.confirmedAt as number));
+  const named = new Set(programmeRooms(state));
+  const used = live.filter(({ venue, rooms }) => [...rooms, ...Object.keys(state.rooms).filter((room) => state.rooms[room].venue === venue)].some((room) => named.has(room)));
+  return used.length === 1 ? used[0] : live.at(-1);
+}
 
 /** The latest programme version, if one. */
 const latestOf = (state: Congress): Programme | undefined => state.population?.programme.at(-1);
