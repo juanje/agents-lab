@@ -348,3 +348,20 @@ describe("a withdrawal's sessions, as the parts read them (FR-CONGRESS-11)", () 
     expect([answerFor(state, "s1", 2), answerFor(state, "s1", 5)]).toEqual(["accept", "withdraw"]);
   });
 });
+
+describe("a speaker's acceptance, its own (FR-CONGRESS-11, FR-CONGRESS-04)", () => {
+  it("is the same for a speaker whatever other speakers the pool has", () => {
+    const acceptsOf = (count: number) => {
+      const loaded = loadScenario(
+        congress({ speaker: count }, (configuration) => {
+          const pools = parse(configuration.pools as string);
+          pools.speaker = Array.from({ length: count }, (_, index) => ({ id: `s${index + 1}`, fee: 0, available: true, acceptance: 0.5 }));
+          configuration.pools = stringify(pools);
+        }),
+        42,
+      );
+      return (loaded.variant as { accepts: Record<string, boolean> }).accepts;
+    };
+    for (const count of [6, 7, 9]) expect(Object.entries(acceptsOf(count)).filter(([id]) => id <= "s5").sort()).toEqual(Object.entries(acceptsOf(5)).sort());
+  });
+});

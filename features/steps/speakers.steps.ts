@@ -231,8 +231,8 @@ function drawsOf(context: Context, speaker: string, count: number): number[] {
 Then(
   '"s1" either mailed "slides" before {string}, or sent nothing, as its sequence drew with probability 0.8',
   function (this: Context, by: string) {
-    // Its draws: the invitation's, then the request of slides'.
-    const [, slides] = drawsOf(this, "s1", 2);
+    // Its draws: the request of slides'; whether it accepts comes with the variant (FR-CONGRESS-11).
+    const [slides] = drawsOf(this, "s1", 1);
     const sent = sentBy(this, "s1").filter((line) => line.act === "slides");
     if (slides < 0.8) {
       assert.equal(sent.length, 1, `"s1" drew ${slides} and sent ${sent.length} slides`);
