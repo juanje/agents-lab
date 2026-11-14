@@ -220,7 +220,8 @@ Then('the record of acts holds the organiser\'s "invite" to "s2" and "s2"\'s "ac
   );
   // Each at the world time the call ended.
   const { day, seconds } = (call?.ended as { worldTime: { day: number; seconds: number } }).worldTime;
-  for (const { at } of between) assert.equal(Math.round(at), Math.round((day - 1) * 1440 + seconds / 60));
+  // The record's time is when answer_call landed; the line's moment is read just after it, within a world minute under load.
+  for (const { at } of between) assert.ok(Math.abs(at - ((day - 1) * 1440 + seconds / 60)) <= 1, `the act's time ${at} is not the call's end`);
 });
 
 Given('"s2" has "pick_up" 0, and the organiser\'s scripted turns "call" "s2" with the act "invite" to session 2, then end', function (this: Context) {
