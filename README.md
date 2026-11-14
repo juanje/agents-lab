@@ -22,7 +22,7 @@ Experiments (their designs, experiment files, materials and results) live in a s
 
 ## Status
 
-Early development. v0.1, what E13 (Schelling with LLM agents) needs, is built and ran three technical pilots; E13 is parked. v0.2, the invented workplace, where a worker meets seeded situations and what it did is read from the world, is built for E1's pilots; E2–E4 come next. v0.3 is under way: E1 in a congress. The calendar, mail, phone calls, money, participants decided by rules, the congress's parties and attendees, and parts as held-out keys are built; the corrections from E1's first technical run are being built. `SPEC.md` lists the requirements and the order they are built in.
+Early development. v0.1, what E13 (Schelling with LLM agents) needs, is built and ran three technical pilots; E13 is parked. v0.2, the invented workplace, where a worker meets seeded situations and what it did is read from the world, is built for E1's pilots; E2–E4 come next. v0.3 is under way: E1 in a congress. The calendar, mail, phone calls, money, participants decided by rules, the congress's parties and attendees, parts as held-out keys and the corrections from E1's first technical run are built; the corrections from its second technical run are being built. With them a congress can run with a fixed budget and an advance from the association, and no board. `SPEC.md` lists the requirements and the order they are built in.
 
 ## Setup
 
