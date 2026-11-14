@@ -221,6 +221,9 @@ interface Drawn {
   cost_covering_price?: number;
   reference_price?: number;
   price_gap?: number;
+  /** The spending limit and the money the association advances the organiser, when the draw gives them (FR-CONGRESS-11). */
+  budget?: number;
+  advance?: number;
 }
 
 /** A kind's draw as `[draw.<kind>]` gives it: a count, roles with their counts, and a venue role priced as the cheapest fit. */
@@ -292,12 +295,18 @@ function variant(configuration: Configuration, random: Random): { configuration:
   const kinds = templatesOf(pools);
   const settings = (configuration.kinds ?? {}) as TomlTable;
   for (const kind of Object.keys(settings)) if (!Object.hasOwn(kinds, kind)) throw refused(`kinds.${kind}`, settings[kind], `the pools have no template of the kind "${kind}"`);
-  const { attendance = [0, 0], price_gap: priceGap, ...counts } = draw;
+  const { attendance = [0, 0], price_gap: priceGap, budget, advance, ...counts } = draw;
   if (priceGap !== undefined && !isRange(priceGap)) throw refused("draw.price_gap", priceGap, "it is not two numbers above 0, the first not above the second");
   const [fewest, most] = attendance as number[];
   if (!(typeof fewest === "number" && typeof most === "number" && fewest <= most)) throw refused("draw.attendance", attendance, "it is not two numbers, the first not above the second");
   const topics = (pools.topics ?? []) as string[];
   const drawn: Drawn = { topic: topics[Math.floor(random.next() * topics.length)], attendance: fewest + Math.floor(random.next() * (most - fewest + 1)), chosen: {} };
+  // The budget and the advance, each a whole number between its two (FR-CONGRESS-11).
+  for (const [key, range] of [["budget", budget], ["advance", advance]] as const) {
+    if (range === undefined) continue;
+    if (!isRange(range)) throw refused(`draw.${key}`, range, "it is not two numbers above 0, the first not above the second");
+    drawn[key] = Math.ceil(range[0]) + Math.floor(random.next() * (Math.floor(range[1]) - Math.ceil(range[0]) + 1));
+  }
   const templates: TomlTable[] = [];
   /** Every chosen template, by kind, whether or not its kind makes it a participant. */
   const chosenOf: Record<string, TomlTable[]> = {};
@@ -387,7 +396,7 @@ function variant(configuration: Configuration, random: Random): { configuration:
           },
         }),
     ...(phone === undefined ? {} : { phone: { ...phone, lines: [...((phone.lines ?? []) as string[]), ...names] } }),
-    ...(money === undefined ? {} : { money: { ...money, accounts: { ...((money.accounts ?? {}) as TomlTable), ...accounts } } }),
+    ...(money === undefined ? {} : { money: { ...money, accounts: { ...((money.accounts ?? {}) as TomlTable), ...accounts, ...organiserAccount(money, drawn) } } }),
   };
   // The texts name what the replica drew, filled in before the run (FR-CONGRESS-08); the directory's order is the
   // variant's last draw, so it gives the roles away no more than the seed does (FR-CONGRESS-09).
@@ -395,11 +404,21 @@ function variant(configuration: Configuration, random: Random): { configuration:
   return { configuration: filled, drawn: { ...drawn, ...(drawn.reference_price === undefined ? referencePrice(configuration, drawn.topic) : {}) } };
 }
 
+/**
+ * The organiser's account with what the draw gives (FR-CONGRESS-11): it opens with the advance, and its ceiling is the
+ * budget from the start; as configured when the draw gives neither.
+ */
+function organiserAccount(money: TomlTable, drawn: Drawn): TomlTable {
+  if (drawn.budget === undefined && drawn.advance === undefined) return {};
+  const configured = (((money.accounts ?? {}) as TomlTable)[ORGANISER] ?? {}) as TomlTable;
+  return { [ORGANISER]: { ...configured, ...(drawn.advance === undefined ? {} : { opening: drawn.advance }), ...(drawn.budget === undefined ? {} : { ceiling: drawn.budget }) } };
+}
+
 /** The weekdays, in order from Monday. */
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
 /** What the texts may name of the replica's draw, in braces (FR-CONGRESS-08). */
-const DRAWN_NAMES = ["topic", "target", "event_day", "funds", "directory"];
+const DRAWN_NAMES = ["topic", "target", "event_day", "funds", "budget", "advance", "directory"];
 
 /**
  * The acts each rule set takes, with the fields each requires, as the directory lists them (FR-CONGRESS-02, -04, -05,
@@ -475,8 +494,9 @@ function directoryOf(configuration: Configuration, chosenOf: Readonly<Record<str
 
 /**
  * The configuration with its texts filled with what the replica drew (FR-CONGRESS-08): {topic}, {target}, {event_day},
- * {funds} and {directory}, and {{ and }} as braces; a name in braces that is none of these, or {funds} with no board
- * drawn, is refused, naming it and its text.
+ * {funds}, {budget}, {advance} (FR-CONGRESS-11) and {directory}, and {{ and }} as braces; a name in braces that is none
+ * of these, {funds} with no board drawn, or {budget} or {advance} the draw does not give, is refused, naming it and its
+ * text.
  */
 function withDrawnTexts(configuration: Configuration, drawn: Drawn, calendar: Calendar | undefined, chosenOf: Readonly<Record<string, TomlTable[]>>, templates: readonly TomlTable[], random: Random): Configuration {
   const day = configuration.event_day as number;
@@ -487,6 +507,8 @@ function withDrawnTexts(configuration: Configuration, drawn: Drawn, calendar: Ca
     target: () => String(drawn.attendance),
     event_day: () => `day ${day}${weekday === undefined ? "" : ` ${weekday}`}`,
     funds: () => String(board?.funds),
+    budget: () => String(drawn.budget),
+    advance: () => String(drawn.advance),
     directory: () => directoryOf(configuration, chosenOf, templates, random),
   };
   const texts = Object.fromEntries(
@@ -496,6 +518,7 @@ function withDrawnTexts(configuration: Configuration, drawn: Drawn, calendar: Ca
         if (name === undefined) return written[0];
         if (!DRAWN_NAMES.includes(name)) throw refused(key, text, `it names {${name}}, which is none of {${DRAWN_NAMES.join("}, {")}}`);
         if (name === "funds" && board === undefined) throw refused(key, text, "it names {funds}, and the variant drew no board");
+        if ((name === "budget" || name === "advance") && drawn[name] === undefined) throw refused(key, text, `it names {${name}}, and the draw gives no ${name}`);
         return values[name]();
       });
       return [key, result];

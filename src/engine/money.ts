@@ -7,7 +7,7 @@ import type { AgentCall, Effector, Refusal, Sensor, Tool } from "./tools.ts";
 import type { Action, World } from "./world.ts";
 
 /** An account as the configuration gives it: its holder, its opening balance or that it is unlimited, and for an agent the money tools it has. */
-export type AccountSettings = { name: string; tools?: readonly string[] } & ({ opening: number } | { unlimited: true });
+export type AccountSettings = { name: string; tools?: readonly string[]; ceiling?: number } & ({ opening: number } | { unlimited: true });
 
 /** A configuration's [money] (FR-MONEY-01), as the engine follows it. */
 export interface MoneySettings {
@@ -34,7 +34,8 @@ function isTable(value: TomlValue | undefined): value is TomlTable {
  * Reads a configuration's [money] (FR-MONEY-01) against the names of the agents and participants and the
  * configuration's [durations]; money that cannot be followed is refused, with an error that names the key: no
  * [calendar], no accounts, an account for no agent or participant, a negative opening, an opening beside unlimited, a
- * negative discretionary_limit, and a negative duration of a money tool.
+ * negative ceiling, a negative discretionary_limit, and a negative duration of a money tool. An account's ceiling is in
+ * force from the start (FR-CONGRESS-11).
  */
 export function readMoney(value: TomlValue, calendar: Calendar | undefined, names: readonly string[], durations: Readonly<Record<string, unknown>> = {}): MoneySettings {
   if (calendar === undefined) throw new Error("The configuration's money cannot be followed: its durations are world time, and the configuration declares no [calendar]");
@@ -44,8 +45,9 @@ export function readMoney(value: TomlValue, calendar: Calendar | undefined, name
   const accounts = Object.entries(written).map(([name, account]): AccountSettings => {
     const key = `money.accounts.${name}`;
     if (!names.includes(name)) throw refused(key, account, `"${name}" is no agent or participant`);
-    const { opening, unlimited, tools } = (isTable(account) ? account : {}) as { opening?: unknown; unlimited?: unknown; tools?: string[] };
-    const kept = tools === undefined ? { name } : { name, tools };
+    const { opening, unlimited, tools, ceiling } = (isTable(account) ? account : {}) as { opening?: unknown; unlimited?: unknown; tools?: string[]; ceiling?: unknown };
+    if (ceiling !== undefined && !(typeof ceiling === "number" && ceiling >= 0)) throw refused(`${key}.ceiling`, ceiling, "it is not an amount of at least 0");
+    const kept = { name, ...(tools === undefined ? {} : { tools }), ...(ceiling === undefined ? {} : { ceiling: ceiling as number }) };
     if (unlimited === true) {
       if (opening !== undefined) throw refused(key, account, "an unlimited account has no opening");
       return { ...kept, unlimited: true };
@@ -166,10 +168,11 @@ export interface MoneyKeeper<State> {
   with(state: State, money: Money): State;
 }
 
-/** The money as a run starts: each account at its opening, no invoice, commitment, ceiling or event. */
+/** The money as a run starts: each account at its opening, with the ceiling its configuration gives, no invoice, commitment or event. */
 export function startingMoney(settings: MoneySettings): Money {
   const balances = Object.fromEntries(settings.accounts.map((account) => [account.name, "unlimited" in account ? null : account.opening]));
-  return { balances, invoices: [], commitments: [], ceilings: {}, overruns: [], events: [] };
+  const ceilings = Object.fromEntries(settings.accounts.flatMap(({ name, ceiling }) => (ceiling === undefined ? [] : [[name, ceiling]])));
+  return { balances, invoices: [], commitments: [], ceilings, overruns: [], events: [] };
 }
 
 /** An account's committed total: the sum of its commitments not released. */
