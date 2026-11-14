@@ -3,7 +3,10 @@ import { describe, expect, it } from "vitest";
 import { readCalendar } from "../src/engine/calendar.ts";
 import { readMoney, startingMoney } from "../src/engine/money.ts";
 import { type Scenario, loadScenario } from "../src/engine/scenario.ts";
+import { Random } from "../src/engine/random.ts";
+import { speakerRules } from "../src/scenarios/congress-parties.ts";
 import { congressScenario } from "../src/scenarios/congress.ts";
+import { calls, conversation } from "./fixtures/rules.ts";
 
 // FR-CONGRESS-11: the world's corrections from E1's second technical run.
 
@@ -67,5 +70,42 @@ describe("no board drawn (FR-CONGRESS-11)", () => {
     expect(mail?.initial.map(({ from, to, act }) => ({ from, to, act }))).toEqual([{ from: "association", to: "organiser", act: "partner_session" }]);
     expect(mail?.mailboxes).not.toContain("association");
     expect(loaded.phone?.settings.lines).not.toContain("association");
+  });
+});
+
+describe("speakers' acceptance drawn with the variant (FR-CONGRESS-11)", () => {
+  /** A congress with twelve available speakers of acceptance 0.5, of which the draw takes 8 with min_accepting as given. */
+  const twelve = (minAccepting: number, available = 12) =>
+    congress({ speaker: { count: 8, min_accepting: minAccepting } }, (configuration) => {
+      const pools = parse(configuration.pools as string);
+      pools.speaker = Array.from({ length: 12 }, (_, index) => ({ id: `s${index + 1}`, fee: 0, available: index < available, acceptance: 0.5 }));
+      configuration.pools = stringify(pools);
+    });
+
+  it("gives each chosen speaker's accepts in the variant and its parameters, and redraws the speakers until at least min_accepting available ones accept", () => {
+    for (const seed of [1, 2, 3, 4, 5, 6]) {
+      const loaded = loadScenario(twelve(6), seed);
+      const { chosen, accepts } = loaded.variant as { chosen: Record<string, string[]>; accepts: Record<string, boolean> };
+      expect(Object.keys(accepts).sort()).toEqual([...chosen.speaker].sort());
+      expect(Object.values(accepts).filter(Boolean).length).toBeGreaterThanOrEqual(6);
+      for (const id of chosen.speaker) expect((loaded.participants.find(({ name }) => name === id) as { params: Record<string, unknown> }).params.accepts).toBe(accepts[id]);
+    }
+  });
+
+  it("refuses a replica that finds too few accepting available speakers in 100 draws, naming draw.speaker.min_accepting", () => {
+    expect(() => loadScenario(twelve(5, 4), 1)).toThrow(/draw\.speaker\.min_accepting/);
+  });
+});
+
+describe("a speaker's answer from its drawn accepts (FR-CONGRESS-11)", () => {
+  const invite = (accepts: boolean, acceptance: number) => {
+    const rules = speakerRules.start({ id: "s1", fee: 0, available: true, acceptance, accepts, organiser: "organiser", event_day: 26 }, new Random(1));
+    const { steps } = conversation(rules, [["day 1 Monday 09:01", "From: organiser. Act: invite. session: 1. time: 10:00. fee: 0. travel_paid: false."]]);
+    return calls(steps, "send_mail").map(({ act }) => act);
+  };
+
+  it("answers its first invitation as its accepts says, whatever its acceptance", () => {
+    expect(invite(false, 1)).toEqual(["decline"]);
+    expect(invite(true, 0)).toEqual(["accept"]);
   });
 });

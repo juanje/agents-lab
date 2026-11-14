@@ -6,6 +6,9 @@ import type { Context } from "../support/context.ts";
 import { change, congressChanges, congressOf, hourMsOf, organiserTurns, setupOf } from "./congress.steps.ts";
 import { before, changePools, fieldsOf, moneyLines, ranLines, sentBy, sentWith } from "./congress-parties.steps.ts";
 import { V1, setUpCorrectionsCongress } from "./run-corrections.steps.ts";
+import { Random } from "../../src/engine/random.ts";
+import { speakerRules } from "../../src/scenarios/congress-parties.ts";
+import { calls, conversation } from "../../tests/fixtures/rules.ts";
 
 // FR-CONGRESS-11: the world's corrections from E1's second technical run, on FR-CONGRESS-09's congress with a fixed
 // budget and no board.
@@ -179,3 +182,44 @@ congressChanges.push(
   ],
   [/^a money account's "ceiling" is -1$/, (setup) => change(setup.context, (configuration) => (((configuration.money as TomlTable).accounts as TomlTable).travel = { unlimited: true, ceiling: -1 }))],
 );
+
+// Speakers' acceptance drawn with the variant.
+Given('the speaker pool has 12 available templates with acceptance 0.5 and the draw takes 8 of them with "min_accepting" 6', function (this: Context) {
+  changePools(this, (pool) => (pool.speaker = Array.from({ length: 12 }, (_, index) => ({ id: `s${index + 1}`, title: `Talk ${index + 1}`, fee: 0, home: "local", available: true, acceptance: 0.5, pick_up: 1 }))));
+  change(this, (configuration) => (configuration.draw = stringify({ ...parse(configuration.draw as string), speaker: { count: 8, min_accepting: 6 } })));
+});
+
+Then('each replica\'s variant line gives every chosen speaker\'s "accepts", and at least 6 available chosen speakers accept', function (this: Context) {
+  for (const { base } of drawnVariants(this)) {
+    const chosen = (base.chosen as Record<string, string[]>).speaker;
+    const accepts = base.accepts as Record<string, boolean>;
+    assert.deepEqual(Object.keys(accepts ?? {}).sort(), [...chosen].sort());
+    assert.ok(Object.values(accepts).filter(Boolean).length >= 6, JSON.stringify(accepts));
+  }
+});
+
+Then('each speaker answers its first invitation as its "accepts" says', function (this: Context) {
+  const scenario = congressOf(setupOf(this));
+  for (const seed of [1, 2, 3]) {
+    const loaded = loadScenario(scenario, seed);
+    const accepts = (loaded.variant as { accepts: Record<string, boolean> }).accepts;
+    for (const [speaker, accepting] of Object.entries(accepts)) {
+      const params = (loaded.participants.find(({ name }) => name === speaker) as { params: Record<string, unknown> }).params;
+      // Its rules, as the run starts them, from the replica's sequence for it.
+      const { steps } = conversation(speakerRules.start(params, new Random(seed)), [["day 1 Monday 09:01", "From: organiser. Act: invite. session: 1. time: 10:00. fee: 0. travel_paid: false."]]);
+      assert.deepEqual(
+        calls(steps, "send_mail").map(({ act }) => act),
+        [accepting ? "accept" : "decline"],
+        `"${speaker}" in the replica of seed ${seed}`,
+      );
+    }
+  }
+});
+
+congressChanges.push([
+  /^"min_accepting" is 5 and the pool has 4 available speakers$/,
+  (setup) => {
+    changePools(setup.context, (pool) => (pool.speaker = pool.speaker.map((template, index) => ({ ...template, available: index < 4 }))));
+    change(setup.context, (configuration) => (configuration.draw = stringify({ ...parse(configuration.draw as string), speaker: { count: 4, min_accepting: 5 } })));
+  },
+]);
