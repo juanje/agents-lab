@@ -215,6 +215,8 @@ describe("a speaker's answers after its invitation, and its outcome (FR-CONGRESS
       expect(mails(steps)).toEqual([
         { to: "organiser", act: answered, fields: { session: 2 } },
         { to: "organiser", act: answered, fields: { session: 5 } },
+        // The same invitation again is a repeat, answered already_sent (FR-CONGRESS-11).
+        { to: "organiser", act: "already_sent", fields: { act: answered, sent: "day 1 Monday 09:01" } },
       ]);
     }
   });

@@ -173,7 +173,7 @@ describe("venues' corrections (FR-CONGRESS-11)", () => {
     perturbations: [],
     ...changes,
   });
-  const mailed = (steps: ReturnType<typeof drive>) => calls(steps, "send_mail").map(({ act, fields }) => ({ act, fields }));
+  const mailed = (steps: ReturnType<typeof drive>): { act: unknown; fields: Record<string, unknown> }[] => calls(steps, "send_mail").map(({ act, fields }) => ({ act, fields: fields as Record<string, unknown> }));
   const book = (rooms: string): [string, string] => ["day 1 Monday 09:01", `From: organiser. Act: book. date: day 26. rooms: ${rooms}. hours: 08:00-18:00.`];
   const accept: [string, string] = ["day 1 Monday 09:02", "From: organiser. Act: accept_contract. contract: v1-contract-1."];
 

@@ -91,6 +91,8 @@ describe("the venue's rules (FR-CONGRESS-02)", () => {
           access: "step-free access throughout",
           catering: "approved caterers only",
           price: 2000,
+          // Its extras with their prices (FR-CONGRESS-11).
+          extras: "ramp: 150",
           hold_days: 2,
           deposit_share: 0.25,
           deposit_due_days: 3,
@@ -149,7 +151,7 @@ describe("the venue's rules (FR-CONGRESS-02)", () => {
 
 describe("the board's rules (FR-CONGRESS-02)", () => {
   const board = { id: "board", funds: 6000, reserve: 1000, organiser: "organiser" };
-  const tools = (message: string) => (tool: string) => (tool === "read_mail" ? message : tool === "check_mail" ? 'm-1: from organiser, subject "x", received day 1 Monday 09:01' : "Done.");
+  const tools = (message: string) => (tool: string) => (tool === "read_mail" ? message : tool === "check_mail" ? 'm-1: from organiser, subject "x", received day 1 Monday 09:01' : tool === "check_time" ? "day 1 Monday 09:01" : "Done.");
 
   it("approves a budget within its funds: sets the ceiling to costs and contingency, transfers the funds asked, and says so", () => {
     const steps = drive(boardRules.start(board, new Random(1)), tools("From: organiser. Act: submit_budget. costs: 5000. income: 3000. contingency: 500. funds_requested: 2500."), [[notice]]);
@@ -171,7 +173,7 @@ describe("the board's rules (FR-CONGRESS-02)", () => {
     let step = rules.next({ stimuli: [notice] });
     for (let guard = 0; step.kind === "call" && guard < 50; guard += 1) {
       steps.push(step);
-      const text = step.tool === "read_mail" ? rendered : step.tool === "check_mail" ? 'm-1: from organiser, subject "x", received day 1 Monday 09:01' : "Done.";
+      const text = step.tool === "read_mail" ? rendered : step.tool === "check_mail" ? 'm-1: from organiser, subject "x", received day 1 Monday 09:01' : step.tool === "check_time" ? "day 1 Monday 09:01" : "Done.";
       step = rules.next({ stimuli: [], result: { tool: step.tool, outcome: "success", text, ...(step.tool === "read_mail" ? { record } : {}) } });
     }
 

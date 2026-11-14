@@ -76,8 +76,8 @@ class Party {
   readonly #callBacks: { at: number; ring: Received }[] = [];
   /** How it answers what reaches it, as it last handled something. */
   #answer?: (received: Received) => Answer | undefined;
-  /** The messages it answered, by sender, act and fields, so a repeat gets no second answer (FR-CONGRESS-09). */
-  readonly #answered = new Set<string>();
+  /** The messages it answered, by sender, act and fields, with its answer's act and world time, so a repeat is answered already_sent (FR-CONGRESS-09, FR-CONGRESS-11). */
+  readonly #answered = new Map<string, { act: string; sent: string }>();
   /** The hours it keeps: its days, and from and to "HH:MM" on each (FR-CONGRESS-09); none, always. */
   readonly #keeps?: { days: readonly string[]; from: string; to: string };
 
@@ -212,13 +212,20 @@ class Party {
       if (given.then !== undefined) yield* given.then();
     }
     if (!mail) return;
-    // Its mail in the order it landed, as check_mail lists it.
-    for (const message of yield* this.mail()) {
+    // Its mail in the order it landed, as check_mail lists it, answered at the time it reads it.
+    const messages = yield* this.mail();
+    if (messages.length > 0) yield* this.clock();
+    for (const message of messages) {
       const key = JSON.stringify([message.from, message.act, message.fields]);
-      if (this.#answered.has(key)) continue;
+      const earlier = this.#answered.get(key);
+      // A repeat of a message it answered: what it answered and when, and nothing else (FR-CONGRESS-11).
+      if (earlier !== undefined) {
+        yield* this.call("send_mail", { to: message.from, act: "already_sent", fields: earlier });
+        continue;
+      }
       const given = answer(message);
       if (given === undefined) continue;
-      this.#answered.add(key);
+      this.#answered.set(key, { act: given.act, sent: this.text() });
       yield* this.call("send_mail", { to: message.from, act: given.act, fields: given.fields });
       if (given.then !== undefined) yield* given.then();
     }
@@ -379,6 +386,8 @@ export const venueRules: RuleSet = {
               access: venue.access_claim,
               ...(venue.catering === undefined ? {} : { catering: venue.catering }),
               price: venue.price,
+              // Its extras with their prices, so the organiser learns them by asking (FR-CONGRESS-11).
+              ...(Object.keys(venue.extras ?? {}).length === 0 ? {} : { extras: Object.entries(venue.extras ?? {}).map(([item, price]) => `${item}: ${price}`).join("; ") }),
               hold_days: venue.hold_days,
               deposit_share: venue.deposit_share,
               deposit_due_days: venue.deposit_due_days,
@@ -590,7 +599,9 @@ export const venueRules: RuleSet = {
           const booked = contracts.find((each) => ["contracted", "confirmed"].includes(statusOf(each.date)));
           if (booked === undefined) return;
           const declared = venue.perturbations.find(({ name }) => name === timer.perturbation);
-          const kind = declared?.kind ?? (random.next() < 0.5 ? "room_lost" : "price_change");
+          const drawnKind = declared?.kind ?? (random.next() < 0.5 ? "room_lost" : "price_change");
+          // A booking with one room loses none: its price rises instead (FR-CONGRESS-11).
+          const kind = drawnKind === "room_lost" && booked.rooms.length < 2 ? "price_change" : drawnKind;
           if (kind === "price_change") {
             const price = Math.round(booked.price * (1.15 + 0.1 * random.next()));
             booked.change = { kind, price };
@@ -598,8 +609,6 @@ export const venueRules: RuleSet = {
             yield* party.write(booked.to, "price_change", { contract: booked.id, old_price: booked.price, price });
             return;
           }
-          // Only a booking with more than one room loses one; the first stays (FR-CONGRESS-09).
-          if (booked.rooms.length < 2) return;
           const lost = booked.rooms.at(-1) as string;
           lostRooms.set(booked.date, new Set([...(lostRooms.get(booked.date) ?? []), lost]));
           const seats = venue.rooms.find(({ id }) => id === lost)?.seats ?? 0;
@@ -626,6 +635,9 @@ export const venueRules: RuleSet = {
           // At least one booked room changes: renamed, when none could move.
           if (allocation.every(([from, to]) => from === to)) allocation[allocation.length - 1][1] = `${allocation[allocation.length - 1][0]}-allocated`;
           booked.rooms = allocation.map(([, to]) => to);
+          // A room renamed or moved away is no room of the booking any more (FR-CONGRESS-11).
+          const away = allocation.filter(([from, to]) => from !== to).map(([from]) => from);
+          lostRooms.set(booked.date, new Set([...(lostRooms.get(booked.date) ?? []), ...away]));
           record("rooms_allocated", { contract: booked.id });
           yield* party.write(booked.to, "rooms_allocated", { contract: booked.id, allocation: allocation.map(([from, to]) => `${from} -> ${to}`).join("; ") });
           return;

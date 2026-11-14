@@ -396,7 +396,8 @@ Given('"c1" confirmed an order, and the organiser mails "c1" "final_numbers" and
 });
 
 Then('"c1" handled "final_numbers" before "cancel_order", and answered "cancelled" once', function (this: Context) {
-  const acts = sentBy(this, "c1").map((line) => String(line.act));
+  // The second cancel_order repeats the first: its already_sent recalls the one cancellation (FR-CONGRESS-11).
+  const acts = sentBy(this, "c1").map((line) => String(line.act)).filter((act) => act !== "already_sent");
   assert.equal(acts[0], "order_confirmed", `"c1" sent ${acts.join(", ")}`);
   assert.ok(["numbers_accepted", "numbers_refused"].includes(acts[1]), `"c1" sent ${acts.join(", ")}`);
   assert.deepEqual(acts.slice(2), ["cancelled"], `"c1" sent ${acts.join(", ")}`);

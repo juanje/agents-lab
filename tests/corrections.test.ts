@@ -150,7 +150,8 @@ describe("a venue's bookings and lost rooms (FR-CONGRESS-09)", () => {
   }
 
   it("takes a room only from a booking with more than one; the lost room stays unavailable for that date", () => {
-    expect(losing("main-hall").changed).toEqual([]);
+    // A booking with one room has its price raised instead (FR-CONGRESS-11).
+    expect(losing("main-hall").changed.map(({ act }) => act)).toEqual(["price_change"]);
 
     const { changed, later } = losing("main-hall, room-b", [
       ["day 1 Monday 13:00", "From: organiser. Act: change_booking. rooms: main-hall. hours: 08:00-18:00."],
@@ -182,7 +183,11 @@ describe("a party's answers to repeated mail (FR-CONGRESS-09)", () => {
     const board = () => boardRules.start({ id: "board", funds: 6000, reserve: 1000, organiser: "organiser" }, new Random(1));
     const report = (text: string): [string, string] => [DAY, `From: organiser. Act: report. note: ${text}.`];
 
-    expect(mailed(conversation(board(), [report("a"), report("a")]).steps)).toEqual([{ act: "acknowledged", fields: {} }]);
+    // A repeat is answered already_sent, with the first answer's act and time (FR-CONGRESS-11).
+    expect(mailed(conversation(board(), [report("a"), report("a")]).steps)).toEqual([
+      { act: "acknowledged", fields: {} },
+      { act: "already_sent", fields: { act: "acknowledged", sent: "day 1 Monday 09:01" } },
+    ]);
     expect(mailed(conversation(board(), [report("a"), report("b")]).steps)).toEqual([
       { act: "acknowledged", fields: {} },
       { act: "acknowledged", fields: {} },
