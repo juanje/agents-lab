@@ -1804,7 +1804,8 @@ const BASE_CONFIGURATION = [
   ...["speaker", "partner"].flatMap((kind) => [
     `[kinds.${kind}]`,
     `rules = "${kind}"`,
-    'tools = ["send_mail", "check_mail", "read_mail", "call", "answer_call", "check_time", "commit", "issue_invoice"]',
+    // A speaker releases the commitment of its fee as it cancels, reading its ledger for it (FR-CONGRESS-13).
+    'tools = ["send_mail", "check_mail", "read_mail", "call", "answer_call", "check_time", "ledger", "commit", "release", "issue_invoice"]',
     `channels = ["mail_notice", "phone", ${[...SPEAKER_PERTURBATIONS, HOTEL_OVERBOOKS, "programme"].map((name) => `"${name}"`).join(", ")}]`,
     "reply_minutes = [0, 0]",
     'account = "unlimited"',

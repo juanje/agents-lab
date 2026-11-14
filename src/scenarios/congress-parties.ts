@@ -76,8 +76,13 @@ class Party {
   readonly #callBacks: { at: number; ring: Received }[] = [];
   /** How it answers what reaches it, as it last handled something. */
   #answer?: (received: Received) => Answer | undefined;
-  /** The messages it answered, by sender, act and fields, with its answer's act and world time, so a repeat is answered already_sent (FR-CONGRESS-09, FR-CONGRESS-11). */
-  readonly #answered = new Map<string, { act: string; sent: string }>();
+  /**
+   * The messages it answered, by sender, act and fields, with its answer's act and world time, and its version as it
+   * answered, so a repeat is answered already_sent while nothing changed (FR-CONGRESS-09, FR-CONGRESS-11, FR-CONGRESS-13).
+   */
+  readonly #answered = new Map<string, { act: string; sent: string; version: number }>();
+  /** How many times something reached it or its own state changed: an act from any sender, or a change of its own (FR-CONGRESS-13). */
+  #version = 0;
   /** The hours it keeps: its days, and from and to "HH:MM" on each (FR-CONGRESS-09); none, always. */
   readonly #keeps?: { days: readonly string[]; from: string; to: string };
 
@@ -99,6 +104,11 @@ class Party {
       if (minutes < closes) return Math.max(minutes, opens);
     }
     return minutes;
+  }
+
+  /** Notes a change of its own state that no act brought, such as a booking's lapse, a change or an allocation (FR-CONGRESS-13). */
+  changed(): void {
+    this.#version += 1;
   }
 
   /** A call of one of its tools; it gives the call's result and keeps any stimulus that came meanwhile. */
@@ -204,6 +214,7 @@ class Party {
       if (stimulus.channel !== "phone") continue;
       const ring = readRing(stimulus);
       if (ring === undefined) continue;
+      this.changed();
       if (!(random.next() < pickUp)) {
         // A missed ring is called back with probability 0.5, within the party's reply delay after the ring ends (FR-CONGRESS-07).
         if (this.#callBack !== undefined && random.next() < CALL_BACK) {
@@ -226,16 +237,19 @@ class Party {
     for (const message of messages) {
       const key = JSON.stringify([message.from, message.act, message.fields]);
       const earlier = this.#answered.get(key);
-      // A repeat of a message it answered: what it answered and when, and nothing else (FR-CONGRESS-11).
-      if (earlier !== undefined) {
-        yield* this.call("send_mail", { to: message.from, act: "already_sent", fields: earlier });
+      // A repeat of a message it answered, while nothing reached it and nothing of its own changed since: what it
+      // answered and when, and nothing else (FR-CONGRESS-11, FR-CONGRESS-13).
+      if (earlier !== undefined && earlier.version === this.#version) {
+        yield* this.call("send_mail", { to: message.from, act: "already_sent", fields: { act: earlier.act, sent: earlier.sent } });
         continue;
       }
+      this.changed();
       const given = answer(message);
       if (given === undefined) continue;
-      this.#answered.set(key, { act: given.act, sent: this.text() });
+      const sent = this.text();
       yield* this.call("send_mail", { to: message.from, act: given.act, fields: given.fields });
       if (given.then !== undefined) yield* given.then();
+      this.#answered.set(key, { act: given.act, sent, version: this.#version });
     }
   }
 }
@@ -576,8 +590,9 @@ export const venueRules: RuleSet = {
       } else record("left_free", { date });
     };
 
-    /** What the venue does when one of its timers comes. */
+    /** What the venue does when one of its timers comes: a change of its own state (FR-CONGRESS-13). */
     function* fire(timer: Timer): Generator<RuleStep, void, Perceived> {
+      party.changed();
       const contract = contractOf(timer.contract);
       switch (timer.kind) {
         case "lapse":
@@ -643,6 +658,7 @@ export const venueRules: RuleSet = {
     function* announceChange(given: string): Generator<RuleStep, void, Perceived> {
       const booked = contracts.find((each) => ["contracted", "confirmed"].includes(statusOf(each.date)));
       if (booked === undefined) return;
+      party.changed();
       const drawnKind = CHANGE_KINDS.includes(given) ? given : random.next() < 0.5 ? "room_lost" : "price_change";
       // A booking with one room loses none: its price rises instead (FR-CONGRESS-11).
       const kind = drawnKind === "room_lost" && booked.rooms.length < 2 ? "price_change" : drawnKind;
@@ -972,6 +988,10 @@ export const speakerRules: RuleSet = {
       record.cancelled = true;
       if (channel === "late_cancel") yield* tell("cancel");
       else yield* party.write(speaker.organiser, "cancel", {});
+      // Its fee is no longer owed (FR-CONGRESS-13).
+      if (!committed) return;
+      yield* party.release((what) => what === `fee ${speaker.id}`);
+      committed = false;
     }
 
     function* script(): Script {
@@ -1067,7 +1087,7 @@ export const catererRules: RuleSet = {
     const forOrder = `order ${caterer.id}`;
     const finalDay = caterer.event_day - caterer.final_days;
     const balanceAt = (caterer.event_day - BALANCE_DAYS - 1) * 1440;
-    let order: { total: number; price: number; deposit: number; balanced: boolean } | undefined;
+    let order: { total: number; price: number; deposit: number; balanced: boolean; date: string; counts: string } | undefined;
     const today = () => Math.floor(party.now / 1440) + 1;
     const diets = caterer.diets ?? {};
     const dietsText = () => Object.entries(diets).map(([diet, { limit }]) => `${diet}: ${limit ?? "no limit"}`).join("; ");
@@ -1106,6 +1126,8 @@ export const catererRules: RuleSet = {
             },
           };
         case "order": {
+          // A customer that holds an order for the date changes it by final numbers or cancels it (FR-CONGRESS-13).
+          if (order !== undefined && order.date === String(fields.date)) return { act: "order_refused", fields: { reason: "order_held", counts: order.counts } };
           // A venue that keeps its catering or charges for outside catering asks for a permit, unless it is the venue's own (FR-CONGRESS-07).
           const rule = caterer.venues?.[String(fields.venue)]?.catering;
           if (fields.venue !== undefined && (rule === "in_house" || rule === "outside_fee") && caterer.in_house_for !== fields.venue && fields.permit === undefined) {
@@ -1116,7 +1138,7 @@ export const catererRules: RuleSet = {
           if (over !== undefined) return { act: "order_refused", fields: { diet: over } };
           if (total(counts) < (caterer.minimum ?? 0)) return { act: "order_refused", fields: belowMinimum() };
           const price = total(counts) * caterer.price_per_head;
-          order = { total: total(counts), price, deposit: Math.round(price * caterer.deposit_share), balanced: false };
+          order = { total: total(counts), price, deposit: Math.round(price * caterer.deposit_share), balanced: false, date: String(fields.date), counts: String(fields.counts) };
           record.order = String(fields.counts);
           record.ordered = order.total;
           const placed = order;
@@ -1142,6 +1164,7 @@ export const catererRules: RuleSet = {
           const surcharge = late ? Math.round(increase * caterer.price_per_head * LATE_SURCHARGE) : 0;
           const price = asked * caterer.price_per_head + surcharge;
           order.price = price;
+          order.counts = String(fields.counts);
           record.final_numbers = String(fields.counts);
           record.surcharges += surcharge;
           return { act: "numbers_accepted", fields: { total: asked, price }, then: () => recommit(price) as Script };
