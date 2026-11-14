@@ -86,7 +86,7 @@ describe("a speaker's answer to an invitation (FR-CONGRESS-04)", () => {
     expect(answerTo(invite("10:00", 0, true), { home: "north-station", condition: "travel_paid" })).toEqual([{ to: "organiser", act: "accept", fields: { session: 2 } }]);
     expect(answerTo(invite("10:00", 100), { fee: 300, condition: "fee" })).toEqual([{ to: "organiser", act: "accept_if", fields: { session: 2, condition: "fee" } }]);
     expect(answerTo(invite("10:00", 300), { fee: 300, condition: "fee" })).toEqual([{ to: "organiser", act: "accept", fields: { session: 2 } }]);
-    expect(answerTo(invite("12:00"), { condition: "morning_slot" })).toEqual([{ to: "organiser", act: "accept_if", fields: { session: 2, condition: "morning_slot" } }]);
+    expect(answerTo(invite("12:00"), { condition: "morning_slot" })).toEqual([{ to: "organiser", act: "accept_if", fields: { session: 2, condition: "morning_slot", time: "before 12:00" } }]);
     // A constraint is hard, whatever the condition (FR-CONGRESS-07).
     expect(answerTo(invite("14:00", 100), { constraint: "morning", condition: "fee", fee: 100 })).toEqual([{ to: "organiser", act: "decline", fields: { session: 2 } }]);
   });
@@ -201,8 +201,8 @@ describe("a speaker's answers after its invitation, and its outcome (FR-CONGRESS
 
     const unmet = conversation({ fee: 300, condition: "fee" }, [invite("10:00", 0), "From: organiser. Act: accept_condition."]);
     expect(mails(unmet.steps)).toEqual([
-      { to: "organiser", act: "accept_if", fields: { session: 2, condition: "fee" } },
-      { to: "organiser", act: "accept_if", fields: { session: 2, condition: "fee" } },
+      { to: "organiser", act: "accept_if", fields: { session: 2, condition: "fee", fee: 300 } },
+      { to: "organiser", act: "accept_if", fields: { session: 2, condition: "fee", fee: 300 } },
     ]);
     expect(unmet.rules.outcome()).toMatchObject({ condition_met: false, answer: "accept_if" });
   });
@@ -293,7 +293,7 @@ describe("a speaker's own cycle and its cancellations (FR-CONGRESS-04)", () => {
 
     clock.time = "day 19 Saturday 00:00";
     const after = drive(rules, answer, [[]], true);
-    expect(mails(after)).toEqual([{ to: "organiser", act: "withdraw", fields: { session: 2, condition: "travel_paid" } }]);
+    expect(mails(after)).toEqual([{ to: "organiser", act: "withdraw", fields: { sessions: "2", condition: "travel_paid" } }]);
     expect(rules.outcome()).toMatchObject({ answer: "withdraw", condition_met: false });
   });
 

@@ -6,7 +6,7 @@ import { type Scenario, loadScenario } from "../src/engine/scenario.ts";
 import { Random } from "../src/engine/random.ts";
 import { speakerRules } from "../src/scenarios/congress-parties.ts";
 import { congressScenario } from "../src/scenarios/congress.ts";
-import { calls, conversation } from "./fixtures/rules.ts";
+import { calls, conversation, drive, notice, tools } from "./fixtures/rules.ts";
 
 // FR-CONGRESS-11: the world's corrections from E1's second technical run.
 
@@ -107,5 +107,46 @@ describe("a speaker's answer from its drawn accepts (FR-CONGRESS-11)", () => {
   it("answers its first invitation as its accepts says, whatever its acceptance", () => {
     expect(invite(false, 1)).toEqual(["decline"]);
     expect(invite(true, 0)).toEqual(["accept"]);
+  });
+});
+
+describe("speakers' withdrawals, illness and conditions (FR-CONGRESS-11)", () => {
+  const params = (changes: Record<string, unknown> = {}) => ({ id: "s1", fee: 300, home: "local", available: true, acceptance: 1, condition: "fee", organiser: "organiser", event_day: 26, ...changes });
+  const invite = (session: number, fee: number, time = "10:00") => `From: organiser. Act: invite. session: ${session}. time: ${time}. fee: ${fee}. travel_paid: false.`;
+  /** Its steps as one more message reaches it, read at a time, once it has started. */
+  const then = (rules: ReturnType<typeof speakerRules.start>, time: string, message: string) => drive(rules, tools(() => message, () => time), [[notice]], true);
+
+  it("withdraws at day 19 only the sessions still waiting on its condition, naming them, and keeps those it accepted", () => {
+    const rules = speakerRules.start(params(), new Random(1));
+    const { steps } = conversation(rules, [
+      ["day 2 Tuesday 10:00", invite(2, 300)],
+      ["day 2 Tuesday 11:00", invite(5, 0, "14:00")],
+    ]);
+    expect(calls(steps, "send_mail").map(({ act }) => act)).toEqual(["accept", "accept_if"]);
+    const after = then(rules, "day 19 Friday 00:00", "From: organiser. Act: ask_promote.");
+    const withdrawn = calls(after, "send_mail").filter(({ act }) => act === "withdraw");
+    expect(withdrawn.map(({ fields }) => fields)).toEqual([{ sessions: "5", condition: "fee" }]);
+    const confirmed = then(rules, "day 19 Friday 01:00", "From: organiser. Act: confirm. time: 10:00. room: hall-a. length: 45. travel: none.");
+    expect(calls(confirmed, "send_mail").map(({ act }) => act)).toContain("acknowledged");
+  });
+
+  it("once ill, declines every invitation and panel, and answers a confirm or change with not_available", () => {
+    const rules = speakerRules.start(params({ condition: undefined, fee: 0 }), new Random(1));
+    conversation(rules, [["day 1 Monday 09:01", invite(3, 0)]]);
+    drive(rules, tools(() => "", () => "day 1 Monday 12:00"), [[{ channel: "early_cancel", source: "illness", content: "You are ill and cannot give your session." }]], true);
+    const steps = [
+      ...then(rules, "day 1 Monday 13:00", "From: organiser. Act: ask_panel. slot: 16:00."),
+      ...then(rules, "day 1 Monday 13:01", invite(4, 0, "11:00")),
+      ...then(rules, "day 1 Monday 13:02", "From: organiser. Act: confirm. time: 10:00. room: hall-a. length: 45. travel: none."),
+      ...then(rules, "day 1 Monday 13:03", "From: organiser. Act: change. time: 11:00."),
+    ];
+    expect(calls(steps, "send_mail").map(({ act }) => act)).toEqual(["decline", "decline", "not_available", "not_available"]);
+  });
+
+  it("states what its condition needs in its accept_if", () => {
+    const answer = (changes: Record<string, unknown>, message: string) => calls(conversation(speakerRules.start(params(changes), new Random(1)), [["day 1 Monday 09:01", message]]).steps, "send_mail")[0]?.fields;
+    expect(answer({}, invite(1, 0, "15:00"))).toEqual({ session: 1, condition: "fee", fee: 300 });
+    expect(answer({ condition: "travel_paid", home: "north", fee: 0 }, invite(1, 0, "15:00"))).toEqual({ session: 1, condition: "travel_paid", travel_paid: true, from: "north" });
+    expect(answer({ condition: "morning_slot", fee: 0 }, invite(1, 0, "15:00"))).toEqual({ session: 1, condition: "morning_slot", time: "before 12:00" });
   });
 });

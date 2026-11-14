@@ -4,7 +4,7 @@ import { type TomlTable, parse, stringify } from "smol-toml";
 import { loadScenario } from "../../src/engine/scenario.ts";
 import type { Context } from "../support/context.ts";
 import { change, congressChanges, congressOf, hourMsOf, organiserTurns, setupOf } from "./congress.steps.ts";
-import { before, changePools, fieldsOf, moneyLines, ranLines, sentBy, sentWith } from "./congress-parties.steps.ts";
+import { before, changePools, fieldsOf, moneyLines, ranLines, sentBy, sentWith, untilTime } from "./congress-parties.steps.ts";
 import { V1, setUpCorrectionsCongress } from "./run-corrections.steps.ts";
 import { Random } from "../../src/engine/random.ts";
 import { speakerRules } from "../../src/scenarios/congress-parties.ts";
@@ -223,3 +223,68 @@ congressChanges.push([
     change(setup.context, (configuration) => (configuration.draw = stringify({ ...parse(configuration.draw as string), speaker: { count: 4, min_accepting: 5 } })));
   },
 ]);
+
+// Speakers.
+/** The organiser's turns that invite a speaker to a session at a time with a fee, then wait for its answer. */
+const inviting = (context: Context, speaker: string, session: number, time: string, fee: number) =>
+  organiserTurns(`call "send_mail" to "${speaker}" with the act "invite", session ${session}, time "${time}", fee ${fee} and travel_paid false, then wait 1 world hour, then "check_time"`, hourMsOf(context));
+
+Given('"s1" accepted session 2 with fee 300 and answered "accept_if" to session 5 with fee 0', function (this: Context) {
+  before(this, [...inviting(this, "s1", 2, "10:00", 300), ...inviting(this, "s1", 5, "14:00", 0)]);
+});
+
+Then('"s1"\'s "withdraw" mail names session 5 only, and "s1" still holds its acceptance of session 2', function (this: Context) {
+  assert.equal(fieldsOf(sentWith(this, "s1", "accept")).session, 2);
+  assert.equal(fieldsOf(sentWith(this, "s1", "accept_if")).session, 5);
+  assert.equal(fieldsOf(sentWith(this, "s1", "withdraw")).sessions, "5");
+  // Nothing after the acceptance answers session 2 otherwise.
+  assert.ok(!sentBy(this, "s1").some((line) => ["decline", "withdraw"].includes(String(line.act)) && String(fieldsOf(line).sessions ?? fieldsOf(line).session).split(", ").includes("2")));
+});
+
+Given('"s4" accepted session 3, acknowledged its confirmation and cancelled at the perturbation "early_cancel"', function (this: Context) {
+  before(this, [
+    ...inviting(this, "s4", 3, "10:00", 0),
+    ...organiserTurns('call "send_mail" to "s4" with the act "confirm", time "10:00", room "hall-a", length 45 and travel "none", then wait 1 world hour, then "check_time"', hourMsOf(this)),
+  ]);
+  change(this, (configuration) => ((configuration.perturbations as TomlTable).early_cancel = { between: ["day 1 12:00", "day 1 12:00"] }));
+});
+
+Given(
+  'the organiser\'s scripted turns then send "s4" "ask_panel" for slot "16:00", "invite" to session 4 at "11:00", and "confirm" for session 3, then end',
+  function (this: Context) {
+    untilTime(this, "day 1 13:00");
+    before(
+      this,
+      organiserTurns(
+        'call "send_mail" to "s4" with the act "ask_panel" and slot "16:00", then "send_mail" to "s4" with the act "invite", session 4, time "11:00", fee 0 and travel_paid false, then "send_mail" to "s4" with the act "confirm", time "10:00", room "hall-a", length 45 and travel "none", then wait 1 world hour, then "check_time"',
+        hourMsOf(this),
+      ),
+    );
+  },
+);
+
+Then('"s4" answered "decline" to the panel and to session 4, and "not_available" to the confirmation', function (this: Context) {
+  const cancelled = sentWith(this, "s4", "cancel");
+  const after = sentBy(this, "s4").filter((line) => Number(line.atMs) > Number(cancelled.atMs));
+  assert.deepEqual(
+    after.map((line) => [line.act, fieldsOf(line)]),
+    [
+      ["decline", { slot: "16:00" }],
+      ["decline", { session: 4 }],
+      ["not_available", { what: "acceptance" }],
+    ],
+  );
+});
+
+Given(/^the organiser invites "(s\d)" to session 1 at "15:00" with fee 0 and travel_paid false$/, function (this: Context, speaker: string) {
+  before(this, inviting(this, speaker, 1, "15:00", 0));
+});
+
+Then(/^"(s\d)" answered "accept_if" with the condition "(\w+)" and (.+)$/, function (this: Context, speaker: string, condition: string, needs: string) {
+  const needed: Record<string, Record<string, unknown>> = {
+    "the fee 300": { fee: 300 },
+    'travel_paid true and from "north"': { travel_paid: true, from: "north" },
+    'the time "before 12:00"': { time: "before 12:00" },
+  };
+  assert.deepEqual(fieldsOf(sentWith(this, speaker, "accept_if")), { session: 1, condition, ...needed[needs] });
+});
