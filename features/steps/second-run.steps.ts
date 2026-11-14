@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import { Given, Then, When } from "@cucumber/cucumber";
+import { Before, Given, Then, When } from "@cucumber/cucumber";
 import { type TomlTable, parse, stringify } from "smol-toml";
 import { loadScenario } from "../../src/engine/scenario.ts";
 import type { Context } from "../support/context.ts";
 import { change, congressChanges, congressOf, hourMsOf, organiserTurns, setupOf } from "./congress.steps.ts";
 import { before, changePools, fieldsOf, moneyLines, ranLines, sentBy, sentWith, untilTime } from "./congress-parties.steps.ts";
-import { V1, setUpCorrectionsCongress } from "./run-corrections.steps.ts";
+import { ATTENDEES, V1, setUpCorrectionsCongress } from "./run-corrections.steps.ts";
 import { Random } from "../../src/engine/random.ts";
 import { speakerRules } from "../../src/scenarios/congress-parties.ts";
 import { calls, conversation } from "../../tests/fixtures/rules.ts";
@@ -353,4 +353,104 @@ Then('"v1" answered "already_sent" with the act "quote" and sent "day 1 Monday 1
     sentBy(this, "v1").map((line) => line.act),
     ["quote", "already_sent"],
   );
+});
+
+/** Each scenario's step texts, so a step can see what the scenario goes on to do. */
+const stepTexts = new WeakMap<Context, string[]>();
+Before({ tags: "@FR-CONGRESS-11" }, function (this: Context, { pickle }) {
+  stepTexts.set(
+    this,
+    pickle.steps.map(({ text }) => text),
+  );
+});
+
+// Caterers' minimum.
+Given('"c1" confirmed an order for 40 people, unless the scenario\'s message is the order', function (this: Context) {
+  if ((stepTexts.get(this) ?? []).some((text) => text.includes('to "c1" with the act "order"'))) return;
+  before(this, organiserTurns('call "send_mail" to "c1" with the act "order", counts "standard: 40", date "day 26" and venue "v1", then wait 1 world hour, then "check_time"', hourMsOf(this)));
+});
+
+Then(/^"c1" answered "(order_refused|numbers_refused)" with the reason "below_minimum" and the minimum 30$/, function (this: Context, act: string) {
+  assert.deepEqual(fieldsOf(sentWith(this, "c1", act)), { reason: "below_minimum", minimum: 30 });
+});
+
+// Invoices.
+Then('the call failed with the outcome "invalid_arguments", saying that only sponsors are invoiced, and took no time', function (this: Context) {
+  const call = ranLines(this).find((line) => line.type === "tool_call" && line.agent === ORGANISER && line.tool === "issue_invoice");
+  assert.ok(call !== undefined, "the organiser made no issue_invoice call");
+  assert.equal(call.outcome, "invalid_arguments");
+  assert.match(String(call.result ?? call.text ?? call.reason), /only sponsors are invoiced/);
+  assert.equal(call.durationMs ?? 0, 0);
+  assert.equal(moneyLines(this, "invoice").filter((line) => line.from === ORGANISER).length, 0);
+});
+
+// Registrants.
+Given("the registrant {string}, who needs a wheelchair, mailed the organiser a question about access", function (this: Context, id: string) {
+  // Six people of the pool, a-1 to a-6, who do not register, and a-7, who registers on day 1 at 10:00 and was not asked.
+  change(this, (configuration) => (configuration.attendees = stringify({ ...ATTENDEES, pool_factor: 0.12, fixed: [{ id, access: "wheelchair", between: ["day 1 10:00", "day 1 10:00"] }] })));
+  before(this, [{ toolCalls: [{ name: "edit_ticket_page", arguments: { open: true, price: 10 } }] as never, delayMs: 0 }]);
+  // Its question comes within a day of registering.
+  untilTime(this, "day 2 11:00");
+  this.timeLimitMs = 29 * hourMsOf(this);
+});
+
+/** The population's lines of the run. */
+const populationLines = (context: Context) => ranLines(context).filter((line) => line.type === "population");
+
+Then('the mail was delivered, the population recorded the answer, and "a-7"\'s access need is known to the organiser', function (this: Context) {
+  const question = sentWith(this, "a-7", "question");
+  assert.equal(fieldsOf(question).about, "access");
+  const answer = sentWith(this, ORGANISER, "answer");
+  assert.ok(ranLines(this).some((line) => line.type === "message_delivered" && line.id === answer.id), "the answer was not delivered");
+  const recorded = populationLines(this).find((line) => line.event === "answer" && line.person === "a-7");
+  assert.ok(recorded !== undefined, "the population recorded no answer");
+  assert.deepEqual(recorded.known, { access: "wheelchair" });
+});
+
+Then('the directory says that registrants are mailed at their id with the act "answer"', function (this: Context) {
+  assert.match(directoryOf(this), /^Registrants are mailed at their id with the act answer \(text\)\.$/m);
+});
+
+/** The directory as the organiser's system prompt gives it, for the replica of seed 1. */
+function directoryOf(context: Context, seed = 1): string {
+  const scenario = congressOf(setupOf(context));
+  const withDirectory = { ...scenario, baseConfiguration: stringify({ ...parse(scenario.baseConfiguration ?? ""), knowledge: "{directory}" }) };
+  return loadScenario(withDirectory, seed).systemPrompts.get(ORGANISER) ?? "";
+}
+
+// Announcements.
+Given("the ticket page is open and nothing was announced", function (this: Context) {
+  before(this, [{ toolCalls: [{ name: "edit_ticket_page", arguments: { open: true, price: 10 } }] as never, delayMs: 0 }]);
+});
+
+Then("registration counts as announced from that moment, and a promotion runs for 2 world days", function (this: Context) {
+  const announced = ranLines(this).find((line) => line.type === "tool_call" && line.agent === ORGANISER && line.tool === "announce");
+  assert.equal(announced?.outcome, "success");
+  const state = setupOf(this).loaded?.world.state as { population: { announced: boolean; promotions: { start: number; factor: number }[]; announcements: { at: number }[] } };
+  assert.equal(state.population.announced, true);
+  assert.deepEqual(
+    state.population.promotions.map(({ start }) => start),
+    state.population.announcements.map(({ at }) => at),
+  );
+});
+
+// The directory.
+Then("each directory lists each kind's acts once, then the venues, the speakers, the caterers, the sponsors and the agency in that order", function (this: Context) {
+  for (const seed of [1, 2]) {
+    const lines = directoryOf(this, seed).split("\n");
+    const acts = lines.filter((line) => / takes /.test(line));
+    const parties = lines.filter((line) => line.startsWith("- "));
+    assert.equal(lines.indexOf(acts.at(-1) as string) < lines.indexOf(parties[0]), true);
+    assert.equal(new Set(acts.map((line) => line.split(" ")[1])).size, acts.length);
+    const kinds = parties.map((line) => (/^- [\w-]+: (\w+)/.exec(line) as RegExpExecArray)[1]);
+    const order = ["venue", "speaker", "caterer", "sponsor", "agency"];
+    assert.deepEqual(kinds, [...kinds].sort((one, other) => order.indexOf(one) - order.indexOf(other)), kinds.join(", "));
+  }
+});
+
+Then("within each kind the parties are in an order drawn from the replica's seed", function (this: Context) {
+  const speakersOf = (seed: number) => directoryOf(this, seed).split("\n").filter((line) => /^- s\d: speaker/.test(line)).map((line) => line.slice(2, 4));
+  const orders = [1, 2, 3, 4, 5].map(speakersOf);
+  for (const order of orders) assert.deepEqual([...order].sort(), ["s1", "s2", "s3", "s4"]);
+  assert.ok(new Set(orders.map((order) => order.join())).size > 1, `every seed lists ${orders[0].join(", ")}`);
 });

@@ -228,13 +228,15 @@ function callOf(written: string): { name: string; arguments: Record<string, unkn
   // An invoice, a travel booking and travel options (FR-CONGRESS-05).
   const invoice = /^to "(\w+)" for (\d+), due "([^"]+)", for "([^"]+)"$/.exec(rest);
   if (tool === "issue_invoice" && invoice !== null) return { name: tool, arguments: { to: invoice[1], amount: Number(invoice[2]), due: invoice[3], for: invoice[4] } };
+  const invoiceWith = /^to "(\w+)" with the amount (\d+), due "([^"]+)" and for "([^"]+)"$/.exec(rest);
+  if (tool === "issue_invoice" && invoiceWith !== null) return { name: tool, arguments: { to: invoiceWith[1], amount: Number(invoiceWith[2]), due: invoiceWith[3], for: invoiceWith[4] } };
   // The ticket page, announcements and the programme (FR-POPULATION-01).
   if (tool === "edit_ticket_page") {
     const fields = fieldsIn(rest.replace(/^with /, ""), written);
     if (typeof fields.required_fields === "string") fields.required_fields = fields.required_fields.split(", ");
     return { name: tool, arguments: fields };
   }
-  const announced = /^to "(\w+)" the kind "(\w+)"$/.exec(rest);
+  const announced = /^(?:to|with the audience) "(\w+)" (?:and )?the kind "(\w+)"$/.exec(rest);
   if (tool === "announce" && announced !== null) return { name: tool, arguments: { audience: announced[1], kind: announced[2] } };
   if (tool === "ticket_page") return { name: tool, arguments: { detail: quoted[0] } };
   if (tool === "publish_programme") return { name: tool, arguments: programmeOf(rest) };
@@ -264,7 +266,7 @@ export const FIRST_CONTRACT = (venue: string) => `${venue}-contract-1`;
  * "the contract's id".
  */
 function messageOf(written: string): Record<string, unknown> {
-  const [, to, act, rest = ""] = /^to "(\w+)" with the act "(\w+)"(.*)$/.exec(written) ?? [];
+  const [, to, act, rest = ""] = /^to "([\w-]+)" with the act "(\w+)"(.*)$/.exec(written) ?? [];
   assert.ok(to !== undefined, `the steps do not read the message "${written}"`);
   const fields = fieldsIn(rest, written);
   if (rest.includes("the contract's id")) fields.contract = FIRST_CONTRACT(to);
@@ -306,7 +308,10 @@ function fieldsIn(rest: string, written: string): Record<string, unknown> {
     const total = /^a total of (\d+)$/.exec(segment);
     const named = /^(\w+) (?:"(\d+)"(?: (-?\d+(?:\.\d+)?))?|(-?\d+(?:\.\d+)?)|(true|false))$/.exec(segment);
     const more = /^"(\d+)"(?: (-?\d+(?:\.\d+)?))?$/.exec(segment);
+    // A text a message carries as its field "text" (FR-CONGRESS-11).
+    const text = /^the text "(\d+)"$/.exec(segment);
     if (total !== null) fields.counts = `standard: ${total[1]}`;
+    else if (text !== null) fields.text = textOf(text[1]);
     else if (named !== null) {
       const [, name, text, count, number, truth] = named;
       if (count !== undefined) {

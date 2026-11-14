@@ -4,7 +4,9 @@ import { readCalendar } from "../src/engine/calendar.ts";
 import { readMoney, startingMoney } from "../src/engine/money.ts";
 import { type Scenario, loadScenario } from "../src/engine/scenario.ts";
 import { Random } from "../src/engine/random.ts";
-import { speakerRules, venueRules } from "../src/scenarios/congress-parties.ts";
+import type { Tool } from "../src/engine/tools.ts";
+import { catererRules, speakerRules, venueRules } from "../src/scenarios/congress-parties.ts";
+import { type Population, type PopulationWorld, populationComponent, populationTools } from "../src/scenarios/population.ts";
 import { congressScenario } from "../src/scenarios/congress.ts";
 import { calls, conversation, drive, notice, tools } from "./fixtures/rules.ts";
 
@@ -206,5 +208,108 @@ describe("venues' corrections (FR-CONGRESS-11)", () => {
       ["day 1 Monday 11:01", ask],
     ]);
     expect(mailed(steps).map(({ act, fields }) => (act === "already_sent" ? { act, fields } : act))).toEqual(["quote", { act: "already_sent", fields: { act: "quote", sent: "day 1 Monday 10:01" } }]);
+  });
+});
+
+describe("caterers, invoices, registrants, promotions and the directory (FR-CONGRESS-11)", () => {
+  const caterer = { id: "c1", price_per_head: 30, diets: {}, minimum: 30, final_days: 7, deposit_share: 0.2, deposit_due_days: 3, cancellation: [{ share: 0.3 }], pick_up: 1, organiser: "organiser", event_day: 26 };
+
+  it("a caterer refuses an order or final numbers below its minimum, saying so", () => {
+    const answers = (messages: string[]) =>
+      calls(conversation(catererRules.start(caterer, new Random(1)), messages.map((message): [string, string] => ["day 2 Tuesday 09:00", message])).steps, "send_mail").map(({ act, fields }) => ({ act, fields }));
+    expect(answers(["From: organiser. Act: order. counts: standard: 20. date: day 26."])).toEqual([{ act: "order_refused", fields: { reason: "below_minimum", minimum: 30 } }]);
+    expect(answers(["From: organiser. Act: order. counts: standard: 40. date: day 26.", "From: organiser. Act: final_numbers. counts: standard: 25."]).at(-1)).toEqual({ act: "numbers_refused", fields: { reason: "below_minimum", minimum: 30 } });
+  });
+
+  it("refuses the organiser's invoice to a party that is no sponsor as invalid_arguments, and no other party's", () => {
+    const state = { context: { ids: { speakers: ["s1"], sponsors: ["sp1"] } } } as never;
+    const invoice = (agent: string, to: string) => congressScenario.refuses?.(state, { agent, arguments: { to, amount: 500, due: "day 20", for: "deposit" } }, "issue_invoice");
+    expect(invoice("organiser", "v1")).toEqual({ outcome: "invalid_arguments", reason: expect.stringContaining("only sponsors are invoiced") });
+    expect(invoice("organiser", "sp1")).toBeUndefined();
+    expect(invoice("v1", "organiser")).toBeUndefined();
+  });
+
+  it("gives every registrant a mailbox that takes the act answer, and says so in the directory", () => {
+    const loaded = loadScenario(
+      congress({}, (configuration) => {
+        configuration.attendees = stringify({ pool_factor: 0.1, base_per_day: 0, unannounced: 0, promotion_factor: 1, payment_fee_share: 0, cancel_share: 0, consent_share: 1, diets: { none: 1 }, access: { none: 1 }, fixed: [{ id: "f-1", between: ["day 1 10:00", "day 1 10:00"] }], group: { size: [2, 3], diet: "vegan", between: ["day 2 10:00", "day 2 10:00"] } });
+        configuration.knowledge = "{directory}";
+      }),
+      1,
+    );
+    const mail = loaded.mail?.settings;
+    // Five of the pool, the fixed person, and up to three of the group after them.
+    for (const id of ["a-1", "a-5", "f-1", "a-7", "a-9"]) {
+      expect(mail?.mailboxes).toContain(id);
+      expect(mail?.acts[id]).toEqual({ answer: ["text"] });
+    }
+    expect(loaded.systemPrompts.get("organiser")).toMatch(/^Registrants are mailed at their id with the act answer \(text\)\.$/m);
+  });
+
+  it("lists the drawn parties grouped by kind, venues, speakers, caterers, sponsors and agency, each kind in an order drawn from the seed", () => {
+    const orderOf = (seed: number) => {
+      const loaded = loadScenario(
+        congress({ speaker: 6, caterer: 1 }, (configuration) => {
+          const pools = parse(configuration.pools as string);
+          pools.speaker = ["s1", "s2", "s3", "s4", "s5", "s6"].map((id) => ({ id, fee: 0, available: true, acceptance: 1 }));
+          pools.caterer = [{ id: "c1", price_per_head: 30, final_days: 7, deposit_share: 0.2, deposit_due_days: 3, cancellation: [{ share: 0.3 }] }];
+          configuration.pools = stringify(pools);
+          configuration.knowledge = "{directory}";
+        }),
+        seed,
+      );
+      return [...(loaded.systemPrompts.get("organiser") ?? "").matchAll(/^- ([\w-]+):/gm)].map(([, id]) => id);
+    };
+    const orders = [1, 2, 3, 4].map(orderOf);
+    for (const order of orders) {
+      expect(order[0]).toBe("v1");
+      expect([...order.slice(1, 7)].sort()).toEqual(["s1", "s2", "s3", "s4", "s5", "s6"]);
+      expect(order[7]).toBe("c1");
+    }
+    expect(new Set(orders.map((order) => order.join())).size).toBeGreaterThan(1);
+  });
+});
+
+describe("the population's answers and promotions (FR-CONGRESS-11)", () => {
+  const material = { pool_factor: 1, base_per_day: 0, unannounced: 0, promotion_factor: 2, payment_fee_share: 0, cancel_share: 0, consent_share: 1, pay_share: 1, no_show_share: 0, diets: { none: 1 }, access: { none: 1 }, fixed: [] };
+  const at = (day: number, clock = "09:00") => ({ day, weekday: "Monday" as const, seconds: Number(clock.slice(0, 2)) * 3600 + Number(clock.slice(3)) * 60 });
+  const message = (id: string, from: string, to: string, act: string, fields: Record<string, unknown>, received: ReturnType<typeof at>) => ({ id, from, to, act, fields, subject: act, received, read: false });
+  const world = (mail: ReturnType<typeof message>[]): PopulationWorld => ({
+    population: {
+      material,
+      eventDay: 26,
+      referencePrice: 50,
+      draws: {},
+      people: [{ id: "a-7", diet: "none", access: "wheelchair", pays: true, consents: true, no_show: false, registered: 600, given: {} }],
+      page: { open: true, price: 10, required_fields: [], info: [], waiting_list: false },
+      announced: false,
+      promotions: [],
+      programme: [],
+      sponsorData: {},
+      events: [],
+    },
+    money: { balances: {}, invoices: [], commitments: [], ceilings: {}, overruns: [], events: [] } as never,
+    mail: { mailboxes: { organiser: mail.filter(({ to }) => to === "organiser"), "a-7": mail.filter(({ to }) => to === "a-7") }, inTransit: [] } as never,
+  });
+
+  it("records the organiser's answer to a registrant, and an answer to a question about access makes that need known", () => {
+    const state = world([message("m-1", "a-7", "organiser", "question", { about: "access" }, at(1, "11:00")), message("m-2", "organiser", "a-7", "answer", { text: "There is a ramp." }, at(1, "12:00"))]);
+    const cycle = populationComponent<PopulationWorld>({ organiser: "organiser", target: 50, msFor: () => 1 }).cycle(new Random(1));
+    let current = state;
+    for (let guard = 0; guard < 5; guard += 1) {
+      const step = cycle.next(current, undefined, 0, at(1, "13:00"));
+      if (step.kind !== "action") break;
+      current = step.action.effect(current, { world: at(1, "13:00") } as never);
+    }
+    const population = current.population as Population;
+    expect(population.people[0].given).toEqual({ access: "wheelchair" });
+    expect(population.events?.filter(({ event }) => event === "answer")).toEqual([{ event: "answer", person: "a-7", known: { access: "wheelchair" }, worldTime: at(1, "13:00") }]);
+  });
+
+  it("counts a promotion to the association's list while the page is open as registration_open", () => {
+    const tool = populationTools<PopulationWorld>({ organiser: "organiser" }).find(({ name }) => name === "announce") as Tool<PopulationWorld> & { kind: "effector" };
+    const after = tool.action?.effect(world([]), { agent: "organiser", arguments: { audience: "association_list", kind: "promotion" }, world: at(2) } as never) as PopulationWorld;
+    expect((after.population as Population).announced).toBe(true);
+    expect((after.population as Population).promotions).toHaveLength(1);
   });
 });
