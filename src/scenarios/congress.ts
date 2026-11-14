@@ -224,6 +224,8 @@ interface Drawn {
   /** The spending limit and the money the association advances the organiser, when the draw gives them (FR-CONGRESS-11). */
   budget?: number;
   advance?: number;
+  /** Whether each chosen speaker accepts, drawn with the variant (FR-CONGRESS-11). */
+  accepts?: Record<string, boolean>;
 }
 
 /** A kind's draw as `[draw.<kind>]` gives it: a count, roles with their counts, and a venue role priced as the cheapest fit. */
@@ -232,7 +234,12 @@ interface KindDraw {
   roles?: Record<string, number>;
   cheapest_fit?: string;
   cheapest_margin?: [number, number];
+  /** For the speakers: how many available ones must accept, redrawn until they do (FR-CONGRESS-11). */
+  min_accepting?: number;
 }
+
+/** How many times the variant redraws the speakers to find min_accepting who accept (FR-CONGRESS-11). */
+const SPEAKER_REDRAWS = 100;
 
 /** Whether a value is two numbers above 0, the first not above the second. */
 const isRange = (value: unknown): value is [number, number] =>
@@ -265,6 +272,22 @@ function drawKind(kind: string, pool: readonly TomlTable[], draw: KindDraw, rand
   const count = draw.count ?? 0;
   if (!(typeof count === "number" && count >= 0 && count <= unroled.length)) throw refused(`draw.${kind}.count`, count, `the pool of "${kind}" has ${unroled.length} templates with no role`);
   return { chosen: [...taken, ...chooseFrom(unroled, count, random)], roles };
+}
+
+/**
+ * The chosen speakers, each with its `accepts`, true with its acceptance, from the replica's sequence (FR-CONGRESS-11):
+ * with min_accepting, the speakers are drawn again, the whole draw, until at least that many available ones accept, up
+ * to 100 times; refused, naming draw.speaker.min_accepting, when they never do.
+ */
+function withAcceptance(first: TomlTable[], drawAgain: () => TomlTable[], minAccepting: number | undefined, random: Random): TomlTable[] {
+  if (minAccepting !== undefined && !(Number.isInteger(minAccepting) && minAccepting >= 0)) throw refused("draw.speaker.min_accepting", minAccepting, "it is not a whole number of at least 0");
+  let chosen = first;
+  for (let draws = 1; ; draws += 1) {
+    const drawn: TomlTable[] = chosen.map((template) => ({ ...template, accepts: random.next() < ((template.acceptance as number | undefined) ?? 1) }));
+    if (minAccepting === undefined || drawn.filter(({ available, accepts }) => available === true && accepts).length >= minAccepting) return drawn;
+    if (draws >= SPEAKER_REDRAWS) throw refused("draw.speaker.min_accepting", minAccepting, `fewer available speakers accepted in each of ${SPEAKER_REDRAWS} draws`);
+    chosen = drawAgain().map((template) => ({ ...template }));
+  }
 }
 
 /** The pools' templates of each kind, by kind, refusing two templates with one id. */
@@ -316,20 +339,24 @@ function variant(configuration: Configuration, random: Random): { configuration:
     if (pool === undefined) throw refused(`draw.${kind}`, count, `the pools have no template of the kind "${kind}"`);
     // A venue's in-house caterer comes with its venue, not from the draw (FR-CONGRESS-05).
     const drawable = pool.filter(({ in_house_for: inHouse }) => inHouse === undefined);
-    let chosen: TomlTable[];
-    if (typeof count === "number") {
-      if (!(count >= 0 && count <= drawable.length)) throw refused(`draw.${kind}`, count, `the pool of "${kind}" has ${pool.length} templates`);
-      chosen = chooseFrom(drawable, count, random);
-    } else {
+    const drawOnce = (): TomlTable[] => {
+      if (typeof count === "number") {
+        if (!(count >= 0 && count <= drawable.length)) throw refused(`draw.${kind}`, count, `the pool of "${kind}" has ${pool.length} templates`);
+        return chooseFrom(drawable, count, random);
+      }
       const byRole = count as unknown as KindDraw;
       if (byRole.cheapest_margin !== undefined && !isRange(byRole.cheapest_margin)) throw refused(`draw.${kind}.cheapest_margin`, byRole.cheapest_margin, "it is not two numbers above 0, the first not above the second");
       const drawnByRole = drawKind(kind, drawable, byRole, random);
-      chosen = drawnByRole.chosen;
       if (Object.keys(drawnByRole.roles).length > 0) drawn.roles = { ...drawn.roles, [kind]: drawnByRole.roles };
-    }
-    chosen = chosen.map((template) => ({ ...template }));
+      return drawnByRole.chosen;
+    };
+    let chosen = drawOnce().map((template) => ({ ...template }));
+    // Each speaker's acceptance is drawn once, with the variant; the whole speaker draw is redrawn until min_accepting
+    // available speakers accept (FR-CONGRESS-11).
+    if (kind === "speaker") chosen = withAcceptance(chosen, drawOnce, (count as unknown as KindDraw).min_accepting, random);
     chosenOf[kind] = chosen;
     drawn.chosen[kind] = chosen.map(({ id }) => id as string);
+    if (kind === "speaker") drawn.accepts = Object.fromEntries(chosen.map(({ id, accepts }) => [id as string, accepts as boolean]));
   }
   // The cheapest-fit role's venue is priced below the cheapest other chosen venue that seats the target (FR-CONGRESS-01's addition).
   const venueDraw = counts.venue as unknown as KindDraw | undefined;

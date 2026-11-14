@@ -88,7 +88,7 @@ describe("speakers' acceptance drawn with the variant (FR-CONGRESS-11)", () => {
       const { chosen, accepts } = loaded.variant as { chosen: Record<string, string[]>; accepts: Record<string, boolean> };
       expect(Object.keys(accepts).sort()).toEqual([...chosen.speaker].sort());
       expect(Object.values(accepts).filter(Boolean).length).toBeGreaterThanOrEqual(6);
-      for (const id of chosen.speaker) expect((loaded.participants.find(({ name }) => name === id) as { params: Record<string, unknown> }).params.accepts).toBe(accepts[id]);
+      for (const id of chosen.speaker) expect(((loaded.participants ?? []).find(({ name }) => name === id) as { params: Record<string, unknown> }).params.accepts).toBe(accepts[id]);
     }
   });
 

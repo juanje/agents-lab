@@ -104,7 +104,7 @@ describe("the congress's variant (FR-CONGRESS-01)", () => {
     expect(speakers.map(({ name }) => name).sort()).toEqual([...chosen.speaker].sort());
     for (const speaker of speakers) {
       expect(speaker).toMatchObject({ decides: "rules", rules: "silent", tools: ["send_mail"], channels: ["mail_notice"], replyMinutes: [5, 10] });
-      if (speaker.name === "s1" && speaker.decides === "rules") expect(speaker.params).toEqual({ id: "s1", fee: 300, call_back_minutes: [6, 16] }); // its id; a minute after ring_minutes 5, up to reply_minutes 10 later (FR-CONGRESS-07)
+      if (speaker.name === "s1" && speaker.decides === "rules") expect(speaker.params).toEqual({ id: "s1", fee: 300, accepts: true, call_back_minutes: [6, 16] }); // its id, its acceptance drawn with the variant (FR-CONGRESS-11); a minute after ring_minutes 5, up to reply_minutes 10 later (FR-CONGRESS-07)
     }
     // A venue's kind gives no settings: a chosen venue is no participant.
     expect((loaded.participants ?? []).map(({ name }) => name)).not.toContain("v1");

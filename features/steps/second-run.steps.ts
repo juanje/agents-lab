@@ -204,7 +204,7 @@ Then('each speaker answers its first invitation as its "accepts" says', function
     const loaded = loadScenario(scenario, seed);
     const accepts = (loaded.variant as { accepts: Record<string, boolean> }).accepts;
     for (const [speaker, accepting] of Object.entries(accepts)) {
-      const params = (loaded.participants.find(({ name }) => name === speaker) as { params: Record<string, unknown> }).params;
+      const params = ((loaded.participants ?? []).find(({ name }) => name === speaker) as { params: Record<string, unknown> }).params;
       // Its rules, as the run starts them, from the replica's sequence for it.
       const { steps } = conversation(speakerRules.start(params, new Random(seed)), [["day 1 Monday 09:01", "From: organiser. Act: invite. session: 1. time: 10:00. fee: 0. travel_paid: false."]]);
       assert.deepEqual(

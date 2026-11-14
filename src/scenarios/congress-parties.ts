@@ -756,6 +756,8 @@ interface SpeakerParams {
   available?: boolean;
   constraint?: (typeof SPEAKER_CONSTRAINTS)[number];
   acceptance?: number;
+  /** Whether it accepts, drawn with the variant (FR-CONGRESS-11). */
+  accepts?: boolean;
   condition?: (typeof SPEAKER_CONDITIONS)[number];
   pick_up?: number;
   organiser: string;
@@ -848,8 +850,8 @@ export const speakerRules: RuleSet = {
           if (speaker.partner === true) return answering("accept");
           // A constraint is hard, whatever the condition (FR-CONGRESS-07).
           if (speaker.available !== true || breaksConstraint(fields.time)) return answering("decline");
-          // Whether it would accept is drawn once, and every later invitation reuses it (FR-CONGRESS-09).
-          wouldAccept ??= !(random.next() < 1 - (speaker.acceptance ?? 1));
+          // Whether it would accept is drawn once, with the variant (FR-CONGRESS-11), or by itself when not given (FR-CONGRESS-09).
+          wouldAccept ??= speaker.accepts ?? !(random.next() < 1 - (speaker.acceptance ?? 1));
           if (!wouldAccept) return answering("decline");
           if (speaker.condition !== undefined && !meetsCondition(fields)) return answering("accept_if", { condition: speaker.condition });
           return answering("accept");
