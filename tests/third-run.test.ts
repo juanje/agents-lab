@@ -1,6 +1,10 @@
 import { type TomlTable, parse, stringify } from "smol-toml";
 import { describe, expect, it } from "vitest";
 import { startingMoney, withCommitment, withRelease } from "../src/engine/money.ts";
+import { type Phone, phoneTools } from "../src/engine/phone.ts";
+import type { Effector } from "../src/engine/tools.ts";
+import * as parts from "../src/scenarios/congress-parts.ts";
+import type { Congress } from "../src/scenarios/congress.ts";
 import { type Scenario, loadScenario } from "../src/engine/scenario.ts";
 import { congressScenario } from "../src/scenarios/congress.ts";
 
@@ -70,5 +74,55 @@ describe("overruns only at a new high (FR-CONGRESS-13, FR-MONEY-01)", () => {
     commit(200);
     expect(money.events.filter(({ kind }) => kind === "unapproved_overrun").map(({ amount }) => amount)).toEqual([4400, 4600]);
     expect(money.overruns.map(({ committed }) => committed)).toEqual([4400, 4600]);
+  });
+});
+
+describe("an answered call keeps when it ended (FR-CONGRESS-13, FR-PHONE-01)", () => {
+  it("records the world time its answer_call lands as the call's end", () => {
+    const settings = { lines: ["ana", "desk"], ringMinutes: 5, callMinutes: 4, ring: "{from}" };
+    const keeper = { of: (state: { phone: Phone }) => state.phone, with: (_state: { phone: Phone }, phone: Phone) => ({ phone }) };
+    const answer = phoneTools({ settings, keeper, acts: {}, inHours: () => true }).find(({ name }) => name === "answer_call") as Effector<{ phone: Phone }>;
+    const connected: Phone = { calls: [{ id: "c-1", from: "ana", to: "desk", act: "ask", fields: {}, status: "connected", answer: { act: "yes", fields: {} } }] };
+    const world = { day: 2, weekday: "Tuesday" as const, seconds: 36000 };
+    const after = answer.action?.effect({ phone: connected }, { agent: "desk", arguments: { call: "c-1", act: "yes" }, atMs: 0, world }) as { phone: Phone };
+    expect(after.phone.calls[0]).toMatchObject({ status: "ended", outcome: "answered", endedAt: world });
+  });
+});
+
+describe("one record of acts, mail and phone (FR-CONGRESS-13)", () => {
+  /** A world with a mail delivered, one in transit, an answered call and a call nobody answered. */
+  const state = {
+    mail: {
+      mailboxes: { s1: [{ id: "m-1", from: "organiser", to: "s1", act: "invite", fields: { session: 1 }, subject: "invite", sent: { day: 1, weekday: "Monday", seconds: 32400 }, received: { day: 1, weekday: "Monday", seconds: 32460 }, read: true }] },
+      inTransit: [{ id: "m-2", from: "s1", to: "organiser", act: "accept", fields: { session: 1 }, subject: "accept", sent: { day: 1, weekday: "Monday", seconds: 36000 } }],
+    },
+    phone: {
+      calls: [
+        { id: "c-1", from: "organiser", to: "s2", act: "invite", fields: { session: 2 }, status: "ended", outcome: "answered", answer: { act: "accept", fields: { session: 2 } }, endedAt: { day: 1, weekday: "Monday", seconds: 34200 } },
+        { id: "c-2", from: "organiser", to: "s3", act: "invite", fields: { session: 3 }, status: "ended", outcome: "no_answer" },
+      ],
+    },
+  } as unknown as Congress;
+
+  it("gives each mail and each act of an answered call, the caller's and the answer, with its sender, receiver, act, fields, world time and channel, in the order of their times", () => {
+    const actsOf = (parts as Record<string, unknown>).actsOf as (state: Congress) => Record<string, unknown>[];
+    expect(actsOf).toBeTypeOf("function");
+    expect(actsOf(state).map(({ from, to, act, fields, at, channel }) => ({ from, to, act, fields, at, channel }))).toEqual([
+      { from: "organiser", to: "s1", act: "invite", fields: { session: 1 }, at: 541, channel: "mail" },
+      { from: "organiser", to: "s2", act: "invite", fields: { session: 2 }, at: 570, channel: "phone" },
+      { from: "s2", to: "organiser", act: "accept", fields: { session: 2 }, at: 570, channel: "phone" },
+      { from: "s1", to: "organiser", act: "accept", fields: { session: 1 }, at: 600, channel: "mail" },
+    ]);
+  });
+
+  it("reads orders confirmed on a call as orders", () => {
+    const ordersOf = (parts as Record<string, unknown>).ordersOf as (state: Congress) => { caterer: string; counts: Record<string, number> }[];
+    expect(ordersOf).toBeTypeOf("function");
+    const ordered = {
+      ...state,
+      mail: { mailboxes: {}, inTransit: [] },
+      phone: { calls: [{ id: "c-1", from: "organiser", to: "c1", act: "order", fields: { counts: "standard: 40", date: "day 26", venue: "v1" }, status: "ended", outcome: "answered", answer: { act: "order_confirmed", fields: { total: 40 } }, endedAt: { day: 1, weekday: "Monday", seconds: 34200 } }] },
+    } as unknown as Congress;
+    expect(ordersOf(ordered).map(({ caterer, counts }) => ({ caterer, counts }))).toEqual([{ caterer: "c1", counts: { none: 40 } }]);
   });
 });

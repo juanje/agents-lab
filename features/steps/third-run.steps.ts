@@ -3,8 +3,10 @@ import { Given, Then } from "@cucumber/cucumber";
 import { type TomlTable, parse, stringify } from "smol-toml";
 import type { RuleSet, RuleStep } from "../../src/engine/participants.ts";
 import type { Context } from "../support/context.ts";
-import { change, congressChanges } from "./congress.steps.ts";
-import { changePools, moneyLines } from "./congress-parties.steps.ts";
+import * as congressParts from "../../src/scenarios/congress-parts.ts";
+import type { Congress } from "../../src/scenarios/congress.ts";
+import { change, congressChanges, hourMsOf, organiserTurns, setupOf } from "./congress.steps.ts";
+import { before, changePools, moneyLines, ranLines, sentWith } from "./congress-parties.steps.ts";
 import { CITY, V1 } from "./run-corrections.steps.ts";
 import { drawnVariant } from "./roles.steps.ts";
 
@@ -167,5 +169,109 @@ Then('the money records two "unapproved_overrun": one with the committed total 4
   assert.deepEqual(
     overruns.map((line) => line.amount),
     [4400, 4600],
+  );
+});
+
+// One record of acts.
+/** The world's state as the run left it. */
+function finalState(context: Context): Congress {
+  ranLines(context);
+  const state = setupOf(context).loaded?.world.state as Congress | undefined;
+  assert.ok(state !== undefined, "the congress did not run");
+  return state;
+}
+
+/** An act of the record: its sender, receiver, act, fields, world time in world minutes, and channel. */
+interface RecordedAct {
+  from: string;
+  to: string;
+  act: string;
+  fields: Readonly<Record<string, unknown>>;
+  at: number;
+  channel: string;
+}
+
+/** The congress's record of acts exchanged, mail and phone, as the world left it. */
+function recordOfActs(context: Context): RecordedAct[] {
+  const actsOf = (congressParts as Record<string, unknown>).actsOf as ((state: Congress) => RecordedAct[]) | undefined;
+  assert.ok(actsOf !== undefined, "the congress gives no record of acts");
+  return actsOf(finalState(context));
+}
+
+/** The organiser's turns that call a party as the contract writes it, then wait for the call to end. */
+const calling = (context: Context, written: string) => organiserTurns(`call "call" ${written}, then wait 1 world hour, then "check_time"`, hourMsOf(context));
+
+Given('the organiser\'s scripted turns "call" "s2" with the act "invite", session 2 at "11:00", fee 0 and travel_paid false, then end', function (this: Context) {
+  before(this, calling(this, 'to "s2" with the act "invite", session 2, time "11:00", fee 0 and travel_paid false'));
+});
+
+Then('the record of acts holds the organiser\'s "invite" to "s2" and "s2"\'s "accept", each with its fields, its world time and the channel "phone"', function (this: Context) {
+  const call = ranLines(this).find((line) => line.type === "call" && line.from === ORGANISER && line.to === "s2");
+  assert.equal(call?.outcome, "answered");
+  const between = recordOfActs(this).filter(({ from, to }) => [from, to].includes(ORGANISER) && [from, to].includes("s2"));
+  assert.deepEqual(
+    between.map(({ from, to, act, fields, channel }) => ({ from, to, act, fields, channel })),
+    [
+      { from: ORGANISER, to: "s2", act: "invite", fields: { session: 2, time: "11:00", fee: 0, travel_paid: false }, channel: "phone" },
+      { from: "s2", to: ORGANISER, act: "accept", fields: { session: 2 }, channel: "phone" },
+    ],
+  );
+  // Each at the world time the call ended.
+  const { day, seconds } = (call?.ended as { worldTime: { day: number; seconds: number } }).worldTime;
+  for (const { at } of between) assert.equal(Math.round(at), Math.round((day - 1) * 1440 + seconds / 60));
+});
+
+Given('"s2" has "pick_up" 0, and the organiser\'s scripted turns "call" "s2" with the act "invite" to session 2, then end', function (this: Context) {
+  changePools(this, (pool) => Object.assign(pool.speaker.find(({ id }) => id === "s2") as TomlTable, { pick_up: 0 }));
+  before(this, calling(this, 'to "s2" with the act "invite", session 2, time "11:00", fee 0 and travel_paid false'));
+});
+
+Then('the call\'s outcome is "no_answer", and the record of acts holds no act between the organiser and "s2"', function (this: Context) {
+  const call = ranLines(this).find((line) => line.type === "call" && line.from === ORGANISER && line.to === "s2");
+  assert.equal(call?.outcome, "no_answer");
+  assert.deepEqual(
+    recordOfActs(this).filter(({ from, to }) => [from, to].includes("s2")),
+    [],
+  );
+});
+
+Given(
+  '"s2" accepted session 2 on a call, and on a later call the organiser sent "confirm" with the time "11:00" and the room "hall-a", and "s2" answered "acknowledged"',
+  function (this: Context) {
+    before(this, [
+      ...calling(this, 'to "s2" with the act "invite", session 2, time "11:00", fee 0 and travel_paid false'),
+      ...calling(this, 'to "s2" with the act "confirm", time "11:00", room "hall-a", length 45 and travel "none"'),
+    ]);
+  },
+);
+
+Given('the perturbation "early_cancel" fires at "day 3 10:00" and picks among confirmed speakers', function (this: Context) {
+  change(this, (configuration) => ((configuration.perturbations as TomlTable).early_cancel = { at: "day 3 10:00" }));
+  // The run ends a world hour after it.
+  this.timeLimitMs = 50 * hourMsOf(this);
+});
+
+Then('"early_cancel" picked "s2", and "s2" cancelled', function (this: Context) {
+  const answers = ranLines(this).filter((line) => line.type === "call" && line.from === ORGANISER && line.to === "s2").map((line) => (line.answer as { act: string } | undefined)?.act);
+  assert.deepEqual(answers, ["accept", "acknowledged"]);
+  assert.deepEqual(
+    finalState(this).perturbations.map(({ name, target }) => [name, target]),
+    [["early_cancel", "s2"]],
+  );
+  sentWith(this, "s2", "cancel");
+});
+
+Given('the organiser\'s scripted turns "call" "c1" with the act "order", counts "standard: 40", date "day 26" and venue "v1", then end', function (this: Context) {
+  before(this, calling(this, 'to "c1" with the act "order", counts "standard" 40, date "day 26" and venue "v1"'));
+});
+
+Then('"c1" answered "order_confirmed" on the call, and the congress\'s orders hold that order for 40', function (this: Context) {
+  const call = ranLines(this).find((line) => line.type === "call" && line.from === ORGANISER && line.to === "c1");
+  assert.equal((call?.answer as { act: string } | undefined)?.act, "order_confirmed");
+  const ordersOf = (congressParts as Record<string, unknown>).ordersOf as ((state: Congress) => { caterer: string; counts: Record<string, number> }[]) | undefined;
+  assert.ok(ordersOf !== undefined, "the congress gives no orders");
+  assert.deepEqual(
+    ordersOf(finalState(this)).map(({ caterer, counts }) => ({ caterer, counts })),
+    [{ caterer: "c1", counts: { none: 40 } }],
   );
 });
