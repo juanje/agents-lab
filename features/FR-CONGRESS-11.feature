@@ -4,28 +4,28 @@ Feature: Corrections to the world from E1's second technical run
   Background:
     Given the congress scenario of FR-CONGRESS-09, whose calendar starts at "day 1 Monday 09:00" with one segment of scale 60000, so one world hour is 60 milliseconds of the run
     And the mail delivers in 1 world minute and every party has no hours, no reply delay and "pick_up" 1, unless a scenario says otherwise
-    And the draw gives no board and "budget" [4000, 4000], and the variant draws the venue "v1" (rooms "hall-a" and "hall-b", extras "early_access" 50 and "ramp" 200), the speakers "s1" (acceptance 1, condition "fee", fee 300), "s2" (acceptance 1, condition "travel_paid", from "north"), "s3" (acceptance 1, condition "morning_slot") and "s4" (acceptance 1, no condition), the caterer "c1" (minimum 30), the sponsor "sp1" and the partner "p1"
+    And the draw gives no board, "budget" [4000, 4000] and "advance" [1500, 1500], and the variant draws the venue "v1" (rooms "hall-a" and "hall-b", extras "early_access" 50 and "ramp" 200), the speakers "s1" (acceptance 1, condition "fee", fee 300), "s2" (acceptance 1, condition "travel_paid", from "north"), "s3" (acceptance 1, condition "morning_slot") and "s4" (acceptance 1, no condition), the caterer "c1" (minimum 30), the sponsor "sp1" and the partner "p1"
 
-  Scenario: The organiser's account opens with the budget, which is its ceiling from the start
+  Scenario: The organiser's account opens with the advance, and the budget is its ceiling from the start
     Given the organiser's scripted turns call "ledger", then end
     When the run ends
-    Then the "ledger" result gives the balance 4000 and the ceiling 4000
-    And the variant line gives the budget 4000
+    Then the "ledger" result gives the balance 1500 and the ceiling 4000
+    And the variant line gives the budget 4000 and the advance 1500
 
   Scenario: Committing beyond the budget is recorded, and nothing is refused
     Given "v1" committed 3500 with the organiser, and then "c1" commits 900
     When the run ends
     Then the money records an "unapproved_overrun" for "c1"'s commitment, with the committed total 4400 and the limit 4000, and both commitments stand
 
-  Scenario: The budget is drawn between its two numbers
-    Given the draw gives "budget" [3000, 5000]
+  Scenario: The budget and the advance are drawn between their two numbers
+    Given the draw gives "budget" [3000, 5000] and "advance" [1000, 2000]
     When the variant is drawn for the seeds 1 to 20
-    Then each budget is a whole number from 3000 to 5000, the same for every condition of a replica
+    Then each budget is a whole number from 3000 to 5000 and each advance one from 1000 to 2000, the same for every condition of a replica
 
-  Scenario: The texts may name the budget
-    Given the "task" text is "You have {budget} for the congress."
+  Scenario: The texts may name the budget and the advance
+    Given the "task" text is "You may spend {budget}; the association advances {advance}."
     When the run starts
-    Then the organiser's first message from the person reads "You have 4000 for the congress."
+    Then the organiser's first message from the person reads "You may spend 4000; the association advances 1500."
 
   Scenario: With no board drawn, the partner's session mail comes from the association
     Given the organiser's scripted turns call "check_mail", then end
@@ -41,6 +41,7 @@ Feature: Corrections to the world from E1's second technical run
     Examples:
       | change                                                    | it                         |
       | "budget" is [5000, 3000]                                  | budget                     |
+      | "advance" is [2000, 1000]                                 | advance                    |
       | the "task" text names "{budget}" and the draw gives none  | {budget}                   |
       | a money account's "ceiling" is -1                         | ceiling                    |
       | "min_accepting" is 5 and the pool has 4 available speakers | draw.speaker.min_accepting |

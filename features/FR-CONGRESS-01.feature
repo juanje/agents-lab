@@ -133,10 +133,10 @@ Feature: The congress world from materials
     Then the perturbation acted on "sp3"
 
   Scenario Outline: The reference price comes from a cheapest feasible plan, less a drawn gap (FR-CONGRESS-11)
-    Given the target attendance is 50, "helpers" is 2, the cheapest venue that seats it costs 2000 <ramp>, the chosen caterers' prices per head are 25 and 30, the agency costs 460, the five lowest-fee accepting available speakers' fees add up to 500 and one of them comes from "north", whose cheapest train costs 40, the budget is 3000, the sponsors outside the role "withdraws" add up to 1000 and the one in it to 500, and "price_gap" is [0.6, 0.6]
+    Given the target attendance is 50, "helpers" is 2, the cheapest venue that seats it costs 2000 <ramp>, the chosen caterers' prices per head are 25 and 30, the agency costs 460, the five lowest-fee accepting available speakers' fees add up to 500 and one of them comes from "north", whose cheapest train costs 40, the advance is 3000, the sponsors outside the role "withdraws" add up to 1000 and the one in it to 500, and "price_gap" is [0.6, 0.6]
     When the variant is drawn
     Then the cost-covering price is <covering>, the reference price is <reference>, and the similar events cost <similar>
-    And the variant line gives both prices, the gap and the budget
+    And the variant line gives both prices, the gap, the budget and the advance
 
     Examples:
       | ramp                                                         | covering | reference | similar        |
