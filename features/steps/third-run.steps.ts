@@ -6,7 +6,7 @@ import type { Context } from "../support/context.ts";
 import * as congressParts from "../../src/scenarios/congress-parts.ts";
 import type { Congress } from "../../src/scenarios/congress.ts";
 import { change, congressChanges, hourMsOf, organiserTurns, setupOf } from "./congress.steps.ts";
-import { before, changePools, moneyLines, ranLines, sentWith } from "./congress-parties.steps.ts";
+import { assertBetween, before, changePools, minutesOf, moneyLines, ranLines, sentBy, sentWith, untilTime } from "./congress-parties.steps.ts";
 import { CITY, V1 } from "./run-corrections.steps.ts";
 import { drawnVariant } from "./roles.steps.ts";
 
@@ -274,4 +274,53 @@ Then('"c1" answered "order_confirmed" on the call, and the congress\'s orders ho
     ordersOf(finalState(this)).map(({ caterer, counts }) => ({ caterer, counts })),
     [{ caterer: "c1", counts: { none: 40 } }],
   );
+});
+
+// The venue change.
+/** The organiser's turns that book a venue's room for "day 26" and accept its contract. */
+const booking = (context: Context, venue: string, room: string) =>
+  organiserTurns(
+    `call "send_mail" to "${venue}" with the act "book", date "day 26", rooms "${room}" and hours "08:00-18:00", then wait 1 world hour, then "send_mail" to "${venue}" with the act "accept_contract" and the contract's id, then wait 1 world hour, then "check_time"`,
+    hourMsOf(context),
+  );
+
+Given('the organiser\'s contract with "v1" was cancelled on "day 4", and its contract with "v2" is confirmed', function (this: Context) {
+  before(this, booking(this, "v1", "hall-a"));
+  untilTime(this, "day 4 09:00");
+  before(this, [...organiserTurns('call "send_mail" to "v1" with the act "cancel_booking", then wait 1 world hour, then "check_time"', hourMsOf(this)), ...booking(this, "v2", "hall-2")]);
+});
+
+/** Declares the venue change at a world time, and ends the run a world hour after it. */
+function changeAt(context: Context, time: string): void {
+  change(context, (configuration) => ((configuration.perturbations as TomlTable).change = { at: time }));
+  context.timeLimitMs = ((minutesOf(time) + 60 - minutesOf("day 1 09:00")) / 60) * hourMsOf(context);
+}
+
+Given('the perturbation "change" is drawn for "day 8 10:00"', function (this: Context) {
+  changeAt(this, "day 8 10:00");
+});
+
+/** The changes a venue announced, as its mail gives them. */
+const announced = (context: Context, venue: string) => sentBy(context, venue).filter((line) => line.act === "price_change" || line.act === "room_lost");
+
+Then('"v2" announced one change to the organiser at "day 8 10:00", "v1" announced none, and the run records one venue change in all', function (this: Context) {
+  const changes = announced(this, "v2");
+  assert.equal(changes.length, 1, JSON.stringify(changes));
+  assert.equal(changes[0].to, ORGANISER);
+  // Within the few world minutes its own tools take.
+  assertBetween(changes[0], "day 8 10:00", "day 8 10:00", 5);
+  assert.deepEqual(announced(this, "v1"), []);
+  assert.deepEqual(
+    finalState(this).perturbations.map(({ name, target }) => [name, target]),
+    [["change", "v2"]],
+  );
+});
+
+Given('the organiser has no contracted or confirmed booking at "day 8 10:00", when the perturbation "change" is drawn', function (this: Context) {
+  changeAt(this, "day 8 10:00");
+});
+
+Then("no venue announced a change", function (this: Context) {
+  assert.deepEqual([...announced(this, "v1"), ...announced(this, "v2")], []);
+  assert.deepEqual(finalState(this).perturbations, []);
 });

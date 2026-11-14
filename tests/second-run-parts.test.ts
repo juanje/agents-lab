@@ -22,7 +22,6 @@ function world({ mail = [], events = [], people = [], programme = [], context = 
     ],
     mail: { mailboxes, inTransit: [] },
     phone: { calls: [] },
-    phone: { calls: [] },
     money: { balances: {}, invoices: [], commitments: [], ceilings: {}, overruns: [], events },
     population: { people, programme, events: [], page: { open: true, price: 50, required_fields: [], info: [], waiting_list: false }, referencePrice: 40, edits: [], announcements: [] },
     perturbations: [],

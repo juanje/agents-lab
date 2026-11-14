@@ -5,7 +5,10 @@ import { type Phone, phoneTools } from "../src/engine/phone.ts";
 import type { Effector } from "../src/engine/tools.ts";
 import * as parts from "../src/scenarios/congress-parts.ts";
 import type { Congress } from "../src/scenarios/congress.ts";
+import { Random } from "../src/engine/random.ts";
 import { type Scenario, loadScenario } from "../src/engine/scenario.ts";
+import { venueRules } from "../src/scenarios/congress-parties.ts";
+import { calls, conversation, drive, tools } from "./fixtures/rules.ts";
 import { congressScenario } from "../src/scenarios/congress.ts";
 
 // FR-CONGRESS-13: the world's corrections from E1's third technical run.
@@ -124,5 +127,74 @@ describe("one record of acts, mail and phone (FR-CONGRESS-13)", () => {
       phone: { calls: [{ id: "c-1", from: "organiser", to: "c1", act: "order", fields: { counts: "standard: 40", date: "day 26", venue: "v1" }, status: "ended", outcome: "answered", answer: { act: "order_confirmed", fields: { total: 40 } }, endedAt: { day: 1, weekday: "Monday", seconds: 34200 } }] },
     } as unknown as Congress;
     expect(ordersOf(ordered).map(({ caterer, counts }) => ({ caterer, counts }))).toEqual([{ caterer: "c1", counts: { none: 40 } }]);
+  });
+});
+
+describe("the venue change, once per replica, to the live booking (FR-CONGRESS-13)", () => {
+  const at = (day: number, clock = "10:00") => ({ day, weekday: "Monday" as const, seconds: Number(clock.slice(0, 2)) * 3600 + Number(clock.slice(3)) * 60 });
+  /** The congress with "v1" and "v2" and the venue change at day 8 10:00. */
+  const loaded = () =>
+    loadScenario(
+      congress({ venue: 2 }, (configuration) => {
+        const pools = parse(configuration.pools as string);
+        pools.venue = [...(pools.venue as TomlTable[]), { ...(pools.venue as TomlTable[])[0], id: "v2", rooms: [{ id: "hall-2", seats: 90 }], price: 2500 }];
+        configuration.pools = stringify(pools);
+        const city = parse(configuration.city as string);
+        city.venues = [...(city.venues as TomlTable[]), { id: "v2", entrance: "v2-entrance", hours: "always", rooms: [{ id: "hall-2", seats: 90 }] }];
+        city.passages = [...(city.passages as TomlTable[]), { between: ["office", "v2-entrance"], length: 5, step_free: true }, { between: ["v2-entrance", "hall-2"], length: 1, step_free: true }];
+        configuration.city = stringify(city);
+        (configuration.perturbations as TomlTable).change = { between: ["day 8 10:00", "day 8 10:00"] };
+      }),
+      1,
+    );
+  /** A venue's mail to the organiser, delivered at a world time. */
+  const mail = (from: string, act: string, fields: Record<string, unknown>, day: number) => ({ id: `m-${from}-${act}`, from, to: "organiser", act, fields, subject: act, received: at(day), read: true });
+
+  it("is a component that, at its drawn time, records itself for the venue holding the live booking and tells only that venue", () => {
+    const congressLoaded = loaded();
+    const component = congressLoaded.components.find(({ name }) => name === "change");
+    expect(component).toBeDefined();
+    const state = {
+      ...(congressLoaded.world.state as Congress),
+      mail: {
+        mailboxes: {
+          organiser: [
+            mail("v1", "contract", { contract: "v1-contract-1", date: "day 26", rooms: "hall-a" }, 2),
+            mail("v1", "confirmed", { contract: "v1-contract-1" }, 2),
+            mail("v1", "cancelled", { contract: "v1-contract-1", charge: 0 }, 4),
+            mail("v2", "contract", { contract: "v2-contract-1", date: "day 26", rooms: "hall-2" }, 4),
+            mail("v2", "confirmed", { contract: "v2-contract-1" }, 4),
+          ],
+        },
+        inTransit: [],
+      },
+    } as unknown as Congress;
+    const cycle = component?.cycle(new Random(1));
+    const step = cycle?.next(state as never, undefined, 0, at(8)) as { kind: string; action: { effect: (state: Congress, landing: unknown) => Congress } };
+    expect(step.kind).toBe("action");
+    expect(step.action.effect(state, { component: "change", atMs: 0, world: at(8) }).perturbations).toEqual([{ name: "change", target: "v2", at: 7 * 1440 + 600 }]);
+    expect(cycle?.next(state as never, "success", 0, at(8))).toMatchObject({ kind: "deliver", agent: "v2", channel: "venue_change", held: false });
+    expect(cycle?.next(state as never, "success", 0, at(8))).toEqual({ kind: "end" });
+  });
+
+  it("does nothing with no live booking, and gives no venue a change of its own", () => {
+    const congressLoaded = loaded();
+    const cycle = congressLoaded.components.find(({ name }) => name === "change")?.cycle(new Random(1));
+    expect(cycle?.next(congressLoaded.world.state as never, undefined, 0, at(8))).toEqual({ kind: "end" });
+    for (const venue of ["v1", "v2"]) {
+      const params = (congressLoaded.participants ?? []).find(({ name }) => name === venue) as unknown as { params: { perturbations: { name: string }[] } };
+      expect(params.params.perturbations.map(({ name }) => name)).not.toContain("change");
+    }
+  });
+
+  it("a venue announces a change of its booking when the change reaches it, and none at a time of its own", () => {
+    const venue = { id: "v1", rooms: [{ id: "hall-a", seats: 80 }], access_claim: "step-free", price: 2000, extras: {}, hold_days: 2, deposit_share: 0.25, deposit_due_days: 3, cancellation: [{ share: 0.5 }], pick_up: 1, organiser: "organiser", event_day: 26, floor_plan: [], perturbations: [] };
+    const rules = venueRules.start(venue, new Random(1));
+    conversation(rules, [
+      ["day 1 Monday 09:01", "From: organiser. Act: book. date: day 26. rooms: hall-a. hours: 08:00-18:00."],
+      ["day 1 Monday 09:02", "From: organiser. Act: accept_contract. contract: v1-contract-1."],
+    ]);
+    const steps = drive(rules, tools(() => "", () => "day 8 Monday 10:00"), [[{ channel: "venue_change", source: "the venue's management", content: "change" }]], true);
+    expect(calls(steps, "send_mail").map(({ act }) => act)).toEqual(["price_change"]);
   });
 });
