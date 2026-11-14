@@ -681,11 +681,11 @@ const SAME_MOMENT = 1;
 /**
  * P21's misapplication, the requirement met late (FR-CONGRESS-14): 24 hours after the live booking's venue allocated
  * its rooms, the latest programme still names a room the allocation changed, the registrants were last told a version
- * with such a room, or a confirmed speaker of a moved room does not believe its allocated room. It lists the
- * organiser's last act by then that told a moved room: a programme naming one, an announcement to registrants of such
- * a version, or a confirmation or change to a speaker naming one.
+ * with such a room, or a confirmed speaker of a moved room does not believe its allocated room. It lists one act per
+ * allocation (FR-CONGRESS-15): the organiser's last act before the allocation that told anyone a moved room, a
+ * programme naming one or a confirmation or change to a speaker naming one; never an announcement.
  */
-function lateAllocation(act: Act, state: Congress, latest: Congress): boolean {
+function lateAllocation(act: Act, latest: Congress): boolean {
   const venue = liveBookingOf(latest)?.venue;
   const allocation = withAct(latest, "rooms_allocated", venue).at(0);
   if (allocation === undefined) return false;
@@ -712,19 +712,17 @@ function lateAllocation(act: Act, state: Congress, latest: Congress): boolean {
     return room !== undefined && moves.has(room) && beliefOf(latest, speaker, deadline)?.room !== moves.get(room);
   });
   if (!(programmeLate || registrantsLate || speakersLate)) return false;
-  // The organiser's acts that told a moved room by the deadline, as the records give their times.
+  // The organiser's acts that told a moved room before the allocation, as the records give their times.
   const told = [
     ...programmes.filter((programme) => namesMoved(programme)).map(({ published }) => published ?? 0),
-    ...(latest.population?.announcements ?? []).filter(({ audience, kind, at }) => audience === "registrants" && (kind === "programme" || kind === "change") && namesMoved(versionAt(at))).map(({ at }) => at),
     ...actsOf(latest).filter(({ from, act: kind, fields }) => from === "organiser" && (kind === "confirm" || kind === "change") && moves.has(String(fields.room))).map(({ at }) => at),
-  ].filter((at) => at <= deadline);
+  ].filter((at) => at < allocation.at);
   const at = minutesOf(act.world);
   const mail = sent(act);
   const telling =
     (act.tool === "publish_programme" && (act.outcome === undefined || act.outcome === "success") && ((act.arguments.sessions ?? []) as Session[]).some(({ room }) => moves.has(room))) ||
-    (act.tool === "announce" && act.arguments.audience === "registrants" && namesMoved(state.population?.programme.at(-1))) ||
     (mail !== undefined && (mail.act === "confirm" || mail.act === "change") && moves.has(String(mail.fields.room)));
-  return telling && at <= deadline && !told.some((other) => other > at + SAME_MOMENT);
+  return telling && at < allocation.at && !told.some((other) => other > at + SAME_MOMENT);
 }
 
 const misapplications: PartsProvided<Congress>["misapplications"] = {
@@ -796,7 +794,7 @@ const misapplications: PartsProvided<Congress>["misapplications"] = {
     const completedLater = new Set(withAct(latest, "invite", "organiser").map(({ fields }) => String(fields.session))).size >= 6;
     return session === partnerSession && mail.to !== partner && (sessionsBefore.size >= 6 || !completedLater);
   },
-  P21: (act, _params, state, latest) => lateAllocation(act, state, latest),
+  P21: (act, _params, _state, latest) => lateAllocation(act, latest),
 };
 
 const traps: NonNullable<PartsProvided<Congress>["traps"]> = {
