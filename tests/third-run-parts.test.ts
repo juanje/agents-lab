@@ -187,8 +187,13 @@ describe("P21's misapplication, the requirement met late (FR-CONGRESS-14)", () =
     const beliefs = people.flatMap(({ id }) => [{ event: "belief", person: id, version: 1, worldTime: worldOf(minutes(12, "01:00")) }, ...(told ? [{ event: "belief", person: id, version: 2, worldTime: worldOf(republished + 1) }] : [])]);
     return world({ mail, programme: versions, people, beliefs });
   };
-  const acts = (republished: number) => [acted("publish_programme", { sessions: [session(["s2"], "10:30", "room-b")] }, minutes(12)), acted("publish_programme", { sessions: [session(["s2"], "10:30", "room-d")] }, republished)];
-  const listed = (latest: Congress, republished: number) => acts(republished).filter((act) => congressParts.misapplications.P21(act, {}, latest, latest)).length;
+  /** The organiser's acts: both programmes, and its change to "s2" with the room it names. */
+  const acts = (republished: number, s2: string) => [
+    acted("publish_programme", { sessions: [session(["s2"], "10:30", "room-b")] }, minutes(12)),
+    acted("publish_programme", { sessions: [session(["s2"], "10:30", "room-d")] }, republished),
+    acted("send_mail", { to: "s2", act: "change", fields: { room: s2 } }, republished + 2),
+  ];
+  const listed = (latest: Congress, republished: number, s2 = "room-d") => acts(republished, s2).filter((act) => congressParts.misapplications.P21(act, {}, latest, latest)).length;
 
   it("lists nothing when, 24 hours after the allocation, the programme, the registrants and every moved speaker have the allocated room", () => {
     expect(listed(records({ republished: minutes(16, "09:00") }), minutes(16, "09:00"))).toBe(0);
@@ -199,7 +204,7 @@ describe("P21's misapplication, the requirement met late (FR-CONGRESS-14)", () =
   });
 
   it("lists one misapplication when a confirmed speaker of a moved room does not believe its allocated room, or the registrants were last told a version with a moved room", () => {
-    expect(listed(records({ republished: minutes(16, "09:00"), s2: "room-b" }), minutes(16, "09:00"))).toBe(1);
+    expect(listed(records({ republished: minutes(16, "09:00"), s2: "room-b" }), minutes(16, "09:00"), "room-b")).toBe(1);
     expect(listed(records({ republished: minutes(16, "09:00"), told: false }), minutes(16, "09:00"))).toBe(1);
   });
 });

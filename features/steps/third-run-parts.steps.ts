@@ -246,6 +246,9 @@ Given(
       act(this, "send_mail", { to: "s2", act: "change", fields: { room: "room-d" } }, republishedAt + 2);
     }
     // "s2" learns its room from the programme too, unless it still believes the old one.
-    if (after.includes('"s2" still believes "room-b"')) mail(this, "organiser", "s2", "change", { room: "room-b" }, republishedAt + 3);
+    if (after.includes('"s2" still believes "room-b"')) {
+      mail(this, "organiser", "s2", "change", { room: "room-b" }, republishedAt + 3);
+      act(this, "send_mail", { to: "s2", act: "change", fields: { room: "room-b" } }, republishedAt + 3);
+    }
   },
 );
