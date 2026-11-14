@@ -3,7 +3,7 @@ import { Given, Then } from "@cucumber/cucumber";
 import { type TomlTable, parse, stringify } from "smol-toml";
 import type { RuleSet, RuleStep } from "../../src/engine/participants.ts";
 import type { Context } from "../support/context.ts";
-import { change } from "./congress.steps.ts";
+import { change, congressChanges } from "./congress.steps.ts";
 import { changePools, moneyLines } from "./congress-parties.steps.ts";
 import { CITY, V1 } from "./run-corrections.steps.ts";
 import { drawnVariant } from "./roles.steps.ts";
@@ -103,6 +103,28 @@ Then(
     assert.equal(variant.cost_covering_price, 33.25);
   },
 );
+
+// The refusals: a key beside the one it replaces, and a range outside its bounds.
+for (const [replaced, key, range] of [
+  ["budget", "budget_over_plan", [1.1, 1.2]],
+  ["advance", "advance_over_deposits", [1, 1.2]],
+  ["price_gap", "break_even_share", [0.7, 0.8]],
+  [undefined, "budget_over_plan", [0.9, 1.2]],
+  [undefined, "advance_over_deposits", [0.5, 1]],
+  [undefined, "break_even_share", [0.7, 1.2]],
+] as const) {
+  const written = `the draw gives ${replaced === undefined ? "" : `both "${replaced}" and `}"${key}" [${range.join(", ")}]`;
+  congressChanges.push([
+    literal(written),
+    (setup) =>
+      changeDraw(setup.context, (draw) => {
+        // The Background's draw gives the budget and the advance: a range alone stands in place of what it replaces.
+        if (replaced === undefined && key !== "break_even_share") delete draw[key === "budget_over_plan" ? "budget" : "advance"];
+        if (replaced === "price_gap") draw.price_gap = [0.5, 0.5];
+        draw[key] = [...range];
+      }),
+  ]);
+}
 
 // Overruns.
 Given("the organiser's account has the ceiling {int}", function (this: Context, ceiling: number) {
