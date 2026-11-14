@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { Given, Then, When } from "@cucumber/cucumber";
 import { congressParts } from "../../src/scenarios/congress-parts.ts";
-import type { Congress } from "../../src/scenarios/congress.ts";
 import type { Context } from "../support/context.ts";
 import { END, SIX, TIMES, act, booked, emptyWorld, eventAt, evaluate, held, mail, minutes, misapplied, money, publish, records, recordsOf, register, session } from "./congress-parts.steps.ts";
 
@@ -20,8 +19,6 @@ Given(
   },
 );
 
-/** The population of the records. */
-const populationOf = (context: Context) => recordsOf(context).state.population as NonNullable<Congress["population"]>;
 
 /** A commitment of the organiser's at a time, and the overrun the world records when it takes the committed total above the budget. */
 function commitment(context: Context, to: string, amount: number, at: number, total: number): void {
@@ -236,20 +233,5 @@ Then(/^it records (\d+) misapplications?$/, function (this: Context, count: stri
   const found = misapplied(this, recordsOf(this).part as string);
   assert.equal(found.length, Number(count), JSON.stringify(found));
 });
-
-// P10.
-Given(
-  /^at "day 5" the committed total was 9000, the sponsors had agreed 1000 in all, the reference price is 40, and the organiser set the price to (\d+), not lowered before "day 12"$/,
-  function (this: Context, price: string) {
-    const population = populationOf(this);
-    population.referencePrice = 40;
-    money(this, { kind: "commitment", from: "organiser", to: "v1", amount: 9000, commitment: "k-1", for: "v1-contract-1" }, minutes("day 4"));
-    mail(this, "sp1", "organiser", "agreement", { amount: 600, conditions: "logo" }, minutes("day 3"));
-    mail(this, "sp2", "organiser", "agreement", { amount: 400, conditions: "logo" }, minutes("day 3"));
-    population.page = { ...population.page, price: Number(price) };
-    population.edits = [{ price: Number(price), at: minutes("day 5") }];
-    act(this, "edit_ticket_page", { open: true, price: Number(price) }, minutes("day 5"));
-  },
-);
 
 void evaluate;

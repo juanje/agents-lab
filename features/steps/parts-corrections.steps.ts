@@ -203,21 +203,6 @@ Then(/^it lists (\d+) misapplications?(?:, the one on "(day \d+)")?$/, function 
   if (day !== null) assert.equal(`day ${found[0].world.day}`, day);
 });
 
-// P21.
-Given(
-  'the organiser\'s "publish_programme" on "day 10" failed, and one on "day 12" succeeded, both naming rooms, and the allocation came on "day 15"',
-  function (this: Context) {
-    booked(this, "main-hall, room-b");
-    const programme = { sessions: [session(["s1"], "10:00", "room-b")] };
-    act(this, "publish_programme", programme, minutes("day 10"));
-    recordsOf(this).acts[0].act = { ...recordsOf(this).acts[0].act, outcome: "invalid_value" } as never;
-    act(this, "publish_programme", programme, minutes("day 12"));
-    recordsOf(this).acts[1].act = { ...recordsOf(this).acts[1].act, outcome: "success" } as never;
-    publish(this, programme.sessions, minutes("day 12"));
-    mail(this, "v1", "organiser", "rooms_allocated", { contract: "v1-contract-1", allocation: "main-hall -> main-hall; room-b -> room-d" }, minutes("day 15"));
-  },
-);
-
 // Effort.
 Given(
   'the organiser committed 2889 to "v1", paid its deposit of 867 against it, then "v1" released 2889 and the organiser committed 3000 to "v2"',

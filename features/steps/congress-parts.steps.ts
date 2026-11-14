@@ -550,12 +550,6 @@ Given(/^"v1" allocated "room-b" as "room-d" on "day 15", and (.+)$/, function (t
   void population;
 });
 
-Given('"v1"\'s contract with the indicative-rooms term arrived on "day 4", and the organiser published a programme naming rooms on "day 12"', function (this: Context) {
-  mail(this, "v1", "organiser", "contract", { contract: "v1-contract-1", date: "day 26", rooms: "main-hall", hours: "08:00-18:00", price: 2000, terms: "Rooms are indicative until allocated." }, minutes("day 4"));
-  act(this, "publish_programme", { sessions: [session(["s1"], "10:00", "room-b")] }, minutes("day 12"));
-  mail(this, "v1", "organiser", "rooms_allocated", { contract: "v1-contract-1", allocation: "room-b -> room-d" }, minutes("day 15"));
-});
-
 // P01's trap.
 Given('the organiser held "v1" on "day 2" and the hold lapsed on "day 4" with no contract accepted', function (this: Context) {
   mail(this, "v1", "organiser", "held", { date: "day 26", until: "day 4 Thursday 09:00" }, minutes("day 2"));
