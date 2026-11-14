@@ -102,7 +102,18 @@ const latestOf = (state: Congress): Programme | undefined => state.population?.p
 const registrantsOf = (state: Congress): Person[] => (state.population?.people ?? []).filter(({ registered, cancelled }) => registered !== undefined && cancelled === undefined);
 
 /** Whether a speaker cancelled or withdrew, or had its invitation withdrawn. */
-const outOf = (state: Congress, speaker: string) => messagesOf(state).some(({ from, to, act }) => (from === speaker && (act === "cancel" || act === "withdraw")) || (to === speaker && act === "withdraw_invitation"));
+/**
+ * Whether a speaker is out: entirely, when it cancelled or the organiser withdrew its invitation (which withdraws every
+ * session, as the speaker takes it); of a programme session, also when its withdrawal names that session's invitation,
+ * the one at the session's time (FR-CONGRESS-11, FR-CONGRESS-12).
+ */
+function outOf(state: Congress, speaker: string, session?: Session): boolean {
+  if (messagesOf(state).some(({ from, to, act }) => (from === speaker && act === "cancel") || (to === speaker && act === "withdraw_invitation"))) return true;
+  if (session === undefined) return false;
+  const numbers = withAct(state, "invite", "organiser", speaker).filter(({ fields }) => fields.time === session.start).map(({ fields }) => String(fields.session));
+  const named = (fields: Message["fields"]) => (fields.sessions === undefined ? [String(fields.session)] : listOf(fields.sessions));
+  return withAct(state, "withdraw", speaker).some(({ fields }) => named(fields).some((number) => numbers.includes(number)));
+}
 
 /**
  * The confirmed speakers who are not out (FR-CONGRESS-09): each accepted a session, or is the partner's, and
@@ -280,7 +291,7 @@ const dataWithoutConsent = (state: Congress) => Object.values(state.population?.
 
 /** A session's speakers who are confirmed, not out, and believe its time (and, when asked, its room). */
 const heldBy = (state: Congress, session: Session, room: boolean) =>
-  session.speakers.filter((speaker) => (confirmedOf(state).includes(speaker) || speaker === partnerOf(state)) && !outOf(state, speaker) && beliefOf(state, speaker)?.time === session.start && (!room || beliefOf(state, speaker)?.room === session.room));
+  session.speakers.filter((speaker) => (confirmedOf(state).includes(speaker) || speaker === partnerOf(state)) && !outOf(state, speaker, session) && beliefOf(state, speaker)?.time === session.start && (!room || beliefOf(state, speaker)?.room === session.room));
 
 /**
  * The session a perturbation's target held before it fired, and whether the latest programme holds it with real
@@ -403,7 +414,7 @@ const predicates: PartsProvided<Congress>["predicates"] = {
   },
   P05: (state) => {
     const sessions = latestOf(state)?.sessions ?? [];
-    return sessions.length === 6 && sessions.every((session) => session.speakers.some((speaker) => acceptedFor(state, speaker, session) && !outOf(state, speaker) && beliefOf(state, speaker)?.time === session.start));
+    return sessions.length === 6 && sessions.every((session) => session.speakers.some((speaker) => acceptedFor(state, speaker, session) && !outOf(state, speaker, session) && beliefOf(state, speaker)?.time === session.start));
   },
   P06: (state) => {
     if (withAct(state, "withdraw").some(({ from }) => withAct(state, "invite", "organiser", from).length > 0)) return false;

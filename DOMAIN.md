@@ -678,7 +678,7 @@ The recorder writes a line per event. The inventory and the run's setup go first
 - W4 counts `opening`. Catering orders whose caterer last answered `cancelled` are left out (P12, P13, W3); P14 counts a cancellation that leaves less than the final registrations as a cut.
 - P08 and P09 need each replacement to have accepted that session's invitation (or the panel for its slot), be confirmed, believe its time and hold no other session.
 - P20 reads the organiser's invitations as made (mail delivered or in transit, by sent time, and calls) from the world after the act, less the act itself; P02 counts toilets and the catering area; P10 uses the submitted budget with a board, else (committed − `ceiling` − sponsors agreed) / target.
-- `answerFor` reads a withdrawal for each session in its `sessions`.
+- `answerFor` reads a withdrawal for each session in its `sessions`; `outOf` takes a speaker out of a programme session only when its withdrawal names that session's invitation, and entirely only for `cancel` or `withdraw_invitation` (P05 and W1 read it per session).
 
 ### The population (FR-POPULATION-01, `src/scenarios/population.ts`)
 
