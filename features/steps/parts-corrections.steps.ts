@@ -88,7 +88,7 @@ When(/^"(\w+)" is evaluated as it is due$/, function (this: Context, part: strin
 
 // P04.
 Given('the board approved a budget on "day 3 11:00" and the committed total first passed 300 on "day 4"', function (this: Context) {
-  money(this, { kind: "approval", from: "board", to: "organiser", ceiling: 5500 }, minutes("day 3 11:00"));
+  money(this, { kind: "approval", from: "board", to: "organiser", amount: 5500 }, minutes("day 3 11:00"));
   money(this, { kind: "commitment", from: "organiser", to: "v1", amount: 200, commitment: "k-1", for: "a" }, minutes("day 2"));
   money(this, { kind: "commitment", from: "organiser", to: "v1", amount: 200, commitment: "k-2", for: "b" }, minutes("day 4"));
 });

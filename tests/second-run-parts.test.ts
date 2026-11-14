@@ -141,7 +141,8 @@ describe("the patterns (FR-CONGRESS-12)", () => {
     const latest = { ...state, mail: { ...state.mail, inTransit: [{ id: "m-99", from: "organiser", to: "s6", act: "invite", fields: fields(6), subject: "invite", sent: worldOf(minutes(2)) }] } } as unknown as Congress;
     const pattern = congressParts.misapplications.P20;
     expect(pattern(act("send_mail", { to: "s6", act: "invite", fields: fields(6) }, minutes(2)), {}, latest, latest)).toBe(true);
-    expect(pattern(act("send_mail", { to: "s5", act: "invite", fields: fields(5) }, minutes(2)), {}, latest, latest)).toBe(false);
+    // As the fifth landed, the sixth was not made yet.
+    expect(pattern(act("send_mail", { to: "s5", act: "invite", fields: fields(5) }, minutes(2)), {}, state, latest)).toBe(false);
   });
 
   it("P02 counts when the toilets of the live booking at the false-claim venue are reached through steps with no ramp", () => {

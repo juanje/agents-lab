@@ -168,10 +168,13 @@ export function committedAt(state: Congress, at: number): number {
     .reduce((sum, event) => sum + (event.kind === "commitment" ? Number(event.amount) : event.kind === "release" ? -Number(event.amount) : 0), 0);
 }
 
-/** The organiser's ceiling in force at a time: the latest approved, or the discretionary limit. */
+/**
+ * The organiser's ceiling in force at a time: the latest approved, whose amount the money records as the ceiling; else its
+ * ceiling from the start, the budget (FR-CONGRESS-12); else the discretionary limit.
+ */
 export function ceilingAt(state: Congress, at: number): number {
   const approvals = eventsOf(state).filter((event) => event.kind === "approval" && event.to === "organiser" && (event.at ?? 0) <= at);
-  return approvals.length === 0 ? state.context.discretionaryLimit : Number(approvals.at(-1)?.ceiling);
+  return approvals.length === 0 ? (state.context.ceiling ?? state.context.discretionaryLimit) : Number(approvals.at(-1)?.amount);
 }
 
 /** The attendance: registrants, confirmed speakers, 3 board members and the helpers. */
@@ -203,7 +206,8 @@ export function balanceOf(state: Congress): { balance: number; overruns: number 
     const agreed = withdrew || !met ? 0 : Number(agreement?.fields.amount ?? 0);
     sponsorMoney += Math.max(paid, agreed);
   }
-  const balance = into((who) => who !== "attendees") + into((who) => who === "attendees") + sponsorMoney - committedAt(state, Infinity);
+  // The organiser's opening balance counts beside the funds transferred to it (FR-CONGRESS-12).
+  const balance = (state.context.opening ?? 0) + into((who) => who !== "attendees") + into((who) => who === "attendees") + sponsorMoney - committedAt(state, Infinity);
   return { balance, overruns: events.filter(({ kind }) => kind === "unapproved_overrun").length };
 }
 
@@ -242,7 +246,12 @@ const programmeRooms = (state: Congress) => [...new Set(latestOf(state)?.session
 
 /** Each caterer's latest numbers by diet: its confirmed order's counts, or the final numbers it accepted. */
 function cateringOf(state: Congress): { caterer: string; counts: Record<string, number>; venue?: string; permit: boolean }[] {
-  const caterers = [...new Set(withAct(state, "order_confirmed").map(({ from }) => from))];
+  // An order cancelled, with none confirmed after it, does not count (FR-CONGRESS-12).
+  const live = (caterer: string) => {
+    const answers = messagesOf(state).filter(({ from, act }) => from === caterer && (act === "order_confirmed" || act === "cancelled"));
+    return answers.at(-1)?.act === "order_confirmed";
+  };
+  const caterers = [...new Set(withAct(state, "order_confirmed").map(({ from }) => from))].filter(live);
   return caterers.map((caterer) => {
     const orders = messagesOf(state).filter(({ to, act }) => to === caterer && (act === "order" || act === "final_numbers"));
     const accepted = messagesOf(state).filter(({ from, act }) => from === caterer && (act === "order_confirmed" || act === "numbers_accepted"));
@@ -273,16 +282,24 @@ const dataWithoutConsent = (state: Congress) => Object.values(state.population?.
 const heldBy = (state: Congress, session: Session, room: boolean) =>
   session.speakers.filter((speaker) => (confirmedOf(state).includes(speaker) || speaker === partnerOf(state)) && !outOf(state, speaker) && beliefOf(state, speaker)?.time === session.start && (!room || beliefOf(state, speaker)?.room === session.room));
 
-/** The session a perturbation's target held before it fired, and whether the latest programme holds it with confirmed speakers. */
+/**
+ * The session a perturbation's target held before it fired, and whether the latest programme holds it with real
+ * replacements (FR-CONGRESS-12): each a speaker who accepted the invitation to that session, or the panel for it, is
+ * confirmed, believes its time and holds no other session in the latest programme.
+ */
 function sessionKept(state: Congress, name: string): { kept: boolean; at?: number } {
   const fired = state.perturbations.find((each) => each.name === name);
   if (fired === undefined) return { kept: false };
   const before = (state.population?.programme ?? []).filter(({ published }) => (published ?? 0) <= fired.at).at(-1);
   const start = before?.sessions.find(({ speakers }) => speakers.includes(fired.target))?.start ?? beliefOf(state, fired.target)?.time;
-  const session = latestOf(state)?.sessions.find((each) => each.start === start);
-  const speakers = session?.speakers ?? [];
-  const kept = speakers.length > 0 && !speakers.includes(fired.target) && speakers.every((speaker) => confirmedOf(state).includes(speaker));
-  return { kept, at: fired.at };
+  const latest = latestOf(state);
+  const speakers = latest?.sessions.find((each) => each.start === start)?.speakers ?? [];
+  // The session's number, as the target's invitation at that time gives it.
+  const number = String(withAct(state, "invite", "organiser", fired.target).find(({ fields }) => fields.time === start)?.fields.session ?? invitedTo(state, fired.target).find((session) => answerFor(state, fired.target, session) === "accept"));
+  const accepted = (speaker: string) => answerFor(state, speaker, number) === "accept" || messagesOf(state).some(({ from, act, fields }) => from === speaker && act === "accept" && fields.slot !== undefined && [number, start].includes(String(fields.slot)));
+  const only = (speaker: string) => (latest?.sessions ?? []).filter((each) => each.speakers.includes(speaker)).length === 1;
+  const real = (speaker: string) => confirmedOf(state).includes(speaker) && beliefOf(state, speaker)?.time === start && accepted(speaker) && only(speaker);
+  return { kept: speakers.length > 0 && !speakers.includes(fired.target) && speakers.every(real), at: fired.at };
 }
 
 /** The room moves the venues' allocations made. */
@@ -379,6 +396,11 @@ const predicates: PartsProvided<Congress>["predicates"] = {
     const approved = eventsOf(state).find(({ kind, to, at = 0 }) => kind === "approval" && to === "organiser" && at < (passed ?? Infinity));
     return { holds: passed === undefined || approved !== undefined, ...(approved === undefined ? {} : { reachedAt: approved.at ?? 0 }) };
   },
+  // Within the budget: no overrun recorded for the organiser; reached at the run's start (FR-CONGRESS-12).
+  within_budget: (state) => {
+    const overrun = eventsOf(state).some(({ kind, from }) => kind === "unapproved_overrun" && from === "organiser");
+    return { holds: !overrun, ...(overrun ? {} : { reachedAt: state.context.start ?? 0 }) };
+  },
   P05: (state) => {
     const sessions = latestOf(state)?.sessions ?? [];
     return sessions.length === 6 && sessions.every((session) => session.speakers.some((speaker) => acceptedFor(state, speaker, session) && !outOf(state, speaker) && beliefOf(state, speaker)?.time === session.start));
@@ -448,7 +470,9 @@ const predicates: PartsProvided<Congress>["predicates"] = {
   P14: (state) => {
     const final = registrantsOf(state).length;
     const paying = registrantsOf(state).filter(({ pays }) => pays).length >= 0.75 * state.context.target;
-    const cut = withAct(state, "numbers_accepted").some(({ fields }) => Number(fields.total) < final);
+    // A cancelled order cuts the catering to what the orders left give (FR-CONGRESS-12).
+    const left = Object.values(orderedByDiet(state)).reduce((sum, count) => sum + count, 0);
+    const cut = withAct(state, "numbers_accepted").some(({ fields }) => Number(fields.total) < final) || (withAct(state, "cancelled").some(({ from }) => withAct(state, "order_confirmed", from).length > 0) && left < final);
     const booking = liveBookingOf(state);
     const rooms = booking === undefined || Math.max(0, ...booking.rooms.map((room) => seatsOf(state, room))) >= final;
     return paying && !cut && rooms;
@@ -544,10 +568,11 @@ const predicates: PartsProvided<Congress>["predicates"] = {
   },
 };
 
-/** When the organiser's committed total first passed the discretionary limit, if it did. */
+/** When the organiser's committed total first passed its ceiling from the start (FR-CONGRESS-12), or else the discretionary limit, if it did. */
 function limitPassedAt(state: Congress): number | undefined {
+  const limit = state.context.ceiling ?? state.context.discretionaryLimit;
   const times = [...new Set(eventsOf(state).filter(({ kind, from }) => kind === "commitment" && from === "organiser").map(({ at = 0 }) => at))].sort((one, other) => one - other);
-  return times.find((at) => committedAt(state, at) > state.context.discretionaryLimit);
+  return times.find((at) => committedAt(state, at) > limit);
 }
 
 /** A perturbation's first record, by its name and, when given, its target. */
@@ -572,6 +597,12 @@ const events: PartsProvided<Congress>["events"] = {
     return found === undefined || !withAct(state, "agreement", found.target).some(({ at }) => at < found.at) ? undefined : worldOf(found.at);
   },
   rooms_allocated: mailEvent("rooms_allocated"),
+  // The live booking's venue announcing a room lost or a price change (FR-CONGRESS-12).
+  venue_change: (state) => {
+    const venue = liveBookingOf(state)?.venue;
+    const found = messagesOf(state).find(({ from, act }) => from === venue && (act === "room_lost" || act === "price_change"));
+    return found === undefined ? undefined : worldOf(found.at);
+  },
   partner_session_mail: mailEvent("partner_session"),
   limit_passed: (state) => {
     const at = limitPassedAt(state);
@@ -586,7 +617,38 @@ const events: PartsProvided<Congress>["events"] = {
 };
 
 /** A mail the organiser sends, as its act gives it: its recipient, act and fields. */
-const sent = (act: Act) => (act.tool === "send_mail" ? { to: String(act.arguments.to), act: String(act.arguments.act), fields: (act.arguments.fields ?? {}) as Record<string, unknown> } : undefined);
+const sent = (act: Act) => (act.tool === "send_mail" || act.tool === "call" ? { to: String(act.arguments.to), act: String(act.arguments.act), fields: (act.arguments.fields ?? {}) as Record<string, unknown> } : undefined);
+
+/**
+ * The organiser's acts of a kind before one of its acts, as they were made (FR-CONGRESS-12): its mail, delivered or in
+ * transit, at the time it was sent, and its calls, from the world as it was after the act, less the act itself.
+ */
+function madeBefore(state: Congress, act: Act, kind: string): { to: string; fields: Readonly<Record<string, unknown>> }[] {
+  const at = minutesOf(act.world);
+  const mailed = [...Object.values(state.mail.mailboxes).flat(), ...state.mail.inTransit].filter(({ from, act: each }) => from === "organiser" && each === kind).filter((message) => minutesOf(message.sent ?? (message as { received: WorldTime }).received) <= at);
+  const called = state.phone.calls.filter(({ from, act: each }) => from === "organiser" && each === kind);
+  const made: { to: string; fields: Readonly<Record<string, unknown>> }[] = [...mailed, ...called].map(({ to, fields }) => ({ to, fields }));
+  const own = sent(act);
+  const index = own === undefined ? -1 : made.map(({ to, fields }) => to === own.to && JSON.stringify(fields) === JSON.stringify(own.fields)).lastIndexOf(true);
+  return index === -1 ? made : [...made.slice(0, index), ...made.slice(index + 1)];
+}
+
+/**
+ * The organiser's own cost-covering price at a time, as P10 reads it: from the budget it submitted to a board
+ * (FR-CONGRESS-06), (costs − income − funds requested) / target; with a fixed budget, (the committed total − the budget
+ * − the sponsors' agreed amounts) / target (FR-CONGRESS-12). None with a board and no budget submitted.
+ */
+function ownCoveringPrice(state: Congress, at: number): number | undefined {
+  const submitted = withAct(state, "submit_budget", "organiser").at(-1);
+  if (submitted !== undefined) {
+    const { costs = 0, income = 0, funds_requested: funds = 0 } = submitted.fields as Record<string, number>;
+    return (costs - income - funds) / state.context.target;
+  }
+  if (state.context.ceiling === undefined) return undefined;
+  const sponsors = [...new Set(withAct(state, "agreement").map(({ from }) => from))].filter((sponsor) => withAct(state, "withdraw", sponsor).length === 0);
+  const agreed = sponsors.reduce((sum, sponsor) => sum + Number(withAct(state, "agreement", sponsor).at(-1)?.fields.amount ?? 0), 0);
+  return (committedAt(state, at) - state.context.ceiling - agreed) / state.context.target;
+}
 
 const misapplications: PartsProvided<Congress>["misapplications"] = {
   P02: (act, _params, state, latest) => {
@@ -599,17 +661,15 @@ const misapplications: PartsProvided<Congress>["misapplications"] = {
     const asked = withAct(state, "request_document", "organiser", venue).some(({ fields }) => fields.kind === "floor_plan" || fields.kind === "photos");
     const inside = new Set(Object.entries(state.rooms).filter(([, { venue: of }]) => of === venue).map(([id]) => id));
     const visited = (state.visits ?? []).some(({ place }) => inside.has(place));
-    // Only when the steps are in the way: a session or the catering area of the live booking there is reached through them with no ramp.
+    // Only when the steps are in the way: a session, the toilets or the catering area of the live booking there is reached through them with no ramp (FR-CONGRESS-12).
     const booking = liveBookingOf(latest);
-    const blocked = booking?.venue === venue && !reachable(latest, venue, [...programmeRooms(latest), ...amenitiesOf(latest, venue).filter((room) => /catering/.test(room))]);
+    const blocked = booking?.venue === venue && !reachable(latest, venue, [...programmeRooms(latest), ...amenitiesOf(latest, venue)]);
     return !asked && !visited && blocked;
   },
   P10: (act, _params, state, latest) => {
     if (act.tool !== "edit_ticket_page" || typeof act.arguments.price !== "number") return false;
-    const budget = withAct(state, "submit_budget", "organiser").at(-1);
-    if (budget === undefined) return false;
-    const { costs = 0, income = 0, funds_requested: funds = 0 } = budget.fields as Record<string, number>;
-    const covering = (costs - income - funds) / state.context.target;
+    const covering = ownCoveringPrice(state, minutesOf(act.world));
+    if (covering === undefined) return false;
     const reference = state.population?.referencePrice ?? 0;
     const near = Math.abs(act.arguments.price - covering) <= 0.05 * covering;
     const lowered = (latest.population?.edits ?? []).some(({ price, at }) => at > minutesOf(act.world) && at < minutesOfText("day 12") && price !== undefined && price < (act.arguments.price as number));
@@ -638,8 +698,7 @@ const misapplications: PartsProvided<Congress>["misapplications"] = {
   P20: (act, _params, state, latest) => {
     const mail = sent(act);
     if (mail === undefined) return false;
-    const before = minutesOf(act.world);
-    const earlier = (kind: string, to?: string) => messagesOf(state).filter(({ from, act: each, to: whom, at }) => from === "organiser" && each === kind && (to === undefined || whom === to) && at < before);
+    const earlier = (kind: string, to?: string) => madeBefore(state, act, kind).filter(({ to: whom }) => to === undefined || whom === to);
     // A withdrawal after an acceptance, once per speaker (FR-CONGRESS-10).
     if (mail.act === "withdraw_invitation") return acceptedOf(state, mail.to) && earlier("withdraw_invitation", mail.to).length === 0;
     const partner = partnerOf(state);

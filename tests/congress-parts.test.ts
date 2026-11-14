@@ -53,7 +53,7 @@ describe("the congress's records, as its parts read them (FR-CONGRESS-06)", () =
     const state = world({
       events: [
         { kind: "commitment", from: "organiser", to: "v1", amount: 2000, commitment: "k-1", at: minutes(3) },
-        { kind: "approval", from: "board", to: "organiser", ceiling: 5500, at: minutes(4) },
+        { kind: "approval", from: "board", to: "organiser", amount: 5500, at: minutes(4) },
         { kind: "commitment", from: "organiser", to: "c1", amount: 1000, commitment: "k-2", at: minutes(5) },
         { kind: "release", from: "organiser", to: "v1", amount: 2000, commitment: "k-1", at: minutes(6) },
         { kind: "commitment", from: "v1", to: "organiser", amount: 99, commitment: "k-3", at: minutes(6) },
@@ -147,7 +147,7 @@ describe("the parts' corrections (FR-CONGRESS-10)", () => {
     expect(congressParts.predicates.P11(withContext(world({ people }), {}, { edits }), {})).toMatchObject({ holds: true, reachedAt: minutes(5, "10:00") });
 
     const events = [
-      { kind: "approval", from: "board", to: "organiser", ceiling: 5500, at: minutes(3, "11:00") },
+      { kind: "approval", from: "board", to: "organiser", amount: 5500, at: minutes(3, "11:00") },
       { kind: "commitment", from: "organiser", to: "v1", amount: 400, commitment: "k-1", at: minutes(4) },
     ];
     expect(congressParts.predicates.P04(withContext(world({ events }), {}), {})).toMatchObject({ holds: true, reachedAt: minutes(3, "11:00") });

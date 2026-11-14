@@ -286,7 +286,7 @@ Given(
   'the venue raised its price by 400 on "day 8", the organiser accepted it when its committed total was 5400 and its ceiling 5500',
   function (this: Context) {
     booked(this, "main-hall");
-    money(this, { kind: "approval", from: "board", to: "organiser", ceiling: 5500 }, minutes("day 2"));
+    money(this, { kind: "approval", from: "board", to: "organiser", amount: 5500 }, minutes("day 2"));
     money(this, { kind: "commitment", from: "organiser", to: "c1", amount: 3400, commitment: "k-2", for: "order c1" }, minutes("day 5"));
     mail(this, "v1", "organiser", "price_change", { contract: "v1-contract-1", old_price: 2000, price: 2400 }, minutes("day 8"));
     mail(this, "v1", "organiser", "confirmed", { contract: "v1-contract-1", price: 2400, rooms: "main-hall" }, minutes("day 9"));
@@ -297,7 +297,7 @@ Given(
 
 // P04.
 Given(/^the board approved a budget on "(day \d+)" and the organiser's committed total first passed 300 on "day 4"$/, function (this: Context, approved: string) {
-  money(this, { kind: "approval", from: "board", to: "organiser", ceiling: 5500 }, minutes(approved));
+  money(this, { kind: "approval", from: "board", to: "organiser", amount: 5500 }, minutes(approved));
   money(this, { kind: "commitment", from: "organiser", to: "v1", amount: 200, commitment: "k-1", for: "a" }, minutes("day 2"));
   money(this, { kind: "commitment", from: "organiser", to: "v1", amount: 200, commitment: "k-2", for: "b" }, minutes("day 4"));
 });
@@ -470,7 +470,7 @@ Given('S3 withdrew on "day 12", and a commitment on "day 15" was recorded as an 
 Given(/^(the agency was booked on "day 15" and its commitment fit the ceiling|the agency was booked and its commitment was an "unapproved_overrun"|the agency was not booked)$/, function (this: Context, booking: string) {
   if (booking.includes("not booked")) return;
   // The ceiling in force: one the board approved, which the 400 fits; without it, the discretionary limit, which it does not.
-  if (booking.includes("fit the ceiling")) money(this, { kind: "approval", from: "board", to: "organiser", ceiling: 5500 }, minutes("day 10"));
+  if (booking.includes("fit the ceiling")) money(this, { kind: "approval", from: "board", to: "organiser", amount: 5500 }, minutes("day 10"));
   mail(this, "a1", "organiser", "booked", { date: "day 26", price: 400 }, minutes("day 15"));
   money(this, { kind: "commitment", from: "organiser", to: "a1", amount: 400, commitment: "k-1", for: "interpreting a1" }, minutes("day 15"));
   if (booking.includes("unapproved_overrun")) money(this, { kind: "unapproved_overrun", from: "organiser", amount: 400, commitment: "k-1", limit: 300 }, minutes("day 15"));
@@ -623,7 +623,7 @@ Given(/^(the latest programme has S1's slot at "10:30" but not its logo, and S1 
     if (paid) money(this, { kind: "payment", from: "sp1", to: "organiser", amount: 1200, invoice: "i-1" }, minutes("day 8"));
   } else if (state.startsWith("the venue raised")) {
     booked(this, "main-hall");
-    money(this, { kind: "approval", from: "board", to: "organiser", ceiling: 5500 }, minutes("day 2"));
+    money(this, { kind: "approval", from: "board", to: "organiser", amount: 5500 }, minutes("day 2"));
     money(this, { kind: "commitment", from: "organiser", to: "c1", amount: 3000, commitment: "k-2", for: "order c1" }, minutes("day 5"));
     mail(this, "v1", "organiser", "price_change", { contract: "v1-contract-1", old_price: 2000, price: 2400 }, minutes("day 8"));
     mail(this, "v1", "organiser", "confirmed", { contract: "v1-contract-1", price: 2400, rooms: "main-hall" }, minutes("day 9"));

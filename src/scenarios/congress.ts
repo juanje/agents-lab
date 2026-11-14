@@ -107,6 +107,11 @@ export interface PartsContext {
   fees?: Readonly<Record<string, number>>;
   /** The drawn speakers, the partner's among them, and sponsors, by id (FR-CONGRESS-09). */
   ids?: { speakers: readonly string[]; sponsors: readonly string[] };
+  /** The organiser's ceiling from the start, the budget when the draw gives one, and its opening balance (FR-CONGRESS-12). */
+  ceiling?: number;
+  opening?: number;
+  /** The run's start, in world minutes (FR-CONGRESS-12). */
+  start?: number;
 }
 
 /** The congress's world (FR-CONGRESS-01). */
@@ -989,6 +994,18 @@ function contextOf(configuration: Configuration, discretionaryLimit: number): Pa
     noShowCut: (configuration.no_show_cut as number | undefined) ?? 0,
     discretionaryLimit,
     ...partiesContext(configuration),
+    ...organiserContext(configuration),
+  };
+}
+
+/** The organiser's ceiling from the start and opening balance, as its account gives them, and the run's start (FR-CONGRESS-12). */
+function organiserContext(configuration: Configuration): Pick<PartsContext, "ceiling" | "opening" | "start"> {
+  const account = ((((configuration.money as TomlTable | undefined)?.accounts ?? {}) as TomlTable)[ORGANISER] ?? {}) as TomlTable;
+  const start = (configuration.calendar as TomlTable | undefined)?.start;
+  return {
+    ...(typeof account.ceiling === "number" ? { ceiling: account.ceiling } : {}),
+    ...(typeof account.opening === "number" ? { opening: account.opening } : {}),
+    ...(typeof start === "string" ? { start: minutesOfTime(start) } : {}),
   };
 }
 
