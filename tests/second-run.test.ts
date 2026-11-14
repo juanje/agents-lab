@@ -52,3 +52,20 @@ describe("a fixed budget and an advance (FR-CONGRESS-11)", () => {
     expect(() => loadScenario(congress({ advance: [2000, 1000] }), 1)).toThrow(/draw\.advance/);
   });
 });
+
+describe("no board drawn (FR-CONGRESS-11)", () => {
+  it("has the partner's session mail come from the association, which has no mailbox and no line, at the calendar's start", () => {
+    const loaded = loadScenario(
+      congress({ partner: 1 }, (configuration) => {
+        const pools = parse(configuration.pools as string);
+        pools.partner = [{ id: "p1", session: 3, fee: 0, available: true }];
+        configuration.pools = stringify(pools);
+      }),
+      1,
+    );
+    const mail = loaded.mail?.settings;
+    expect(mail?.initial.map(({ from, to, act }) => ({ from, to, act }))).toEqual([{ from: "association", to: "organiser", act: "partner_session" }]);
+    expect(mail?.mailboxes).not.toContain("association");
+    expect(loaded.phone?.settings.lines).not.toContain("association");
+  });
+});

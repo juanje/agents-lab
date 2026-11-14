@@ -85,7 +85,9 @@ function watched(scenario: typeof workplaceScenario, keep: (state: Workplace) =>
 }
 
 When("the run starts", async function (this: Context) {
-  await runWorkplace(this);
+  // A congress runs as its steps set it up (FR-CONGRESS-11); the workplace otherwise.
+  if (this.runInstead !== undefined) await this.runInstead();
+  else await runWorkplace(this);
 });
 
 Given("{string} is {string} and {string} is {string}", function (this: Context, key: string, text: string, other: string, otherText: string) {
