@@ -17,6 +17,7 @@ import {
   SPEAKER_PERTURBATIONS,
   SPONSOR_CONDITIONS,
   SPONSOR_PERTURBATION,
+  VENUE_CHANGE,
   agencyRules,
   boardRules,
   catererRules,
@@ -26,7 +27,7 @@ import {
   sponsorRules,
   venueRules,
 } from "./congress-parties.ts";
-import { actsOf as recordedActs, congressParts } from "./congress-parts.ts";
+import { actsOf as recordedActs, bookingsOf, congressParts } from "./congress-parts.ts";
 import { type AttendeesMaterial, type Population, minutesOfTime, populationComponent, populationTools } from "./population.ts";
 import { describeUniformRhythm, rhythmChannels, uniformRhythm } from "./rhythm.ts";
 
@@ -898,6 +899,12 @@ const HOTEL_OVERBOOKS = "hotel_overbooks";
 /** The perturbations that are no venue's: the speakers' cancellations, a sponsor's withdrawal and the hotels' overbooking. */
 const NOT_A_VENUES = [...SPEAKER_PERTURBATIONS, SPONSOR_PERTURBATION, HOTEL_OVERBOOKS];
 
+/** The venue perturbation every venue keeps for itself: its events office allocating its booked rooms. */
+const ROOM_ALLOCATION = "room_allocation";
+
+/** Whether a declared perturbation is the venue change: a venue's that is no room allocation (FR-CONGRESS-13). */
+const isVenueChange = (name: string) => !NOT_A_VENUES.includes(name) && name !== ROOM_ALLOCATION;
+
 /**
  * What the world adds to a party's parameters, by its rule set: a venue gets the organiser it answers, the event's day,
  * its interior's true floor plan from the city and the perturbations for it; a board gets the organiser.
@@ -916,7 +923,8 @@ function worldOf(rules: unknown, id: string, configuration: Configuration, city:
     organiser: ORGANISER_NAME,
     event_day: configuration.event_day as number,
     floor_plan: city.passages.filter(({ between }) => between.every((place) => inside.includes(place))).map(({ between, step_free: stepFree }) => ({ between, step_free: stepFree })),
-    perturbations: perturbations.filter((each) => !NOT_A_VENUES.includes(each.name) && (each.for === undefined || each.for === id)) as unknown as TomlTable[],
+    // Its rooms' allocation only: the venue change is the world's (FR-CONGRESS-13).
+    perturbations: perturbations.filter((each) => each.name === ROOM_ALLOCATION && (each.for === undefined || each.for === id)) as unknown as TomlTable[],
   };
 }
 
@@ -1357,6 +1365,44 @@ function cancellation(declared: Perturbation, speakers: readonly string[], calen
   };
 }
 
+/**
+ * The venue change (FR-CONGRESS-13), a perturbation component: once per replica, at a time drawn in its window from its
+ * own sequence, or at its time, it records itself for the venue holding the organiser's live booking (contracted or
+ * confirmed, as the record of acts gives it) and tells that venue, not held, the kind declared; with no live booking it
+ * does nothing.
+ */
+function venueChange(declared: Perturbation, calendar: Calendar): Component<Congress> {
+  return {
+    name: declared.name,
+    kind: "perturbation",
+    description: `At a time drawn between ${String(declared.between?.join(" and ") ?? declared.at)}, makes the venue holding the organiser's live booking lose a room or raise its price; with no live booking, nothing.`,
+    cycle: (random) => {
+      const [from, to] = (declared.between ?? [declared.at, declared.at]).map((time) => perturbationMinutes(time) as number);
+      const time = from + random.next() * (to - from);
+      let venue: string | undefined;
+      let done = false;
+      return {
+        next: (state, _outcome, sinceStartMs, world) => {
+          const now = minutesOfWorld(world as WorldTime);
+          if (done) return { kind: "end" };
+          if (now < time) return { kind: "wait", ms: reachedAfterMs(calendar, sinceStartMs, (time - now) * 60) };
+          if (venue !== undefined) {
+            done = true;
+            return { kind: "deliver", agent: venue, channel: VENUE_CHANGE, held: false, values: { kind: declared.kind ?? "" } };
+          }
+          venue = bookingsOf(state).filter(({ cancelledAt }) => cancelledAt === undefined).at(-1)?.venue;
+          if (venue === undefined) {
+            done = true;
+            return { kind: "end" };
+          }
+          // It records itself, then tells its venue.
+          return recording(declared.name, [venue]);
+        },
+      };
+    },
+  };
+}
+
 /** A perturbation's record of itself, as it fires, for each of its targets (FR-CONGRESS-06): an action that takes no time. */
 function recording(name: string, targets: readonly string[]): Step<Congress> {
   return {
@@ -1445,10 +1491,10 @@ function hotelOverbooking(declared: Perturbation, calendar: Calendar, eventDay: 
   };
 }
 
-/** The speakers' cancellations and a sponsor's withdrawal the configuration declares. */
+/** The speakers' cancellations, a sponsor's withdrawal, the hotels' overbooking and the venue change the configuration declares. */
 function components(configuration: Configuration): Component<Congress>[] {
   const declared = Object.entries((configuration.perturbations ?? {}) as TomlTable)
-    .filter(([name]) => SPEAKER_PERTURBATIONS.includes(name) || name === SPONSOR_PERTURBATION || name === HOTEL_OVERBOOKS)
+    .filter(([name]) => name !== ROOM_ALLOCATION)
     .map(([name, written]) => ({ name, ...(written as TomlTable) }) as unknown as Perturbation);
   const calendar = readCalendar(configuration.calendar);
   // The attendees, when the configuration gives their material (FR-POPULATION-01).
@@ -1461,6 +1507,7 @@ function components(configuration: Configuration): Component<Congress>[] {
   return [...attendees, ...declared.map((each) => {
     if (each.name === SPONSOR_PERTURBATION) return sponsorWithdrawal(each, calendar);
     if (each.name === HOTEL_OVERBOOKS) return hotelOverbooking(each, calendar, configuration.event_day as number);
+    if (isVenueChange(each.name)) return venueChange(each, calendar);
     return cancellation(each, speakers, calendar);
   })];
 }
@@ -1740,7 +1787,7 @@ const BASE_CONFIGURATION = [
   "[kinds.venue]",
   'rules = "venue"',
   'tools = ["send_mail", "check_mail", "read_mail", "call", "answer_call", "check_time", "ledger", "commit", "release", "issue_invoice"]',
-  'channels = ["mail_notice", "phone"]',
+  `channels = ["mail_notice", "phone", "${VENUE_CHANGE}"]`,
   "reply_minutes = [0, 0]",
   'account = "unlimited"',
   "[kinds.board]",
@@ -1809,6 +1856,8 @@ export const congressScenario: Scenario<Congress> = {
     ...SPEAKER_PERTURBATIONS.map((name) => ({ name, source: "illness", stimulus: "You are ill and cannot give your session." })),
     { name: SPONSOR_PERTURBATION, source: "the sponsor's board", stimulus: "Your board withdraws the sponsorship." },
     { name: HOTEL_OVERBOOKS, source: "the hotel", stimulus: "Your hotel room for the night before the event is cancelled: the hotel is overbooked." },
+    // The venue change reaches the venue holding the live booking, with the kind declared (FR-CONGRESS-13).
+    { name: VENUE_CHANGE, source: "the venue's management", stimulus: "{kind}" },
     // A published programme tells each of its speakers its session (FR-POPULATION-01).
     { name: "programme", source: "the programme", stimulus: "Your session in the programme: {time} in {room}." },
     // An invoice reaches its recipient from its issuer, as a message does (FR-CONGRESS-05).

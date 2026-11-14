@@ -34,6 +34,9 @@ export function resultOf(tool: string, outcome: string, text: string, record?: R
   return { tool, outcome, text, ...(kept === undefined ? {} : { record: kept }) };
 }
 
+/** The venue change as it reaches a venue, of a kind or, empty, one the venue draws (FR-CONGRESS-13). */
+export const venueChange = (kind = ""): Stimulus => ({ channel: "venue_change", source: "the venue's management", content: kind });
+
 /** The mail notice of a message from the organiser. */
 export const notice: Stimulus = { channel: "mail_notice", source: "mail client", content: "New mail from organiser: x" };
 

@@ -126,7 +126,7 @@ describe("the congress's speakers and partner (FR-CONGRESS-04)", () => {
     expect(loaded.money?.settings.accounts).toEqual(expect.arrayContaining([{ name: "s1", unlimited: true }]));
   });
 
-  it("gives a venue none of the speakers' perturbations", () => {
+  it("gives a venue none of the speakers' perturbations, nor the venue change, which is the world's (FR-CONGRESS-13)", () => {
     const loaded = loadScenario(
       congress((configuration, pools) => {
         configuration.city = stringify({ places: [{ id: "office" }], venues: [{ id: "v1", entrance: "v1-entrance", hours: "always", rooms: [{ id: "main-hall", seats: 120 }] }], passages: [{ between: ["office", "v1-entrance"], length: 40, step_free: true }] });
@@ -138,7 +138,7 @@ describe("the congress's speakers and partner (FR-CONGRESS-04)", () => {
       1,
     );
     const v1 = loaded.participants?.find(({ name }) => name === "v1");
-    expect(v1?.decides === "rules" && (v1.params.perturbations as { name: string }[]).map(({ name }) => name)).toEqual(["change"]);
+    expect(v1?.decides === "rules" && (v1.params.perturbations as { name: string }[]).map(({ name }) => name)).toEqual([]);
   });
 
   it("puts the board's mail about the partner's session in the organiser's mailbox at the calendar's start", () => {

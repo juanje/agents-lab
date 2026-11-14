@@ -8,7 +8,7 @@ import type { Congress } from "../src/scenarios/congress.ts";
 import { Random } from "../src/engine/random.ts";
 import { type Scenario, loadScenario } from "../src/engine/scenario.ts";
 import { venueRules } from "../src/scenarios/congress-parties.ts";
-import { calls, conversation, drive, tools } from "./fixtures/rules.ts";
+import { calls, conversation, drive, tools, venueChange } from "./fixtures/rules.ts";
 import { congressScenario } from "../src/scenarios/congress.ts";
 
 // FR-CONGRESS-13: the world's corrections from E1's third technical run.
@@ -194,7 +194,7 @@ describe("the venue change, once per replica, to the live booking (FR-CONGRESS-1
       ["day 1 Monday 09:01", "From: organiser. Act: book. date: day 26. rooms: hall-a. hours: 08:00-18:00."],
       ["day 1 Monday 09:02", "From: organiser. Act: accept_contract. contract: v1-contract-1."],
     ]);
-    const steps = drive(rules, tools(() => "", () => "day 8 Monday 10:00"), [[{ channel: "venue_change", source: "the venue's management", content: "change" }]], true);
+    const steps = drive(rules, tools(() => "", () => "day 8 Monday 10:00"), [[venueChange()]], true);
     expect(calls(steps, "send_mail").map(({ act }) => act)).toEqual(["price_change"]);
   });
 });

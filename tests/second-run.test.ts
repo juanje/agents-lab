@@ -9,7 +9,7 @@ import { catererRules, speakerRules, venueRules } from "../src/scenarios/congres
 import { type Population, type PopulationWorld, populationComponent, populationTools } from "../src/scenarios/population.ts";
 import { answerFor } from "../src/scenarios/congress-parts.ts";
 import { congressScenario } from "../src/scenarios/congress.ts";
-import { calls, conversation, drive, notice, tools } from "./fixtures/rules.ts";
+import { calls, conversation, drive, notice, tools, venueChange } from "./fixtures/rules.ts";
 
 // FR-CONGRESS-11: the world's corrections from E1's second technical run.
 
@@ -186,9 +186,9 @@ describe("venues' corrections (FR-CONGRESS-11)", () => {
   });
 
   it("raises its price instead of taking a room from a booking with one room", () => {
-    const rules = venueRules.start(venue({ perturbations: [{ name: "change", kind: "room_lost", at: "day 1 12:00" }] }), new Random(1));
+    const rules = venueRules.start(venue(), new Random(1));
     conversation(rules, [book("hall-a"), accept]);
-    const steps = drive(rules, tools(() => "", () => "day 1 Monday 12:00"), [[]], true);
+    const steps = drive(rules, tools(() => "", () => "day 1 Monday 12:00"), [[venueChange("room_lost")]], true);
     expect(mailed(steps).map(({ act }) => act)).toEqual(["price_change"]);
   });
 

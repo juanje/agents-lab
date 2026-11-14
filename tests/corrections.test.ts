@@ -5,7 +5,7 @@ import { type Scenario, loadScenario } from "../src/engine/scenario.ts";
 import type { Stimulus } from "../src/engine/stimuli.ts";
 import { boardRules, catererRules, speakerRules, venueRules } from "../src/scenarios/congress-parties.ts";
 import { congressScenario } from "../src/scenarios/congress.ts";
-import { calls, conversation, drive, notice, tools } from "./fixtures/rules.ts";
+import { calls, conversation, drive, notice, tools, venueChange } from "./fixtures/rules.ts";
 
 /** "v1"'s parameters: main-hall (120 seats) and room-b (40), the day price 2000, and what the world adds. */
 const venue = (changes: Record<string, unknown> = {}) => ({
@@ -83,10 +83,10 @@ describe("a venue's catering rule, rooms and lost rooms (FR-CONGRESS-07)", () =>
       { id: "room-c", seats: 20, equipment: [] },
     ];
     const lost = (option: string) => {
-      const rules = venueRules.start(venue({ rooms, perturbations: [{ name: "change", kind: "room_lost", at: "day 1 12:00" }] }), new Random(1));
+      const rules = venueRules.start(venue({ rooms }), new Random(1));
       const first = conversation(rules, [book("main-hall, room-b"), accept]);
       first.clock.time = "day 1 Monday 12:00";
-      const changed = drive(rules, tools(() => "", () => first.clock.time), [[]], true);
+      const changed = drive(rules, tools(() => "", () => first.clock.time), [[venueChange("room_lost")]], true);
       const chosen = drive(rules, tools(() => `From: organiser. Act: accept_change. option: ${option}.`, () => first.clock.time, committed("k-1", 2000, "v1-contract-1")), [[notice]], true);
       return { changed: calls(changed, "send_mail"), chosen };
     };
@@ -138,10 +138,10 @@ describe("a venue's bookings and lost rooms (FR-CONGRESS-09)", () => {
 
   /** A booking with these rooms, accepted, and the room_lost change at noon: what the venue mailed at noon, and then. */
   function losing(rooms: string, then: [string, string][] = []) {
-    const rules = venueRules.start(venue({ perturbations: [{ name: "change", kind: "room_lost", at: "day 1 12:00" }] }), new Random(1));
+    const rules = venueRules.start(venue(), new Random(1));
     const first = conversation(rules, [book(rooms), accept]);
     first.clock.time = "day 1 Monday 12:00";
-    const changed = drive(rules, tools(() => "", () => first.clock.time), [[]], true);
+    const changed = drive(rules, tools(() => "", () => first.clock.time), [[venueChange("room_lost")]], true);
     const later = then.flatMap(([time, message]) => {
       first.clock.time = time;
       return drive(rules, tools(() => message, () => first.clock.time), [[notice]], true);
@@ -165,10 +165,10 @@ describe("a venue's bookings and lost rooms (FR-CONGRESS-09)", () => {
 describe("a party's own mail within its hours (FR-CONGRESS-09)", () => {
   it("sends its own mail, such as a perturbation's notice, at the first moment within its hours", () => {
     const OFFICE = { days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"], from: "09:00", to: "17:00" };
-    const rules = venueRules.start(venue({ keeps: OFFICE, perturbations: [{ name: "change", kind: "price_change", at: "day 3 23:00" }] }), new Random(1));
+    const rules = venueRules.start(venue({ keeps: OFFICE }), new Random(1));
     const first = conversation(rules, [book("main-hall"), accept]);
     first.clock.time = "day 3 Wednesday 23:00";
-    const night = drive(rules, tools(() => "", () => first.clock.time), [[]], true);
+    const night = drive(rules, tools(() => "", () => first.clock.time), [[venueChange("price_change")]], true);
     expect(calls(night, "send_mail")).toEqual([]);
     expect(night.at(-1)).toEqual({ kind: "wait", minutes: 600 });
 

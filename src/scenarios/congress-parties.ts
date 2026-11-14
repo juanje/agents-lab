@@ -308,11 +308,19 @@ interface Contract {
 /** Something a venue does at a world time of its own. */
 interface Timer {
   at: number;
-  kind: "lapse" | "challenge_lapse" | "reminder" | "unpaid_cancel" | "enquiry" | "change" | "room_allocation";
+  kind: "lapse" | "challenge_lapse" | "reminder" | "unpaid_cancel" | "enquiry" | "room_allocation";
   date?: string;
   contract?: string;
-  perturbation?: string;
 }
+
+/**
+ * The channel on which the venue change reaches the venue that holds the organiser's live booking, its text the kind
+ * declared, room_lost or price_change, or empty when the venue draws it (FR-CONGRESS-13).
+ */
+export const VENUE_CHANGE = "venue_change";
+
+/** The kinds of a venue change. */
+const CHANGE_KINDS = ["room_lost", "price_change"];
 
 /**
  * The venue's rules (FR-CONGRESS-02): from its template, it answers quotes, documents, holds, bookings, contracts, extras,
@@ -595,32 +603,6 @@ export const venueRules: RuleSet = {
           yield* (cancelled.then as () => Script)();
           return;
         }
-        case "change": {
-          const booked = contracts.find((each) => ["contracted", "confirmed"].includes(statusOf(each.date)));
-          if (booked === undefined) return;
-          const declared = venue.perturbations.find(({ name }) => name === timer.perturbation);
-          const drawnKind = declared?.kind ?? (random.next() < 0.5 ? "room_lost" : "price_change");
-          // A booking with one room loses none: its price rises instead (FR-CONGRESS-11).
-          const kind = drawnKind === "room_lost" && booked.rooms.length < 2 ? "price_change" : drawnKind;
-          if (kind === "price_change") {
-            const price = Math.round(booked.price * (1.15 + 0.1 * random.next()));
-            booked.change = { kind, price };
-            record("price_change", { contract: booked.id, price });
-            yield* party.write(booked.to, "price_change", { contract: booked.id, old_price: booked.price, price });
-            return;
-          }
-          const lost = booked.rooms.at(-1) as string;
-          lostRooms.set(booked.date, new Set([...(lostRooms.get(booked.date) ?? []), lost]));
-          const seats = venue.rooms.find(({ id }) => id === lost)?.seats ?? 0;
-          const smaller = venue.rooms.filter(({ id, seats: other }) => other < seats && !booked.rooms.includes(id)).sort((one, other) => other.seats - one.seats)[0];
-          // It offers its largest free smaller room, and a cut of the lost room's price (FR-CONGRESS-07).
-          const cut = roomPrice(lost);
-          booked.change = { kind: "room_lost", room: lost, cut, ...(smaller === undefined ? {} : { smaller: smaller.id }) };
-          record("room_lost", { contract: booked.id, room: lost });
-          const offer = smaller === undefined ? { offer: "price_cut" } : { offer: "smaller_room", smaller: smaller.id };
-          yield* party.write(booked.to, "room_lost", { contract: booked.id, room: lost, ...offer, cut });
-          return;
-        }
         case "room_allocation": {
           const booked = live();
           if (booked === undefined || venue.indicative !== true) return;
@@ -645,6 +627,32 @@ export const venueRules: RuleSet = {
       }
     }
 
+    /** The venue change, when it reaches the venue (FR-CONGRESS-13): to its live booking, of the kind given, or one it draws. */
+    function* announceChange(given: string): Generator<RuleStep, void, Perceived> {
+      const booked = contracts.find((each) => ["contracted", "confirmed"].includes(statusOf(each.date)));
+      if (booked === undefined) return;
+      const drawnKind = CHANGE_KINDS.includes(given) ? given : random.next() < 0.5 ? "room_lost" : "price_change";
+      // A booking with one room loses none: its price rises instead (FR-CONGRESS-11).
+      const kind = drawnKind === "room_lost" && booked.rooms.length < 2 ? "price_change" : drawnKind;
+      if (kind === "price_change") {
+        const price = Math.round(booked.price * (1.15 + 0.1 * random.next()));
+        booked.change = { kind, price };
+        record("price_change", { contract: booked.id, price });
+        yield* party.write(booked.to, "price_change", { contract: booked.id, old_price: booked.price, price });
+        return;
+      }
+      const lost = booked.rooms.at(-1) as string;
+      lostRooms.set(booked.date, new Set([...(lostRooms.get(booked.date) ?? []), lost]));
+      const seats = venue.rooms.find(({ id }) => id === lost)?.seats ?? 0;
+      const smaller = venue.rooms.filter(({ id, seats: other }) => other < seats && !booked.rooms.includes(id)).sort((one, other) => other.seats - one.seats)[0];
+      // It offers its largest free smaller room, and a cut of the lost room's price (FR-CONGRESS-07).
+      const cut = roomPrice(lost);
+      booked.change = { kind: "room_lost", room: lost, cut, ...(smaller === undefined ? {} : { smaller: smaller.id }) };
+      record("room_lost", { contract: booked.id, room: lost });
+      const offer = smaller === undefined ? { offer: "price_cut" } : { offer: "smaller_room", smaller: smaller.id };
+      yield* party.write(booked.to, "room_lost", { contract: booked.id, room: lost, ...offer, cut });
+    }
+
     /** The next other customer's enquiry, after an interval drawn from its sequence at enquiries_per_day. */
     function scheduleEnquiry(): void {
       const rate = venue.enquiries_per_day ?? 0;
@@ -654,16 +662,20 @@ export const venueRules: RuleSet = {
     function* script(): Script {
       yield* party.clock();
       scheduleEnquiry();
+      // Its rooms' allocation; the venue change is the world's, which reaches it only when it holds the live booking (FR-CONGRESS-13).
       for (const declared of venue.perturbations) {
-        if (declared.at !== undefined) timers.push({ at: perturbationMinutes(declared.at) as number, kind: declared.name === "room_allocation" ? "room_allocation" : "change", perturbation: declared.name });
+        if (declared.at !== undefined) timers.push({ at: perturbationMinutes(declared.at) as number, kind: "room_allocation" });
         if (declared.between !== undefined) {
           const [from, to] = declared.between.map((time) => perturbationMinutes(time) as number);
-          timers.push({ at: from + random.next() * (to - from), kind: declared.name === "room_allocation" ? "room_allocation" : "change", perturbation: declared.name });
+          timers.push({ at: from + random.next() * (to - from), kind: "room_allocation" });
         }
       }
       for (;;) {
         // What reaches it is answered at the time it is answered.
         if (party.stimuli.length > 0) yield* party.clock();
+        const changes = party.stimuli.filter(({ channel }) => channel === VENUE_CHANGE);
+        party.stimuli.splice(0, party.stimuli.length, ...party.stimuli.filter((stimulus) => !changes.includes(stimulus)));
+        for (const { content } of changes) yield* announceChange(content.trim());
         yield* party.handle(answer, venue.pick_up ?? 1, random);
         yield* party.clock();
         // Firing a timer may set others, so the next is found again each time.
