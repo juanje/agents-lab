@@ -1322,6 +1322,8 @@ export const sponsorRules: RuleSet = {
     const withdrawing = (): Answer => {
       record.withdrew = true;
       record.agreement = "none";
+      // It drops the payments it had pending, and rests until a message or a call reaches it (FR-CONGRESS-15).
+      payments.length = 0;
       return { act: "withdraw", fields: {} };
     };
     const counter = (conditions: string[]): Answer => {
