@@ -4,7 +4,7 @@ import { readCalendar } from "../src/engine/calendar.ts";
 import { readMoney, startingMoney } from "../src/engine/money.ts";
 import { type Scenario, loadScenario } from "../src/engine/scenario.ts";
 import { Random } from "../src/engine/random.ts";
-import { speakerRules } from "../src/scenarios/congress-parties.ts";
+import { speakerRules, venueRules } from "../src/scenarios/congress-parties.ts";
 import { congressScenario } from "../src/scenarios/congress.ts";
 import { calls, conversation, drive, notice, tools } from "./fixtures/rules.ts";
 
@@ -148,5 +148,63 @@ describe("speakers' withdrawals, illness and conditions (FR-CONGRESS-11)", () =>
     expect(answer({}, invite(1, 0, "15:00"))).toEqual({ session: 1, condition: "fee", fee: 300 });
     expect(answer({ condition: "travel_paid", home: "north", fee: 0 }, invite(1, 0, "15:00"))).toEqual({ session: 1, condition: "travel_paid", travel_paid: true, from: "north" });
     expect(answer({ condition: "morning_slot", fee: 0 }, invite(1, 0, "15:00"))).toEqual({ session: 1, condition: "morning_slot", time: "before 12:00" });
+  });
+});
+
+describe("venues' corrections (FR-CONGRESS-11)", () => {
+  const venue = (changes: Record<string, unknown> = {}) => ({
+    id: "v1",
+    rooms: [
+      { id: "hall-a", seats: 80 },
+      { id: "hall-b", seats: 40 },
+      { id: "annex", seats: 50 },
+    ],
+    access_claim: "step-free",
+    price: 2000,
+    extras: { early_access: 50, ramp: 200 },
+    hold_days: 2,
+    deposit_share: 0.25,
+    deposit_due_days: 3,
+    cancellation: [{ share: 0.5 }],
+    pick_up: 1,
+    organiser: "organiser",
+    event_day: 26,
+    floor_plan: [],
+    perturbations: [],
+    ...changes,
+  });
+  const mailed = (steps: ReturnType<typeof drive>) => calls(steps, "send_mail").map(({ act, fields }) => ({ act, fields }));
+  const book = (rooms: string): [string, string] => ["day 1 Monday 09:01", `From: organiser. Act: book. date: day 26. rooms: ${rooms}. hours: 08:00-18:00.`];
+  const accept: [string, string] = ["day 1 Monday 09:02", "From: organiser. Act: accept_contract. contract: v1-contract-1."];
+
+  it("gives its extras with their prices in its quote", () => {
+    const { steps } = conversation(venueRules.start(venue(), new Random(1)), [["day 1 Monday 09:01", "From: organiser. Act: ask_quote. date: day 26. attendance: 60."]]);
+    expect(mailed(steps)[0].fields.extras).toBe("early_access: 50; ramp: 200");
+  });
+
+  it("raises its price instead of taking a room from a booking with one room", () => {
+    const rules = venueRules.start(venue({ perturbations: [{ name: "change", kind: "room_lost", at: "day 1 12:00" }] }), new Random(1));
+    conversation(rules, [book("hall-a"), accept]);
+    const steps = drive(rules, tools(() => "", () => "day 1 Monday 12:00"), [[]], true);
+    expect(mailed(steps).map(({ act }) => act)).toEqual(["price_change"]);
+  });
+
+  it("answers unavailable to a change of booking naming a room its allocation moved away", () => {
+    const rules = venueRules.start(venue({ indicative: true, perturbations: [{ name: "room_allocation", at: "day 1 12:00" }] }), new Random(1));
+    conversation(rules, [book("hall-a, hall-b"), accept]);
+    const allocated = drive(rules, tools(() => "", () => "day 1 Monday 12:00"), [[]], true);
+    expect(mailed(allocated)[0].fields.allocation).toBe("hall-a -> hall-a; hall-b -> annex");
+    const steps = drive(rules, tools(() => "From: organiser. Act: change_booking. rooms: hall-a, hall-b, annex. hours: 08:00-18:00.", () => "day 1 Monday 13:00"), [[notice]], true);
+    expect(mailed(steps).map(({ act }) => act)).toEqual(["unavailable"]);
+  });
+
+  it("answers a repeat of a message it answered already_sent, with the earlier answer's act and world time, and changes nothing", () => {
+    const rules = venueRules.start(venue(), new Random(1));
+    const ask = "From: organiser. Act: ask_quote. date: day 26. attendance: 60.";
+    const { steps } = conversation(rules, [
+      ["day 1 Monday 10:01", ask],
+      ["day 1 Monday 11:01", ask],
+    ]);
+    expect(mailed(steps).map(({ act, fields }) => (act === "already_sent" ? { act, fields } : act))).toEqual(["quote", { act: "already_sent", fields: { act: "quote", sent: "day 1 Monday 10:01" } }]);
   });
 });

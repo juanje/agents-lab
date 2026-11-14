@@ -357,7 +357,8 @@ export function hourMsOf(context: Context): number {
   return (3600 * 1000) / segment.scale;
 }
 
-Given(/^the organiser's scripted turns (call .+), then end$/, function (this: Context, written: string) {
+// "again": a repeat of a message the turns before sent (FR-CONGRESS-11).
+Given(/^the organiser's scripted turns (call .+?)(?: again)?, then end$/, function (this: Context, written: string) {
   script(this, ORGANISER, [...(turnsBefore.get(this) ?? []), ...organiserTurns(written, hourMsOf(this)), { text: "Done.", delayMs: 0 }]);
 });
 

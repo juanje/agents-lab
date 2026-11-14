@@ -289,3 +289,68 @@ Then(/^"(s\d)" answered "accept_if" with the condition "(\w+)" and (.+)$/, funct
   };
   assert.deepEqual(fieldsOf(sentWith(this, speaker, "accept_if")), { session: 1, condition, ...needed[needs] });
 });
+
+// Venues.
+Then('"v1"\'s "quote" gives the extras "early_access: 50" and "ramp: 200"', function (this: Context) {
+  assert.deepEqual(String(fieldsOf(sentWith(this, "v1", "quote")).extras).split(/;\s*/), ["early_access: 50", "ramp: 200"]);
+});
+
+/** The organiser's turns that book "v1" for "day 26" with these rooms and accept its contract. */
+const booking = (context: Context, rooms: string) =>
+  organiserTurns(
+    `call "send_mail" to "v1" with the act "book", date "day 26", rooms "${rooms}" and hours "08:00-18:00", then wait 1 world hour, then "send_mail" to "v1" with the act "accept_contract" and the contract's id, then wait 1 world hour, then "check_time"`,
+    hourMsOf(context),
+  );
+
+Given('the organiser\'s confirmed contract with "v1" has only "hall-a", and the perturbation "change" of the kind "room_lost" fires', function (this: Context) {
+  before(this, booking(this, "hall-a"));
+  change(this, (configuration) => ((configuration.perturbations as TomlTable).change = { at: "day 1 12:00", kind: "room_lost" }));
+});
+
+Then('"v1" announced "price_change", and lost no room', function (this: Context) {
+  sentWith(this, "v1", "confirmed");
+  sentWith(this, "v1", "price_change");
+  assert.equal(sentBy(this, "v1").filter((line) => line.act === "room_lost").length, 0);
+});
+
+Given(
+  'the organiser\'s confirmed contract with "v1" has "hall-a" and "hall-b", whose rooms are indicative, and "rooms_allocated" moved "hall-b" to "annex"',
+  function (this: Context) {
+    // "annex", a room of "v1" no booking has, seats "hall-b"'s audience but not "hall-a"'s.
+    changePools(this, (pool) => Object.assign(pool.venue[0], { indicative: true, rooms: [...(pool.venue[0].rooms as TomlTable[]), { id: "annex", seats: 50, equipment: [] }] }));
+    change(this, (configuration) => {
+      const city = parse(configuration.city as string);
+      const [v1] = city.venues as TomlTable[];
+      v1.rooms = [...(v1.rooms as TomlTable[]), { id: "annex", seats: 50 }];
+      city.passages = [...(city.passages as TomlTable[]), { between: ["v1-entrance", "annex"], length: 1, step_free: true }];
+      configuration.city = stringify(city);
+      (configuration.perturbations as TomlTable).room_allocation = { at: "day 1 12:00" };
+    });
+    before(this, booking(this, "hall-a, hall-b"));
+    untilTime(this, "day 1 13:00");
+  },
+);
+
+Then('"v1" answered "unavailable"', function (this: Context) {
+  assert.equal(fieldsOf(sentWith(this, "v1", "rooms_allocated")).allocation, "hall-a -> hall-a; hall-b -> annex");
+  sentWith(this, "v1", "unavailable");
+  assert.equal(sentBy(this, "v1").filter((line) => line.act === "contract_changed").length, 0);
+});
+
+Given('"v1" answered "quote" to the organiser\'s "ask_quote" for "day 26" and attendance 60 at "day 1 Monday 10:01"', function (this: Context) {
+  // The calendar starts at 10:00, a world minute 100 ms of the run, so the quote's minute is exact.
+  change(this, (configuration) => Object.assign(configuration.calendar as TomlTable, { start: "day 1 Monday 10:00", segments: [{ scale: 600 }] }));
+  this.timeLimitMs = 2 * hourMsOf(this);
+  before(this, organiserTurns('call "send_mail" to "v1" with the act "ask_quote", date "day 26" and attendance 60, then wait 1 world hour, then "check_time"', hourMsOf(this)));
+});
+
+Then('"v1" answered "already_sent" with the act "quote" and sent "day 1 Monday 10:01", and changed nothing else', function (this: Context) {
+  const quote = sentWith(this, "v1", "quote");
+  const { day, seconds } = quote.worldTime as { day: number; seconds: number };
+  assert.deepEqual([day, Math.floor(seconds / 60)], [1, 10 * 60 + 1]);
+  assert.deepEqual(fieldsOf(sentWith(this, "v1", "already_sent")), { act: "quote", sent: "day 1 Monday 10:01" });
+  assert.deepEqual(
+    sentBy(this, "v1").map((line) => line.act),
+    ["quote", "already_sent"],
+  );
+});
