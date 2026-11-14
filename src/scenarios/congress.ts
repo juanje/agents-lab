@@ -5,7 +5,7 @@ import { INVOICE_NOTICE, invoiced, stamped, withCommitment, withRelease } from "
 import type { Money } from "../engine/money.ts";
 import type { Phone } from "../engine/phone.ts";
 import { type Places, arrive, exits, inSight, layout, leave, put, where } from "../engine/places.ts";
-import type { Random } from "../engine/random.ts";
+import { Random } from "../engine/random.ts";
 import type { Component, Step } from "../engine/components.ts";
 import type { Configuration, Scenario } from "../engine/scenario.ts";
 import type { Channel } from "../engine/stimuli.ts";
@@ -280,15 +280,16 @@ function drawKind(kind: string, pool: readonly TomlTable[], draw: KindDraw, rand
 }
 
 /**
- * The chosen speakers, each with its `accepts`, true with its acceptance, from the replica's sequence (FR-CONGRESS-11):
+ * The chosen speakers, each with its `accepts`, true with its acceptance, from a sequence of its own for each draw, derived
+ * from the variant's (FR-CONGRESS-04, FR-CONGRESS-11):
  * with min_accepting, the speakers are drawn again, the whole draw, until at least that many available ones accept, up
  * to 100 times; refused, naming draw.speaker.min_accepting, when they never do.
  */
-function withAcceptance(first: TomlTable[], drawAgain: () => TomlTable[], minAccepting: number | undefined, random: Random): TomlTable[] {
+function withAcceptance(first: TomlTable[], drawAgain: () => TomlTable[], minAccepting: number | undefined, seed: number): TomlTable[] {
   if (minAccepting !== undefined && !(Number.isInteger(minAccepting) && minAccepting >= 0)) throw refused("draw.speaker.min_accepting", minAccepting, "it is not a whole number of at least 0");
   let chosen = first;
   for (let draws = 1; ; draws += 1) {
-    const drawn: TomlTable[] = chosen.map((template) => ({ ...template, accepts: random.next() < ((template.acceptance as number | undefined) ?? 1) }));
+    const drawn: TomlTable[] = chosen.map((template) => ({ ...template, accepts: Random.derive(seed, `acceptance of ${String(template.id)}, draw ${draws}`).next() < ((template.acceptance as number | undefined) ?? 1) }));
     if (minAccepting === undefined || drawn.filter(({ available, accepts }) => available === true && accepts).length >= minAccepting) return drawn;
     if (draws >= SPEAKER_REDRAWS) throw refused("draw.speaker.min_accepting", minAccepting, `fewer available speakers accepted in each of ${SPEAKER_REDRAWS} draws`);
     chosen = drawAgain().map((template) => ({ ...template }));
@@ -328,6 +329,9 @@ function variant(configuration: Configuration, random: Random): { configuration:
   const [fewest, most] = attendance as number[];
   if (!(typeof fewest === "number" && typeof most === "number" && fewest <= most)) throw refused("draw.attendance", attendance, "it is not two numbers, the first not above the second");
   const topics = (pools.topics ?? []) as string[];
+  // The seed of each speaker's own acceptance sequence, the variant's first draw, so another speaker in the pool changes
+  // no speaker's acceptance (FR-CONGRESS-04, FR-CONGRESS-11).
+  const acceptances = Math.floor(random.next() * 2 ** 32);
   const drawn: Drawn = { topic: topics[Math.floor(random.next() * topics.length)], attendance: fewest + Math.floor(random.next() * (most - fewest + 1)), chosen: {} };
   // The budget and the advance, each a whole number between its two (FR-CONGRESS-11).
   for (const [key, range] of [["budget", budget], ["advance", advance]] as const) {
@@ -358,7 +362,7 @@ function variant(configuration: Configuration, random: Random): { configuration:
     let chosen = drawOnce().map((template) => ({ ...template }));
     // Each speaker's acceptance is drawn once, with the variant; the whole speaker draw is redrawn until min_accepting
     // available speakers accept (FR-CONGRESS-11).
-    if (kind === "speaker") chosen = withAcceptance(chosen, drawOnce, (count as unknown as KindDraw).min_accepting, random);
+    if (kind === "speaker") chosen = withAcceptance(chosen, drawOnce, (count as unknown as KindDraw).min_accepting, acceptances);
     chosenOf[kind] = chosen;
     drawn.chosen[kind] = chosen.map(({ id }) => id as string);
     if (kind === "speaker") drawn.accepts = Object.fromEntries(chosen.map(({ id, accepts }) => [id as string, accepts as boolean]));
