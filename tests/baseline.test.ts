@@ -235,3 +235,157 @@ describe("D3 everyone_fits: every room of the latest programme is in the live bo
   it("does not hold for an attendance above the seats", () => expect(holds("everyone_fits", congress("hall-a", "hall-a", 80))).toBe(false));
   it("does not hold with no live booking", () => expect(holds("everyone_fits", congress(undefined, "hall-a"))).toBe(false));
 });
+
+describe("D4 everyone_can_reach: every registrant with an access need reaches the programme's rooms, the catering area and the toilets (FR-CONGRESS-20)", () => {
+  /** A live booking of "hall-a" with the programme there, 40 registrants and, when asked, a wheelchair user. */
+  function congress({ wheelchair = true, booking = true } = {}): Congress {
+    const state = world();
+    if (booking) booked(state);
+    sixConfirmed(state);
+    published(state);
+    registered(state, 40);
+    if (wheelchair) registered(state, 1, { id: "a-wheelchair", access: "wheelchair", given: { diet: "none", access: "wheelchair" } });
+    return state;
+  }
+
+  it("holds when no registrant has an access need, whatever the steps", () => expect(holds("everyone_can_reach", congress({ wheelchair: false }))).toBe(true));
+  it("does not hold for a wheelchair user when the toilets are behind steps and no ramp was booked", () => expect(holds("everyone_can_reach", congress())).toBe(false));
+
+  it("holds for a wheelchair user once the venue confirmed the extra ramp", () => {
+    const state = congress();
+    mail(state, "v1", "organiser", "extra_confirmed", { item: "ramp", price: 100 }, minutes("day 14"));
+    expect(holds("everyone_can_reach", state)).toBe(true);
+  });
+
+  it("does not hold when the catering area is behind steps", () => {
+    const state = congress();
+    state.passages = state.passages.map((passage) => (passage.between.includes("v1-toilets") ? { ...passage, step_free: true } : passage));
+    state.rooms["v1-catering"] = { venue: "v1" } as never;
+    state.passages.push({ between: ["hall-a", "v1-catering"], length: 1, step_free: "2 steps" } as never);
+    expect(holds("everyone_can_reach", state)).toBe(false);
+    state.passages[3] = { ...state.passages[3], step_free: true };
+    expect(holds("everyone_can_reach", state)).toBe(true);
+  });
+
+  it("does not hold for a wheelchair user with no live booking", () => expect(holds("everyone_can_reach", congress({ booking: false }))).toBe(false));
+});
+
+describe("D5 food_for_everyone: the live orders cover each diet's attendance, from caterers that serve it within their limits (FR-CONGRESS-20)", () => {
+  /** A live booking, 50 registrants of whom 4 eat vegan and 3 gluten-free, six confirmed speakers and 2 helpers: 54 standard. */
+  function congress(): Congress {
+    const state = world();
+    booked(state);
+    registered(state, 43);
+    registered(state, 4, { diet: "vegan" });
+    registered(state, 3, { diet: "gluten_free" });
+    sixConfirmed(state);
+    published(state);
+    return state;
+  }
+
+  it("holds when one caterer covers every diet", () => {
+    const state = congress();
+    ordered(state, "c2", "standard: 54; vegan: 4; gluten_free: 3");
+    expect(holds("food_for_everyone", state)).toBe(true);
+  });
+
+  it("does not hold when a diet is missing", () => {
+    const state = congress();
+    ordered(state, "c2", "standard: 54; vegan: 4");
+    expect(holds("food_for_everyone", state)).toBe(false);
+  });
+
+  it("holds when two orders cover the diets between them", () => {
+    const state = congress();
+    ordered(state, "c1", "standard: 54; vegan: 4");
+    ordered(state, "c2", "gluten_free: 3", { at: minutes("day 10") });
+    expect(holds("food_for_everyone", state)).toBe(true);
+  });
+
+  it("does not hold when the standard meals fall short of everyone else", () => {
+    const state = congress();
+    ordered(state, "c2", "standard: 50; vegan: 4; gluten_free: 3");
+    expect(holds("food_for_everyone", state)).toBe(false);
+  });
+
+  it("counts a diet's meals only up to the caterer's limit", () => {
+    const state = congress();
+    ordered(state, "c1", "standard: 54; vegan: 4; gluten_free: 3");
+    expect(holds("food_for_everyone", state)).toBe(false);
+  });
+
+  it("does not count meals of a diet the caterer does not serve", () => {
+    const state = congress();
+    registered(state, 1, { diet: "halal" });
+    ordered(state, "c1", "standard: 54; vegan: 4; halal: 1");
+    ordered(state, "c2", "gluten_free: 3", { at: minutes("day 10") });
+    expect(holds("food_for_everyone", state)).toBe(false);
+  });
+
+  it("does not count an order for another day, nor a cancelled one", () => {
+    const other = congress();
+    ordered(other, "c2", "standard: 54; vegan: 4; gluten_free: 3", { date: "day 25" });
+    expect(holds("food_for_everyone", other)).toBe(false);
+    const cancelled = congress();
+    ordered(cancelled, "c2", "standard: 54; vegan: 4; gluten_free: 3");
+    mail(cancelled, "c2", "organiser", "cancelled", { charge: 0 }, minutes("day 15"));
+    expect(holds("food_for_everyone", cancelled)).toBe(false);
+  });
+
+  describe("at a venue that keeps its catering", () => {
+    /** "v1" in-house with its own caterer "c9", which serves every diet; 50 standard registrants and 4 vegan: 61 standard. */
+    function inHouse(rule = "in_house"): Congress {
+      const state = world();
+      state.context = { ...state.context, catering: { v1: { rule, inHouse: "c9" } }, diets: { ...state.context.diets, c9: { vegan: {}, gluten_free: {} } } } as Congress["context"];
+      booked(state);
+      registered(state, 50);
+      registered(state, 4, { diet: "vegan" });
+      sixConfirmed(state);
+      published(state);
+      return state;
+    }
+    /** "v1"'s permit for outside meals of a diet. */
+    const permit = (state: Congress, diet: string) => mail(state, "v1", "organiser", "extra_confirmed", { item: "outside_catering", price: 20, permit: "v1-permit-1", diet, attendance: 4 }, minutes("day 8"));
+
+    it("holds for the venue's own caterer", () => {
+      const state = inHouse();
+      ordered(state, "c9", "standard: 61; vegan: 4");
+      expect(holds("food_for_everyone", state)).toBe(true);
+    });
+
+    it("does not count an outside caterer's meals with no permit", () => {
+      const state = inHouse();
+      ordered(state, "c2", "standard: 61; vegan: 4");
+      expect(holds("food_for_everyone", state)).toBe(false);
+    });
+
+    it("counts an outside caterer's meals of the diet the venue's permit names, and no others", () => {
+      const state = inHouse();
+      permit(state, "vegan");
+      ordered(state, "c9", "standard: 61");
+      ordered(state, "c2", "vegan: 4", { at: minutes("day 10"), more: { permit: "v1-permit-1" } });
+      expect(holds("food_for_everyone", state)).toBe(true);
+      const standard = inHouse();
+      permit(standard, "vegan");
+      ordered(standard, "c2", "standard: 61; vegan: 4", { more: { permit: "v1-permit-1" } });
+      expect(holds("food_for_everyone", standard)).toBe(false);
+    });
+
+    it("does not count a permit the venue did not give", () => {
+      const state = inHouse();
+      ordered(state, "c9", "standard: 61");
+      ordered(state, "c2", "vegan: 4", { at: minutes("day 10"), more: { permit: "v1-permit-7" } });
+      expect(holds("food_for_everyone", state)).toBe(false);
+    });
+
+    it("counts every meal of an outside caterer with the permit of a venue that charges a fee", () => {
+      const state = inHouse("outside_fee");
+      mail(state, "v1", "organiser", "extra_confirmed", { item: "outside_catering", price: 200, permit: "v1-permit-1" }, minutes("day 8"));
+      ordered(state, "c2", "standard: 61; vegan: 4", { more: { permit: "v1-permit-1" } });
+      expect(holds("food_for_everyone", state)).toBe(true);
+      const without = inHouse("outside_fee");
+      ordered(without, "c2", "standard: 61; vegan: 4");
+      expect(holds("food_for_everyone", without)).toBe(false);
+    });
+  });
+});

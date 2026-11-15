@@ -42,7 +42,7 @@ const tool = (name: string) => congressScenario.tools.find((each) => each.name =
 describe("the congress's records for its parts (FR-CONGRESS-06)", () => {
   it("keeps what its parts read: the event's day, the helpers, the target, the end of preparation, the roles, the no-show cut and the discretionary limit", () => {
     const state = congress().world.state as Congress;
-    expect(state.context).toEqual({ eventDay: 26, helpers: 2, target: 50, endOfPreparation: minutes(26, "06:30"), roles: { venue: { false_claim: ["v1"] } }, noShowCut: 0.05, discretionaryLimit: 300, homes: {}, catering: { v1: {} }, ids: { speakers: expect.arrayContaining(["s1", "s2"]), sponsors: [] }, fees: { s1: 0, s2: 0 }, opening: 0, start: minutes(1, "09:00") });
+    expect(state.context).toEqual({ eventDay: 26, helpers: 2, target: 50, endOfPreparation: minutes(26, "06:30"), roles: { venue: { false_claim: ["v1"] } }, noShowCut: 0.05, discretionaryLimit: 300, homes: {}, catering: { v1: {} }, ids: { speakers: expect.arrayContaining(["s1", "s2"]), sponsors: [] }, fees: { s1: 0, s2: 0 }, diets: {}, opening: 0, start: minutes(1, "09:00") });
   });
 
   it("stamps a travel booking and a programme version with their world times", () => {
@@ -71,12 +71,14 @@ describe("the records only the congress's parts read (FR-CONGRESS-06)", () => {
   it("records the organiser's visits, announcements and ticket prices with their world times, and gives its parts", () => {
     const loaded = congress((configuration) => {
       configuration.attendees = stringify({ pool_factor: 1, base_per_day: 0, unannounced: 0, promotion_factor: 1, payment_fee_share: 0, cancel_share: 0, consent_share: 1, diets: { none: 1 } });
-      configuration.pools = stringify({ ...parse(configuration.pools as string), caterer: [{ id: "c9", price_per_head: 30, final_days: 7, deposit_share: 0.2, deposit_due_days: 3, cancellation: [{ share: 0.3 }], in_house_for: "v1" }] });
+      configuration.pools = stringify({ ...parse(configuration.pools as string), caterer: [{ id: "c9", price_per_head: 30, final_days: 7, deposit_share: 0.2, deposit_due_days: 3, cancellation: [{ share: 0.3 }], in_house_for: "v1", diets: { vegan: {}, gluten_free: { limit: 3 } } }] });
       configuration.pools = stringify({ ...parse(configuration.pools as string), venue: [{ ...(parse(configuration.pools as string).venue as TomlTable[])[0], catering: "in_house" }], speaker: [{ id: "s1", fee: 0, available: true, acceptance: 1, home: "north" }, { id: "s2", fee: 0, available: true, acceptance: 1, home: "local" }] });
       configuration.kinds = { ...(configuration.kinds as TomlTable) };
     });
     const state = loaded.world.state as Congress;
     expect(state.context).toMatchObject({ homes: { s1: "north" }, catering: { v1: { rule: "in_house", inHouse: "c9" } } });
+    // Each caterer's diets with their limits, as D5 reads them (FR-CONGRESS-20).
+    expect(state.context.diets).toEqual({ c9: { vegan: {}, gluten_free: { limit: 3 } } });
     const goTo = congressScenario.tools.find((each) => each.name === "go") as never as { start: { effect: (state: unknown, call: unknown) => Congress }; action: { effect: (state: unknown, call: unknown) => Congress } };
     const call = { agent: "organiser", arguments: { place: "v1-entrance" }, atMs: 0, world: at(2, "10:00") };
     // The organiser leaves the office as its walk starts, and arrives as it ends.
