@@ -518,12 +518,14 @@ The recorder writes a line per event. The inventory and the run's setup go first
 - A caterer's params give each chosen venue's rule (`venues`), and its `order` names a `venue`.
 - Unless it is that venue's in-house caterer or the order gives a `permit`, an `in_house` or `outside_fee` venue refuses it (`order_refused`, `reason` `venue_requires_permit`).
 - The venue quotes `request_extra outside_catering` at its fee per head × attendance (outside_fee only) and gives `permit` `<venue>-permit-<n>` with `extra_confirmed`.
+- An `in_house` venue's params give its in-house caterer's diets (`in_house_diets`); for a `diet` that caterer serves with a limit or not at all, it quotes `outside_catering` at `outside_diet_fee_per_head` × attendance, and its permit carries the `diet` and the `attendance` (FR-CONGRESS-17).
+- A caterer reads an order's permit with the sensor `read_permit` (no time; offered to the organiser too, as `read_programme` is), from the venue's `extra_confirmed`, and refuses an order with meals of another kind or more than the attendance (`permit_exceeded`). A caterer with `in_house_for` refuses an order naming another venue (`own_venue_only`).
 
 **Rooms and prices**
 - A room's price is the day price × its seats ÷ all the venue's seats, rounded.
 - `change_booking` (rooms, hours) answers `contract_changed` with the price moved by the rooms added and dropped, committing the difference or releasing and committing again.
 - `request_extra room` (seats) quotes the smallest free room with those seats.
-- `room_lost` offers `smaller` (largest free smaller room) and `cut` (the lost room's price), and `accept_change` takes `option` `smaller_room` or `price_cut`.
+- `room_lost` offers `smaller` (largest free smaller room) and `cut` (the lost room's price), and `accept_change` takes `option` `smaller_room` or `price_cut`. On a one-room booking it offers `smaller` only, no `cut`; unanswered, the booking moves to it at the same price, and `change_applied` names the `room` and the `smaller` (FR-CONGRESS-17).
 
 **The board and speakers**
 - The board refuses `request_approval` with `reason` `no_budget` until it has approved a budget.
@@ -558,7 +560,8 @@ The recorder writes a line per event. The inventory and the run's setup go first
 **Hotels**
 - A hotel's rooms left for a night are rooms × min(14, days left) / 14, rounded down, less those booked.
 - `hotel_overbooks` (a perturbation component, never a venue's) at its time cancels every room booked for the night before the event, releasing its commitment, then delivers its channel to each traveller, not held.
-- A speaker it hits calls the organiser with `no_room` and mails it if the call is not answered.
+- A speaker it hits calls the organiser with `no_room` and mails it if the call is not answered, unless it is out: it cancelled, had its invitation withdrawn, or withdrew from every session (FR-CONGRESS-17).
+- On the night's own day a hotel has no room left for it, so after `hotel_overbooks` only a train in time can still meet P19.
 
 **Sponsors**
 - A sponsor mails `invoice_disputed` (`invoice`, `amount` its agreed amount) for an invoice above what is left of its amount, and pays nothing for it.
@@ -601,7 +604,8 @@ The recorder writes a line per event. The inventory and the run's setup go first
 - Each part requires the situation it measures; outcomes need six sessions and a live booking.
 - Answers are read per session (`answerFor`).
 - An act carries its `outcome`; P21 counts only published programmes, P20 and P02 the act meant, once.
-- `effortMoney` counts commitments net of releases, and payments only to an actor with no commitment counted.
+- `effortMoney` counts commitments net of releases, a release only when its commitment is counted in the same window (FR-CONGRESS-17), and payments only to an actor with no commitment counted.
+- Since FR-CONGRESS-17: `bookingsOf` reads `change_applied` (the lost room leaves, its `smaller` joins); `confirmedOf` also confirms a speaker who accepted and acknowledged a `change` naming a time and a room; P19 leaves out a speaker who is out; P20 holds on the partner's confirmed session and kept agreements, whatever the other sessions, and counts an invitation of one speaker for the partner's session once.
 - W4 counts sponsor money only under conditions met; since FR-CONGRESS-14 it needs a congress that happens and no overrun.
 
 ### The congress ready for an experiment (FR-CONGRESS-08)
@@ -665,7 +669,7 @@ The recorder writes a line per event. The inventory and the run's setup go first
 
 **Parties**
 - A speaker's `accept_if` states its need (`fee`; `travel_paid` true and `from`; `time` "before 12:00"); at day 19 its `withdraw` names in `sessions` only the sessions still waiting; once ill it declines invitations and panels and answers `confirm`/`change` with `not_available`.
-- A venue's `quote` gives `extras` (`<item>: <price>; …`); a `room_lost` on a one-room booking becomes a `price_change`; rooms an allocation moved away are lost for the date, so `change_booking` naming one is `unavailable`.
+- A venue's `quote` gives `extras` (`<item>: <price>; …`); a `room_lost` on a one-room booking becomes a `price_change` when no smaller room is free (FR-CONGRESS-17); rooms an allocation moved away are lost for the date, so `change_booking` naming one is `unavailable`.
 - A party answers a repeat (same sender, act and fields) with `already_sent` (`act`, `sent`: its first answer's act and world time); it reads the time once per batch of mail it answers.
 - A caterer refuses `order` and `final_numbers` below its minimum with `reason` `below_minimum` and `minimum`.
 
