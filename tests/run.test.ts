@@ -827,6 +827,17 @@ describe("run", () => {
     expect(delivered).toEqual([]);
   });
 
+  it("refuses, before any model call, an effector that delivers through a channel the scenario does not declare, naming the tool and the channel (FR-STIMULUS-02)", async () => {
+    const logDirectory = newLogDirectory();
+    const model = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
+
+    const running = run(slots({ tools: [tellingTake(["b"])] }), [{ name: "a", model, activations: 1 }], seed, { ...settings, logDirectory });
+
+    await expect(running).rejects.toThrow('The effector "take" delivers through the channel "news", which scenario "slots" does not declare');
+    expect(model.received).toEqual([]);
+    expect(readdirSync(logDirectory)).toEqual([]);
+  });
+
   it("gives an effector with no action, which changes nothing, its outcome without the arbiter: the world's version stays", async () => {
     const { action: _action, ...still } = patientTake;
     const loaded = slots({ tools: [{ ...still, durationMs: () => 20 }] });
