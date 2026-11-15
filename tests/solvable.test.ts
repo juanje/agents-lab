@@ -319,7 +319,7 @@ function solvableCongress(venues: Record<string, unknown>[], draw: Record<string
     city: stringify({
       places: [{ id: "office" }],
       venues: templates.map(({ id, rooms }) => ({ id, entrance: `${String(id)}-entrance`, hours: "always", rooms })),
-      passages: templates.flatMap(({ id, rooms }) => [{ between: ["office", `${String(id)}-entrance`], length: 5, step_free: true }, ...rooms.map(({ id: room }) => ({ between: [`${String(id)}-entrance`, room], length: 1, step_free: true }))]),
+      passages: templates.flatMap(({ id, rooms }) => [{ between: ["office", `${String(id)}-entrance`], length: 5, step_free: true }, ...(rooms as { id: string }[]).map(({ id: room }) => ({ between: [`${String(id)}-entrance`, room], length: 1, step_free: true }))]),
     }),
     pools: stringify({
       topics: ["soil"],
