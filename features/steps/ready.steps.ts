@@ -365,9 +365,8 @@ Then("the organiser's tools in the inventory are exactly those its session is of
   const excluded = [one, two, three, four];
   const [condition] = readyInventory(this).conditions;
   const listed = condition.tools.map(({ name }) => name).sort();
-  // The organiser's account gives it ledger, pay and issue_invoice of the money's tools (the base's [money]); the
-  // congress's read_permit, which caterers read permits with, is offered with its other tools (FR-CONGRESS-17).
-  const offered = ["check_time", "look", "go", "write_note", "read_notes", "wait", "travel_options", "book_travel", "similar_events", "read_permit", "edit_ticket_page", "ticket_page", "publish_programme", "announce", "read_programme", "send_mail", "check_mail", "read_mail", "call", "answer_call", "ledger", "pay", "issue_invoice"].sort();
+  // The organiser's account gives it ledger, pay and issue_invoice of the money's tools (the base's [money]).
+  const offered = ["check_time", "look", "go", "write_note", "read_notes", "wait", "travel_options", "book_travel", "similar_events", "edit_ticket_page", "ticket_page", "publish_programme", "announce", "read_programme", "send_mail", "check_mail", "read_mail", "call", "answer_call", "ledger", "pay", "issue_invoice"].sort();
   assert.deepEqual(listed, offered);
   for (const tool of excluded) assert.ok((MONEY_TOOLS as readonly string[]).includes(tool) && !listed.includes(tool), `the inventory lists "${tool}"`);
 });

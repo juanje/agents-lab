@@ -207,7 +207,14 @@ describe("a venue's outside_diet_fee_per_head (FR-CONGRESS-17)", () => {
 });
 
 describe("read_permit (FR-CONGRESS-17)", () => {
-  const readPermit = congressScenario.tools.find(({ name }) => name === "read_permit") as { kind: string; sense: (state: unknown, agent: string, args: Record<string, unknown>, ms: number) => string } | undefined;
+  // A tool of the parties only, never the organiser's (FR-CONGRESS-17).
+  const partyTools = ((congressScenario as { partyTools?: readonly { name: string }[] }).partyTools ?? []) as readonly { name: string }[];
+  const readPermit = partyTools.find(({ name }) => name === "read_permit") as { kind: string; sense: (state: unknown, agent: string, args: Record<string, unknown>, ms: number) => string } | undefined;
+
+  it("is a tool of the parties, not one the organiser is offered", () => {
+    expect(congressScenario.tools.map(({ name }) => name)).not.toContain("read_permit");
+    expect(partyTools.map(({ name }) => name)).toContain("read_permit");
+  });
 
   it("gives the diet and the attendance a venue's permit carries, from the venue's extra_confirmed", () => {
     expect(readPermit?.kind).toBe("sensor");
