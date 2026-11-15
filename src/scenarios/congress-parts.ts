@@ -142,6 +142,13 @@ function outOf(state: Congress, speaker: string, session?: Session): boolean {
   return withAct(state, "withdraw", speaker).some(({ fields }) => named(fields).some((number) => numbers.includes(number)));
 }
 
+/** Whether a speaker is out entirely: out, or it withdrew from every session it was invited to and accepted none (FR-CONGRESS-17). */
+function outEntirely(state: Congress, speaker: string): boolean {
+  if (outOf(state, speaker)) return true;
+  const answers = invitedTo(state, speaker).map((session) => answerFor(state, speaker, session));
+  return answers.includes("withdraw") && answers.every((answer) => answer === "withdraw" || answer === "decline");
+}
+
 /**
  * The confirmed speakers who are not out (FR-CONGRESS-09): each accepted a session, or is the partner's, and
  * acknowledged a confirmation the organiser sent it.
@@ -537,9 +544,10 @@ const predicates: PartsProvided<Congress>["predicates"] = {
       .filter(({ kind, from, to }) => kind === "commitment" && from === "organiser" && to === booking.from)
       .every(({ at = 0 }) => committedAt(state, at) <= ceilingAt(state, at));
   },
+  // A speaker who is out is left out (FR-CONGRESS-17).
   P19: (state) =>
     state.perturbations
-      .filter(({ name }) => name === "hotel_overbooks")
+      .filter(({ name, target }) => name === "hotel_overbooks" && !outEntirely(state, target))
       .every(({ target }) => {
         const night = `day ${state.context.eventDay - 1}`;
         const deadline = minutesOfText(`${night} 23:30`);

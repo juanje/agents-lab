@@ -1118,7 +1118,9 @@ export const speakerRules: RuleSet = {
         const roomless = party.stimuli.some(({ channel }) => channel === HOTEL_OVERBOOKS);
         party.stimuli.splice(0, party.stimuli.length, ...party.stimuli.filter((stimulus) => !ill.includes(stimulus) && stimulus.channel !== HOTEL_OVERBOOKS && stimulus.channel !== PROGRAMME));
         for (const { channel } of ill) yield* cancel(channel);
-        if (roomless) yield* tell("no_room");
+        // Not once it is out: it cancelled, had its invitation withdrawn or withdrew from every session (FR-CONGRESS-17).
+        const out = record.cancelled || anyAnswered("withdrawn") || (anyAnswered("withdraw") && !anyAnswered("accept") && !anyAnswered("accept_if"));
+        if (roomless && !out) yield* tell("no_room");
         yield* party.handle(answer, speaker.pick_up ?? 1, random);
         // A condition not met by day 19, or two world days after its conditional answer when later, makes it withdraw
         // (FR-CONGRESS-16).
