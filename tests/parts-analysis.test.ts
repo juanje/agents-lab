@@ -95,3 +95,34 @@ describe("partsOfRuns, the fixes found by E1's smoke run (FR-ANALYSIS-04's addit
     expect(partsOfRuns(directory, join(home, "elsewhere")).conditions[0]).toMatchObject({ words: 3, tokens: 4 });
   });
 });
+
+describe("partsOfRuns for an experiment with no kind_factor (FR-CONGRESS-22)", () => {
+  it("lists every part with its reached_at per run, and leaves out the kinds, when no part line gives a kind or a group", () => {
+    const { home, directory } = runsDirectory(
+      [
+        { condition: "a", replica: 1, status: "completed", parts: [part("M1", undefined, true, { reached_at: "day 5 10:00" }), part("D0", undefined, false), part("W4", undefined, true, { values: { balance: 5 } })] },
+        { condition: "a", replica: 2, status: "completed", parts: [part("M1", undefined, false), part("D0", undefined, true), part("W4", undefined, true, { values: { balance: 7 } })] },
+      ],
+      { a: 3 },
+    );
+    const report = partsOfRuns(directory, home);
+    expect(report.parts.map(({ part: id, kind, held, reached }) => [id, kind, held, reached])).toEqual([
+      ["M1", "", 1, ["day 5 10:00", null]],
+      ["D0", "", 1, [null, null]],
+      ["W4", "", 2, [null, null]],
+    ]);
+    expect(report.kinds).toEqual([]);
+    // The values still reach the outcomes.
+    expect(report.outcomes.find(({ outcome }) => outcome === "W4")?.values).toEqual([{ balance: 5 }, { balance: 7 }]);
+    const printed = partsMarkdown(report);
+    expect(printed).toMatch(/^\| M1 \| a \|  \| 2 \| 0 \| 2 \| 1 \| day 5 10:00, - \|/m);
+    expect(printed).not.toMatch(/## Kinds/);
+  });
+
+  it("keeps the kinds table when a part line gives a kind", () => {
+    const { home, directory } = runsDirectory([{ condition: "a", replica: 1, status: "completed", parts: [part("p1", "new", true), part("w1", undefined, true)] }], { a: 3 });
+    const report = partsOfRuns(directory, home);
+    expect(report.parts.map(({ part: id }) => id)).toEqual(["p1"]);
+    expect(partsMarkdown(report)).toMatch(/## Kinds/);
+  });
+});
