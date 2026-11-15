@@ -318,7 +318,10 @@ function roomsFit(state: Congress, booking: Booking): boolean {
   return programmeRooms(state).every((room) => booking.rooms.includes(room) && seatsOf(state, room) >= attendance);
 }
 
-/** Each caterer's latest numbers by diet, by mail or by phone: its confirmed order's counts, or the final numbers it accepted. */
+/**
+ * Each caterer's latest numbers by diet, by mail or by phone: its confirmed order's counts, or the final numbers it
+ * accepted; and the venue, date and permit of the order it confirmed.
+ */
 export function ordersOf(state: Congress): { caterer: string; counts: Record<string, number>; venue?: string; date?: string; permit?: string }[] {
   // An order cancelled, with none confirmed after it, does not count (FR-CONGRESS-12).
   const live = (caterer: string) => {
@@ -330,7 +333,9 @@ export function ordersOf(state: Congress): { caterer: string; counts: Record<str
     const orders = actsOf(state).filter(({ to, act }) => to === caterer && (act === "order" || act === "final_numbers"));
     const accepted = actsOf(state).filter(({ from, act }) => from === caterer && (act === "order_confirmed" || act === "numbers_accepted"));
     const lastOrder = orders.filter(({ at }) => at <= (accepted.at(-1)?.at ?? Infinity)).at(-1);
-    const order = orders.find(({ act }) => act === "order");
+    // Its venue, date and permit are those of the last order sent before the caterer's last confirmation (FR-CONGRESS-24).
+    const confirmed = accepted.filter(({ act }) => act === "order_confirmed").at(-1);
+    const order = orders.filter(({ act, at }) => act === "order" && at <= (confirmed?.at ?? Infinity)).at(-1);
     return {
       caterer,
       counts: countsOf(lastOrder?.fields.counts),
