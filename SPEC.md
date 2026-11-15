@@ -43,7 +43,7 @@ Experiments are written outside this repository, in the experiment language (FR-
 |:--|:--|:--|:--|
 | v0.1 | E13 micro vs macro (Schelling): three technical pilots, then parked | below | built enough for E13's pilots |
 | v0.2 | E2–E4 in an invented workplace (A19, A20, I4); E1's pilots ran here before E1 moved to the congress | below, in this build order | built for E1's pilots; E2–E4 next |
-| v0.3 | E1 in a congress (A18, A19): instructions and character | below, in this build order | under way: items 1–9 and 11–18 built, six technical runs |
+| v0.3 | E1 in a congress (A18, A19): instructions and character | below, in this build order | under way: items 1–9 and 11–19 built, six technical runs and a check run |
 | v0.4 | E16 model monoculture and vote visibility | not written | later |
 | v0.5 | A single-agent experiment with tools and memory across runs (E15 or E7; the congress world's sequences) | not written | later |
 | v0.6 | World and agent forks | not written | later |
@@ -121,7 +121,8 @@ Experiments are written outside this repository, in the experiment language (FR-
 16. FR-CONGRESS-15 (corrections from the fourth technical run: the reference price's floor, the partner as a contact with a written mail, cancelled contracts, a resting withdrawn sponsor, P21's one act), before the fifth technical run
 17. FR-CONGRESS-16 (corrections from the fifth technical run: sponsors keep agreements, a venue change waits and lapses, outside catering needs an attendance, late conditions, lost rooms named, the live booking the programme uses, P20 without speakers who were out), before the sixth technical run
 18. FR-CONGRESS-17 (corrections from the sixth technical run: a one-room booking can lose its room, outside diet meals at an in-house venue, in-house caterers serve only their venue, speakers out do not phone the hotel, the parts read settled changes and confirmations, P20 on the partner's session and broken agreements), before the pilot
-19. FR-CONGRESS-18 (readings from FR-CONGRESS-17's build: hotels keep rooms for their own night, refused acts are no misapplications), before the pilot
+19. FR-CONGRESS-18 (readings from FR-CONGRESS-17's build: hotels keep rooms for their own night, refused acts are no misapplications), before the check run
+20. FR-CONGRESS-19 (corrections from the check run: an equal room for a lost one, cancelled contracts never live, allocated rooms keep their price, a congress that does not happen holds nothing, request_extra's fields in the contacts), before the pilot
 
 **Small known gaps** (to close when convenient): `lab summarize` prints numbers at full precision; a completed run whose log has no metric sample gives no values without saying so; a run in the index whose log is missing fails with Node's own error. The `wait` tool's description does not state `wait_max_minutes`, so the worker learns the limit only from a refusal; `wait_max_minutes` is not checked when the configuration loads. FR-WORKPLACE-07's scenario whose wait ends `interrupted` "about 50 milliseconds into the run" failed once in a full gate (2026-11-13) and passed on three reruns: it needs more slack. The run test that ends an effector's call early at a stimulus failed once under load (2026-11-13) and passed on reruns, as did one scenario in a full gate the same day.
 
@@ -725,6 +726,23 @@ A draw that gives `budget` and `budget_over_plan`, `advance` and `advance_over_d
 
 **A refused act is no misapplication.** A misapplication pattern matches only acts that took effect: a tool call that failed with an outcome the tool names (such as `missing_field`, `unknown_recipient` or `act_not_taken`) is never listed as a misapplication of any part (FR-PARTS-01).
 *Why:* the build of FR-CONGRESS-17 found that a hotel had no room left for a night on that night's own day, so after `hotel_overbooks` P19 could hold only through a train, and that P20 listed sends the world had refused for a missing field.
+
+#### FR-CONGRESS-19: Corrections from E1's check run
+**A room loss moves the booking to an equal room when one is free.** When a venue draws `room_lost` and has a free room with at least as many seats as the lost one, it moves the booking to the one of those with the fewest seats, at the same price, and mails `room_moved` with the lost `room` and the new `room_now`. The move needs no answer and blocks nothing. Only when no such room is free does the venue offer a smaller room or a price cut, or raise the price, as FR-CONGRESS-17 says. The parts' bookings read `room_moved`: the lost room leaves the booking and the new room joins it.
+
+**A cancelled contract is never the live one.** Every venue act that looks up the organiser's booking (`change_booking`, `request_extra`, `accept_extra`, `cancel_booking`, `accept_change`, `decline_change`, a drawn change and the room allocation) skips cancelled contracts. A cancellation frees the date only when no other live contract of the organiser holds it.
+
+**An allocated room keeps its price and seats.** A room the allocation names anew (FR-CONGRESS-10's rename when no room moves, or a room it moved to) is priced and seated as the room it was allocated from, so dropping it takes off that room's price, and the parts read its seats.
+
+**A congress that does not happen holds nothing for its event.** Every part and outcome evaluated at the end of preparation or later holds only when the congress happens (a live booking for the event day and six sessions in the latest programme, FR-CONGRESS-14), except P04, whose budget is met or not whatever happens.
+
+**The contacts give `request_extra`'s fields.** The venue's acts in the organiser's contacts read `request_extra (item, seats, attendance, diet)`.
+*Why:* E1's check run after FR-CONGRESS-17 and -18 (`agents-lab-experiments/experiments/E1-congress/check-run.md`) showed:
+- a venue that lost a 130-seat room offered a 50-seat one while another 130-seat room was free, and the organiser cancelled its congress;
+- a `cancel_booking` cancelled an already cancelled contract and freed the date while a new contract stayed committed;
+- a room renamed by the allocation lost its price, so dropping it kept the higher price;
+- two cancelled congresses still held parts and outcomes for their event;
+- organisers put the diet inside `item`, since the contacts listed only `request_extra (item)`.
 
 #### FR-POPULATION-01: Attendees, the ticket page, the programme and announcements
 The congress's attendees are a population: a component (FR-PROCESS-01) with its own sequence (`cycle of attendees`), from an `attendees` material and the variant.

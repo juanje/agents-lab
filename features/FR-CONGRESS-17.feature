@@ -7,12 +7,12 @@ Feature: Corrections from E1's sixth technical run
     And the draw gives no board, "budget" [8000, 8000] and "advance" [3000, 3000], and the variant draws the venues "v1" (rooms "hall-a" of 90 seats, "hall-b" of 90 seats and "room-c" of 30 seats, catering "outside_free") and "v2" (rooms "room-x" and "room-y", catering "in_house", "outside_diet_fee_per_head" 5), the speakers "s1" and "s2", the partner "p1" (session 3), the caterer "c1" (serves "gluten_free" with no limit) and "v2"'s in-house caterer "c2" (serves "gluten_free" with limit 5, and "vegetarian" with no limit)
 
   Scenario: A one-room booking loses its room for a smaller one
-    Given the organiser's contract "c-1" with "v1" is confirmed at 2000 with "hall-a" only
+    Given the organiser's contract "c-1" with "v1" is confirmed at 2000 with "hall-a" only, and "hall-b" is booked by another customer
     When "v1" draws "room_lost" on "c-1" at "day 8 10:00"
     Then "v1" mailed "room_lost" for "hall-a" with the offer "smaller_room", the smaller room "room-c" and no price cut
 
   Scenario: A one-room booking with no free smaller room rises in price
-    Given the organiser's contract "c-1" with "v1" is confirmed at 2000 with "room-c" only
+    Given the organiser's contract "c-1" with "v1" is confirmed at 2000 with "room-c" only, and "hall-a" and "hall-b" are booked by other customers
     When "v1" draws "room_lost" on "c-1" at "day 8 10:00"
     Then "v1" mailed "price_change" for "c-1", and no "room_lost"
 
