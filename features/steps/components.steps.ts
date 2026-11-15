@@ -34,7 +34,7 @@ function waitsOf(context: Context): Map<string, number[]> {
 }
 
 /** Declares a test world component, in place of any of the same name, keeping each wait it draws. */
-function declare(context: Context, name: string, filling: Filling): void {
+export function declare(context: Context, name: string, filling: Filling): void {
   fillingsOf(context).set(name, filling);
   const component = filler(name, {
     ...filling,

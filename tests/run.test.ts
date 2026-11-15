@@ -2084,6 +2084,98 @@ describe("run's metric samples at an interval", () => {
   });
 });
 
+describe("run, a world its scenario says is finished (FR-RUN-08)", () => {
+  /** Whether slots 1 and 2 are both held: the world a test scenario says is finished then (FR-RUN-08). */
+  const oneAndTwoHeld = (state: Slots) => holder(state, 1) !== null && holder(state, 2) !== null;
+
+  it("ends the run once the scenario says, after a change, that its world is finished: the call that finished it keeps its outcome, a model turn still running is cut off, and the log gives world_finished, then the final metric sample (FR-RUN-08)", async () => {
+    const logDirectory = newLogDirectory();
+    const loaded = slots({ ...agentsNamed("a", "b"), tools: withTakeTaking(50), finished: oneAndTwoHeld });
+    const a = new ScriptedModel([
+      { toolCalls: [{ name: "take", arguments: { slot: 1 } }], delayMs: 0 },
+      { toolCalls: [{ name: "take", arguments: { slot: 2 } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+    const b = new ScriptedModel([{ text: "Thinking.", delayMs: 5_000 }]);
+
+    const { runId, toolCalls, turns } = await run(loaded, [
+      { name: "a", model: a, activations: 1 },
+      { name: "b", model: b, activations: 1 },
+    ], seed, { ...settings, logDirectory, timeLimitMs: 10_000 });
+
+    const finishing = toolCalls.filter((call) => call.agent === "a")[1];
+    expect(finishing).toMatchObject({ outcome: "success" });
+    expect(a.received).toHaveLength(2);
+    expect(turns.find((turn) => turn.agent === "b")).toMatchObject({ outcome: "cut_off" });
+    const lines = logOf(logDirectory, runId) as { type: string; atMs?: number; version?: number }[];
+    const finished = lines.findIndex((line) => line.type === "world_finished");
+    expect(lines[finished]).toEqual({ type: "world_finished", atMs: expect.any(Number) });
+    expect(Math.abs(lines[finished].atMs! - finishing.endedAtMs)).toBeLessThan(20);
+    const lastSample = lines.map((line) => line.type).lastIndexOf("metric_sample");
+    expect(lastSample).toBeGreaterThan(finished);
+    expect(lines[lastSample]).toMatchObject({ version: 2, metrics: { held: 2 } });
+  });
+
+  it("cuts off a tool call and a component's action still running when its world is finished: neither applies anything (FR-RUN-08)", async () => {
+    const logDirectory = newLogDirectory();
+    const porter = filler("porter", { slot: 3, thing: "crate", waitMs: () => 0, actionMs: 2_000 });
+    const fill = { ...(slotTools[1] as Effector<Slots>), name: "fill", durationMs: () => 2_000 };
+    const loaded = slots({ ...agentsNamed("a", "b"), tools: [...withTakeTaking(50), fill], components: () => [porter], finished: oneAndTwoHeld });
+    const a = new ScriptedModel([
+      { toolCalls: [{ name: "take", arguments: { slot: 1 } }], delayMs: 0 },
+      { toolCalls: [{ name: "take", arguments: { slot: 2 } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+    const b = new ScriptedModel([
+      { toolCalls: [{ name: "fill", arguments: { slot: 3 } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+
+    const { runId, toolCalls } = await run(loaded, [
+      { name: "a", model: a, activations: 1 },
+      { name: "b", model: b, activations: 1 },
+    ], seed, { ...settings, logDirectory, timeLimitMs: 10_000 });
+
+    expect(toolCalls.find((call) => call.tool === "fill")).toMatchObject({ outcome: "cut_off" });
+    const actions = logOf(logDirectory, runId).filter((line) => (line as { type: string }).type === "component_action");
+    expect(actions).toMatchObject([{ component: "porter", outcome: "cut_off" }]);
+    expect(holder(loaded.world.state, 3)).toBeNull();
+  });
+
+  it("asks its scenario after a change a component applies too, and gives the world's time with world_finished in a run with a calendar (FR-RUN-08)", async () => {
+    const logDirectory = newLogDirectory();
+    const porter = filler("porter", { slot: 2, thing: "crate", waitMs: () => 50, actionMs: 50 });
+    const calendar = ["[calendar]", 'start = "day 3 Sunday 23:58"', "[[calendar.segments]]", "scale = 600", ""].join("\n");
+    const loaded = slots({ components: () => [porter], finished: oneAndTwoHeld, initialState: () => ["start", null, null], baseConfiguration: `${slotsScenario.baseConfiguration}\n${calendar}` });
+    const model = new ScriptedModel([{ text: "Thinking.", delayMs: 5_000 }]);
+
+    const { runId } = await run(loaded, [{ name: "a", model, activations: 1 }], seed, { ...settings, logDirectory, timeLimitMs: 10_000 });
+
+    const lines = logOf(logDirectory, runId) as { type: string; endedAtMs?: number; atMs?: number; worldTime?: { seconds: number } }[];
+    const action = lines.find((line) => line.type === "component_action")!;
+    const finished = lines.find((line) => line.type === "world_finished")!;
+    expect(action).toMatchObject({ outcome: "success" });
+    expect(Math.abs(finished.atMs! - action.endedAtMs!)).toBeLessThan(20);
+    // About 100 ms of the run at the scale 600 is a minute past 23:58; the engine's own milliseconds add a few seconds.
+    expect(finished.worldTime).toMatchObject({ day: 3, weekday: "Sunday" });
+    expect(finished.worldTime!.seconds).toBeGreaterThanOrEqual(23 * 3600 + 59 * 60);
+    expect(finished.worldTime!.seconds).toBeLessThan(23 * 3600 + 59 * 60 + 30);
+  });
+
+  it("writes no world_finished line when its scenario never says its world is finished, nor when the time limit passes first (FR-RUN-08)", async () => {
+    for (const [finished, timeLimitMs] of [[undefined, 10_000], [oneAndTwoHeld, 75]] as const) {
+      const logDirectory = newLogDirectory();
+      const model = new ScriptedModel([
+        { toolCalls: [{ name: "take", arguments: { slot: 1 } }], delayMs: 0 },
+        { toolCalls: [{ name: "take", arguments: { slot: 2 } }], delayMs: 0 },
+        { text: "Done.", delayMs: 0 },
+      ]);
+      const { runId } = await run(slots({ tools: withTakeTaking(50), ...(finished === undefined ? {} : { finished }) }), [{ name: "a", model, activations: 1 }], seed, { ...settings, logDirectory, timeLimitMs });
+      expect(logOf(logDirectory, runId).filter((line) => (line as { type: string }).type === "world_finished")).toEqual([]);
+    }
+  });
+});
+
 describe("run, with components", () => {
   /** A component that keeps each draw from its random sequence, drawing once and then ending. */
   const drawing = (name: string, draws: number[]): Component<Slots> => ({

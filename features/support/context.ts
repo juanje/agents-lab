@@ -84,6 +84,8 @@ export class Context extends CucumberWorld {
   stimuli!: Stimuli;
   /** What the scenario does with the run's stimuli as the run starts, such as delivering one a while into it. */
   readonly atRunStart: ((stimuli: Stimuli) => void)[] = [];
+  /** When the scenario says the test world is finished, for a scenario that says (FR-RUN-08). */
+  finished?: (state: Slots) => boolean;
   /** The components the scenario declares besides its agents, in the test world (FR-PROCESS-01). */
   components: Component<Slots>[] = [];
   /** The tools the scenario declares: the test world's, as the scenario sets them. */

@@ -111,6 +111,7 @@ export async function runTheScenario(context: Context): Promise<void> {
     systemPrompt: () => context.systemPrompt,
     rhythm: rhythmsOf(context),
     components: () => context.components,
+    ...(context.finished === undefined ? {} : { finished: context.finished }),
   };
   await runScenario(context, context.loaded ?? assembled(scenario, context.world, context.calendar === undefined ? {} : { calendar: context.calendar }));
 }
