@@ -303,8 +303,9 @@ const booking = (context: Context, rooms: string) =>
     hourMsOf(context),
   );
 
-Given('the organiser\'s confirmed contract with "v1" has only "hall-a", and the perturbation "change" of the kind "room_lost" fires', function (this: Context) {
-  before(this, booking(this, "hall-a"));
+Given('the organiser\'s confirmed contract with "v1" has only "hall-b", its smallest room, and the perturbation "change" of the kind "room_lost" fires', function (this: Context) {
+  // "hall-b", 40 seats, has no free room of "v1" with fewer seats to move to (FR-CONGRESS-17).
+  before(this, booking(this, "hall-b"));
   change(this, (configuration) => ((configuration.perturbations as TomlTable).change = { at: "day 1 12:00", kind: "room_lost" }));
 });
 

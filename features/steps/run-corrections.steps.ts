@@ -295,8 +295,9 @@ function roomLostAt(context: Context) {
   change(context, (configuration) => ((configuration.perturbations as TomlTable).change = { at: "day 1 13:00", kind: "room_lost" }));
 }
 
-Given('the organiser\'s contract with "v1" has only "hall-a", and the perturbation "change" of the kind "room_lost" fires', function (this: Context) {
-  before(this, bookingTurns(this, "hall-a"));
+Given('the organiser\'s contract with "v1" has only "hall-b", its smallest room, and the perturbation "change" of the kind "room_lost" fires', function (this: Context) {
+  // "hall-b", 40 seats, has no free room of "v1" with fewer seats to move to (FR-CONGRESS-17).
+  before(this, bookingTurns(this, "hall-b"));
   roomLostAt(this);
 });
 

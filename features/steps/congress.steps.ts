@@ -365,9 +365,9 @@ export function hourMsOf(context: Context): number {
 }
 
 // "again": a repeat of a message the turns before sent (FR-CONGRESS-11). FR-CONGRESS-13's "with the same" and
-// FR-CONGRESS-15's "of the first message", contract "c-1" and accept_change's option, and FR-CONGRESS-16's call on or
-// at a day, are their own steps.
-Given(/^the organiser's scripted turns (call (?!.*(?: with the same | of the first message| the contract "c-1"|"accept_change" and (?:the option|no option)| (?:on|at) "day [^"]+", then end$)).+?)(?: again)?, then end$/, function (this: Context, written: string) {
+// FR-CONGRESS-15's "of the first message", contract "c-1" and accept_change's option, FR-CONGRESS-16's call on or at a
+// day, and FR-CONGRESS-17's order with "the counts", are their own steps.
+Given(/^the organiser's scripted turns (call (?!.*(?: with the same | of the first message| the contract "c-1"|"accept_change" and (?:the option|no option)| (?:on|at) "day [^"]+", then end$| the counts ")).+?)(?: again)?, then end$/, function (this: Context, written: string) {
   script(this, ORGANISER, [...(turnsBefore.get(this) ?? []), ...organiserTurns(written, hourMsOf(this)), { text: "Done.", delayMs: 0 }]);
 });
 

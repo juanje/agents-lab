@@ -85,8 +85,9 @@ function sentAfter(context: Context, party: string, act: string): Record<string,
 }
 
 // "the organiser's scripted turns call … on|at "day …", then end": the call made at that world time, the run ending 4
-// world hours later unless the scenario's time limit says otherwise.
-Given(/^the organiser's scripted turns (call .+) (?:on|at) "(day \d+(?: \d\d:\d\d)?)", then end$/, function (this: Context, written: string, day: string) {
+// world hours later unless the scenario's time limit says otherwise. FR-CONGRESS-17's call made "again on" a later day
+// is its own step.
+Given(/^the organiser's scripted turns (call (?!.*, and again on ).+) (?:on|at) "(day \d+(?: \d\d:\d\d)?)", then end$/, function (this: Context, written: string, day: string) {
   untilTime(this, timeOf(day));
   before(this, organiserTurns(`${written}, then wait 1 world hour, then "check_time"`, hourMsOf(this)));
   this.timeLimitMs = msUntil(this, timeOf(day)) + 4 * hourMsOf(this);
