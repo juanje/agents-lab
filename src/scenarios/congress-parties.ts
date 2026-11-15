@@ -76,6 +76,8 @@ class Party {
   readonly #callBacks: { at: number; ring: Received }[] = [];
   /** How it answers what reaches it, as it last handled something. */
   #answer?: (received: Received) => Answer | undefined;
+  /** What it reads before it answers something, as it last handled something (FR-CONGRESS-17). */
+  #prepare?: (received: Received) => Generator<RuleStep, void, Perceived>;
   /**
    * The messages it answered, by sender, act and fields, with its answer's act and world time, and its version as it
    * answered, so a repeat is answered already_sent while nothing changed (FR-CONGRESS-09, FR-CONGRESS-11, FR-CONGRESS-13).
@@ -136,6 +138,7 @@ class Party {
     for (const due of this.#callBacks.filter(({ at }) => at <= this.now)) {
       this.#callBacks.splice(this.#callBacks.indexOf(due), 1);
       if ((yield* this.call("call", { to: due.ring.from, act: "missed_call" })).outcome !== "success") continue;
+      if (this.#prepare !== undefined) yield* this.#prepare(due.ring);
       const given = this.#answer?.(due.ring);
       if (given === undefined) continue;
       yield* this.call("send_mail", { to: due.ring.from, act: given.act, fields: given.fields });
@@ -205,11 +208,19 @@ class Party {
   /**
    * Handles what has reached it: a ring it picks up, with the probability given, is answered by answer_call; its unread
    * mail is answered by mail. Each answer is made, then what it does once it has answered; no answer, nothing is sent.
-   * A repeat is answered already_sent, unless `afresh` says the party answers that message afresh.
+   * A repeat is answered already_sent, unless `afresh` says the party answers that message afresh. What `prepare` reads
+   * comes before each answer, as a caterer reads an order's permit (FR-CONGRESS-17).
    */
-  *handle(answer: (received: Received) => Answer | undefined, pickUp: number, random: Random, afresh: (received: Received) => boolean = () => false): Generator<RuleStep, void, Perceived> {
+  *handle(
+    answer: (received: Received) => Answer | undefined,
+    pickUp: number,
+    random: Random,
+    afresh: (received: Received) => boolean = () => false,
+    prepare?: (received: Received) => Generator<RuleStep, void, Perceived>,
+  ): Generator<RuleStep, void, Perceived> {
     let mail = false;
     this.#answer = answer;
+    this.#prepare = prepare;
     while (this.stimuli.length > 0) {
       const stimulus = this.stimuli.shift() as Stimulus;
       if (stimulus.channel === "mail_notice") mail = true;
@@ -227,6 +238,7 @@ class Party {
         }
         continue;
       }
+      if (prepare !== undefined) yield* prepare(ring);
       const given = answer(ring);
       if (given === undefined) continue;
       yield* this.call("answer_call", { call: ring.call, act: given.act, fields: given.fields });
@@ -247,6 +259,7 @@ class Party {
         continue;
       }
       this.changed();
+      if (prepare !== undefined) yield* prepare(message);
       const given = answer(message);
       if (given === undefined) continue;
       const sent = this.text();
@@ -1206,6 +1219,26 @@ export const catererRules: RuleSet = {
       record.invoices_issued += 1;
     }
 
+    /** The permits it read, by their ids: the diet and the attendance each carries, when it carries them (FR-CONGRESS-17). */
+    const permits = new Map<string, { diet?: string; attendance?: number }>();
+
+    /** Reads the permit an order gives with read_permit; one it cannot read carries nothing. */
+    function* readPermit({ act, fields }: Received): Generator<RuleStep, void, Perceived> {
+      if (act !== "order" || fields.permit === undefined) return;
+      const text = (yield* party.call("read_permit", { permit: String(fields.permit) })).text;
+      let read: { diet?: unknown; attendance?: unknown } = {};
+      try {
+        read = JSON.parse(text) as typeof read;
+      } catch {
+        // No such permit: it carries no diet.
+      }
+      permits.set(String(fields.permit), typeof read.diet === "string" ? { diet: read.diet, attendance: Number(read.attendance) } : {});
+    }
+
+    /** Whether counts exceed a permit for outside diet meals: meals of another kind, or more than its attendance (FR-CONGRESS-17). */
+    const exceeds = (counts: Record<string, number>, { diet, attendance }: { diet?: string; attendance?: number }) =>
+      diet !== undefined && (Object.entries(counts).some(([kind, count]) => kind !== diet && count > 0) || total(counts) > (attendance ?? 0));
+
     /** Why an order or final numbers below its minimum are refused (FR-CONGRESS-11). */
     const belowMinimum = (): Fields => ({ reason: "below_minimum", minimum: caterer.minimum as number });
 
@@ -1228,12 +1261,15 @@ export const catererRules: RuleSet = {
         case "order": {
           // A customer that holds an order for the date changes it by final numbers or cancels it (FR-CONGRESS-13).
           if (order !== undefined && order.date === String(fields.date)) return { act: "order_refused", fields: { reason: "order_held", counts: order.counts } };
+          // An in-house caterer serves only its venue (FR-CONGRESS-17).
+          if (caterer.in_house_for !== undefined && fields.venue !== undefined && fields.venue !== caterer.in_house_for) return { act: "order_refused", fields: { reason: "own_venue_only", venue: caterer.in_house_for } };
           // A venue that keeps its catering or charges for outside catering asks for a permit, unless it is the venue's own (FR-CONGRESS-07).
           const rule = caterer.venues?.[String(fields.venue)]?.catering;
           if (fields.venue !== undefined && (rule === "in_house" || rule === "outside_fee") && caterer.in_house_for !== fields.venue && fields.permit === undefined) {
             return { act: "order_refused", fields: { reason: "venue_requires_permit" } };
           }
           const counts = countsIn(fields.counts);
+          if (fields.permit !== undefined && exceeds(counts, permits.get(String(fields.permit)) ?? {})) return { act: "order_refused", fields: { reason: "permit_exceeded" } };
           const over = overLimit(counts);
           if (over !== undefined) return { act: "order_refused", fields: { diet: over } };
           if (total(counts) < (caterer.minimum ?? 0)) return { act: "order_refused", fields: belowMinimum() };
@@ -1295,7 +1331,7 @@ export const catererRules: RuleSet = {
       yield* party.clock();
       for (;;) {
         if (party.stimuli.length > 0) yield* party.clock();
-        yield* party.handle(answer, caterer.pick_up ?? 1, random);
+        yield* party.handle(answer, caterer.pick_up ?? 1, random, undefined, readPermit);
         yield* party.clock();
         if (order !== undefined && !order.balanced && party.now >= balanceAt) {
           order.balanced = true;

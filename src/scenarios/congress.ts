@@ -1641,7 +1641,27 @@ const similarEventsTool: Sensor<Congress> = {
   sense: (state) => JSON.stringify(state.similar),
 };
 
-/** The organiser's own tools, besides the mail's and the phone's. */
+/**
+ * "read_permit": a venue's permit for outside catering, by its id, as the venue's extra_confirmed gives it: its venue and,
+ * for outside diet meals, the diet and the attendance it carries; caterers read an order's permit with it (FR-CONGRESS-17).
+ */
+const readPermit: Sensor<Congress> = {
+  kind: "sensor",
+  name: "read_permit",
+  description: "Read a venue's permit for outside catering, by its id: its venue, and the diet and attendance it covers when it carries them.",
+  parameters: { type: "object", properties: { permit: { type: "string" } }, required: ["permit"] },
+  durationMs: () => ({ worldSeconds: 0 }),
+  sense: (state, _agent, { permit }) => {
+    const given = Object.values(state.mail.mailboxes)
+      .flat()
+      .find(({ act, fields }) => act === "extra_confirmed" && fields.permit === permit);
+    if (given === undefined) return "No such permit.";
+    const { diet, attendance } = given.fields;
+    return JSON.stringify({ permit, venue: given.from, ...(diet === undefined ? {} : { diet }), ...(attendance === undefined ? {} : { attendance }) });
+  },
+};
+
+/** The organiser's own tools, besides the mail's and the phone's; read_programme and read_permit are the parties' too. */
 const TOOLS: readonly Tool<Congress>[] = [
   checkTime,
   look,
@@ -1652,6 +1672,7 @@ const TOOLS: readonly Tool<Congress>[] = [
   travelOptions,
   bookTravel,
   similarEventsTool,
+  readPermit,
   // The ticket page, the programme and announcements (FR-POPULATION-01).
   ...populationTools<Congress>({
     organiser: ORGANISER,
@@ -1698,6 +1719,7 @@ function describeDuration(configuration: Configuration, tool: string): string {
     publish_programme: `${durations.publish_programme} world minutes.`,
     announce: `${durations.announce} world minutes.`,
     read_programme: `${durations.read_programme} world minutes.`,
+    read_permit: "No time.",
   };
   if (!Object.hasOwn(described, tool)) throw new Error(`The congress has no tool "${tool}"`);
   return described[tool];
@@ -1815,7 +1837,8 @@ const BASE_CONFIGURATION = [
   "reply_minutes = [0, 0]",
   'account = "funds"',
   ...[
-    ["caterer", '["send_mail", "check_mail", "read_mail", "call", "answer_call", "check_time", "ledger", "commit", "release", "issue_invoice", "void_invoice"]', '["mail_notice", "phone"]', '"unlimited"'],
+    // A caterer reads an order's permit (FR-CONGRESS-17).
+    ["caterer", '["send_mail", "check_mail", "read_mail", "call", "answer_call", "check_time", "ledger", "commit", "release", "issue_invoice", "void_invoice", "read_permit"]', '["mail_notice", "phone"]', '"unlimited"'],
     ["sponsor", '["send_mail", "check_mail", "read_mail", "call", "answer_call", "check_time", "ledger", "pay", "read_programme"]', `["mail_notice", "phone", "${SPONSOR_PERTURBATION}", "${INVOICE_NOTICE}"]`, '"amount"'],
     ["agency", '["send_mail", "check_mail", "read_mail", "call", "answer_call", "check_time", "ledger", "commit", "release"]', '["mail_notice", "phone"]', '"unlimited"'],
   ].flatMap(([kind, tools, channels, account]) => [`[kinds.${kind}]`, `rules = "${kind}"`, `tools = ${tools}`, `channels = ${channels}`, "reply_minutes = [0, 0]", `account = ${account}`]),
