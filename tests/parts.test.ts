@@ -268,3 +268,37 @@ describe("a part's group beside its kinds (FR-PARTS-01's addition)", () => {
     expect(lines.find(({ part }) => part === "p2")).toMatchObject({ active: false, group: "variant" });
   });
 });
+
+describe("the run keeps what the parts read (FR-CONGRESS-24)", () => {
+  it("writes one parts_state line for each time parts are evaluated, with the world's state, before that time's part lines", () => {
+    const lines: Record<string, unknown>[] = [];
+    const parts = book([P1, { ...P1, id: "p2" }, { ...P1, id: "p3", evaluate_at: "day 1 20:00" }], lines);
+    parts.start(state(), at(1, "09:00"));
+    parts.changed(state({ door: true }), at(1, "10:00"));
+    parts.due(state({ door: true }), at(1, "18:00"));
+    parts.changed(state({ door: false }), at(1, "19:00"));
+    parts.due(state({ door: false }), at(1, "20:00"));
+    expect(lines.map(({ type, part, evaluated_at }) => [type, part ?? null, evaluated_at])).toEqual([
+      ["parts_state", null, "day 1 18:00"],
+      ["part", "p1", "day 1 18:00"],
+      ["part", "p2", "day 1 18:00"],
+      ["parts_state", null, "day 1 20:00"],
+      ["part", "p3", "day 1 20:00"],
+    ]);
+    expect(lines[0].state).toEqual(state({ door: true }));
+    expect(lines[3].state).toEqual(state({ door: false }));
+  });
+
+  it("writes it before an inactive part's line, and at the run's end for a part evaluated then", () => {
+    const lines: Record<string, unknown>[] = [];
+    const parts = book([{ ...P1, activation: { event: "flag_raised", params: { flag: "alarm" } } }, { ...P1, id: "p2", evaluate_at: "end" }], lines);
+    parts.start(state(), at(1, "09:00"));
+    parts.finish(state({ door: true }), at(1, "21:00"));
+    expect(lines.map(({ type, evaluated_at }) => [type, evaluated_at])).toEqual([
+      ["parts_state", "day 1 18:00"],
+      ["part", "day 1 18:00"],
+      ["parts_state", "day 1 21:00"],
+      ["part", "day 1 21:00"],
+    ]);
+  });
+});
