@@ -119,8 +119,8 @@ Then(
 );
 
 Then(
-  'it gives the durations in world minutes: "look" {float}, "read_plan" {int}, "take" {int}, "put_back" {float}, "join" {int}, "take_apart" {int}, "mount" {int}, "mount_refused" {float}, "say" {float} with "say_words_per_minute" {int}, and "wait_max_minutes" {int}',
-  function (this: Context, look: number, readPlan: number, take: number, putBack: number, join: number, takeApart: number, mount: number, mountRefused: number, say: number, wordsPerMinute: number, waitMax: number) {
+  'it gives the durations in world minutes: "look" {float}, "read_plan" {int}, "take" {int}, "put_back" {float}, "join" {int}, "take_apart" {int}, "mount" {int}, "mount_refused" {float}, "say" {float} with "say_words_per_minute" {int}, "hand" {float}, and "wait_max_minutes" {int}',
+  function (this: Context, look: number, readPlan: number, take: number, putBack: number, join: number, takeApart: number, mount: number, mountRefused: number, say: number, wordsPerMinute: number, hand: number, waitMax: number) {
     const world = inventoryWorld(this);
     assert.deepEqual(world.durations, {
       look,
@@ -133,6 +133,7 @@ Then(
       mount_refused: mountRefused,
       say,
       say_words_per_minute: wordsPerMinute,
+      hand,
     });
     assert.equal(world.wait_max_minutes, waitMax);
   },
@@ -427,7 +428,7 @@ Given("every worker whose turns are not given ends every turn without a tool cal
   workshopSetupOf(this).othersIdle = true;
 });
 
-/** The texts of each effector's outcomes (FR-WORKSHOP-02, FR-WORKSHOP-03). */
+/** The texts of each effector's outcomes (FR-WORKSHOP-02, FR-WORKSHOP-03, FR-WORKSHOP-05). */
 const EFFECTOR_TEXTS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   take: { success: "You are holding it.", none_left: "The pile has no piece of that kind; you have taken nothing.", hands_full: "Your hands are full; you have taken nothing." },
   put_back: { success: "You have put it back on the pile.", not_held: "You hold no loose piece of that kind; nothing has moved." },
@@ -446,7 +447,7 @@ const EFFECTOR_TEXTS: Readonly<Record<string, Readonly<Record<string, string>>>>
     out_of_order: "A module yours must be mounted after is not mounted yet; you have mounted nothing.",
     already_mounted: "A module of that name is already mounted; you have mounted nothing.",
   },
-  wait: { success: "You have waited.", interrupted: "Someone spoke; you stopped waiting." },
+  wait: { success: "You have waited.", interrupted: "Something reached you; you stopped waiting." },
   say: { success: "You have said it.", empty_text: "You said nothing; nobody heard anything." },
 };
 

@@ -54,7 +54,7 @@ describe("the workshop's base configuration (FR-WORKSHOP-01)", () => {
   });
 
   it("gives the durations in world minutes, the calendar, the rhythm and the texts word for word, all in the system prompt", () => {
-    expect(base.durations).toEqual({ look: 0.5, read_plan: 1, take: 1, put_back: 0.5, join: 2, take_apart: 2, mount: 3, mount_refused: 0.5, say: 0.25, say_words_per_minute: 30 });
+    expect(base.durations).toEqual({ look: 0.5, read_plan: 1, take: 1, put_back: 0.5, join: 2, take_apart: 2, mount: 3, mount_refused: 0.5, say: 0.25, say_words_per_minute: 30, hand: 0.5 });
     expect(base.wait_max_minutes).toBe(10);
     expect(base.calendar).toEqual({ start: "day 1 Monday 09:00", segments: [{ scale: 4 }] });
     expect(base.rhythm).toEqual({ source: "your own pace", text: "You are ready to act.", min_ms: 1000, max_ms: 3000 });
@@ -138,6 +138,8 @@ describe("the workshop's refusals (FR-WORKSHOP-01)", () => {
     ["no worker", (c) => (c.workers = []), ['"workers"']],
     ["a worker named twice", (c) => (c.workers = ["Dal", "Dal", "Nar", "Ren"]), ['"workers"', "Dal"]],
     ["a negative duration", (c) => ((c.durations as TomlTable).join = -1), ['"durations.join"']],
+    ["a negative hand duration (FR-WORKSHOP-05)", (c) => ((c.durations as TomlTable).hand = -1), ['"durations.hand"']],
+    ["no hand duration (FR-WORKSHOP-05)", (c) => delete (c.durations as TomlTable).hand, ['"durations.hand"']],
     ["a wait_max_minutes of 0", (c) => (c.wait_max_minutes = 0), ['"wait_max_minutes"']],
     ["a calendar of two segments", (c) => ((c.calendar as TomlTable).segments = [{ scale: 4, until: "day 1 Monday 10:00" }, { scale: 60 }]), ['"calendar.segments"']],
     ["a min_ms above max_ms", (c) => ((c.rhythm as TomlTable).min_ms = 4000), ['"rhythm"']],
@@ -361,7 +363,9 @@ describe("the workers' tools (FR-WORKSHOP-02)", () => {
     expect(wait.action).toBeUndefined();
     expect(wait.endsEarly?.outcome).toBe("interrupted");
     expect(wait.endsEarly?.byStimulus({ channel: "voice", source: "Mik", content: "hello" }, { agent: "Dal", arguments: {} })).toBe(true);
-    expect(wait.texts).toEqual({ success: "You have waited.", interrupted: "Someone spoke; you stopped waiting." });
+    expect(wait.texts).toEqual({ success: "You have waited.", interrupted: "Something reached you; you stopped waiting." });
+    // Its description says it ends as soon as something reaches the worker: someone speaks or hands it something.
+    expect(wait.description).toMatch(/as soon as something reaches you \(someone speaks or hands you something\)/);
   });
 
   it("reads take's and mount's targets in the worker's last look", () => {
