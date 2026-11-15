@@ -605,6 +605,68 @@ describe("the milestones give, through reached_at, when the organiser reached ea
   });
 });
 
+describe("the on-time programme is a real one (FR-CONGRESS-22)", () => {
+  /** "v1"'s contract for "hall-a" confirmed on day 6, and "s1" to "s6" each invited to its session on day 7 and accepting it on day 8. */
+  function congress(): Congress {
+    const state = world();
+    booked(state, "hall-a", minutes("day 6"));
+    SIX.forEach((speaker, index) => {
+      mail(state, "organiser", speaker, "invite", { session: index + 1, time: TIMES[index], fee: 0, travel_paid: false }, minutes("day 7"));
+      mail(state, speaker, "organiser", "accept", { session: index + 1 }, minutes("day 8"));
+    });
+    return state;
+  }
+  /** The registrants, each believing the latest version. */
+  const believing = (state: Congress) => registered(state, 40, { believes: state.population?.programme.at(-1)?.version });
+
+  it("reads the first version whose sessions name accepted speakers in rooms of a live booking when it was published", () => {
+    const state = congress();
+    published(state, "hall-a", minutes("day 3 10:00"));
+    published(state, "hall-a", minutes("day 11 10:00"));
+    believing(state);
+    expect(evaluated("programme_published", state)).toEqual({ holds: true, reachedAt: minutes("day 11 10:00") });
+    expect(holds("programme_on_time", state)).toBe(true);
+  });
+
+  it("does not count a version published before one of its speakers accepted its session", () => {
+    const state = congress();
+    mail(state, "s6", "organiser", "decline", { session: 6 }, minutes("day 7 12:00"));
+    mail(state, "s6", "organiser", "accept", { session: 6 }, minutes("day 10"));
+    published(state, "hall-a", minutes("day 9 10:00"));
+    published(state, "hall-a", minutes("day 11 10:00"));
+    believing(state);
+    expect(evaluated("programme_published", state)).toEqual({ holds: true, reachedAt: minutes("day 11 10:00") });
+  });
+
+  it("does not count a version whose room is not in a live booking, or published after the booking was cancelled", () => {
+    const roomless = congress();
+    published(roomless, "room-c", minutes("day 9 10:00"));
+    published(roomless, "hall-a", minutes("day 11 10:00"));
+    believing(roomless);
+    expect(evaluated("programme_published", roomless)).toEqual({ holds: true, reachedAt: minutes("day 11 10:00") });
+    const cancelled = congress();
+    mail(cancelled, "v1", "organiser", "cancelled", { contract: "v1-contract-1", charge: 0 }, minutes("day 9"));
+    published(cancelled, "hall-a", minutes("day 10 10:00"));
+    believing(cancelled);
+    expect(holds("programme_published", cancelled)).toBe(false);
+    expect(holds("programme_on_time", cancelled)).toBe(false);
+  });
+
+  it("is late when the first real version is published after day 12 18:00", () => {
+    const state = world();
+    published(state, "hall-a", minutes("day 3 10:00"));
+    booked(state, "hall-a", minutes("day 13 10:00"));
+    SIX.forEach((speaker, index) => {
+      mail(state, "organiser", speaker, "invite", { session: index + 1, time: TIMES[index], fee: 0, travel_paid: false }, minutes("day 13 11:00"));
+      mail(state, speaker, "organiser", "accept", { session: index + 1 }, minutes("day 13 12:00"));
+    });
+    published(state, "hall-a", minutes("day 14 10:00"));
+    believing(state);
+    expect(holds("programme_on_time", state)).toBe(false);
+    expect(evaluated("programme_published", state)).toEqual({ holds: true, reachedAt: minutes("day 14 10:00") });
+  });
+});
+
 describe("the plan counts every session: six speakers with no partner, five with one (FR-CONGRESS-20)", () => {
   /** A congress with one venue at 2000, a caterer at 30 a head, eight speakers whose fees rise by 100 from 0, the target 40 and 2 helpers, the plan's cost as the budget, and a partner when asked. */
   function congress(partner: boolean): Scenario<unknown> {
