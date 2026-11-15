@@ -95,6 +95,8 @@ export interface ToolInventory {
   texts: Record<string, string>;
   /** What the agent receives for any outcome the tool declares no text for (FR-TOOL-02). */
   otherOutcomes: string;
+  /** For an effector whose effect delivers stimuli, the channel it delivers through (FR-STIMULUS-02). */
+  deliversThrough?: string;
 }
 
 /** The descriptions a scenario gives only for the inventory, and how an error names each. */
@@ -175,6 +177,7 @@ function conditionInventory<State>(
       effort: NONE,
       texts: textsOf(tool),
       otherOutcomes: OUTCOME_NAME,
+      ...(tool.kind === "effector" && tool.delivers !== undefined ? { deliversThrough: tool.delivers.channel } : {}),
     })),
     engineOutcomes: { ...ENGINE_OUTCOMES },
     channels: channels.map(({ name, source, stimulus }) => ({ name, source, delivers: stimulus })),
@@ -282,7 +285,7 @@ function toolsMarkdown({ tools }: ConditionInventory): string {
       `#### Tool "${tool.name}"\n`,
       `- Kind: ${tool.kind}`,
       `- Duration: ${tool.duration}`,
-      `- Effort: ${tool.effort}\n`,
+      `- Effort: ${tool.effort}${tool.deliversThrough === undefined ? "" : `\n- Delivers through: ${tool.deliversThrough}`}\n`,
       "Description:\n",
       fenced(tool.description, "text"),
       "Parameters:\n",
