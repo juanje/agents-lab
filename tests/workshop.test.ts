@@ -87,8 +87,8 @@ describe("the workshop at the start (FR-WORKSHOP-01)", () => {
   });
 
   it("declares no order channel when every text is in the system prompt", () => {
-    // FR-WORKSHOP-03 adds "voice".
-    expect(load().channels.map(({ name }) => name)).toEqual(["rhythm", "voice"]);
+    // FR-WORKSHOP-03 adds "voice", FR-WORKSHOP-05 "hands".
+    expect(load().channels.map(({ name }) => name)).toEqual(["rhythm", "voice", "hands"]);
   });
 
   it("names nothing of the world in its system prompts", () => {
