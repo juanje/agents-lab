@@ -97,6 +97,7 @@ export async function run<State>(
   // Refused before its log opens, as a scenario that fails to load is: nothing has run.
   assertScenarioAgents(loaded, agents);
   assertNamesDiffer([...agents.map(({ name }) => name), ...loaded.components.map(({ name }) => name)]);
+  assertDeliveryChannels(loaded);
   const recorder = Recorder.open(settings.logDirectory, settings.runId, settings.onRecord);
   // Aborts when the run ends before its agents are done: its time limit passes (FR-CLOCK-02) or it stops on an error.
   const runEnd = new AbortController();
@@ -163,6 +164,20 @@ function assertScenarioAgents<State>({ scenario, systemPrompts }: LoadedScenario
 function assertNamesDiffer(names: readonly string[]): void {
   const twice = names.find((name, index) => names.indexOf(name) !== index);
   if (twice !== undefined) throw new Error(`The run gives two of its agents and components the name "${twice}"; each must have its own`);
+}
+
+/**
+ * Refuses a scenario with an effector that delivers through a channel it does not declare, naming the tool and the
+ * channel: its first delivery would otherwise fail in the middle of the run (FR-STIMULUS-02).
+ */
+function assertDeliveryChannels<State>({ scenario, channels }: LoadedScenario<State>): void {
+  for (const tool of [...scenario.tools, ...(scenario.partyTools ?? [])]) {
+    if (tool.kind !== "effector" || tool.delivers === undefined) continue;
+    const { channel } = tool.delivers;
+    if (!channels.some(({ name }) => name === channel)) {
+      throw new Error(`The effector "${tool.name}" delivers through the channel "${channel}", which scenario "${scenario.name}" does not declare`);
+    }
+  }
 }
 
 /** Every sampling parameter but the thinking level, which the engine never sends, so the provider's defaults apply. */
