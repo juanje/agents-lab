@@ -287,6 +287,10 @@ interface VenueParams {
   /** Its catering rule: in_house, outside_fee (with outside_fee_per_head) or outside_free (FR-CONGRESS-07). */
   catering?: string;
   outside_fee_per_head?: number;
+  /** At an in_house venue, the fee a head for outside meals of a diet its caterer cannot serve in full (FR-CONGRESS-17). */
+  outside_diet_fee_per_head?: number;
+  /** Its in-house caterer's diets, with their limits, when it has one (FR-CONGRESS-17). */
+  in_house_diets?: Record<string, { limit?: number }>;
   opening?: string;
   price: number;
   extras?: Record<string, number>;
@@ -410,8 +414,10 @@ export const venueRules: RuleSet = {
     const totalSeats = venue.rooms.reduce((sum, { seats }) => sum + seats, 0);
     /** A room's price: its share of the day price by seats, rounded (FR-CONGRESS-07). */
     const roomPrice = (room: string) => Math.round((venue.price * (venue.rooms.find(({ id }) => id === room)?.seats ?? 0)) / totalSeats);
-    /** The extras it quoted, by item, with their price and, for a room, which room. */
-    const quoted = new Map<string, { price: number; room?: string }>();
+    /** The extras it quoted, by item, with their price and, for a room, which room; for outside diet meals, their diet and attendance. */
+    const quoted = new Map<string, { price: number; room?: string; diet?: string; attendance?: number }>();
+    /** Whether its in-house caterer cannot serve a diet in full: it serves it with a limit, or not at all (FR-CONGRESS-17). */
+    const notServedInFull = (diet: string) => venue.in_house_diets?.[diet]?.limit !== undefined || !Object.hasOwn(venue.in_house_diets ?? {}, diet);
     let permits = 0;
     /** A contract's new price, the difference committed, or its commitments released and the new price committed. */
     function repriced(contract: Contract, to: string, price: number): () => Script {
@@ -508,8 +514,15 @@ export const venueRules: RuleSet = {
         case "request_extra": {
           const item = String(fields.item);
           if (item === "outside_catering") {
+            const attendance = Number(fields.attendance ?? 0);
+            // At an in_house venue, outside meals of a diet its caterer cannot serve in full (FR-CONGRESS-17).
+            if (venue.catering === "in_house" && fields.diet !== undefined && notServedInFull(String(fields.diet))) {
+              const price = (venue.outside_diet_fee_per_head ?? 0) * attendance;
+              quoted.set(item, { price, diet: String(fields.diet), attendance });
+              return { act: "extra_quote", fields: { item, price } };
+            }
             if (venue.catering !== "outside_fee") return notAvailable(item);
-            const price = (venue.outside_fee_per_head ?? 0) * Number(fields.attendance ?? 0);
+            const price = (venue.outside_fee_per_head ?? 0) * attendance;
             quoted.set(item, { price });
             return { act: "extra_quote", fields: { item, price } };
           }
@@ -532,7 +545,9 @@ export const venueRules: RuleSet = {
           contract.extras[item] = price;
           if (offer?.room !== undefined) contract.rooms = [...contract.rooms, offer.room];
           record("extra", { contract: contract.id, item });
-          const permit: Fields = item === "outside_catering" ? { permit: `${venue.id}-permit-${(permits += 1)}` } : {};
+          // A permit for outside diet meals carries their diet and attendance (FR-CONGRESS-17).
+          const diet: Fields = offer?.diet === undefined ? {} : { diet: offer.diet, attendance: offer.attendance as number };
+          const permit: Fields = item === "outside_catering" ? { permit: `${venue.id}-permit-${(permits += 1)}`, ...diet } : {};
           return { act: "extra_confirmed", fields: { item, price, ...permit, ...(offer?.room === undefined ? {} : { room: offer.room }) }, then: function* () { yield* party.call("commit", { with: from, amount: price, for: `${contract.id} extra ${item}` }); } as () => Script };
         }
         case "change_booking": {

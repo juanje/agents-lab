@@ -443,7 +443,7 @@ function variant(configuration: Configuration, random: Random): { configuration:
       const ring = (configuration.phone as TomlTable | undefined)?.ring_minutes as number | undefined;
       const [, slowest = 0] = ((replyMinutes ?? kept.reply_minutes ?? []) as number[]);
       const callBack: TomlTable = ring === undefined ? {} : { call_back_minutes: [ring + 1, ring + 1 + slowest] };
-      const world = worldOf(kept.rules, id as string, configuration, city, perturbations, chosenVenues);
+      const world = worldOf(kept.rules, id as string, configuration, city, perturbations, chosenVenues, templates.filter(({ kind }) => kind === "caterer"));
       // A party knows the hours it keeps, within which it writes its own mail and pays (FR-CONGRESS-09).
       const hoursKept = (hours ?? kept.hours) as string | undefined;
       const keeps = hoursKept === undefined ? undefined : (((configuration.calendar as TomlTable | undefined)?.hours as TomlTable | undefined)?.[hoursKept] as TomlTable | undefined);
@@ -756,6 +756,7 @@ function assertParties(kinds: Readonly<Record<string, TomlTable[]>>, settings: T
         if (!isShare(template.deposit_share)) throw naming("deposit_share", "it is not a share from 0 to 1");
         if (!Array.isArray(template.cancellation) || !(template.cancellation as TomlTable[]).every(({ share }) => isShare(share))) throw naming("cancellation", "its shares are not from 0 to 1");
         if (template.pick_up !== undefined && !isShare(template.pick_up)) throw naming("pick_up", "it is not a probability from 0 to 1");
+        if (template.outside_diet_fee_per_head !== undefined && !isAmount(template.outside_diet_fee_per_head)) throw naming("outside_diet_fee_per_head", "it is not an amount of at least 0");
       }
       if (rules === "board" && typeof template.funds !== "number") throw naming("funds", "a board needs its funds");
       if (rules === "speaker" || rules === "partner") assertSpeaker(template, rules, naming);
@@ -919,9 +920,10 @@ const isVenueChange = (name: string) => !NOT_A_VENUES.includes(name) && name !==
 
 /**
  * What the world adds to a party's parameters, by its rule set: a venue gets the organiser it answers, the event's day,
- * its interior's true floor plan from the city and the perturbations for it; a board gets the organiser.
+ * its interior's true floor plan from the city, the perturbations for it and its in-house caterer's diets; a board gets
+ * the organiser.
  */
-function worldOf(rules: unknown, id: string, configuration: Configuration, city: City, perturbations: readonly Perturbation[], venues: readonly TomlTable[]): TomlTable {
+function worldOf(rules: unknown, id: string, configuration: Configuration, city: City, perturbations: readonly Perturbation[], venues: readonly TomlTable[], caterers: readonly TomlTable[]): TomlTable {
   if (rules === "board") return { organiser: ORGANISER_NAME };
   // A caterer knows each chosen venue's catering rule (FR-CONGRESS-07).
   if (rules === "caterer") return { organiser: ORGANISER_NAME, event_day: configuration.event_day as number, venues: Object.fromEntries(venues.map(({ id: venue, catering }): [string, TomlTable] => [venue as string, catering === undefined ? {} : { catering }])) };
@@ -930,6 +932,7 @@ function worldOf(rules: unknown, id: string, configuration: Configuration, city:
   if (rules !== "venue") return {};
   const venue = city.venues.find((each) => each.id === id) as Venue;
   const inside = [venue.entrance, ...venue.rooms.map((room) => room.id)];
+  const inHouse = caterers.find(({ in_house_for: inHouseFor }) => inHouseFor === id);
   return {
     id,
     organiser: ORGANISER_NAME,
@@ -939,6 +942,8 @@ function worldOf(rules: unknown, id: string, configuration: Configuration, city:
     perturbations: perturbations.filter((each) => each.name === ROOM_ALLOCATION && (each.for === undefined || each.for === id)) as unknown as TomlTable[],
     // The mail's delivery delay, from which its change's answer_by counts (FR-CONGRESS-16).
     ...((configuration.mail as TomlTable | undefined)?.delivery_minutes === undefined ? {} : { mail_delivery_minutes: (configuration.mail as TomlTable).delivery_minutes }),
+    // Which diets its own caterer serves, and their limits, by which it gives permits for outside diet meals (FR-CONGRESS-17).
+    ...(inHouse === undefined ? {} : { in_house_diets: (inHouse.diets ?? {}) as TomlTable }),
   };
 }
 
