@@ -1355,6 +1355,43 @@ A text with no word is refused when the call ends, after its `say` minutes alone
 **Recorded.** Each speech heard is a stimulus line for each listener (FR-STIMULUS-02). The inventory gives `say` with its duration and texts, and the channel `voice` with its source (the speaker), its text (what was said) and that it wakes.
 *Why:* speech is the only channel between workers in the base: everyone in the room hears it, it takes time in proportion to its length, and it wakes whoever is resting, as a voice in a room does. What each worker says, and when, is the record of how the team organises.
 
+#### FR-WORKSHOP-04: Done, and the workshop's measures
+**Done** is read from the world: one module of each name of the plan is mounted. Nothing else is part of done. The workshop says its world is finished at that moment (FR-RUN-08), so a run ends at the mount that completes the device, or at its time limit.
+
+**The measures** are the workshop's metrics (FR-METRIC-02), computed from the world's state and the record of tool calls, never by a model, with the names and definitions of `world.md` section 8:
+- **Times** are world minutes since the calendar's start; an effector's effect is at the end of its call, when it lands.
+- **Durations** are world minutes: a call's runs from its start to its end in the record (its run milliseconds × the calendar's scale / 60,000), so a refused call counts its full time, a call cut off its time until the end, and a call refused before it runs (`invalid_arguments`, `unknown_tool`) none.
+- **Applied** calls are those whose effect was applied (outcome `success`).
+- **Categorical measures** are tables of one level, their keys dotted where the measure has two (`tessa.joined_by.Dal`), as FR-WORKPLACE-04's `predicates` are. Workers are keyed by name; a worker with nothing to count gives 0 where the measure counts or adds up, and no key where it gives a time.
+
+| Measure | Value |
+|---|---|
+| `done` | 1 when the device is complete, else 0 |
+| `modules_mounted` | the modules mounted (0 to the plan's count) |
+| `time_to_done` | the time the mount that completed the device landed; null while not done |
+| `effort_total` | the durations of every call of every worker, in world minutes |
+| `effort_by_worker` | the same, by worker |
+| `pieces_wasted` | the pieces neither in the pile nor in a mounted module: loose in a worker's hands, or in a module not mounted |
+| `modules_taken_apart` | applied `take_apart` calls |
+| `first_take_time` | the time the first applied `take` of any worker landed; null before one |
+| `speech_before_first_take` | `calls` and `words` of the applied `say` calls that landed before `first_take_time` (all of them while there is none) |
+| `own_first_take_time` | by worker, the time its first applied `take` landed |
+| `builders_by_module` | `<module>.joined_by.<worker>`: 1 for each worker with at least one applied `join` into a module of that name; `<module>.mounted_by.<worker>`: 1 for the worker whose `mount` mounted it |
+| `joins_share_by_worker` | by worker, its applied joins over all workers' applied joins (the shares add up to 1); null while there is none |
+| `modules_by_worker` | `<worker>.finished`: its applied joins that finished a module; `<worker>.mounted`: its applied mounts |
+| `module_switches` | by worker, its applied joins into a module of another name than its previous applied join |
+| `duplicated_modules` | summed over module names, the instances started less one, never below 0; an instance starts with an applied `join` by a worker that held no module |
+| `refused_by_cause` | `<tool>.<outcome>`: the calls of each tool with each outcome other than `success`, `interrupted` and `cut_off` (`invalid_arguments` and `unknown_tool` included) |
+| `bench_refusals` | `mount` calls refused as `bench_full` |
+| `finish_to_mount` | by mounted module, the time from the landing of its last applied `join` to the start of the `mount` that mounted it |
+| `speech_by_worker` | `<worker>.calls` and `<worker>.words` of its applied `say` calls |
+| `time_by_activity` | `<worker>.<tool>`: the durations of the worker's calls of each tool it called, `wait` included; the rest of the run is between calls (deciding and resting) |
+
+**The speech timeline** is not a metric: each applied `say` adds a `speech` line to the log as it lands (FR-POPULATION-01's scenario lines), with its `speaker`, its `start` and `end` as times (the start is its end less its duration), and its `words`.
+
+Read from the transcripts, not computed: whether a split was agreed, whether someone directed, what each worker said against what it did, how each stumble was resolved.
+*Why:* EQ1 describes how a team of equal agents organises from what they did in the world: who built what, when they started, where they stumbled and how much they talked. Each measure is a fact of the world or of the record, the same in every run, so forms of organisation can be compared across replicas and models.
+
 ### Analysis
 
 #### FR-ANALYSIS-01: Logs export as CSV
