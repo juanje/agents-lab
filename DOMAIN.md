@@ -519,7 +519,7 @@ The recorder writes a line per event. The inventory and the run's setup go first
 - Unless it is that venue's in-house caterer or the order gives a `permit`, an `in_house` or `outside_fee` venue refuses it (`order_refused`, `reason` `venue_requires_permit`).
 - The venue quotes `request_extra outside_catering` at its fee per head × attendance (outside_fee only) and gives `permit` `<venue>-permit-<n>` with `extra_confirmed`.
 - An `in_house` venue's params give its in-house caterer's diets (`in_house_diets`); for a `diet` that caterer serves with a limit or not at all, it quotes `outside_catering` at `outside_diet_fee_per_head` × attendance, and its permit carries the `diet` and the `attendance` (FR-CONGRESS-17).
-- A caterer reads an order's permit with the sensor `read_permit` (no time; offered to the organiser too, as `read_programme` is), from the venue's `extra_confirmed`, and refuses an order with meals of another kind or more than the attendance (`permit_exceeded`). A caterer with `in_house_for` refuses an order naming another venue (`own_venue_only`).
+- A caterer reads an order's permit with the sensor `read_permit` (no time), one of the scenario's `partyTools`, which only rule-decided participants are given and no agent is offered or the inventory lists, from the venue's `extra_confirmed`, and refuses an order with meals of another kind or more than the attendance (`permit_exceeded`). A caterer with `in_house_for` refuses an order naming another venue (`own_venue_only`).
 
 **Rooms and prices**
 - A room's price is the day price × its seats ÷ all the venue's seats, rounded.
