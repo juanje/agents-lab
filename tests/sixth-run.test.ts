@@ -173,9 +173,9 @@ describe("a diet permit covers only its diet and its attendance (FR-CONGRESS-17)
     }
   });
 
-  it("takes an order under a permit it cannot read as before", () => {
+  it("refuses an order under a permit it cannot read, which no venue gave (FR-CONGRESS-22)", () => {
     const steps = answered(caterer(), "From: organiser. Act: order. counts: gluten_free: 40. date: day 26. venue: v2. permit: v2-permit-7.");
-    expect(mailed(steps)).toEqual(["order_confirmed"]);
+    expect(calls(steps, "send_mail")).toEqual([{ to: "organiser", act: "order_refused", fields: { reason: "permit_unknown" } }]);
   });
 });
 

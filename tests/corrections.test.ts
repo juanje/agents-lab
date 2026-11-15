@@ -5,7 +5,7 @@ import { type Scenario, loadScenario } from "../src/engine/scenario.ts";
 import type { Stimulus } from "../src/engine/stimuli.ts";
 import { boardRules, catererRules, speakerRules, venueRules } from "../src/scenarios/congress-parties.ts";
 import { congressScenario } from "../src/scenarios/congress.ts";
-import { calls, conversation, drive, notice, tools, venueChange } from "./fixtures/rules.ts";
+import { type ToolAnswer, calls, conversation, drive, notice, tools, venueChange } from "./fixtures/rules.ts";
 
 /** "v1"'s parameters: main-hall (120 seats) and room-b (40), the day price 2000, and what the world adds. */
 const venue = (changes: Record<string, unknown> = {}) => ({
@@ -120,7 +120,12 @@ describe("a caterer at a venue with a catering rule (FR-CONGRESS-07)", () => {
       new Random(1),
     );
   const order = (venueId: string, permit = "") => `From: organiser. Act: order. counts: standard: 40. date: day 26. venue: ${venueId}.${permit}`;
-  const answer = (rules: ReturnType<typeof caterer>, message: string) => mailed(conversation(rules, [[DAY, message]]).steps)[0];
+  // read_permit gives "v2-permit-1" as "v2" gave it (FR-CONGRESS-22).
+  const answer = (rules: ReturnType<typeof caterer>, message: string) => {
+    const permits: ToolAnswer = (tool, args) => (tool === "read_permit" && args.permit === "v2-permit-1" ? { text: JSON.stringify({ permit: "v2-permit-1", venue: "v2" }) } : tools(() => message)(tool, args));
+    drive(rules, tools(() => ""));
+    return mailed(drive(rules, permits, [[notice]], true))[0];
+  };
 
   it("refuses an order for a venue that asks for a permit unless it gives one, or it is the venue's in-house caterer", () => {
     expect(answer(caterer(), order("v1"))).toEqual({ act: "order_refused", fields: { reason: "venue_requires_permit" } });

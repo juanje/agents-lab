@@ -1286,20 +1286,23 @@ export const catererRules: RuleSet = {
       record.invoices_issued += 1;
     }
 
-    /** The permits it read, by their ids: the diet and the attendance each carries, when it carries them (FR-CONGRESS-17). */
-    const permits = new Map<string, { diet?: string; attendance?: number }>();
+    /**
+     * The permits it read, by their ids: the venue that gave each (FR-CONGRESS-22), and the diet and the attendance each
+     * carries, when it carries them (FR-CONGRESS-17).
+     */
+    const permits = new Map<string, { venue?: string; diet?: string; attendance?: number }>();
 
     /** Reads the permit an order gives with read_permit; one it cannot read carries nothing. */
     function* readPermit({ act, fields }: Received): Generator<RuleStep, void, Perceived> {
       if (act !== "order" || fields.permit === undefined) return;
       const text = (yield* party.call("read_permit", { permit: String(fields.permit) })).text;
-      let read: { diet?: unknown; attendance?: unknown } = {};
+      let read: { venue?: unknown; diet?: unknown; attendance?: unknown } = {};
       try {
         read = JSON.parse(text) as typeof read;
       } catch {
-        // No such permit: it carries no diet.
+        // No such permit: no venue gave it, and it carries no diet.
       }
-      permits.set(String(fields.permit), typeof read.diet === "string" ? { diet: read.diet, attendance: Number(read.attendance) } : {});
+      permits.set(String(fields.permit), { ...(typeof read.venue === "string" ? { venue: read.venue } : {}), ...(typeof read.diet === "string" ? { diet: read.diet, attendance: Number(read.attendance) } : {}) });
     }
 
     /** Whether counts exceed a permit for outside diet meals: meals of another kind, or more than its attendance (FR-CONGRESS-17). */
@@ -1335,6 +1338,8 @@ export const catererRules: RuleSet = {
           if (fields.venue !== undefined && (rule === "in_house" || rule === "outside_fee") && caterer.in_house_for !== fields.venue && fields.permit === undefined) {
             return { act: "order_refused", fields: { reason: "venue_requires_permit" } };
           }
+          // A permit must be one the named venue gave (FR-CONGRESS-22).
+          if (fields.permit !== undefined && permits.get(String(fields.permit))?.venue !== String(fields.venue)) return { act: "order_refused", fields: { reason: "permit_unknown" } };
           const counts = countsIn(fields.counts);
           if (fields.permit !== undefined && exceeds(counts, permits.get(String(fields.permit)) ?? {})) return { act: "order_refused", fields: { reason: "permit_exceeded" } };
           const over = overLimit(counts);
