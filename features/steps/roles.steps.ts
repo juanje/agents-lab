@@ -162,8 +162,10 @@ Given(
       Object.assign(venue("v3"), priced(500, 30));
       pools.caterer = [25, 30].map((price, index) => ({ id: `c${index + 1}`, price_per_head: price, final_days: 7, deposit_share: 0.2, deposit_due_days: 3, cancellation: [{ share: 0.3 }] }));
       pools.agency = [{ id: "a1", price: 460, notice_days: 7 }];
-      // Five accepting available speakers whose fees add up to 500, one from "north", a dearer one, one not available and one that does not accept.
-      pools.speaker = [0, 50, 100, 150, 200, 400].map((fee, index) => ({ id: `s${index + 1}`, fee, home: index === 2 ? "north" : "local", available: true, acceptance: 1 }));
+      // Five accepting available speakers whose fees add up to 500, one from "north", a dearer one that does not accept, one
+      // not available and one that does not accept: with no partner, the plan takes a speaker for each of six sessions
+      // (FR-CONGRESS-20), and only these five accept.
+      pools.speaker = [0, 50, 100, 150, 200, 400].map((fee, index) => ({ id: `s${index + 1}`, fee, home: index === 2 ? "north" : "local", available: true, acceptance: index === 5 ? 0 : 1 }));
       pools.speaker.push({ id: "s7", fee: 0, home: "local", available: false, acceptance: 1 }, { id: "s8", fee: 0, home: "local", available: true, acceptance: 0 });
       pools.sponsor = [600, 400, 500].map((amount, index) => ({ id: `sp${index + 1}`, amount, conditions: ["logo"], pay_days: [2, 2], ...(index === 2 ? { roles: ["withdraws"] } : {}) }));
     });

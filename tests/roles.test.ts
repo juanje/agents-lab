@@ -83,10 +83,10 @@ describe("the price gap (FR-CONGRESS-01's addition)", () => {
       congress(pools, { venue: 3, speaker: 8, caterer: 3, board: 1, sponsor: 2, price_gap: [0.5, 0.5] }, (configuration) => (configuration.similar_events = stringify(similar))),
       1,
     );
-    // From a cheapest feasible plan (FR-CONGRESS-11): (2000 + 58 × 45 + 400 − 1000 − 1000) / 50.
-    expect(loaded.variant).toMatchObject({ cost_covering_price: 60.2, price_gap: 0.5 });
-    expect((loaded.variant as { reference_price: number }).reference_price).toBeCloseTo(60.2 / 1.5);
-    expect((loaded.world.state as { similar: { name: string; price: number; size: number }[] }).similar.map(({ price }) => Math.round(price * 100) / 100)).toEqual([32.11, 40.13, 48.16]);
+    // From a cheapest feasible plan (FR-CONGRESS-11) with six speakers (FR-CONGRESS-20): (2000 + 59 × 45 + 600 − 1000 − 1000) / 50.
+    expect(loaded.variant).toMatchObject({ cost_covering_price: 65.1, price_gap: 0.5 });
+    expect((loaded.variant as { reference_price: number }).reference_price).toBeCloseTo(65.1 / 1.5);
+    expect((loaded.world.state as { similar: { name: string; price: number; size: number }[] }).similar.map(({ price }) => Math.round(price * 100) / 100)).toEqual([34.72, 43.4, 52.08]);
   });
 
   it("keeps the cost-covering price at least 1", () => {

@@ -335,9 +335,11 @@ describe("the price gap from a cheapest feasible plan (FR-CONGRESS-11)", () => {
       configuration.city = stringify(city);
     });
 
-  it("prices the cheapest venue that seats the target, its ramp when its interior has steps, the attendance at the highest price per head, the agency, five speakers' fees and trains, less the advance and the sponsors that stay", () => {
-    expect(loadScenario(plan(true), 1).variant).toMatchObject({ cost_covering_price: 16, reference_price: 10, price_gap: 0.6, budget: 5000, advance: 3000 });
-    expect(loadScenario(plan("3 steps"), 1).variant).toMatchObject({ cost_covering_price: 20, reference_price: 12.5 });
+  it("prices the cheapest venue that seats the target, its ramp when its interior has steps, the attendance at the highest price per head, the agency, six speakers' fees and trains, less the advance and the sponsors that stay", () => {
+    // With no partner, a speaker for each of six sessions (FR-CONGRESS-20): "s6" adds its fee, 400, and a head at 30, 430 over 50 paying.
+    expect(loadScenario(plan(true), 1).variant).toMatchObject({ cost_covering_price: 16 + 8.6, price_gap: 0.6, budget: 5000, advance: 3000 });
+    expect((loadScenario(plan(true), 1).variant as { reference_price: number }).reference_price).toBeCloseTo(24.6 / 1.6);
+    expect((loadScenario(plan("3 steps"), 1).variant as { cost_covering_price: number }).cost_covering_price).toBeCloseTo(20 + 8.6);
   });
 });
 
