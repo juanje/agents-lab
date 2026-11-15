@@ -250,3 +250,20 @@ describe("the population, a component with its own sequence (FR-POPULATION-01)",
     });
   });
 });
+
+describe("a registrant believes the programme it registered under (FR-CONGRESS-22)", () => {
+  /** A programme version of one session, published at a world time. */
+  const version = (number: number, day: number) => ({ version: number, sessions: [{ start: "10:00", end: "10:45", title: "Opening", speakers: ["s1"], room: "main-hall" }], breaks: [], sponsor_slots: [], logos: [], published: minutesOf(at(day)) });
+  const person = { id: "a-1", diet: "none", access: "none", pays: true, consents: true, no_show: false, registersAt: minutesOf(at(3, "10:00")), given: {} };
+
+  it("on registering, believes the latest published version", () => {
+    const { state } = cycleUntil(opened({ people: [person], programme: [version(1, 1), version(2, 2)] }), minutesOf(at(3, "12:00")));
+    expect(pop(state).people.map(({ id, registered, believes }) => [id, registered, believes])).toEqual([["a-1", minutesOf(at(3, "10:00")), 2]]);
+  });
+
+  it("believes nothing when no version is published", () => {
+    const { state } = cycleUntil(opened({ people: [person] }), minutesOf(at(3, "12:00")));
+    expect(pop(state).people[0].registered).toBe(minutesOf(at(3, "10:00")));
+    expect(pop(state).people[0].believes).toBeUndefined();
+  });
+});
