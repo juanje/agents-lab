@@ -334,16 +334,19 @@ interface Contract {
    * A change the venue announced and awaits an answer on, with the fields its mail gave and the world minute of its
    * answer_by once mailed (FR-CONGRESS-16).
    */
-  change?: ({ kind: "price_change"; price: number } | { kind: "room_lost"; room: string; smaller?: string; cut: number }) & { mailed?: Fields; answerBy?: number };
+  change?: ({ kind: "price_change"; price: number } | { kind: "room_lost"; room: string; smaller?: string; cut?: number }) & { mailed?: Fields; answerBy?: number };
 }
 
 /** How long a venue waits for the answer to its change: 72 world hours after its mail is delivered (FR-CONGRESS-16). */
 const CHANGE_ANSWER_MINUTES = 72 * 60;
 
-/** The options a change offers: none for a price change; for a lost room, its smaller room when it has one, and a price cut. */
+/**
+ * The options a change offers: none for a price change; for a lost room, its smaller room when it has one, and a price
+ * cut unless the booking had that room only (FR-CONGRESS-17).
+ */
 function offered(change: NonNullable<Contract["change"]>): string[] {
   if (change.kind === "price_change") return [];
-  return [...(change.smaller === undefined ? [] : ["smaller_room"]), "price_cut"];
+  return [...(change.smaller === undefined ? [] : ["smaller_room"]), ...(change.cut === undefined ? [] : ["price_cut"])];
 }
 
 /** Something a venue does at a world time of its own. */
@@ -571,7 +574,7 @@ export const venueRules: RuleSet = {
             // The smaller room in place of the lost one at the same price, or the lost room gone and its price cut (FR-CONGRESS-07).
             const smaller = change.smaller !== undefined && fields.option !== "price_cut" ? change.smaller : undefined;
             contract.rooms = contract.rooms.flatMap((room) => (room !== change.room ? [room] : smaller === undefined ? [] : [smaller]));
-            if (smaller === undefined) newPrice = contract.price - change.cut;
+            if (smaller === undefined) newPrice = contract.price - (change.cut ?? 0);
           }
           const then = repriced(contract, from, newPrice);
           record("change_accepted", { contract: contract.id, price: newPrice });
@@ -676,11 +679,13 @@ export const venueRules: RuleSet = {
             yield* (cancelled.then as () => Script)();
             return;
           }
-          // Its price cut taken: the lost room gone, the commitment down by the cut.
-          contract.rooms = contract.rooms.filter((room) => room !== change.room);
-          const then = repriced(contract, contract.to, contract.price - change.cut);
+          // A one-room booking moves to the smaller room at the same price (FR-CONGRESS-17); any other takes its price cut:
+          // the lost room gone, the commitment down by the cut.
+          const { cut, smaller } = change;
+          contract.rooms = contract.rooms.flatMap((room) => (room !== change.room ? [room] : cut === undefined && smaller !== undefined ? [smaller] : []));
+          const then = repriced(contract, contract.to, contract.price - (cut ?? 0));
           record("change_applied", { contract: contract.id, rooms: contract.rooms.join(", "), price: contract.price });
-          yield* party.write(contract.to, "change_applied", { contract: contract.id, room: change.room, cut: change.cut });
+          yield* party.write(contract.to, "change_applied", { contract: contract.id, room: change.room, ...(cut === undefined ? { smaller: smaller as string } : { cut }) });
           yield* then();
           return;
         }
@@ -714,8 +719,14 @@ export const venueRules: RuleSet = {
       if (booked === undefined) return;
       party.changed();
       const drawnKind = CHANGE_KINDS.includes(given) ? given : random.next() < 0.5 ? "room_lost" : "price_change";
-      // A booking with one room loses none: its price rises instead (FR-CONGRESS-11).
-      const kind = drawnKind === "room_lost" && booked.rooms.length < 2 ? "price_change" : drawnKind;
+      const lost = booked.rooms.at(-1) as string;
+      const seats = venue.rooms.find(({ id }) => id === lost)?.seats ?? 0;
+      // Its largest free room with fewer seats (FR-CONGRESS-07).
+      const smaller = venue.rooms.filter(({ id, seats: other }) => other < seats && !booked.rooms.includes(id)).sort((one, other) => other.seats - one.seats)[0];
+      const oneRoom = booked.rooms.length < 2;
+      // A booking with one room loses it only for a smaller room; with none free, its price rises instead (FR-CONGRESS-11,
+      // FR-CONGRESS-17).
+      const kind = drawnKind === "room_lost" && oneRoom && smaller === undefined ? "price_change" : drawnKind;
       if (kind === "price_change") {
         const price = Math.round(booked.price * (1.15 + 0.1 * random.next()));
         booked.change = { kind, price };
@@ -723,16 +734,14 @@ export const venueRules: RuleSet = {
         yield* party.write(booked.to, "price_change", awaiting(booked, { contract: booked.id, old_price: booked.price, price }));
         return;
       }
-      const lost = booked.rooms.at(-1) as string;
       lostRooms.set(booked.date, new Set([...(lostRooms.get(booked.date) ?? []), lost]));
-      const seats = venue.rooms.find(({ id }) => id === lost)?.seats ?? 0;
-      const smaller = venue.rooms.filter(({ id, seats: other }) => other < seats && !booked.rooms.includes(id)).sort((one, other) => other.seats - one.seats)[0];
-      // It offers its largest free smaller room, and a cut of the lost room's price (FR-CONGRESS-07).
-      const cut = roomPrice(lost);
-      booked.change = { kind: "room_lost", room: lost, cut, ...(smaller === undefined ? {} : { smaller: smaller.id }) };
+      // It offers its largest free smaller room, and a cut of the lost room's price (FR-CONGRESS-07), but no cut that would
+      // leave a booking with no room (FR-CONGRESS-17).
+      const cut: { cut?: number } = oneRoom ? {} : { cut: roomPrice(lost) };
+      booked.change = { kind: "room_lost", room: lost, ...cut, ...(smaller === undefined ? {} : { smaller: smaller.id }) };
       record("room_lost", { contract: booked.id, room: lost });
       const offer: Fields = smaller === undefined ? { offer: "price_cut" } : { offer: "smaller_room", smaller: smaller.id };
-      yield* party.write(booked.to, "room_lost", awaiting(booked, { contract: booked.id, room: lost, ...offer, cut }));
+      yield* party.write(booked.to, "room_lost", awaiting(booked, { contract: booked.id, room: lost, ...offer, ...(cut as Fields) }));
     }
 
     /**
