@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Random } from "../src/engine/random.ts";
-import { venueRules } from "../src/scenarios/congress-parties.ts";
-import { calls, conversation } from "./fixtures/rules.ts";
+import { catererRules, venueRules } from "../src/scenarios/congress-parties.ts";
+import { type ToolAnswer, calls, conversation, drive, notice, tools } from "./fixtures/rules.ts";
 
 // FR-CONGRESS-22: the corrections from the E1 baseline's first check run.
 
@@ -48,5 +48,40 @@ describe("a venue answers the asker's own booking (FR-CONGRESS-22)", () => {
     const held = { act: "held", fields: { date: "day 26", until: "day 3 Wednesday 09:01" } };
     expect(answers([message("hold"), message("ask_quote", " attendance: 50.")]).at(-1)).toEqual(held);
     expect(answers([message("hold"), message("hold", " attendance: 50.")]).at(-1)).toEqual(held);
+  });
+});
+
+describe("a caterer takes only a permit the venue gave (FR-CONGRESS-22)", () => {
+  /** "c1", for venues of each catering rule; read_permit gives the permits given here, by their ids, as the world's mail gives them. */
+  const answer = (permit: string, venueId = "v2", given: Record<string, string> = { "v2-permit-1": "v2", "v1-permit-1": "v1" }) => {
+    const rules = catererRules.start(
+      {
+        id: "c1",
+        price_per_head: 30,
+        final_days: 7,
+        deposit_share: 0.2,
+        deposit_due_days: 3,
+        cancellation: [{ share: 0.3 }],
+        organiser: "organiser",
+        event_day: 26,
+        venues: { v1: { catering: "in_house" }, v2: { catering: "outside_fee" }, v3: { catering: "outside_free" } },
+      },
+      new Random(1),
+    );
+    const order = `From: organiser. Act: order. counts: standard: 40. date: day 26. venue: ${venueId}. permit: ${permit}.`;
+    const permits: ToolAnswer = (tool, args) => (tool === "read_permit" ? { text: given[String(args.permit)] === undefined ? "No such permit." : JSON.stringify({ permit: args.permit, venue: given[String(args.permit)] }) } : tools(() => order)(tool, args));
+    drive(rules, tools(() => ""));
+    return mailed(drive(rules, permits, [[notice]], true))[0];
+  };
+  const unknown = { act: "order_refused", fields: { reason: "permit_unknown" } };
+
+  it("confirms an order with a permit the named venue gave", () => {
+    expect(answer("v2-permit-1").act).toBe("order_confirmed");
+  });
+
+  it("refuses permit_unknown an order whose permit no venue gave, or another venue gave, whatever the venue's rule", () => {
+    expect(answer("outside_catering")).toEqual(unknown);
+    expect(answer("v1-permit-1")).toEqual(unknown);
+    expect(answer("v2-permit-1", "v3")).toEqual(unknown);
   });
 });
