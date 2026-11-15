@@ -179,7 +179,9 @@ export function evaluate(context: Context, part: string, at: number): void {
   const built = recordsOf(context);
   built.at = at;
   built.part = part;
-  built.result = congressParts.predicates[part](built.state, { at });
+  const predicate = congressParts.predicates[part];
+  assert.ok(predicate !== undefined, `the congress provides no predicate "${part}"`);
+  built.result = predicate(built.state, { at });
 }
 
 When(/^"(\w+)" is evaluated at the end of preparation$/, function (this: Context, part: string) {
