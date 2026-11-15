@@ -11,6 +11,7 @@ import { ScriptedModel } from "../src/engine/scripted-model.ts";
 import * as parties from "../src/scenarios/congress-parties.ts";
 import * as congress from "../src/scenarios/congress.ts";
 import { congressScenario } from "../src/scenarios/congress.ts";
+import { type Population, registrationProbability } from "../src/scenarios/population.ts";
 import { postScenario } from "./fixtures/post.ts";
 import { drive, tools } from "./fixtures/rules.ts";
 
@@ -148,6 +149,32 @@ function input(change: (given: Record<string, any>) => void = () => {}): Record<
   change(given);
   return given;
 }
+
+describe("the solvable price leaves a margin (FR-CONGRESS-22)", () => {
+  /** A pool of 46 for the target of 50, registering at 0.0375 a day, a reference price of 44.5, preparation ending at day 26's start. */
+  const margin = (given: Record<string, any>) => {
+    given.attendees = { ...given.attendees, pool_factor: 0.92, base_per_day: 0.0375 };
+    given.referencePrice = 44.5;
+    given.endOfPreparation = minutes("day 26 00:00");
+  };
+  /** The expected paying registrants at a price, the page opened and registration announced on day 2 09:00, by FR-POPULATION-01's hourly probability. */
+  function expected(price: number): number {
+    const population = { material: { base_per_day: 0.0375, unannounced: 0.5 }, page: { open: true, price }, announced: true, referencePrice: 44.5, programme: [{ sessions: [{ speakers: ["s1", "s2", "s3", "s4", "s5", "s6"] }] }], draws: Object.fromEntries(["s1", "s2", "s3", "s4", "s5", "s6"].map((id) => [id, 1])), promotions: [], eventDay: 26 } as unknown as Population;
+    let staying = 1;
+    for (let hour = minutes("day 2 10:00"); hour < minutes("day 26 00:00"); hour += 60) staying *= 1 - registrationProbability({ population }, hour);
+    return 46 * (1 - staying);
+  }
+
+  it("gives each plan the highest whole price at which the expected paying registrants reach 0.85 of the target, with the page opened and announced on day 2 09:00", async () => {
+    // At 44 they reach 0.85 of the target, at 45 they do not; at 52 they still reach 0.75. With the page open from day 1
+    // 09:00 they would reach 0.85 at 45.
+    expect([expected(44) >= 42.5, expected(45) >= 42.5, expected(52) >= 37.5]).toEqual([true, false, true]);
+    const plansOf = (await plansOfModule()) as NonNullable<Awaited<ReturnType<typeof plansOfModule>>>;
+    const { plans } = plansOf(input(margin));
+    expect(plans.length).toBeGreaterThan(0);
+    for (const plan of plans) expect(plan.price).toBe(44);
+  });
+});
 
 describe("the solvability check's plans (FR-CONGRESS-21)", () => {
   it("gives the plans that meet every check: a venue's room, its orders, six speakers and a price, within the budget", async () => {
