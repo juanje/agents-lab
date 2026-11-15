@@ -1,6 +1,8 @@
 import { type TomlTable, stringify } from "smol-toml";
+import type { ToolCall } from "../engine/adapter.ts";
+import { readCalendar, sinceDayOne } from "../engine/calendar.ts";
 import type { Random } from "../engine/random.ts";
-import { type Configuration, type Scenario, isTable } from "../engine/scenario.ts";
+import { type Configuration, type MetricValue, type Scenario, isTable } from "../engine/scenario.ts";
 import type { Sensing } from "../engine/sensings.ts";
 import type { Channel } from "../engine/stimuli.ts";
 import type { AgentCall, Effector, LandingCall, Sensor, Start, TargetAsSensed, Tool } from "../engine/tools.ts";
@@ -50,8 +52,26 @@ export interface Hands {
  * The workshop's state (FR-WORKSHOP-01): the pile's loose pieces, the bench, each worker's hands, and the orders in
  * which `look` lists the pile's kinds and the workers and `read_plan` lists the modules, drawn once for the run.
  */
+/**
+ * What the workshop keeps of its applied effects, for its measures (FR-WORKSHOP-04): each at the world minute it landed,
+ * since the calendar's start.
+ */
+export interface Landed {
+  takes: readonly { worker: string; at: number }[];
+  /** Each applied join: whether it started a module (the worker held none) and whether it finished one. */
+  joins: readonly { worker: string; module: string; at: number; started: boolean; finished: boolean }[];
+  mounts: readonly { worker: string; module: string; at: number }[];
+  /** Each applied say, with its start (its end less its duration) and its words. */
+  speeches: readonly { speaker: string; start: number; end: number; words: number }[];
+}
+
 export interface Workshop {
-  settings: { handPieces: number; durations: Readonly<Record<Duration, number>>; waitMaxMinutes: number };
+  /**
+   * What the tools and the measures read of the configuration: the calendar's start, in world seconds since day 1's
+   * midnight, and its one segment's scale, in world seconds per second of the run.
+   */
+  settings: { handPieces: number; durations: Readonly<Record<Duration, number>>; waitMaxMinutes: number; startSeconds: number; scale: number };
+  landed: Landed;
   plan: Readonly<Record<string, Module>>;
   pile: Readonly<Record<string, number>>;
   bench: { mounted: readonly string[]; places: readonly (string | null)[] };
@@ -68,6 +88,8 @@ interface Settings {
   handPieces: number;
   durations: Readonly<Record<Duration, number>>;
   waitMaxMinutes: number;
+  startSeconds: number;
+  scale: number;
 }
 
 /** A key of the configuration the workshop cannot build from: an error that names it, its value and why. */
@@ -123,6 +145,8 @@ function settingsOf(configuration: Configuration): Settings {
     handPieces: configuration.hand_pieces as number,
     durations: durations as Record<Duration, number>,
     waitMaxMinutes: waitMax,
+    startSeconds: readCalendar(configuration.calendar).start,
+    scale: Number((segments[0] as TomlTable).scale),
   };
 }
 
@@ -190,11 +214,12 @@ function shuffled<Item>(items: readonly Item[], random: Random): Item[] {
  * each from its sorted names, so a condition that changes the workers leaves them as they were.
  */
 function initialState(configuration: Configuration, random: Random): Workshop {
-  const { workers, plan, pile, benchPlaces, handPieces, durations, waitMaxMinutes } = settingsOf(configuration);
+  const { workers, plan, pile, benchPlaces, handPieces, durations, waitMaxMinutes, startSeconds, scale } = settingsOf(configuration);
   const kinds = shuffled(Object.keys(pile).sort(), random);
   const modules = shuffled(Object.keys(plan).sort(), random);
   return {
-    settings: { handPieces, durations, waitMaxMinutes },
+    settings: { handPieces, durations, waitMaxMinutes, startSeconds, scale },
+    landed: { takes: [], joins: [], mounts: [], speeches: [] },
     plan,
     pile: { ...pile },
     bench: { mounted: [], places: Array.from({ length: benchPlaces }, () => null) },
@@ -206,6 +231,17 @@ function initialState(configuration: Configuration, random: Random): Workshop {
 /** A duration in world minutes, as a tool gives it to the engine. */
 function minutes(value: number): { worldSeconds: number } {
   return { worldSeconds: value * 60 };
+}
+
+/** The world minute a call lands at, since the calendar's start (FR-WORKSHOP-04). */
+function landedAt(state: Workshop, call: LandingCall): number {
+  if (call.world === undefined) throw new Error("The workshop's effects need the world's time, which a run without a calendar does not give");
+  return (sinceDayOne(call.world) - state.settings.startSeconds) / 60;
+}
+
+/** The workshop with one more applied effect kept, of a kind. */
+function keeping<Kind extends keyof Landed>(state: Workshop, kind: Kind, entry: Landed[Kind][number]): Workshop {
+  return { ...state, landed: { ...state.landed, [kind]: [...state.landed[kind], entry] } };
 }
 
 /** A worker's hands, which the workshop must have. */
@@ -347,7 +383,8 @@ const take: Effector<Workshop> = {
       ]),
     effect: (state, call) => {
       const kind = named(call, "kind");
-      return withHands({ ...state, pile: { ...state.pile, [kind]: state.pile[kind] - 1 } }, call.agent, { loose: counted(handsOf(state, call.agent).loose, kind, 1) });
+      const taken = withHands({ ...state, pile: { ...state.pile, [kind]: state.pile[kind] - 1 } }, call.agent, { loose: counted(handsOf(state, call.agent).loose, kind, 1) });
+      return keeping(taken, "takes", { worker: call.agent, at: landedAt(state, call) });
     },
   },
   end: END,
@@ -401,7 +438,9 @@ const join: Effector<Workshop> = {
     effect: (state, call) => {
       const hands = handsOf(state, call.agent);
       const [module, kind] = [named(call, "module"), named(call, "kind")];
-      return withHands(state, call.agent, { loose: counted(hands.loose, kind, -1), module: { name: module, joined: [...(hands.module?.joined ?? []), kind] } });
+      const held = { name: module, joined: [...(hands.module?.joined ?? []), kind] };
+      const joined = withHands(state, call.agent, { loose: counted(hands.loose, kind, -1), module: held });
+      return keeping(joined, "joins", { worker: call.agent, module, at: landedAt(state, call), started: hands.module === null, finished: isFinished(state, held) });
     },
   },
   end: END,
@@ -470,8 +509,9 @@ const mount: Effector<Workshop> = {
       ]);
     },
     effect: (state, call) => {
-      const { module } = handsOf(state, call.agent);
-      return withHands({ ...state, bench: { ...state.bench, mounted: [...state.bench.mounted, (module as HeldModule).name] } }, call.agent, { module: null });
+      const { name } = handsOf(state, call.agent).module as HeldModule;
+      const mounted = withHands({ ...state, bench: { ...state.bench, mounted: [...state.bench.mounted, name] } }, call.agent, { module: null });
+      return keeping(mounted, "mounts", { worker: call.agent, module: name, at: landedAt(state, call) });
     },
   },
   end: END,
@@ -527,7 +567,13 @@ const say: Effector<Workshop> = {
   start: doing("speaking"),
   action: {
     precondition: (_state, call) => firstRefusal([[wordsOf(String(call.arguments.text)) === 0, "empty_text"]]),
-    effect: (state) => state,
+    // The speech timeline keeps it (FR-WORKSHOP-04).
+    effect: (state, call) => {
+      const words = wordsOf(String(call.arguments.text));
+      const end = landedAt(state, call);
+      const duration = state.settings.durations.say + words / state.settings.durations.say_words_per_minute;
+      return keeping(state, "speeches", { speaker: call.agent, start: end - duration, end, words });
+    },
   },
   end: END,
   delivers: {
@@ -553,6 +599,118 @@ function describeDuration(configuration: Configuration, tool: string): string {
   if (!TOOLS.some(({ name }) => name === tool)) throw new Error(`The workshop has no tool "${tool}"`);
   return `${durations[tool as Duration]} world minutes.`;
 }
+
+/** Outcomes of calls the tool never ran, which take no time (FR-WORKSHOP-04). */
+const UNRUN = ["invalid_arguments", "unknown_tool"];
+
+/** Outcomes refused_by_cause does not count: the call was not refused. */
+const NOT_REFUSED = ["success", "interrupted", "cut_off"];
+
+/** A call's duration in world minutes: its run milliseconds at the calendar's scale; none for a call never run. */
+function durationOf(state: Workshop, call: ToolCall): number {
+  return UNRUN.includes(call.outcome) ? 0 : ((call.endedAtMs - call.startedAtMs) * state.settings.scale) / 60_000;
+}
+
+/** A table with a value for each worker of the workshop, from a function of the worker. */
+function byWorker(state: Workshop, value: (worker: string) => number): Record<string, number> {
+  return Object.fromEntries(Object.keys(state.workers).map((worker) => [worker, value(worker)]));
+}
+
+/** Adds one to a key of a table. */
+function countIn(table: Record<string, number>, key: string, by = 1): void {
+  table[key] = (table[key] ?? 0) + by;
+}
+
+/** Whether the device is complete: one module of each name of the plan is mounted. */
+function isDone(state: Workshop): boolean {
+  return Object.keys(state.plan).every((module) => state.bench.mounted.includes(module));
+}
+
+/** The time the first applied take of any worker landed, or null before one. */
+function firstTakeTime(state: Workshop): number | null {
+  return state.landed.takes.length === 0 ? null : Math.min(...state.landed.takes.map(({ at }) => at));
+}
+
+/** The workshop's measures (FR-WORKSHOP-04), from the world's state and the record of tool calls. */
+const METRICS: Scenario<Workshop>["metrics"] = {
+  done: (state) => (isDone(state) ? 1 : 0),
+  modules_mounted: (state) => state.bench.mounted.length,
+  time_to_done: (state) => (isDone(state) ? Math.max(...state.landed.mounts.map(({ at }) => at)) : null),
+  effort_total: (state, calls) => calls.reduce((sum, call) => sum + durationOf(state, call), 0),
+  effort_by_worker: (state, calls) => byWorker(state, (worker) => calls.filter(({ agent }) => agent === worker).reduce((sum, call) => sum + durationOf(state, call), 0)),
+  pieces_wasted: (state) => Object.values(state.workers).reduce((sum, hands) => sum + looseCount(hands) + (hands.module?.joined.length ?? 0), 0),
+  modules_taken_apart: (_state, calls) => calls.filter(({ tool, outcome }) => tool === "take_apart" && outcome === "success").length,
+  first_take_time: firstTakeTime,
+  speech_before_first_take: (state) => {
+    const first = firstTakeTime(state);
+    const before = state.landed.speeches.filter(({ end }) => first === null || end < first);
+    return { calls: before.length, words: before.reduce((sum, { words }) => sum + words, 0) };
+  },
+  own_first_take_time: (state) => {
+    const times: Record<string, number> = {};
+    for (const { worker, at } of state.landed.takes) times[worker] = Math.min(times[worker] ?? Infinity, at);
+    return times;
+  },
+  builders_by_module: (state) => {
+    const builders: Record<string, number> = {};
+    for (const { worker, module } of state.landed.joins) builders[`${module}.joined_by.${worker}`] = 1;
+    for (const { worker, module } of state.landed.mounts) builders[`${module}.mounted_by.${worker}`] = 1;
+    return builders;
+  },
+  joins_share_by_worker: (state) => {
+    const total = state.landed.joins.length;
+    return total === 0 ? null : byWorker(state, (worker) => state.landed.joins.filter((join) => join.worker === worker).length / total);
+  },
+  modules_by_worker: (state) => {
+    const table: Record<string, number> = {};
+    for (const worker of Object.keys(state.workers)) {
+      table[`${worker}.finished`] = state.landed.joins.filter((join) => join.worker === worker && join.finished).length;
+      table[`${worker}.mounted`] = state.landed.mounts.filter((mount) => mount.worker === worker).length;
+    }
+    return table;
+  },
+  module_switches: (state) =>
+    byWorker(state, (worker) => {
+      const modules = state.landed.joins.filter((join) => join.worker === worker).map(({ module }) => module);
+      return modules.filter((module, index) => index > 0 && module !== modules[index - 1]).length;
+    }),
+  duplicated_modules: (state) => {
+    const started: Record<string, number> = {};
+    for (const join of state.landed.joins) if (join.started) countIn(started, join.module);
+    return Object.values(started).reduce((sum, count) => sum + Math.max(count - 1, 0), 0);
+  },
+  refused_by_cause: (_state, calls) => {
+    const refused: Record<string, number> = {};
+    for (const { tool, outcome } of calls) if (!NOT_REFUSED.includes(outcome)) countIn(refused, `${tool}.${outcome}`);
+    return refused;
+  },
+  bench_refusals: (_state, calls) => calls.filter(({ tool, outcome }) => tool === "mount" && outcome === "bench_full").length,
+  // A mount that landed started its duration of `mount` minutes before; its module's last join is its mounter's last
+  // applied join into a module of that name before then (a module never changes hands).
+  finish_to_mount: (state) => {
+    const table: Record<string, number> = {};
+    for (const { worker, module, at } of state.landed.mounts) {
+      const start = at - state.settings.durations.mount;
+      const joins = state.landed.joins.filter((join) => join.worker === worker && join.module === module && join.at <= start);
+      if (joins.length > 0) table[module] = start - Math.max(...joins.map((join) => join.at));
+    }
+    return table;
+  },
+  speech_by_worker: (state) => {
+    const table: Record<string, number> = {};
+    for (const worker of Object.keys(state.workers)) {
+      const speeches = state.landed.speeches.filter(({ speaker }) => speaker === worker);
+      table[`${worker}.calls`] = speeches.length;
+      table[`${worker}.words`] = speeches.reduce((sum, { words }) => sum + words, 0);
+    }
+    return table;
+  },
+  time_by_activity: (state, calls) => {
+    const table: Record<string, number> = {};
+    for (const call of calls) countIn(table, `${call.agent}.${call.tool}`, durationOf(state, call));
+    return table;
+  },
+} satisfies Record<string, (state: Workshop, calls: readonly ToolCall[]) => MetricValue>;
 
 /**
  * The workshop's channels: its workers' rhythm; the voice, whose stimulus is what was said, from the speaker, and which
@@ -634,7 +792,11 @@ export const workshopScenario: Scenario<Workshop> = {
   initialState,
   tools: TOOLS,
   channels,
-  metrics: {},
+  metrics: METRICS,
+  // The world is finished once the device is complete (FR-WORKSHOP-04, FR-RUN-08).
+  finished: isDone,
+  // Each applied speech is a line of the speech timeline as it lands.
+  logLines: (before, after) => after.landed.speeches.slice(before.landed.speeches.length).map((speech) => ({ type: "speech", ...speech })),
   firstStimuli: (configuration) => (textsIn(configuration, "first") === "" ? [] : [ORDER_CHANNEL]),
   systemPrompt: (configuration, agent) => textsIn(configuration, "system").replaceAll("{name}", agent),
   rhythm: uniformRhythm,
