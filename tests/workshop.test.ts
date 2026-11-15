@@ -617,6 +617,7 @@ describe("done and the workshop's measures (FR-WORKSHOP-04)", () => {
       finish_to_mount: {},
       speech_by_worker: { "Dal.calls": 0, "Dal.words": 0, "Mik.calls": 0, "Mik.words": 0, "Nar.calls": 0, "Nar.words": 0, "Ren.calls": 0, "Ren.words": 0 },
       time_by_activity: {},
+      handovers: {},
     });
   });
 
@@ -677,6 +678,59 @@ describe("done and the workshop's measures (FR-WORKSHOP-04)", () => {
     expect(metric("own_first_take_time", state)).toEqual({ Dal: 2.25, Mik: 2.35 });
     expect(metric("speech_before_first_take", state)).toEqual({ calls: 1, words: 15 });
     expect(metric("speech_by_worker", state)).toMatchObject({ "Dal.calls": 1, "Dal.words": 15, "Nar.calls": 1, "Nar.words": 6, "Ren.calls": 0 });
+  });
+
+  it("counts the applied hands of pieces and of modules by giver and receiver, and keeps each as it lands (FR-WORKSHOP-05)", () => {
+    let state = base();
+    state = { ...state, workers: { ...state.workers, Dal: { ...state.workers.Dal, loose: { arn: 2, bex: 1 } }, Mik: { ...state.workers.Mik, module: { name: "ulm", joined: ["bex"] } } } };
+    state = apply(state, "hand", "Dal", 0, 0.5, { worker: "Nar", what: "arn" });
+    state = apply(state, "hand", "Dal", 0.5, 1, { worker: "Nar", what: "arn" });
+    state = apply(state, "hand", "Dal", 1, 1.5, { worker: "Ren", what: "bex" });
+    state = apply(state, "hand", "Mik", 1, 1.5, { worker: "Ren", what: "ulm" });
+    // Refused: Dal holds no arn any more.
+    state = apply(state, "hand", "Dal", 1.5, 2, { worker: "Mik", what: "arn" });
+    expect(state.landed.handovers).toEqual([
+      { giver: "Dal", receiver: "Nar", sort: "piece", name: "arn", at: 0.5 },
+      { giver: "Dal", receiver: "Nar", sort: "piece", name: "arn", at: 1 },
+      { giver: "Dal", receiver: "Ren", sort: "piece", name: "bex", at: 1.5 },
+      { giver: "Mik", receiver: "Ren", sort: "module", name: "ulm", at: 1.5 },
+    ]);
+    expect(metric("handovers", state)).toEqual({ "Dal.pieces_to.Nar": 2, "Dal.pieces_to.Ren": 1, "Mik.modules_to.Ren": 1 });
+    // A handed piece or module is wasted while it is in someone's hands.
+    expect(metric("pieces_wasted", state)).toBe(4);
+  });
+
+  it("reads a handed module's last join whoever made it, and its mounter as the worker whose mount mounted it (FR-WORKSHOP-05)", () => {
+    let state = base();
+    state = { ...state, workers: { ...state.workers, Mik: { ...state.workers.Mik, loose: { arn: 2, bex: 1, cal: 1, dov: 1 } } } };
+    for (const [from, kind] of [[0, "arn"], [2, "arn"], [4, "bex"], [6, "cal"], [8, "dov"]] as const) state = apply(state, "join", "Mik", from, from + 2, { module: "tessa", kind });
+    state = apply(state, "hand", "Mik", 10, 10.5, { worker: "Ren", what: "tessa" });
+    // Mik starts another tessa after handing its own, its join landing before Ren's mount starts; Ren's mount reads the
+    // handed one's last join, at 10.
+    state = { ...state, workers: { ...state.workers, Mik: { ...state.workers.Mik, loose: { arn: 1 } } } };
+    state = apply(state, "join", "Mik", 10.5, 10.75, { module: "tessa", kind: "arn" });
+    state = apply(state, "mount", "Ren", 11, 14);
+    expect(state.bench.mounted).toEqual(["tessa"]);
+    expect(metric("finish_to_mount", state)).toEqual({ tessa: 1 });
+    expect(metric("builders_by_module", state)).toEqual({ "tessa.joined_by.Mik": 1, "tessa.mounted_by.Ren": 1 });
+    expect(metric("modules_by_worker", state)).toMatchObject({ "Mik.finished": 1, "Mik.mounted": 0, "Ren.finished": 0, "Ren.mounted": 1 });
+    // Mik's join after handing, holding none, starts a second tessa.
+    expect(metric("duplicated_modules", state)).toBe(1);
+  });
+
+  it("follows a module handed on twice back to its last join, and a receiver's own joins into it (FR-WORKSHOP-05)", () => {
+    let state = base();
+    state = { ...state, workers: { ...state.workers, Dal: { ...state.workers.Dal, loose: { arn: 2, bex: 1, cal: 1 } }, Nar: { ...state.workers.Nar, loose: { dov: 1 } } } };
+    for (const [from, kind] of [[0, "arn"], [2, "arn"], [4, "bex"], [6, "cal"]] as const) state = apply(state, "join", "Dal", from, from + 2, { module: "tessa", kind });
+    state = apply(state, "hand", "Dal", 8, 8.5, { worker: "Mik", what: "tessa" });
+    state = apply(state, "hand", "Mik", 9, 9.5, { worker: "Nar", what: "tessa" });
+    state = apply(state, "join", "Nar", 9.5, 11.5, { module: "tessa", kind: "dov" });
+    state = apply(state, "hand", "Nar", 12, 12.5, { worker: "Ren", what: "tessa" });
+    state = apply(state, "mount", "Ren", 13, 16);
+    expect(metric("finish_to_mount", state)).toEqual({ tessa: 1.5 });
+    expect(metric("module_switches", state)).toEqual({ Dal: 0, Mik: 0, Nar: 0, Ren: 0 });
+    expect(metric("duplicated_modules", state)).toBe(0);
+    expect(metric("modules_by_worker", state)).toMatchObject({ "Dal.finished": 0, "Nar.finished": 1, "Ren.mounted": 1 });
   });
 
   it("gives a speech line for each applied speech, as it lands", () => {

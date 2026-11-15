@@ -1288,7 +1288,7 @@ When("the measures are computed", function (this: Context) {
 });
 
 /** The workshop's measures, by name. */
-const MEASURES = [
+export const WORKSHOP_MEASURES = [
   "done",
   "modules_mounted",
   "time_to_done",
@@ -1309,6 +1309,7 @@ const MEASURES = [
   "finish_to_mount",
   "speech_by_worker",
   "time_by_activity",
+  "handovers",
 ];
 
 /** A value as a step writes it: a number, a fraction, or null. */
@@ -1349,9 +1350,9 @@ function assertMeasure(measures: Record<string, MetricValue>, name: string, verb
 }
 
 // A value follows "is", so the congress's '"done" is evaluated …' is not read here.
-Then(new RegExp(`^("(?:${MEASURES.join("|")})" (?:is (?:-?[\\d.]+|null)|gives )(?:.+)?)$`), function (this: Context, written: string) {
+Then(new RegExp(`^("(?:${WORKSHOP_MEASURES.join("|")})" (?:is (?:-?[\\d.]+|null)|gives )(?:.+)?)$`), function (this: Context, written: string) {
   const measures = measuresOf(this, "last");
-  const mentions = [...written.matchAll(new RegExp(`"(${MEASURES.join("|")})" (is|gives) `, "g"))];
+  const mentions = [...written.matchAll(new RegExp(`"(${WORKSHOP_MEASURES.join("|")})" (is|gives) `, "g"))];
   mentions.forEach((mention, index) => {
     const end = mentions[index + 1]?.index ?? written.length;
     const said = written.slice(mention.index + mention[0].length, end).replace(/(?:,? and |, )$/, "");
@@ -1359,8 +1360,18 @@ Then(new RegExp(`^("(?:${MEASURES.join("|")})" (?:is (?:-?[\\d.]+|null)|gives )(
   });
 });
 
-Then('the last metric sample gives "refused_by_cause" as exactly {string} {int}', function (this: Context, key: string, count: number) {
-  assert.deepEqual({ ...(measuresOf(this, "last").refused_by_cause as object) }, { [key]: count });
+Then("the last metric sample gives {string} as exactly {string} {int}", function (this: Context, name: string, key: string, count: number) {
+  assert.deepEqual({ ...(measuresOf(this, "last")[name] as object) }, { [key]: count });
+});
+
+Then("it gives {string} as exactly {string} {int}", function (this: Context, name: string, key: string, count: number) {
+  assert.deepEqual({ ...(measuresOf(this, "last")[name] as object) }, { [key]: count });
+});
+
+Then("the first metric sample gives {string} as no key", function (this: Context, name: string) {
+  const value = measuresOf(this, "first")[name];
+  assert.ok(value !== null && typeof value === "object", `"${name}" is ${JSON.stringify(value)}`);
+  assert.deepEqual({ ...value }, {});
 });
 
 Then('it gives "effort_by_worker" for {string} as {int}', function (this: Context, worker: string, value: number) {

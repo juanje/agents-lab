@@ -14,6 +14,7 @@ import { withBase } from "./neighbourhood.steps.ts";
 import { script } from "./tool.steps.ts";
 import { editText } from "./workplace.steps.ts";
 import { WORLD, situations } from "./workplace-tools.steps.ts";
+import { WORKSHOP_MEASURES } from "./workshop.steps.ts";
 
 /** The worker, the workplace's one agent. */
 const WORKER = "worker";
@@ -316,8 +317,9 @@ Then("{string} gives {string} {int} tool calls", function (this: Context, metric
   assertValue(this, metric, key, value);
 });
 
-Then("{string} gives {string} {int}", function (this: Context, metric: string, key: string, value: number) {
-  assertValue(this, metric, key, value);
+// The workshop's measures read their own steps (FR-WORKSHOP-04).
+Then(new RegExp(`^"((?!(?:${WORKSHOP_MEASURES.join("|")})")[^"]*)" gives "([^"]*)" (-?\\d+)$`), function (this: Context, metric: string, key: string, value: string) {
+  assertValue(this, metric, key, Number(value));
 });
 
 Then(
