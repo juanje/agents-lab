@@ -630,7 +630,8 @@ describe("the on-time programme is a real one (FR-CONGRESS-22)", () => {
 
   it("does not count a version published before one of its speakers accepted its session", () => {
     const state = congress();
-    mail(state, "s6", "organiser", "decline", { session: 6 }, minutes("day 7 12:00"));
+    // "s6" withdraws on day 8 after accepting, and accepts again on day 10.
+    mail(state, "s6", "organiser", "decline", { session: 6 }, minutes("day 8 12:00"));
     mail(state, "s6", "organiser", "accept", { session: 6 }, minutes("day 10"));
     published(state, "hall-a", minutes("day 9 10:00"));
     published(state, "hall-a", minutes("day 11 10:00"));
