@@ -303,6 +303,15 @@ const amenitiesOf = (state: Congress, venue: string) => Object.entries(state.roo
 /** The rooms of the latest programme. */
 const programmeRooms = (state: Congress) => [...new Set(latestOf(state)?.sessions.map(({ room }) => room) ?? [])];
 
+/** Whether a venue's rooms of the latest programme, its catering area and its toilets are all reachable (P02, D4). */
+const reachesAll = (state: Congress, venue: string) => reachable(state, venue, [...programmeRooms(state), ...amenitiesOf(state, venue)]);
+
+/** Whether every room of the latest programme is in a booking and seats the attendance (P03, D3). */
+function roomsFit(state: Congress, booking: Booking): boolean {
+  const attendance = attendanceOf(state);
+  return programmeRooms(state).every((room) => booking.rooms.includes(room) && seatsOf(state, room) >= attendance);
+}
+
 /** Each caterer's latest numbers by diet, by mail or by phone: its confirmed order's counts, or the final numbers it accepted. */
 export function ordersOf(state: Congress): { caterer: string; counts: Record<string, number>; venue?: string; date?: string; permit?: string }[] {
   // An order cancelled, with none confirmed after it, does not count (FR-CONGRESS-12).
@@ -441,14 +450,12 @@ const predicatesAsWritten: PartsProvided<Congress>["predicates"] = {
   },
   P02: (state) => {
     const booking = liveBookingOf(state);
-    if (booking === undefined) return false;
-    return reachable(state, booking.venue, [...programmeRooms(state), ...amenitiesOf(state, booking.venue)]);
+    return booking !== undefined && reachesAll(state, booking.venue);
   },
   P03: (state) => {
     const booking = liveBookingOf(state);
     if (booking === undefined) return false;
-    const attendance = attendanceOf(state);
-    const rooms = programmeRooms(state).every((room) => booking.rooms.includes(room) && seatsOf(state, room) >= attendance);
+    const rooms = roomsFit(state, booking);
     const increases = eventsOf(state).filter(({ kind, from, for: what }) => kind === "commitment" && from === "organiser" && String(what).endsWith(" change"));
     return rooms && increases.every(({ at = 0 }) => committedAt(state, at) <= ceilingAt(state, at));
   },
@@ -480,20 +487,15 @@ const predicatesAsWritten: PartsProvided<Congress>["predicates"] = {
   },
   P07: (state) => {
     const homes = state.context.homes ?? {};
-    const night = `day ${state.context.eventDay - 1}`;
     // At least one confirmed speaker from a station in the latest programme (FR-CONGRESS-10).
     const travelling = confirmedOf(state).filter((speaker) => homes[speaker] !== undefined && latestOf(state)?.sessions.some(({ speakers }) => speakers.includes(speaker)) === true);
     return travelling.length > 0 && travelling
       .every((speaker) => {
         const session = latestOf(state)?.sessions.find(({ speakers }) => speakers.includes(speaker));
         if (session === undefined) return false;
-        const trains = state.travel.material.trains.filter(({ from }) => from === homes[speaker]);
         const latest = clockOf(session.start) - 30;
-        const booked = state.travel.booked.filter(({ traveller }) => traveller === speaker);
-        const inTime = booked.some(({ option }) => trains.some(({ id, arrives }) => option === `${id} day ${state.context.eventDay}` && clockOf(arrives) <= latest));
-        const firstLate = trains.every(({ arrives }) => clockOf(arrives) > latest);
-        const hotel = booked.some(({ option }) => state.travel.material.hotels.some(({ id }) => option === `${id} ${night}`));
-        return inTime || (firstLate && hotel);
+        const firstLate = trainsOf(state, speaker).every(({ arrives }) => clockOf(arrives) > latest);
+        return trainBy(state, speaker, latest) || (firstLate && hotelBefore(state, speaker));
       });
   },
   P08: (state) => sessionKept(state, "early_cancel").kept,
@@ -646,14 +648,13 @@ const predicatesAsWritten: PartsProvided<Congress>["predicates"] = {
   // D3: every room of the latest programme is in the live booking and seats the attendance.
   everyone_fits: (state) => {
     const booking = liveBookingOf(state);
-    const attendance = attendanceOf(state);
-    return booking !== undefined && programmeRooms(state).every((room) => booking.rooms.includes(room) && seatsOf(state, room) >= attendance);
+    return booking !== undefined && roomsFit(state, booking);
   },
   // D4: every registrant with an access need reaches the latest programme's rooms, the catering area and the toilets.
   everyone_can_reach: (state) => {
     if (registrantsOf(state).every(({ access }) => access === "none")) return true;
     const booking = liveBookingOf(state);
-    return booking !== undefined && reachable(state, booking.venue, [...programmeRooms(state), ...amenitiesOf(state, booking.venue)]);
+    return booking !== undefined && reachesAll(state, booking.venue);
   },
   // D5: for every diet, the live orders' meals of that diet the caterers may serve cover its attendance.
   food_for_everyone: (state) => {
@@ -931,7 +932,7 @@ const misapplications: PartsProvided<Congress>["misapplications"] = {
     const visited = (state.visits ?? []).some(({ place }) => inside.has(place));
     // Only when the steps are in the way: a session, the toilets or the catering area of the live booking there is reached through them with no ramp (FR-CONGRESS-12).
     const booking = liveBookingOf(latest);
-    const blocked = booking?.venue === venue && !reachable(latest, venue, [...programmeRooms(latest), ...amenitiesOf(latest, venue)]);
+    const blocked = booking?.venue === venue && !reachesAll(latest, venue);
     return !asked && !visited && blocked;
   },
   // The edit that set a ticket price above 1.25 × the reference price still in force at day 12 00:00 (FR-CONGRESS-14).
