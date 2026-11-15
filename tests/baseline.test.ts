@@ -1,6 +1,8 @@
+import { type TomlTable, parse, stringify } from "smol-toml";
 import { describe, expect, it } from "vitest";
+import { type Scenario, loadScenario } from "../src/engine/scenario.ts";
 import { congressParts } from "../src/scenarios/congress-parts.ts";
-import type { Congress } from "../src/scenarios/congress.ts";
+import { type Congress, congressScenario } from "../src/scenarios/congress.ts";
 import type { Person, Programme } from "../src/scenarios/population.ts";
 
 // FR-CONGRESS-20: the E1 baseline's definition of done, read on world records built here.
@@ -587,5 +589,34 @@ describe("the milestones give, through reached_at, when the organiser reached ea
     published(state, "hall-a", minutes("day 11 16:00"));
     published(state, "hall-a", minutes("day 14"));
     expect(evaluated("programme_published", state)).toEqual({ holds: true, reachedAt: minutes("day 11 16:00") });
+  });
+});
+
+describe("the plan counts every session: six speakers with no partner, five with one (FR-CONGRESS-20)", () => {
+  /** A congress with one venue at 2000, a caterer at 30 a head, eight speakers whose fees rise by 100 from 0, the target 40 and 2 helpers, the plan's cost as the budget, and a partner when asked. */
+  function congress(partner: boolean): Scenario<unknown> {
+    const configuration = parse(congressScenario.baseConfiguration);
+    const venue = { id: "v1", rooms: [{ id: "hall-a", seats: 80 }], access_claim: "step-free", price: 2000, extras: {}, hold_days: 2, deposit_share: 0.3, deposit_due_days: 3, cancellation: [{ share: 0.5 }] };
+    const speakers = [0, 1, 2, 3, 4, 5, 6, 7].map((n) => ({ id: `s${n + 1}`, fee: 100 * n, home: "local", available: true, acceptance: 1 }));
+    const caterer = { id: "c1", price_per_head: 30, final_days: 7, deposit_share: 0.25, deposit_due_days: 3, cancellation: [{ share: 0.3 }] };
+    Object.assign(configuration, {
+      city: stringify({ places: [{ id: "office" }], venues: [{ id: "v1", entrance: "v1-entrance", hours: "always", rooms: [{ id: "hall-a", seats: 80 }] }], passages: [{ between: ["office", "v1-entrance"], length: 5, step_free: true }, { between: ["v1-entrance", "hall-a"], length: 1, step_free: true }] }),
+      pools: stringify({ topics: ["soil"], venue: [venue], board: [], speaker: speakers, partner: partner ? [{ id: "p1", title: "Partner's soil", session: 3, fee: 0, home: "local", available: true }] : [], caterer: [caterer], sponsor: [], agency: [] }),
+      draw: stringify({ attendance: [40, 40], venue: 1, speaker: 8, caterer: 1, budget_over_plan: [1, 1], advance: [1000, 1000], ...(partner ? { partner: 1 } : {}) }),
+      attendees: stringify({ pool_factor: 1, base_per_day: 0, unannounced: 0, promotion_factor: 1, payment_fee_share: 0, diets: { none: 1 }, access: { none: 1 } }),
+      helpers: 2,
+    });
+    (configuration.calendar as TomlTable).hours = { always: { days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], from: "00:00", to: "23:59" } };
+    return { ...(congressScenario as Scenario<unknown>), baseConfiguration: stringify(configuration) };
+  }
+
+  it("takes the six lowest-fee accepting available speakers when no partner is drawn", () => {
+    // 2000 + (40 + 6 + 2 + 3) × 30 + (0 + 100 + … + 500).
+    expect((loadScenario(congress(false), 1).variant as Record<string, number>).plan_cost).toBe(2000 + 51 * 30 + 1500);
+  });
+
+  it("takes five when one partner is drawn", () => {
+    // 2000 + (40 + 5 + 2 + 3) × 30 + (0 + 100 + … + 400).
+    expect((loadScenario(congress(true), 1).variant as Record<string, number>).plan_cost).toBe(2000 + 50 * 30 + 1000);
   });
 });
