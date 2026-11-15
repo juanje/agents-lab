@@ -152,10 +152,12 @@ export class Stimuli {
 
   /**
    * What an agent receives when it wakes: the rhythm's stimulus when its rhythm wakes it, then, the first time only, its
-   * first stimuli, then the stimuli waiting for it, among them the one that woke it, when a stimulus did (FR-CONGRESS-08).
+   * first stimuli, each `{name}` in them filled with the agent's name (FR-WORKSHOP-05), then the stimuli waiting for it,
+   * among them the one that woke it, when a stimulus did (FR-CONGRESS-08).
    */
   wake(agent: string, byRhythm = true): Stimulus[] {
-    const now = [...(byRhythm ? [RHYTHM_CHANNEL] : []), ...(this.#first.get(agent) ?? [])].map((channel) => this.#stimulusOf(channel));
+    const first = (this.#first.get(agent) ?? []).map((channel) => this.#stimulusOf(channel)).map((stimulus) => ({ ...stimulus, content: stimulus.content.replaceAll("{name}", agent) }));
+    const now = [...(byRhythm ? [this.#stimulusOf(RHYTHM_CHANNEL)] : []), ...first];
     this.#first.delete(agent);
     for (const stimulus of now) this.#delivered(agent, stimulus);
     return [...now, ...this.take(agent)];

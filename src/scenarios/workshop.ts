@@ -9,8 +9,8 @@ import type { AgentCall, Effector, LandingCall, Sensor, Start, TargetAsSensed, T
 import type { Action, Check } from "../engine/world.ts";
 import { describeUniformRhythm, rhythmChannels, uniformRhythm } from "./rhythm.ts";
 
-/** The workshop's texts, in the order each place joins them (FR-WORKSHOP-01). */
-const TEXTS = ["identity", "task", "world_rules"] as const;
+/** The workshop's texts, in the order each place joins them (FR-WORKSHOP-01, FR-WORKSHOP-05's character and limits). */
+const TEXTS = ["identity", "character", "task", "limits", "world_rules"] as const;
 type Text = (typeof TEXTS)[number];
 
 /** Where a text goes: the system prompt, or one message as the worker first wakes. */
@@ -880,7 +880,9 @@ const BASE_CONFIGURATION = stringify({
   hand_pieces: 6,
   wait_max_minutes: 10,
   identity: IDENTITY,
+  character: "",
   task: TASK,
+  limits: "",
   world_rules: WORLD_RULES,
   order_source: "the order",
   plan: {
@@ -895,7 +897,7 @@ const BASE_CONFIGURATION = stringify({
   durations: { look: 0.5, read_plan: 1, take: 1, put_back: 0.5, join: 2, take_apart: 2, mount: 3, mount_refused: 0.5, say: 0.25, say_words_per_minute: 30, hand: 0.5 },
   calendar: { start: "day 1 Monday 09:00", segments: [{ scale: 4 }] },
   rhythm: { source: "your own pace", text: "You are ready to act.", min_ms: 1000, max_ms: 3000 },
-  placement: { identity: "system", task: "system", world_rules: "system" },
+  placement: { identity: "system", character: "system", task: "system", limits: "system", world_rules: "system" },
 });
 
 /**
