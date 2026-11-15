@@ -184,7 +184,8 @@ describe("the population, a component with its own sequence (FR-POPULATION-01)",
       minutesOf(at(4)),
     );
     const w1 = pop(state).people.find(({ id }) => id === "w1");
-    expect(w1?.given).toEqual({ diet: "none" });
+    // No special diet reads as standard (FR-CONGRESS-23).
+    expect(w1?.given).toEqual({ diet: "standard" });
     const [question] = state.mail.inTransit.filter(({ from }) => from === "w1");
     expect(question).toMatchObject({ to: "organiser", act: "question", fields: { about: "access" } });
     expect(minutesOf(question.sent) - (w1?.registered as number)).toBeLessThanOrEqual(1440);
@@ -265,5 +266,30 @@ describe("a registrant believes the programme it registered under (FR-CONGRESS-2
     const { state } = cycleUntil(opened({ people: [person] }), minutesOf(at(3, "12:00")));
     expect(pop(state).people[0].registered).toBe(minutesOf(at(3, "10:00")));
     expect(pop(state).people[0].believes).toBeUndefined();
+  });
+});
+
+describe("no special diet reads as standard (FR-CONGRESS-23)", () => {
+  const person = { id: "a-1", diet: "none", access: "none", pays: true, consents: true, no_show: false, registersAt: minutesOf(at(3, "10:00")), given: {} };
+  const required = (fields: string[]) => ({ open: true, price: 100, required_fields: fields, info: [], waiting_list: false });
+
+  it("gives a registrant with no special diet the diet standard on the ticket page, in its list and its summary", () => {
+    const { state } = cycleUntil(opened({ people: [person], page: required(["diet"]) }), minutesOf(at(3, "12:00")));
+    expect(pop(state).people[0].given).toEqual({ diet: "standard" });
+    expect(sense(state, "ticket_page", { detail: "list" }).registrants).toEqual([{ id: "a-1", diet: "standard" }]);
+    expect(sense(state, "ticket_page", { detail: "summary" }).diets).toEqual({ standard: 1 });
+  });
+
+  it("gives it as standard when a request for needs or an answer to its question makes it known", () => {
+    const requested = cycleUntil(opened({ people: [{ ...person, registered: minutesOf(at(2)), registersAt: undefined }], page: required(["diet"]), needsRequested: minutesOf(at(3)) }), minutesOf(at(5)));
+    expect(pop(requested.state).people[0].given).toEqual({ diet: "standard" });
+
+    const asked = opened({ people: [{ ...person, registered: minutesOf(at(2)), registersAt: undefined }] });
+    asked.mail = {
+      mailboxes: { organiser: [{ id: "m-1", from: "a-1", to: "organiser", act: "question", fields: { about: "diet" }, subject: "question", received: at(2, "10:00"), read: true }], "a-1": [] },
+      inTransit: [{ id: "m-2", from: "organiser", to: "a-1", act: "answer", fields: { text: "noted" }, subject: "answer", sent: at(3) }],
+    } as unknown as Mail;
+    const answered = cycleUntil(asked, minutesOf(at(4)));
+    expect(pop(answered.state).people[0].given).toEqual({ diet: "standard" });
   });
 });
