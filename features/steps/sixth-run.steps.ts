@@ -147,7 +147,9 @@ Then('"v1" mailed "price_change" for "c-1", and no "room_lost"', function (this:
 });
 
 Given('"v1" announced "room_lost" for "hall-a" on "c-1", offering the smaller room "room-c", at "day 8 10:00", and the organiser sent nothing to "v1" after it', function (this: Context) {
-  // "room-c", 30 seats, is "v1"'s largest free room with fewer seats than "hall-a"'s 90.
+  // "room-c", 30 seats, is "v1"'s largest free room with fewer seats than "hall-a"'s 90; "hall-b", of as many, another
+  // customer has, so the room is not moved (FR-CONGRESS-19).
+  changePools(this, (pool) => ((pool.venue.find(({ id }) => id === "v1") as TomlTable).rooms_booked_by_others = ["hall-b"]));
   changeAt(this, "day 8 10:00", "room_lost");
 });
 
@@ -176,6 +178,8 @@ Then('"c-1" stays confirmed with "room-c" only, at 2000', function (this: Contex
 });
 
 Given('"v1" announced "room_lost" for "hall-a" on the organiser\'s one-room contract "c-1", offering the smaller room "room-c"', function (this: Context) {
+  // Another customer has "hall-b", so the room is not moved to it (FR-CONGRESS-19).
+  changePools(this, (pool) => ((pool.venue.find(({ id }) => id === "v1") as TomlTable).rooms_booked_by_others = ["hall-b"]));
   booking(this, "v1", "hall-a", false);
   changeAt(this, "day 1 12:00", "room_lost");
   untilTime(this, "day 1 13:00");

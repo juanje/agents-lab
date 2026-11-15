@@ -86,27 +86,24 @@ function outcomeOf(context: Context, venue: string): { history: Record<string, u
 // A lost room is replaced by an equal free room.
 // With "hall-a" and "hall-b", FR-CONGRESS-16's step.
 Given('the organiser\'s contract "c-1" with "v1" is confirmed at 2000 with "hall-a" only', function (this: Context) {
-  // At 2000 a day, the price the contract is confirmed at.
+  // At 2000 a day, the price the contract is confirmed at, its deposit paid (as FR-CONGRESS-17's scenarios need it).
   changePools(this, (pool) => (pool.venue[0].price = 2000));
-  before(this, bookingTurns(this, "hall-a"));
-  // After the change at 10:00, a booking with no change pending takes a change_booking that keeps its rooms.
-  untilTime(this, "day 8 11:00");
-  before(this, actTurns(this, '"change_booking", rooms "hall-b" and hours "08:00-18:00"'));
+  before(this, organiserTurns(`call "send_mail" to "v1" with the act "book", date "day 26", rooms "hall-a" and hours "08:00-18:00", then wait 1 world hour, then "send_mail" to "v1" with the act "accept_contract" and the contract's id, then wait 1 world hour, then "pay" "i-1"`, hourMsOf(this)));
 });
 
 Then(
   '"v1" mailed "room_moved" with the room "hall-a" and the room now "hall-b", and "c-1" stays confirmed with "hall-b" only, at 2000, with no change pending',
   function (this: Context) {
     assert.deepEqual(fieldsOf(sentWith(this, "v1", "room_moved")), { contract: "v1-contract-1", room: "hall-a", room_now: "hall-b" });
-    const sent = sentBy(this, "v1");
     assert.deepEqual(
-      sent.filter((line) => ["room_lost", "price_change", "cancelled"].includes(String(line.act))).map((line) => line.act),
+      sentBy(this, "v1").filter((line) => ["room_lost", "price_change", "cancelled"].includes(String(line.act))).map((line) => line.act),
       [],
     );
-    const after = sent.slice(sent.findIndex((line) => line.act === "room_moved") + 1);
+    // A change pending is set only as the venue records "room_lost" or "price_change".
+    const history = outcomeOf(this, "v1").history.filter(({ event }) => ["room_moved", "room_lost", "price_change", "booking_changed", "cancelled"].includes(String(event)));
     assert.deepEqual(
-      after.map((line) => [line.act, fieldsOf(line)]),
-      [["contract_changed", { contract: "v1-contract-1", rooms: "hall-b", hours: "08:00-18:00", price: 2000 }]],
+      history.map(({ event, contract, room, room_now: now }) => ({ event, contract, room, room_now: now })),
+      [{ event: "room_moved", contract: "v1-contract-1", room: "hall-a", room_now: "hall-b" }],
     );
     assert.equal(committedFor(this, "v1-contract-1"), 2000);
   },
