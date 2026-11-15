@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { judgeRuns } from "../analysis/judge.ts";
 import { partsMarkdown, partsOfRuns } from "../analysis/parts.ts";
+import { reevaluateRuns } from "../analysis/reevaluate.ts";
 import { summarizeRuns, summaryMarkdown } from "../analysis/replicas.ts";
 import type { AgentModel } from "../engine/adapter.ts";
 import { type Experiment, readExperiment } from "../engine/experiment.ts";
@@ -31,7 +32,7 @@ export interface LabEnvironment {
 const PROGRESS_INTERVAL_MS = 30_000;
 
 /** How the command is used, as an error for other arguments says. */
-const USAGE = "Usage: lab run <experiment.toml> [--resume] [--progress-interval-ms <ms>], lab inventory <experiment.toml>, lab summarize <runs-dir> [--json], lab parts <runs-dir> [--json] or lab judge <runs-dir> <judge.toml>";
+const USAGE = "Usage: lab run <experiment.toml> [--resume] [--progress-interval-ms <ms>], lab inventory <experiment.toml>, lab summarize <runs-dir> [--json], lab parts <runs-dir> [--json], lab reevaluate <runs-dir> <parts.toml> or lab judge <runs-dir> <judge.toml>";
 
 /**
  * The `lab` command, with its arguments: `lab run <experiment.toml>` runs the experiment, printing each run's progress
@@ -39,13 +40,20 @@ const USAGE = "Usage: lab run <experiment.toml> [--resume] [--progress-interval-
  * inventory, without running it or resolving any model; `lab summarize <runs-dir>` prints the summary of an
  * experiment's runs as Markdown, or as JSON with `--json`, from the directory's index and logs alone (FR-RUN-02);
  * `lab judge <runs-dir> <judge.toml>` judges what the agents of its completed runs wrote, with the judge file's model,
- * and prints where the verdicts are (FR-ANALYSIS-02).
+ * and prints where the verdicts are (FR-ANALYSIS-02); `lab reevaluate <runs-dir> <parts.toml>` re-evaluates the parts
+ * file on the states its runs kept, and prints where each run's parts are and each part not evaluated (FR-CONGRESS-24).
  */
 export async function lab(args: readonly string[], environment: LabEnvironment): Promise<void> {
   const command = parse(args);
   if (command.name === "judge") {
     const written = await judgeRuns(resolve(environment.directory, command.path), resolve(environment.directory, command.judgeFile), environment.scenarios, environment.model);
     environment.print(`The verdicts are in ${written}\n`);
+    return;
+  }
+  if (command.name === "reevaluate") {
+    const { written, notEvaluated } = reevaluateRuns(resolve(environment.directory, command.path), resolve(environment.directory, command.partsFile), environment.scenarios, command.path);
+    for (const path of written) environment.print(`The parts of run "${basename(path, ".parts.jsonl")}" are in ${join(command.path, basename(path))}\n`);
+    for (const { run, part, at } of notEvaluated) environment.print(`Part "${part}" of run "${run}" was not evaluated: the run kept no parts_state at ${at}\n`);
     return;
   }
   if (command.name === "parts") {
@@ -75,13 +83,15 @@ type Command =
   | { name: "run"; path: string; progressIntervalMs: number; resume: boolean }
   | { name: "summarize"; path: string; json: boolean }
   | { name: "parts"; path: string; json: boolean }
-  | { name: "judge"; path: string; judgeFile: string };
+  | { name: "judge"; path: string; judgeFile: string }
+  | { name: "reevaluate"; path: string; partsFile: string };
 
 /** The command the arguments give; it refuses any other arguments, saying how the command is used. */
 function parse(args: readonly string[]): Command {
   const [name, path, ...options] = args;
   if (path !== undefined && name === "inventory" && options.length === 0) return { name, path };
   if (path !== undefined && name === "judge" && options.length === 1) return { name, path, judgeFile: options[0] };
+  if (path !== undefined && name === "reevaluate" && options.length === 1) return { name, path, partsFile: options[0] };
   if (path !== undefined && name === "summarize" && options.length <= 1 && options.every((option) => option === "--json")) {
     return { name, path, json: options.length === 1 };
   }

@@ -74,11 +74,15 @@ export interface PartsReport {
   kinds: KindRow[];
   outcomes: OutcomeRow[];
   conditions: ConditionRow[];
+  /** The file each run's part lines were read from: its re-evaluated parts, or its log (FR-CONGRESS-24). */
+  read: { run: string; from: string }[];
 }
 
-/** A run of the index with its log's lines. */
+/** A run of the index with its log's lines, and the part lines read: its re-evaluated parts' when it has them, or its log's. */
 interface Run extends IndexLine {
   lines: Record<string, unknown>[];
+  from: string;
+  parts: Record<string, unknown>[];
 }
 
 /**
@@ -99,14 +103,22 @@ function guidanceWords(run: Run, runsDirectory: string, materialsFrom: string): 
 /**
  * The parts of an experiment's runs (FR-ANALYSIS-04), from its runs directory: its index, its logs, and the materials
  * their setup lines name, read from a directory. Rows by part, kind, outcome and condition; a stopped run is counted
- * apart and gives no values. It refuses a directory without an index, naming it as given.
+ * apart and gives no values. A run's part lines are those of its `<run id>.parts.jsonl` when lab reevaluate wrote one,
+ * and of its log otherwise; the report gives which it read (FR-CONGRESS-24). It refuses a directory without an index,
+ * naming it as given.
  */
 export function partsOfRuns(directory: string, materialsFrom: string, name: string = directory): PartsReport {
-  const runs: Run[] = indexOf(directory, name).map((run) => ({ ...run, lines: linesOf<Record<string, unknown>>(join(directory, `${run.runId}.jsonl`)) }));
+  const runs: Run[] = indexOf(directory, name).map((run) => {
+    const lines = linesOf<Record<string, unknown>>(join(directory, `${run.runId}.jsonl`));
+    // A run's re-evaluated parts, which lab reevaluate wrote, stand for its own part lines (FR-CONGRESS-24).
+    const reevaluated = `${run.runId}.parts.jsonl`;
+    const from = existsSync(join(directory, reevaluated)) ? reevaluated : `${run.runId}.jsonl`;
+    return { ...run, lines, from, parts: from === reevaluated ? linesOf<Record<string, unknown>>(join(directory, reevaluated)) : lines };
+  });
   const conditions = [...new Set(runs.map(({ condition }) => condition))];
   const completedOf = (condition: string) => runs.filter((run) => run.condition === condition && run.status === "completed").sort((one, other) => one.replica - other.replica);
   const stoppedOf = (condition: string) => runs.filter((run) => run.condition === condition && run.status !== "completed").length;
-  const partLines = (run: Run) => run.lines.filter((line) => line.type === "part") as unknown as PartLine[];
+  const partLines = (run: Run) => run.parts.filter((line) => line.type === "part") as unknown as PartLine[];
   const lineOf = (run: Run, part: string) => partLines(run).find((line) => line.part === part);
   const names = [...new Set(runs.filter(({ status }) => status === "completed").flatMap((run) => partLines(run).map(({ part }) => part)))];
   // The group stands for the kind when the lines give one (FR-PARTS-01's addition).
@@ -178,7 +190,7 @@ export function partsOfRuns(directory: string, materialsFrom: string, name: stri
       cost: Math.round(turns.reduce((sum, turn) => sum + (turn.cost?.total ?? 0), 0) * 1e6) / 1e6,
     };
   });
-  return { parts, kinds, outcomes, conditions: rows };
+  return { parts, kinds, outcomes, conditions: rows, read: runs.map(({ runId, from }) => ({ run: runId, from })) };
 }
 
 /** A share as a cell: one decimal, more when it needs them. */
@@ -190,8 +202,11 @@ function tableOf(heading: string, headers: readonly string[], rows: readonly (re
   return `## ${heading}\n\n${line(headers)}${line(headers.map(() => "---"))}${rows.map(line).join("")}\n`;
 }
 
-/** The report as Markdown: its four tables, the kinds left out for an experiment with no kind_factor, or a line saying the runs have no parts. */
-export function partsMarkdown({ parts, kinds, outcomes, conditions }: PartsReport): string {
+/**
+ * The report as Markdown: its four tables, the kinds left out for an experiment with no kind_factor, and the file each
+ * run's part lines were read from; or a line saying the runs have no parts.
+ */
+export function partsMarkdown({ parts, kinds, outcomes, conditions, read }: PartsReport): string {
   if (parts.length === 0 && outcomes.length === 0) return "The runs have no parts.\n";
   const or = (value: number | null) => (value === null ? "-" : String(value));
   return [
@@ -228,6 +243,11 @@ export function partsMarkdown({ parts, kinds, outcomes, conditions }: PartsRepor
       "Conditions",
       ["Condition", "Completed", "Stopped", "Words", "Tokens (estimate)", "Model turns", "Input tokens", "Cost"],
       conditions.map((row) => [row.condition, String(row.completed), String(row.stopped), or(row.words), or(row.tokens), String(row.modelTurns), String(row.inputTokens), String(row.cost)]),
+    ),
+    tableOf(
+      "Part lines read",
+      ["Run", "From"],
+      read.map(({ run, from }) => [run, from]),
     ),
   ].join("");
 }
