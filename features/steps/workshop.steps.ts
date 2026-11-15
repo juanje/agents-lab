@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
-import { Given, Then } from "@cucumber/cucumber";
+import { type DataTable, Given, Then, When } from "@cucumber/cucumber";
 import type { JsonObject } from "@earendil-works/pi-ai";
 import { type TomlTable, parse, stringify } from "smol-toml";
 import type { ToolCall } from "../../src/engine/adapter.ts";
+import { worldTimeAt } from "../../src/engine/calendar.ts";
 import { Random } from "../../src/engine/random.ts";
 import type { ScriptedAnswer } from "../../src/engine/scripted-model.ts";
-import { type LoadedScenario, loadScenario } from "../../src/engine/scenario.ts";
-import { World } from "../../src/engine/world.ts";
+import { type LoadedScenario, type MetricValue, loadScenario } from "../../src/engine/scenario.ts";
+import type { LandingCall } from "../../src/engine/tools.ts";
+import { type Check, World } from "../../src/engine/world.ts";
 import { scenarioLibrary } from "../../src/scenarios/library.ts";
 import type { Workshop } from "../../src/scenarios/workshop.ts";
 import type { Context } from "../support/context.ts";
@@ -1066,4 +1068,284 @@ Then(
 Then("the {string} call failed with {string} and the text {string}", function (this: Context, tool: string, outcome: string, text: string) {
   const call = onlyCallOf(this, tool);
   assert.deepEqual({ outcome: call.outcome, text: call.text }, { outcome, text });
+});
+
+// FR-WORKSHOP-04: done, and the workshop's measures.
+
+/** The world minutes a call's run milliseconds span, at the workshop's one scale. */
+function runMsPerMinute(context: Context): number {
+  const [{ scale }] = (workshopConfiguration(context).calendar as { segments: { scale: number }[] }).segments;
+  return 60_000 / scale;
+}
+
+Then('{string}\'s {string} call succeeded, and {string} made no model turn after it', function (this: Context, worker: string, tool: string, same: string) {
+  assert.equal(worker, same);
+  const call = callOfWorker(this, worker, tool);
+  assert.equal(call.outcome, "success");
+  const turns = logLines(this).filter((line) => line.type === "model_turn" && line.agent === worker) as unknown as { startedAtMs: number }[];
+  const after = turns.filter(({ startedAtMs }) => startedAtMs >= call.endedAtMs);
+  assert.deepEqual(after, [], `"${worker}" made ${after.length} model turns after its "${tool}" call`);
+});
+
+Then(
+  "the log has a {string} line, giving as the moment the world was finished the end of {string}'s {string} call, within {int} milliseconds",
+  function (this: Context, type: string, worker: string, tool: string, withinMs: number) {
+    const lines = logLines(this).filter((line) => line.type === type) as unknown as { atMs: number }[];
+    assert.equal(lines.length, 1, `the log has ${lines.length} "${type}" lines`);
+    const { endedAtMs } = callOfWorker(this, worker, tool);
+    assert.ok(Math.abs(lines[0].atMs - endedAtMs) <= withinMs, `the world was finished ${lines[0].atMs - endedAtMs} ms from the end of the call`);
+  },
+);
+
+Then("{string}'s {string} call has the outcome {string}", function (this: Context, worker: string, tool: string, outcome: string) {
+  assert.equal(callOfWorker(this, worker, tool).outcome, outcome);
+});
+
+/** The run's metric samples, in order. */
+function samples(context: Context): Record<string, MetricValue>[] {
+  const lines = logLines(context).filter((line) => line.type === "metric_sample") as unknown as { metrics: Record<string, MetricValue> }[];
+  assert.ok(lines.length > 0, "the log has no metric sample");
+  return lines.map(({ metrics }) => metrics);
+}
+
+/** The measures the scenario checks: the last sample's, the first's, or those computed from a record. */
+function measuresOf(context: Context, which: "first" | "last"): Record<string, MetricValue> {
+  const computed = measured.get(context);
+  if (computed !== undefined) return computed;
+  return which === "first" ? samples(context)[0] : (samples(context).at(-1) as Record<string, MetricValue>);
+}
+
+/** The measures computed from a record, for a scenario that gives one. */
+const measured = new WeakMap<Context, Record<string, MetricValue>>();
+
+Then(
+  'the last metric sample gives "done" as {int}, "modules_mounted" as {int}, and "time_to_done" as {float}, within {float}',
+  function (this: Context, done: number, mounted: number, time: number, within: number) {
+    const last = measuresOf(this, "last");
+    assert.deepEqual({ done: last.done, modules_mounted: last.modules_mounted }, { done, modules_mounted: mounted });
+    assertNear(last.time_to_done, time, within, "time_to_done");
+  },
+);
+
+/** Checks that a measure is a number near another. */
+function assertNear(value: MetricValue | undefined, expected: number, within: number, name: string): void {
+  assert.equal(typeof value, "number", `"${name}" is ${JSON.stringify(value)}`);
+  assert.ok(Math.abs((value as number) - expected) <= within, `"${name}" is ${String(value)}, not ${expected} within ${within}`);
+}
+
+Then('the last metric sample gives "done" as {int}, "modules_mounted" as {int} and "time_to_done" as null', function (this: Context, done: number, mounted: number) {
+  const last = measuresOf(this, "last");
+  assert.deepEqual({ done: last.done, modules_mounted: last.modules_mounted, time_to_done: last.time_to_done }, { done, modules_mounted: mounted, time_to_done: null });
+});
+
+
+Then(
+  'the first metric sample gives "done" {int}, "modules_mounted" {int}, "time_to_done" null, "effort_total" {int}, "pieces_wasted" {int}, "modules_taken_apart" {int}, "first_take_time" null, "joins_share_by_worker" null, "duplicated_modules" {int} and "bench_refusals" {int}',
+  function (this: Context, done: number, mounted: number, effort: number, wasted: number, takenApart: number, duplicated: number, benchRefusals: number) {
+    const [first] = samples(this);
+    assert.deepEqual(
+      Object.fromEntries(["done", "modules_mounted", "time_to_done", "effort_total", "pieces_wasted", "modules_taken_apart", "first_take_time", "joins_share_by_worker", "duplicated_modules", "bench_refusals"].map((name) => [name, first[name]])),
+      { done, modules_mounted: mounted, time_to_done: null, effort_total: effort, pieces_wasted: wasted, modules_taken_apart: takenApart, first_take_time: null, joins_share_by_worker: null, duplicated_modules: duplicated, bench_refusals: benchRefusals },
+    );
+  },
+);
+
+Then('it gives "effort_by_worker" as {int} for each of {string}, {string}, {string} and {string}', function (this: Context, value: number, a: string, b: string, c: string, d: string) {
+  assert.deepEqual({ ...(samples(this)[0].effort_by_worker as object) }, Object.fromEntries([a, b, c, d].map((worker) => [worker, value])));
+});
+
+Then('it gives "speech_before_first_take" as "calls" {int} and "words" {int}', function (this: Context, calls: number, words: number) {
+  assert.deepEqual({ ...(samples(this)[0].speech_before_first_take as object) }, { calls, words });
+});
+
+/** A call of a record, as a row of its table gives it: times in world minutes. */
+interface RecordRow {
+  worker: string;
+  start: string;
+  end: string;
+  tool: string;
+  arguments: string;
+  outcome: string;
+}
+
+/** A row's arguments, as the tool takes them. */
+function rowArguments({ tool, arguments: written }: RecordRow): Record<string, unknown> {
+  if (written === "") return {};
+  if (tool === "join") {
+    const [module, kind] = written.split(", ");
+    return { module, kind };
+  }
+  if (tool === "say") return { text: written };
+  if (tool === "wait") return { minutes: Number(written) };
+  return { kind: written };
+}
+
+Given("the record holds these calls:", function (this: Context, table: DataTable) {
+  records.set(this, table.hashes() as unknown as RecordRow[]);
+});
+
+const records = new WeakMap<Context, RecordRow[]>();
+
+/** Outcomes of calls the tool never ran: they change nothing and take no time. */
+const UNRUN = ["invalid_arguments", "unknown_tool"];
+
+When("the measures are computed", function (this: Context) {
+  const rows = records.get(this);
+  assert.ok(rows !== undefined, "the scenario gave no record");
+  const loaded = loadWorkshop(this);
+  const { scenario, calendar } = loaded;
+  assert.ok(calendar !== undefined, "the workshop has no calendar");
+  const msPerMinute = runMsPerMinute(this);
+  const toolOf = (name: string) => {
+    const tool = scenario.tools.find((each) => each.name === name);
+    assert.ok(tool !== undefined, `the workshop has no tool "${name}"`);
+    return tool;
+  };
+  // Each call's start and landing, in the order of their times; at one time, landings come before starts.
+  const events = rows.flatMap((row) => {
+    const call = { agent: row.worker, arguments: rowArguments(row) };
+    if (UNRUN.includes(row.outcome)) return [];
+    return [
+      { at: Number(row.start), order: 1, row, call, kind: "start" as const },
+      ...(row.outcome === "cut_off" ? [] : [{ at: Number(row.end), order: 0, row, call, kind: "land" as const }]),
+    ];
+  });
+  events.sort((one, other) => one.at - other.at || one.order - other.order);
+  let state: Workshop = loaded.world.state;
+  for (const { at, row, call, kind } of events) {
+    const tool = toolOf(row.tool);
+    if (tool.kind !== "effector") continue;
+    if (kind === "start") {
+      state = tool.start === undefined ? state : tool.start.effect(state, call);
+      continue;
+    }
+    const landing: LandingCall = { ...call, atMs: at * msPerMinute, world: worldTimeAt(calendar, at * msPerMinute) };
+    const check: Check = tool.action?.precondition(state, landing) ?? { holds: true };
+    // The record is built to match the world: each call's outcome is the one its landing gives.
+    assert.equal(check.holds ? "success" : check.reason, row.outcome === "interrupted" ? "success" : row.outcome, `the record's ${row.worker} ${row.tool} at ${row.end} does not match the world`);
+    if (check.holds && tool.action !== undefined) state = tool.action.effect(state, landing);
+    if (tool.end !== undefined) state = tool.end.effect(state, landing);
+  }
+  const toolCalls: ToolCall[] = rows.map((row) => ({
+    agent: row.worker,
+    tool: row.tool,
+    arguments: rowArguments(row),
+    outcome: row.outcome,
+    startedAtMs: Number(row.start) * msPerMinute,
+    endedAtMs: Number(row.end) * msPerMinute,
+  }));
+  // In the order the calls ended, as the run gives them.
+  toolCalls.sort((one, other) => one.endedAtMs - other.endedAtMs);
+  measured.set(this, Object.fromEntries(Object.entries(scenario.metrics).map(([name, metric]) => [name, metric(state, toolCalls)])));
+});
+
+/** The workshop's measures, by name. */
+const MEASURES = [
+  "done",
+  "modules_mounted",
+  "time_to_done",
+  "effort_total",
+  "effort_by_worker",
+  "pieces_wasted",
+  "modules_taken_apart",
+  "first_take_time",
+  "speech_before_first_take",
+  "own_first_take_time",
+  "builders_by_module",
+  "joins_share_by_worker",
+  "modules_by_worker",
+  "module_switches",
+  "duplicated_modules",
+  "refused_by_cause",
+  "bench_refusals",
+  "finish_to_mount",
+  "speech_by_worker",
+  "time_by_activity",
+];
+
+/** A value as a step writes it: a number, a fraction, or null. */
+function valueOf(written: string): number | null {
+  if (written === "null") return null;
+  const [over, under] = written.split("/").map(Number);
+  return under === undefined ? over : over / under;
+}
+
+/** Checks a measure's value against what a step says of it after "is" or "gives". */
+function assertMeasure(measures: Record<string, MetricValue>, name: string, verb: string, said: string): void {
+  const value = measures[name];
+  if (verb === "is") {
+    const expected = valueOf(said);
+    if (expected === null || typeof value !== "number") assert.equal(value, expected, `"${name}"`);
+    else assert.ok(Math.abs(value - expected) < 1e-9, `"${name}" is ${value}, not ${expected}`);
+    return;
+  }
+  assert.ok(value !== null && typeof value === "object", `"${name}" gives ${JSON.stringify(value)}`);
+  const table = value as Record<string, number>;
+  const exactly = said.startsWith("exactly ");
+  const expected: Record<string, number> = {};
+  if (said !== "no key") for (const [, key, written] of said.matchAll(/"([\w.]+)" (-?\d+(?:\.\d+)?(?:\/\d+)?)/g)) expected[key] = valueOf(written) as number;
+  const zeros = /and 0 for ((?:"\w+"(?:, | and )?)+)$/.exec(said);
+  for (const key of zeros === null ? [] : quoted(zeros[1])) expected[key] = 0;
+  if (/and 0 for every other worker's "finished" and for every worker's "mounted"$/.test(said)) {
+    for (const worker of WORKERS) {
+      expected[`${worker}.finished`] ??= 0;
+      expected[`${worker}.mounted`] ??= 0;
+    }
+  }
+  const absent = /no key for ((?:"\w+"(?:, | or )?)+)/.exec(said);
+  for (const key of absent === null ? [] : quoted(absent[1])) assert.ok(!Object.hasOwn(table, key), `"${name}" gives "${key}" ${table[key]}`);
+  if (exactly || said === "no key") assert.deepEqual(Object.keys(table).sort(), Object.keys(expected).sort(), `"${name}" gives ${JSON.stringify(table)}`);
+  for (const [key, number] of Object.entries(expected)) {
+    assert.ok(Object.hasOwn(table, key) && Math.abs(table[key] - number) < 1e-9, `"${name}" gives "${key}" ${table[key]}, not ${number}: ${JSON.stringify(table)}`);
+  }
+}
+
+Then(new RegExp(`^("(?:${MEASURES.join("|")})" (?:is|gives) .+)$`), function (this: Context, written: string) {
+  const measures = measuresOf(this, "last");
+  const mentions = [...written.matchAll(new RegExp(`"(${MEASURES.join("|")})" (is|gives) `, "g"))];
+  mentions.forEach((mention, index) => {
+    const end = mentions[index + 1]?.index ?? written.length;
+    const said = written.slice(mention.index + mention[0].length, end).replace(/(?:,? and |, )$/, "");
+    assertMeasure(measures, mention[1], mention[2], said);
+  });
+});
+
+Then('the last metric sample gives "refused_by_cause" as exactly {string} {int}', function (this: Context, key: string, count: number) {
+  assert.deepEqual({ ...(measuresOf(this, "last").refused_by_cause as object) }, { [key]: count });
+});
+
+Then('it gives "effort_by_worker" for {string} as {int}', function (this: Context, worker: string, value: number) {
+  assert.equal((measuresOf(this, "last").effort_by_worker as Record<string, number>)[worker], value);
+});
+
+/** The run's speech lines. */
+function speechLines(context: Context) {
+  return logLines(context).filter((line) => line.type === "speech") as unknown as { speaker: string; start: number; end: number; words: number; atMs: number }[];
+}
+
+Then("the log has exactly one {string} line", function (this: Context, type: string) {
+  assert.equal(type, "speech");
+  assert.equal(speechLines(this).length, 1, `the log has ${speechLines(this).length} "speech" lines`);
+});
+
+Then(
+  "it gives the speaker {string}, the start {float} and the end {float}, each within {float}, and {int} words",
+  function (this: Context, speaker: string, start: number, end: number, within: number, words: number) {
+    const [line] = speechLines(this);
+    assert.equal(line.speaker, speaker);
+    assert.ok(Math.abs(line.start - start) <= within, `the speech starts at ${line.start}`);
+    assert.ok(Math.abs(line.end - end) <= within, `the speech ends at ${line.end}`);
+    assert.equal(line.words, words);
+  },
+);
+
+Then("it was written when the {string} call ended", function (this: Context, tool: string) {
+  const [line] = speechLines(this);
+  const applied = callsOfWorker(this, "Dal").filter((call) => call.tool === tool && call.outcome === "success");
+  assert.equal(applied.length, 1, `"Dal" made ${applied.length} applied "${tool}" calls`);
+  const lines = logLines(this);
+  const speechAt = lines.findIndex((each) => each.type === "speech");
+  const callAt = lines.findIndex((each) => each.type === "tool_call" && each.tool === tool && each.outcome === "success");
+  assert.ok(Math.abs(line.atMs - applied[0].endedAtMs) <= 20, `the speech line was written ${line.atMs - applied[0].endedAtMs} ms from the call's end`);
+  assert.ok(speechAt < callAt, "the speech line comes after the call's line");
 });

@@ -1,5 +1,6 @@
 import { type TomlTable, parse, stringify } from "smol-toml";
 import { describe, expect, it } from "vitest";
+import type { ToolCall } from "../src/engine/adapter.ts";
 import { inventory } from "../src/engine/inventory.ts";
 import { type LoadedScenario, type Scenario, loadScenario } from "../src/engine/scenario.ts";
 import { scenarioLibrary } from "../src/scenarios/library.ts";
@@ -215,7 +216,8 @@ describe("the workers' tools (FR-WORKSHOP-02)", () => {
   const start = (changing: (state: Workshop) => Workshop = (state) => state): Workshop =>
     changing({ ...load().world.state, orders: { kinds: ["gor", "arn", "fim", "bex", "dov", "cal", "eln"], workers: ["Ren", "Dal", "Nar", "Mik"], modules: ["zeth", "ulm", "wick", "tessa", "yarl", "vorn"] } });
   const holding = (state: Workshop, worker: string, hands: Partial<Workshop["workers"][string]>): Workshop => ({ ...state, workers: { ...state.workers, [worker]: { ...state.workers[worker], ...hands } } });
-  const call = (agent: string, args: Record<string, unknown> = {}) => ({ agent, arguments: args, atMs: 0 });
+  // A landing is given the world's time (FR-WORKSHOP-04 keeps it).
+  const call = (agent: string, args: Record<string, unknown> = {}) => ({ agent, arguments: args, atMs: 0, world: { day: 1, weekday: "Monday" as const, seconds: 9 * 3600 } });
   /** What an effector's landing gives: its outcome, and the state after it with its end, as the engine applies them. */
   const land = (name: string, state: Workshop, agent: string, args: Record<string, unknown> = {}) => {
     const { action, end } = effector(name);
@@ -413,5 +415,156 @@ describe("say (FR-WORKSHOP-03)", () => {
 
   it("gives the inventory its duration in world minutes", () => {
     expect(workshopScenario.describeDuration(parse(workshopScenario.baseConfiguration), "say")).toBe("0.25 world minutes plus one minute per 30 words.");
+  });
+});
+
+describe("done and the workshop's measures (FR-WORKSHOP-04)", () => {
+  const effectorNamed = (name: string) => {
+    const tool = workshopScenario.tools.find((each) => each.name === name);
+    if (tool?.kind !== "effector") throw new Error(`"${name}" is no effector`);
+    return tool;
+  };
+  /** A call landing at a world minute since the calendar's start (day 1 Monday 09:00). */
+  const at = (agent: string, minute: number, args: Record<string, unknown> = {}) => ({
+    agent,
+    arguments: args,
+    atMs: minute * 15_000,
+    world: { day: 1, weekday: "Monday" as const, seconds: 9 * 3600 + minute * 60 },
+  });
+  /** An effector's start and landing applied to a state, its action when it holds, and its end. */
+  const apply = (state: Workshop, name: string, agent: string, from: number, to: number, args: Record<string, unknown> = {}) => {
+    const tool = effectorNamed(name);
+    let next = tool.start?.effect(state, at(agent, from, args)) ?? state;
+    const landing = at(agent, to, args);
+    if (tool.action !== undefined && tool.action.precondition(next, landing).holds) next = tool.action.effect(next, landing);
+    return tool.end?.effect(next, landing) ?? next;
+  };
+  /** A recorded call, its times in world minutes at the base scale (one world minute is 15 s of the run). */
+  const recorded = (agent: string, tool: string, from: number, to: number, outcome = "success", args: Record<string, unknown> = {}): ToolCall => ({
+    agent,
+    tool,
+    arguments: args,
+    outcome,
+    startedAtMs: from * 15_000,
+    endedAtMs: to * 15_000,
+  });
+  const metric = (name: string, state: Workshop, calls: ToolCall[] = []) => workshopScenario.metrics[name](state, calls);
+  const base = () => load().world.state;
+
+  it("says the world is finished once one module of each name is mounted", () => {
+    const state = base();
+    expect(workshopScenario.finished?.(state)).toBe(false);
+    expect(workshopScenario.finished?.({ ...state, bench: { ...state.bench, mounted: ["tessa", "ulm", "vorn", "wick", "yarl"] } })).toBe(false);
+    expect(workshopScenario.finished?.({ ...state, bench: { ...state.bench, mounted: ["tessa", "ulm", "vorn", "wick", "yarl", "zeth"] } })).toBe(true);
+  });
+
+  it("keeps each applied take, join, mount and speech at the world minute it landed", () => {
+    let state = base();
+    state = apply(state, "take", "Dal", 0, 1, { kind: "bex" });
+    state = apply(state, "take", "Dal", 1, 2, { kind: "eln" });
+    state = apply(state, "join", "Dal", 2, 4, { module: "ulm", kind: "bex" });
+    state = apply(state, "join", "Dal", 4, 6, { module: "ulm", kind: "eln" });
+    state = apply(state, "say", "Mik", 6, 6.75, { text: "I will build tessa now and Mik could build vorn while Nar builds zeth please" });
+    expect(state.landed.takes).toEqual([
+      { worker: "Dal", at: 1 },
+      { worker: "Dal", at: 2 },
+    ]);
+    expect(state.landed.joins).toEqual([
+      { worker: "Dal", module: "ulm", at: 4, started: true, finished: false },
+      { worker: "Dal", module: "ulm", at: 6, started: false, finished: true },
+    ]);
+    expect(state.landed.speeches).toEqual([{ speaker: "Mik", start: 6, end: 6.75, words: 15 }]);
+  });
+
+  it("gives every measure its value at the start", () => {
+    const state = base();
+    expect(Object.fromEntries(Object.keys(workshopScenario.metrics).map((name) => [name, metric(name, state)]))).toEqual({
+      done: 0,
+      modules_mounted: 0,
+      time_to_done: null,
+      effort_total: 0,
+      effort_by_worker: { Dal: 0, Mik: 0, Nar: 0, Ren: 0 },
+      pieces_wasted: 0,
+      modules_taken_apart: 0,
+      first_take_time: null,
+      speech_before_first_take: { calls: 0, words: 0 },
+      own_first_take_time: {},
+      builders_by_module: {},
+      joins_share_by_worker: null,
+      modules_by_worker: { "Dal.finished": 0, "Dal.mounted": 0, "Mik.finished": 0, "Mik.mounted": 0, "Nar.finished": 0, "Nar.mounted": 0, "Ren.finished": 0, "Ren.mounted": 0 },
+      module_switches: { Dal: 0, Mik: 0, Nar: 0, Ren: 0 },
+      duplicated_modules: 0,
+      refused_by_cause: {},
+      bench_refusals: 0,
+      finish_to_mount: {},
+      speech_by_worker: { "Dal.calls": 0, "Dal.words": 0, "Mik.calls": 0, "Mik.words": 0, "Nar.calls": 0, "Nar.words": 0, "Ren.calls": 0, "Ren.words": 0 },
+      time_by_activity: {},
+    });
+  });
+
+  it("gives done, the modules mounted and the time the completing mount landed", () => {
+    let state = base();
+    state = { ...state, bench: { ...state.bench, mounted: ["tessa", "ulm", "vorn", "wick", "zeth"] }, workers: { ...state.workers, Dal: { ...state.workers.Dal, module: { name: "yarl", joined: ["fim", "gor"] } } } };
+    state = apply(state, "mount", "Dal", 2, 5);
+    expect([metric("done", state), metric("modules_mounted", state), metric("time_to_done", state)]).toEqual([1, 6, 5]);
+    expect(metric("finish_to_mount", state)).toEqual({});
+  });
+
+  it("counts effort in world minutes, refused calls' full time included and none for a call never run", () => {
+    const calls = [recorded("Dal", "mount", 3, 3.5, "bench_full"), recorded("Dal", "wait", 4, 4, "invalid_arguments"), recorded("Mik", "look", 0, 0.5), recorded("Mik", "say", 1, 1.4, "cut_off")];
+    // The recorded milliseconds of a call never run are not counted.
+    calls[1] = { ...calls[1], endedAtMs: calls[1].startedAtMs + 3 };
+    expect(metric("effort_total", base(), calls)).toBeCloseTo(1.4);
+    expect(metric("effort_by_worker", base(), calls)).toEqual({ Dal: 0.5, Mik: expect.closeTo(0.9) as unknown as number, Nar: 0, Ren: 0 });
+    expect(metric("refused_by_cause", base(), calls)).toEqual({ "mount.bench_full": 1, "wait.invalid_arguments": 1 });
+    expect(metric("bench_refusals", base(), calls)).toBe(1);
+    expect(metric("time_by_activity", base(), calls)).toEqual({ "Dal.mount": 0.5, "Dal.wait": 0, "Mik.look": 0.5, "Mik.say": expect.closeTo(0.4) as unknown as number });
+  });
+
+  it("counts the pieces neither in the pile nor in a mounted module", () => {
+    const state = base();
+    expect(metric("pieces_wasted", { ...state, workers: { ...state.workers, Nar: { ...state.workers.Nar, loose: { arn: 1 }, module: { name: "zeth", joined: ["bex", "dov"] } } } })).toBe(3);
+  });
+
+  it("reads the split and the stumbles from the applied joins and mounts", () => {
+    let state = base();
+    state = { ...state, workers: { ...state.workers, Dal: { ...state.workers.Dal, loose: { arn: 2 } }, Mik: { ...state.workers.Mik, loose: { arn: 1, bex: 1 } } } };
+    state = apply(state, "join", "Dal", 0, 2, { module: "tessa", kind: "arn" });
+    state = apply(state, "join", "Mik", 0, 2, { module: "tessa", kind: "arn" });
+    state = apply(state, "take_apart", "Mik", 2, 4);
+    state = apply(state, "join", "Mik", 4, 6, { module: "ulm", kind: "bex" });
+    expect(metric("builders_by_module", state)).toEqual({ "tessa.joined_by.Dal": 1, "tessa.joined_by.Mik": 1, "ulm.joined_by.Mik": 1 });
+    expect(metric("joins_share_by_worker", state)).toEqual({ Dal: 1 / 3, Mik: 2 / 3, Nar: 0, Ren: 0 });
+    expect(metric("module_switches", state)).toEqual({ Dal: 0, Mik: 1, Nar: 0, Ren: 0 });
+    expect(metric("duplicated_modules", state)).toBe(1);
+  });
+
+  it("gives each mounted module the time from its last join's landing to its mount's start, and who mounted it", () => {
+    let state = base();
+    state = { ...state, workers: { ...state.workers, Nar: { ...state.workers.Nar, loose: { dov: 1 }, module: { name: "zeth", joined: ["bex", "dov"] } } }, bench: { ...state.bench, mounted: ["tessa"] } };
+    state = apply(state, "join", "Nar", 0, 2, { module: "zeth", kind: "dov" });
+    state = apply(state, "mount", "Nar", 5.5, 8.5);
+    expect(metric("finish_to_mount", state)).toEqual({ zeth: 3.5 });
+    expect(metric("builders_by_module", state)).toEqual({ "zeth.joined_by.Nar": 1, "zeth.mounted_by.Nar": 1 });
+    expect(metric("modules_by_worker", state)).toMatchObject({ "Nar.finished": 1, "Nar.mounted": 1 });
+  });
+
+  it("gives the first take's time, each worker's own, and the speech that landed before it", () => {
+    let state = base();
+    state = apply(state, "say", "Dal", 0.5, 1.25, { text: "I will build tessa now and Mik could build vorn while Nar builds zeth please" });
+    state = apply(state, "take", "Dal", 1.25, 2.25, { kind: "arn" });
+    state = apply(state, "take", "Mik", 1.35, 2.35, { kind: "cal" });
+    state = apply(state, "say", "Nar", 2, 2.45, { text: "I will take the zeth pieces" });
+    expect(metric("first_take_time", state)).toBe(2.25);
+    expect(metric("own_first_take_time", state)).toEqual({ Dal: 2.25, Mik: 2.35 });
+    expect(metric("speech_before_first_take", state)).toEqual({ calls: 1, words: 15 });
+    expect(metric("speech_by_worker", state)).toMatchObject({ "Dal.calls": 1, "Dal.words": 15, "Nar.calls": 1, "Nar.words": 6, "Ren.calls": 0 });
+  });
+
+  it("gives a speech line for each applied speech, as it lands", () => {
+    const before = base();
+    const after = apply(before, "say", "Dal", 0, 0.75, { text: "I will build tessa now and Mik could build vorn while Nar builds zeth please" });
+    expect(workshopScenario.logLines?.(before, after)).toEqual([{ type: "speech", speaker: "Dal", start: 0, end: 0.75, words: 15 }]);
+    expect(workshopScenario.logLines?.(after, after)).toEqual([]);
   });
 });
