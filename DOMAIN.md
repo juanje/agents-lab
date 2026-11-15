@@ -67,6 +67,11 @@ What the words mean here, how the pieces fit together, and how the tools behave 
 **No action**
 - An effector with no action (the workplace's `wait`) changes nothing: its call goes through no arbiter and succeeds.
 
+**An effector's end (`end`, FR-WORKSHOP-02)**
+- An effector may declare an end, applied as its call ends whatever its outcome (`effect` in the adapter).
+- When its action applies, the end goes in the same change (`withEnd`: one version, the end's effect right after the action's); otherwise (the action failed, there is none, or the call ended early and its action failed) it is a change of its own (`applyEnd`), counted among other agents' changes since sensing.
+- A call refused before it runs (`refuses`, `invalid_arguments`, `unknown_tool`) or cut off applies no end; an end the world refuses stops the run.
+
 **Refusals (`refuses`)**
 - An effector may refuse a call from the state as it starts (`refuses`), with an outcome and a reason (`Refusal`).
 - `invalid_arguments` is for a limit its schema cannot give, such as one the configuration sets, or a message its recipient cannot take (FR-MESSAGE-01).
@@ -811,6 +816,12 @@ The recorder writes a line per event. The inventory and the run's setup go first
 - **Listing orders:** `initialState` shuffles, from the initial state's sequence, the sorted kinds, then the sorted modules, then the workers; drawing the workers last keeps the other two orders when a condition changes the workers.
 - **Texts:** `identity`, `task`, `world_rules`, placed `system` or `first`; a place joins its texts in that order with a blank line. `{name}` is filled in the system prompt only: a text placed `first` goes out on the channel `order` (source `order_source`, declared only when some text is placed there) as written.
 - Every time and duration is in world minutes of the one calendar segment.
+- **Tools (FR-WORKSHOP-02):** `look` and `read_plan` give JSON in the drawn orders; `take`, `put_back`, `join`, `take_apart`, `mount` and `wait` are effectors checked when they land, their refusals in the contract's table order (`firstRefusal`).
+- **Doing:** each effector's start sets its worker's `doing` (`taking`, … `waiting`) and the shared `END` sets it back to `nothing`; sensors set nothing, so a worker looking or deciding shows `nothing`. The `effector_start` line gives `{ began }`, and for `mount` the bench `place` it occupies, numbered from 1 (null when every place was taken).
+- **Mount:** its start occupies the first free place; its duration is `mount_refused` when none is free, and its action refuses `bench_full` when the worker occupies no place as it lands; `END` frees the place whatever the outcome.
+- **Wait:** no action; refuses minutes outside (0, `wait_max_minutes`] at once; ends early, `interrupted`, at any stimulus.
+- **Targets:** `take` and `mount` read the worker's last `look` (`lastBy("look")`): the kind's count in the pile, a free bench place.
+- **Steps:** the mail's "… scripted turns …", the workplace's "the call failed with …" and "it took no time" and the wait's "the … call ended with …" hand the workshop's words to `workshop.steps.ts`; "who holds what" is one step that sets the world up as a Given and checks it as a Then, every held or mounted piece taken from the pile.
 - **Steps:** "the configuration is changed so that …" is the congress's step; it hands the change to the first reader in `features/support/changes.ts` that applies, which the workshop's steps register.
 
 ### The runner
