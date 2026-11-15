@@ -322,6 +322,13 @@ async function runAgents<State>(
   // Participants start once the mail and the phone watch the world, so a rule set's first step reaches them (FR-PARTICIPANT-01).
   parties.start();
   const evaluating = partsBook === undefined || calendar === undefined ? undefined : evaluateParts(partsBook, { world, clock, calendar, runEnd: runEnd.signal });
+  // Asked after every change, once the change's own lines are written; its answer ends the run as its time limit would (FR-RUN-08).
+  const finished = scenario.finished;
+  if (finished !== undefined) world.watch((_before, after) => {
+    if (runEnd.signal.aborted || !finished(after)) return;
+    recorder.record({ type: "world_finished", atMs: performance.now(), ...worldTimeOf(clock) });
+    runEnd.abort();
+  });
   const sample = () => sampleMetrics(world, toolCalls, scenario.metrics, recorder, performance.now());
   sampleMetrics(world, toolCalls, scenario.metrics, recorder, startedAtMs);
   const timer = setTimeout(() => runEnd.abort(), settings.timeLimitMs);
@@ -387,6 +394,12 @@ async function runAgents<State>(
   for (const component of components) if (component.outcome !== undefined) recorder.record({ type: "participant_outcome", participant: component.name, outcome: component.outcome(world.state) });
   sample();
   return { turns, toolCalls, messages, sensings, startedAtMs };
+}
+
+/** The world's time now, as a log line gives it beside its run time: `{ worldTime }` for a run with a calendar, nothing otherwise. */
+function worldTimeOf(clock: RunClock): { worldTime?: WorldTime } {
+  const worldTime = clock.worldTime();
+  return worldTime === undefined ? {} : { worldTime };
 }
 
 /**

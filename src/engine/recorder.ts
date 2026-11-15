@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import type { ContextCompaction, EffectorStart, ModelRetry, ModelTurn, ToolCall } from "./adapter.ts";
+import type { WorldTime } from "./calendar.ts";
 import type { CodeVersion } from "./code-version.ts";
 import type { ComponentAction } from "./components.ts";
 import type { Compaction } from "./experiment.ts";
@@ -72,7 +73,8 @@ export type LogLine =
   | PartsLine
   | ({ type: "variant" } & Readonly<Record<string, unknown>>)
   | { type: "participant_outcome"; participant: string; outcome: Readonly<Record<string, string | number | boolean>> }
-  | { type: "run_stopped"; error: string };
+  | { type: "run_stopped"; error: string }
+  | { type: "world_finished"; atMs: number; worldTime?: WorldTime };
 
 /** Writes a run's log: one new JSONL file, named with the run's id, with a line for each event (FR-RECORD-01). */
 export class Recorder {
