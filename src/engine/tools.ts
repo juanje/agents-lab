@@ -117,6 +117,20 @@ export interface Reply<State> {
   record?(state: State, call: AgentCall): Readonly<Record<string, unknown>> | undefined;
 }
 
+/** A stimulus an effector's effect delivers (FR-STIMULUS-02): the agent it reaches, its source and the values that fill its channel's text. */
+export interface EffectDelivery {
+  agent: string;
+  source: string;
+  values: Readonly<Record<string, string>>;
+}
+
+/** The stimuli an effector's effect delivers to other agents, through one channel the scenario declares (FR-STIMULUS-02). */
+export interface Delivering<State> {
+  channel: string;
+  /** The deliveries, from the state right after the effect is applied and the call. */
+  deliveries(state: State, call: AgentCall): readonly EffectDelivery[];
+}
+
 /** Why an effector does not take a call as it starts: the call's outcome, and the reason the agent is told after it. */
 export interface Refusal {
   outcome: string;
@@ -159,6 +173,11 @@ export interface Effector<State> extends Declared<State> {
   reply?: Reply<State>;
   /** What the agent sees as the call ends, which follows the text of the outcomes it names (FR-WORKPLACE-08). */
   sight?: Sight<State>;
+  /**
+   * The stimuli its effect delivers to other agents, made as the effect is applied, when the call ends; a call whose
+   * effect is not applied delivers nothing (FR-STIMULUS-02).
+   */
+  delivers?: Delivering<State>;
   /**
    * What the agent's last sensing says of the call's target, which it finds from the state as the call starts;
    * "not_sensed" when that sensing does not show it, or when the agent has sensed nothing. `lastBy` gives the agent's last

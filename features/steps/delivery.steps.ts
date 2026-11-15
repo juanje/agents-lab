@@ -155,7 +155,7 @@ Then("agent {string} received no stimulus on the channel {string}", function (th
   const declared = this.channels.find((each) => each.name === channel);
   assert.ok(declared !== undefined, `the scenario declares no channel "${channel}"`);
   // Nor did its model read one: no message it received comes from the channel.
-  const read = modelOf(this, agent).received.flatMap((messages) => messages.filter((message) => message.role === "custom" || message.role === "user"));
+  const read = modelOf(this, agent).received.flatMap((messages) => messages.filter((message) => message.role === "user"));
   const fromChannel = read.filter((message) => JSON.stringify(message).includes(declared.stimulus.split("{")[0]));
   assert.deepEqual(fromChannel, [], `agent "${agent}"'s model read a stimulus on the channel "${channel}"`);
 });

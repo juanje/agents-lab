@@ -32,7 +32,7 @@ import type { ParallelismLimit } from "./parallelism.ts";
 import { SCRIPT_EXHAUSTED_MESSAGE } from "./scripted-model.ts";
 import type { Sensings } from "./sensings.ts";
 import type { Stimuli, Stimulus } from "./stimuli.ts";
-import type { AgentCall, EarlyEnd, Effector, Sensor, Start, TargetAsSensed, Tool } from "./tools.ts";
+import type { AgentCall, EarlyEnd, EffectDelivery, Effector, Sensor, Start, TargetAsSensed, Tool } from "./tools.ts";
 import type { World } from "./world.ts";
 
 /**
@@ -698,8 +698,10 @@ export async function callTool<State>(
     stop(failure(`${caller} "${agent}"'s "${tool.name}" call failed`, error));
     throw error;
   }
-  const { outcome, text, takenFrom, seen, record, ...perceived } = called;
+  const { outcome, text, takenFrom, seen, record, deliveries, ...perceived } = called;
   const endedAtMs = performance.now();
+  // Made as the call ends, so each is delivered no earlier than its end (FR-STIMULUS-02).
+  for (const { agent: to, source, values } of deliveries?.each ?? []) stimuli.deliver(to, deliveries!.channel, values, { source });
   const sensed = tool.kind === "sensor" && outcome === "success";
   // An effector call the tool ran is one that read its target; its record keeps the text its agent received.
   const effected = tool.kind === "effector" && perceived.targetAsSensed !== undefined;
@@ -772,6 +774,8 @@ interface CallResult {
   changesSinceSensingBy?: string[] | null;
   /** For an effector's success that declares it, the world's record of what its reply gives, for a rule set (FR-CONGRESS-09). */
   record?: Readonly<Record<string, unknown>>;
+  /** For an effector's call whose effect applied, the stimuli it delivers, made once the call has ended (FR-STIMULUS-02). */
+  deliveries?: { channel: string; each: readonly EffectDelivery[] };
 }
 
 /**
@@ -905,13 +909,16 @@ function effect<State>(world: World<State>, effector: Effector<State>, call: Age
   const landing = { ...call, atMs: performance.now(), ...clock.worldTimeKey() };
   const applied = effector.action === undefined ? "success" : applyCounted(world, changes, call.agent, effector.action, landing);
   const outcome = applied === "success" ? (endedEarly ?? applied) : applied;
+  // Only an effect that applied delivers, from the world right after it (FR-STIMULUS-02).
+  const delivering = applied === "success" && effector.delivers !== undefined ? { deliveries: { channel: effector.delivers.channel, each: effector.delivers.deliveries(world.state, call) } } : {};
   const text = outcome === "success" && effector.reply !== undefined ? effector.reply.text(world.state, call) : (effector.texts?.[outcome] ?? outcome);
   const record = outcome === "success" ? effector.reply?.record?.(world.state, call) : undefined;
-  if (record !== undefined) return { outcome, text, changesSinceSensing, changesSinceSensingBy, record };
-  if (effector.sight === undefined || !effector.sight.outcomes.includes(outcome)) return { outcome, text, changesSinceSensing, changesSinceSensingBy };
+  const result = { outcome, text, changesSinceSensing, changesSinceSensingBy, ...delivering };
+  if (record !== undefined) return { ...result, record };
+  if (effector.sight === undefined || !effector.sight.outcomes.includes(outcome)) return result;
   // What the agent sees from where it is as its call ends: the world right after its effect, if any, was applied.
   const sighting = effector.sight.see(world.state, call.agent);
-  return { outcome, text: `${text} ${sighting.text}`, seen: sighting.seen, changesSinceSensing, changesSinceSensingBy };
+  return { ...result, text: `${text} ${sighting.text}`, seen: sighting.seen };
 }
 
 
