@@ -158,15 +158,18 @@ export function readParts<State>(written: readonly Record<string, unknown>[], pr
 
 /**
  * The money the agents committed or paid to a part's actors between two world times, in world minutes (FR-PARTS-01):
- * commitments net of their releases, and payments to an actor only when no commitment to it is counted, since those
- * settle a commitment already counted (FR-CONGRESS-10).
+ * commitments net of their releases, a release only when the commitment it releases is counted (FR-CONGRESS-17), and
+ * payments to an actor only when no commitment to it is counted, since those settle a commitment already counted
+ * (FR-CONGRESS-10).
  */
 export function effortMoney(money: readonly { event: Readonly<Record<string, unknown>>; at: number }[], agents: readonly string[], actors: readonly string[], from: number, until: number): number {
   const counted = money.filter(({ event, at }) => at >= from && at <= until && agents.includes(String(event.from)) && actors.includes(String(event.to)));
-  const committedTo = new Set(counted.filter(({ event }) => event.kind === "commitment").map(({ event }) => String(event.to)));
+  const commitments = counted.filter(({ event }) => event.kind === "commitment");
+  const committedTo = new Set(commitments.map(({ event }) => String(event.to)));
+  const countedIds = new Set(commitments.map(({ event }) => event.commitment));
   const amount = ({ event }: (typeof counted)[number]) => {
     if (event.kind === "commitment") return Number(event.amount);
-    if (event.kind === "release") return -Number(event.amount);
+    if (event.kind === "release") return countedIds.has(event.commitment) ? -Number(event.amount) : 0;
     return event.kind === "payment" && !committedTo.has(String(event.to)) ? Number(event.amount) : 0;
   };
   return counted.reduce((sum, entry) => sum + amount(entry), 0);
