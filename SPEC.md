@@ -43,7 +43,7 @@ Experiments are written outside this repository, in the experiment language (FR-
 |:--|:--|:--|:--|
 | v0.1 | E13 micro vs macro (Schelling): three technical pilots, then parked | below | built enough for E13's pilots |
 | v0.2 | E2–E4 in an invented workplace (A19, A20, I4); E1's pilots ran here before E1 moved to the congress | below, in this build order | built for E1's pilots; E2–E4 next |
-| v0.3 | E1 in a congress (A18, A19): instructions and character | below, in this build order | under way: items 1–9 and 11–16 built, five technical runs |
+| v0.3 | E1 in a congress (A18, A19): instructions and character | below, in this build order | under way: items 1–9 and 11–17 built, six technical runs |
 | v0.4 | E16 model monoculture and vote visibility | not written | later |
 | v0.5 | A single-agent experiment with tools and memory across runs (E15 or E7; the congress world's sequences) | not written | later |
 | v0.6 | World and agent forks | not written | later |
@@ -119,7 +119,8 @@ Experiments are written outside this repository, in the experiment language (FR-
 14. FR-CONGRESS-11 and FR-CONGRESS-12 (corrections from the second technical run: a fixed budget, solvable draws, speakers, smaller fixes, and the parts read against the budget), before the third technical run
 15. FR-CONGRESS-13 and FR-CONGRESS-14 (corrections from the third technical run: money that can close, one record of mail and phone acts, the venue change, cancellations, overruns, and the parts), before the fourth technical run
 16. FR-CONGRESS-15 (corrections from the fourth technical run: the reference price's floor, the partner as a contact with a written mail, cancelled contracts, a resting withdrawn sponsor, P21's one act), before the fifth technical run
-17. FR-CONGRESS-16 (corrections from the fifth technical run: sponsors keep agreements, a venue change waits and lapses, outside catering needs an attendance, late conditions, lost rooms named, the live booking the programme uses, P20 without speakers who were out), before the pilot
+17. FR-CONGRESS-16 (corrections from the fifth technical run: sponsors keep agreements, a venue change waits and lapses, outside catering needs an attendance, late conditions, lost rooms named, the live booking the programme uses, P20 without speakers who were out), before the sixth technical run
+18. FR-CONGRESS-17 (corrections from the sixth technical run: a one-room booking can lose its room, outside diet meals at an in-house venue, in-house caterers serve only their venue, speakers out do not phone the hotel, the parts read settled changes and confirmations, P20 on the partner's session and broken agreements), before the pilot
 
 **Small known gaps** (to close when convenient): `lab summarize` prints numbers at full precision; a completed run whose log has no metric sample gives no values without saying so; a run in the index whose log is missing fails with Node's own error. The `wait` tool's description does not state `wait_max_minutes`, so the worker learns the limit only from a refusal; `wait_max_minutes` is not checked when the configuration loads. FR-WORKPLACE-07's scenario whose wait ends `interrupted` "about 50 milliseconds into the run" failed once in a full gate (2026-11-13) and passed on three reruns: it needs more slack. The run test that ends an effector's call early at a stimulus failed once under load (2026-11-13) and passed on reruns, as did one scenario in a full gate the same day.
 
@@ -695,6 +696,28 @@ A draw that gives `budget` and `budget_over_plan`, `advance` and `advance_over_d
 - an outside-catering permit was quoted at 0 when no attendance was given (2 runs);
 - a speaker invited after day 19 withdrew six minutes after its conditional answer;
 - P02, P03 and W6 were read against the first of two bookings, not the one the programme used, and P20 failed on travel and withdrawals for speakers who had fallen ill.
+
+#### FR-CONGRESS-17: Corrections from E1's sixth technical run
+**A one-room booking can lose its room.** A drawn `room_lost` on a booking of one room is no longer turned into a price rise when the venue has a free room with fewer seats: the venue offers its largest such room, `offer` `smaller_room` only, with no price cut, since nothing would be left. When the venue has no free smaller room, it raises the price as before (FR-CONGRESS-11). Unanswered by `answer_by`, such a change moves the booking to the smaller room at the same price, and the venue mails `change_applied` with the lost `room` and the `smaller` room. A booking of several rooms keeps FR-CONGRESS-16's lapse.
+
+**Outside diet meals at a venue with its own caterer.** A venue's pool entry may give `outside_diet_fee_per_head` (a number, refused when negative). At an `in_house` venue, `request_extra` `outside_catering` naming a `diet` and an `attendance` is answered `extra_quote` at `outside_diet_fee_per_head` × attendance (0 when the venue gives no fee) when its in-house caterer serves that diet with a limit or does not serve it; for any other diet, or with no `diet`, it is `not_available` as before. `accept_extra` gives `extra_confirmed` with a `permit` that carries the diet and the attendance, and commits the fee. A caterer's `order` under that permit is refused (`order_refused`, reason `permit_exceeded`) when it holds meals of another kind or more meals than the attendance.
+
+**An in-house caterer serves only its venue.** A caterer with `in_house_for` refuses an `order` that names another venue (`order_refused`, reason `own_venue_only`, with its `venue`).
+
+**A speaker who is out does not phone about its hotel.** When the hotel overbooks, a speaker who cancelled, withdrew from every session or had its invitation withdrawn does not phone, and P19 leaves it out.
+
+**The parts read what the venues and speakers settled.**
+- The parts' bookings read `change_applied`: the lost room leaves the booking, and the smaller room, when the mail names one, joins it.
+- A speaker who accepted a session and acknowledged a `change` from the organiser naming a time and a room is confirmed, as one who acknowledged a `confirm` is (FR-CONGRESS-09), since the speaker takes either as its session.
+- A part's effort money subtracts a release only when the commitment it releases is counted in the same window (FR-PARTS-01), so it is never below 0.
+
+**P20 tests the partner's session and broken agreements.** P20's goal no longer requires the other five sessions to have confirmed speakers (P05 and P08 test that). It holds when the latest programme has the partner's speaker confirmed, and no speaker who accepted was withdrawn or left without a session, nor any money committed for a speaker without a session, as FR-CONGRESS-16 reads these. Its misapplications count each decision once: the invitation that completes first choices for six sessions once, an invitation of a speaker for the partner's session once per speaker, and a `withdraw_invitation` once per speaker; a repeated invitation of the same speaker for the same session is not a new one.
+*Why:* E1's sixth technical run (`agents-lab-experiments/experiments/E1-congress/technical-run-6.md`) showed:
+- a venue's room loss never happened in 16 runs, because organisers book one room and a one-room booking only ever rose in price;
+- at the in-house venue seven organisers reached, the strict-diet part could not be met: its caterer served 5 gluten-free meals for 7–11 coeliacs, and outside catering was always refused;
+- an in-house caterer took an order for another venue;
+- the hotel's call reached speakers who had already cancelled;
+- one speaker confirmed by a `change` counted as unconfirmed, a part's effort money went to −3205, and P20 failed in 8 of 8 runs on unfilled sessions, with one decision counted up to four times.
 
 #### FR-POPULATION-01: Attendees, the ticket page, the programme and announcements
 The congress's attendees are a population: a component (FR-PROCESS-01) with its own sequence (`cycle of attendees`), from an `attendees` material and the variant.

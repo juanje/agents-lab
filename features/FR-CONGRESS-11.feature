@@ -79,8 +79,8 @@ Feature: Corrections to the world from E1's second technical run
     When the run ends
     Then "v1"'s "quote" gives the extras "early_access: 50" and "ramp: 200"
 
-  Scenario: A venue's change takes no room from a one-room booking and raises the price instead
-    Given the organiser's confirmed contract with "v1" has only "hall-a", and the perturbation "change" of the kind "room_lost" fires
+  Scenario: A venue's change takes no room from a one-room booking with no smaller room free, and raises the price instead
+    Given the organiser's confirmed contract with "v1" has only "hall-b", its smallest room, and the perturbation "change" of the kind "room_lost" fires
     When the run ends
     Then "v1" announced "price_change", and lost no room
 

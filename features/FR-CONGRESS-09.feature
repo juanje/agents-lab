@@ -73,7 +73,7 @@ Feature: Corrections to the world from E1's first technical run
     Then "v1" answered "contract_held" with "v1-contract-1"
 
   Scenario: A lost room takes only a second room, and stays lost
-    Given the organiser's contract with "v1" has only "hall-a", and the perturbation "change" of the kind "room_lost" fires
+    Given the organiser's contract with "v1" has only "hall-b", its smallest room, and the perturbation "change" of the kind "room_lost" fires
     When the run ends
     Then "v1" lost no room
     And with the rooms "hall-a" and "hall-b" booked instead, "v1" lost "hall-b", and a later "change_booking" adding "hall-b" is answered "unavailable"
