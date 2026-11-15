@@ -576,6 +576,8 @@ export const venueRules: RuleSet = {
               quoted.set(item, { price, diet: String(fields.diet), attendance });
               return { act: "extra_quote", fields: { item, price } };
             }
+            // Free outside catering needs nothing from it (FR-CONGRESS-23).
+            if (venue.catering === "outside_free") return { act: "not_needed", fields: { item } };
             if (venue.catering !== "outside_fee") return notAvailable(item);
             const price = (venue.outside_fee_per_head ?? 0) * attendance;
             quoted.set(item, { price });
