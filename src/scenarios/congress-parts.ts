@@ -692,7 +692,11 @@ const predicatesAsWritten: PartsProvided<Congress>["predicates"] = {
       return trainBy(state, speaker, clockOf(session.start) - 30) || hotelBefore(state, speaker);
     });
   },
-  done: (state, params) => DONE.every((check) => holdsOf(predicates[check](state, params))),
+  // D0 to D9 all hold, but those its params' except names (FR-CONGRESS-24).
+  done: (state, params) => {
+    const except = (params.except ?? []) as readonly string[];
+    return DONE.filter((check) => !except.includes(check)).every((check) => holdsOf(predicates[check](state, params)));
+  },
   // The milestones, which their parts' reached_at time (FR-CONGRESS-20).
   // A confirmed live booking for the event day, reached as it was confirmed.
   venue_confirmed: (state) => {
@@ -1043,4 +1047,13 @@ const traps: NonNullable<PartsProvided<Congress>["traps"]> = {
 };
 
 /** The congress's parts (FR-CONGRESS-06): its predicates, events, misapplication patterns and traps, read only from the world's records. */
-export const congressParts: PartsProvided<Congress> = { predicates, events, misapplications, traps };
+/** Why a predicate cannot follow a part's params: done's except is a list of D0 to D9 names (FR-CONGRESS-24). */
+const refusedParams: PartsProvided<Congress>["refusedParams"] = {
+  done: ({ except = [] }) => {
+    if (!Array.isArray(except)) return "its except is not a list of checks";
+    const wrong = except.find((check) => !DONE.includes(String(check)));
+    return wrong === undefined ? undefined : `${JSON.stringify(wrong)} is not a check of done, one of ${DONE.join(", ")}`;
+  },
+};
+
+export const congressParts: PartsProvided<Congress> = { predicates, events, misapplications, traps, refusedParams };

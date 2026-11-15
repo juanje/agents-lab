@@ -20,6 +20,8 @@ export interface PartsProvided<State> {
   misapplications: Readonly<Record<string, (act: Act, params: Readonly<Record<string, unknown>>, state: State, latest: State) => boolean>>;
   /** Whether a trap holds, read from the world's records at evaluation, with its params and the evaluation's world minutes (FR-CONGRESS-06). */
   traps?: Readonly<Record<string, (state: State, params: Readonly<Record<string, unknown>>, at: number) => boolean>>;
+  /** Why a predicate cannot follow a part's params, by the predicate's name; none when it can (FR-CONGRESS-24). */
+  refusedParams?: Readonly<Record<string, (params: Readonly<Record<string, unknown>>) => string | undefined>>;
 }
 
 /** The kinds a part may be under a level of the kind factor. */
@@ -93,7 +95,8 @@ function eventOf<State>(value: unknown, id: string, key: string, provided: Parts
  * The parts of a held-out material (FR-PARTS-01), read against what the scenario provides; refused, naming the part
  * and the key: a predicate, pattern or event the scenario does not provide, a kind other than the four, kinds that lack a
  * level of the kind factor or name one it does not have, a kind factor that is no factor while a part has kinds, an
- * evaluation time that does not follow its format, an actor that is no participant, and two parts with one id.
+ * evaluation time that does not follow its format, an actor that is no participant, params its predicate refuses, and
+ * two parts with one id.
  */
 export function readParts<State>(written: readonly Record<string, unknown>[], provided: PartsProvided<State>, context: PartsContext): Part[] {
   const ids = new Set<string>();
@@ -103,6 +106,9 @@ export function readParts<State>(written: readonly Record<string, unknown>[], pr
     ids.add(id);
     const predicate = String(part.predicate);
     if (!Object.hasOwn(provided.predicates, predicate)) throw refused(id, "predicate", part.predicate, `the scenario provides no predicate "${predicate}"`);
+    const params = (part.params ?? {}) as Record<string, unknown>;
+    const wrongParams = Object.hasOwn(provided.refusedParams ?? {}, predicate) ? provided.refusedParams?.[predicate](params) : undefined;
+    if (wrongParams !== undefined) throw refused(id, "params", part.params, wrongParams);
     const activation = part.activation === "always" || part.activation === undefined ? "always" : eventOf(part.activation, id, "activation", provided);
     let evaluateAt: Part["evaluateAt"];
     if (part.evaluate_at === "end") evaluateAt = "end";
@@ -155,7 +161,7 @@ export function readParts<State>(written: readonly Record<string, unknown>[], pr
       if (!Object.hasOwn(provided.traps ?? {}, trap)) throw refused(id, "traps", written, `the scenario provides no trap "${trap}"`);
       return { trap, params: (written.params ?? {}) as Record<string, unknown> };
     });
-    return { id, predicate, params: (part.params ?? {}) as Record<string, unknown>, activation, evaluateAt, ...(kinds === undefined ? {} : { kinds }), ...(group === undefined ? {} : { group }), actors, misapplications, traps };
+    return { id, predicate, params, activation, evaluateAt, ...(kinds === undefined ? {} : { kinds }), ...(group === undefined ? {} : { group }), actors, misapplications, traps };
   });
 }
 
