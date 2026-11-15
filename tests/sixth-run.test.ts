@@ -311,6 +311,16 @@ describe("the parts read what the venues and speakers settled (FR-CONGRESS-17)",
     const state = world([{ from: "s2", to: "organiser", act: "cancel", fields: {}, day: 10 }], { perturbations: [{ name: "hotel_overbooks", target: "s2", at: 24 * 1440 + 1260 }] });
     expect(congressParts.predicates.P19(state, {})).toBe(true);
   });
+
+  it("P19 leaves out a speaker who withdrew from every session it was invited to, and not one who accepted another", () => {
+    const hit = { perturbations: [{ name: "hotel_overbooks", target: "s2", at: 24 * 1440 + 1260 }] };
+    const invited = (session: number, answer: string): Recorded[] => [
+      { from: "organiser", to: "s2", act: "invite", fields: { session, time: "10:30", fee: 0, travel_paid: false }, day: 3 },
+      { from: "s2", to: "organiser", act: answer, fields: answer === "withdraw" ? { sessions: String(session) } : { session }, day: 4 },
+    ];
+    expect(congressParts.predicates.P19(world(invited(2, "withdraw"), hit), {})).toBe(true);
+    expect(congressParts.predicates.P19(world([...invited(2, "withdraw"), ...invited(4, "accept")], hit), {})).toBe(false);
+  });
 });
 
 /** The partner "p1" in session 3, confirmed and acknowledged, in a programme of six sessions whose fifth speaker is not confirmed. */

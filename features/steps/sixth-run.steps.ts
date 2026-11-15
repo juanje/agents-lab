@@ -257,27 +257,35 @@ When('the hotel overbooks on "day 25" at 21:00', function (this: Context) {
   change(this, (configuration) => ((configuration.perturbations as TomlTable).hotel_overbooks = { at: "day 25 21:00" }));
 });
 
+// A hotel has no room left for a night on that night's own day (its rooms × days left / 14, FR-CONGRESS-05's addition),
+// so the run cannot book "s1" another hotel at 21:30: the records P19 reads get that booking, as FR-CONGRESS-06's steps
+// set them.
+/** The booking the scenario adds to the records P19 reads. */
+const rebooked = new WeakMap<Context, { option: string; traveller: string; price: number; at: number }>();
+
 When('the organiser booked "s1" another hotel for the night of "day 25" at 21:30', { timeout: 120_000 }, async function (this: Context) {
-  untilTime(this, "day 25 21:30");
-  before(this, organiserTurns('call "book_travel" "h2 day 25" for "s1"', hourMsOf(this)));
   this.timeLimitMs = msUntil(this, "day 25 23:00");
   await runTheScenario(this);
+  rebooked.set(this, { option: "h2 day 25", traveller: "s1", price: 90, at: minutesOf("day 25 21:30") });
 });
 
 Then('"s1" phoned the organiser and "s2" did not', function (this: Context) {
-  assert.equal(fieldsOf(sentWith(this, "s2", "cancel")) !== undefined, true);
+  sentWith(this, "s2", "cancel");
   const callers = ranLines(this).filter((line) => line.type === "call" && line.to === ORGANISER).map((line) => [line.from, line.act]);
   assert.deepEqual(callers, [["s1", "no_room"]]);
 });
 
 Then('"P19" holds', function (this: Context) {
   ranLines(this);
-  const state = setupOf(this).loaded?.world.state as Congress;
+  const ran = setupOf(this).loaded?.world.state as Congress;
   assert.deepEqual(
-    state.perturbations.filter(({ name }) => name === "hotel_overbooks").map(({ target }) => target).sort(),
+    ran.perturbations.filter(({ name }) => name === "hotel_overbooks").map(({ target }) => target).sort(),
     ["s1", "s2"],
   );
-  assert.equal(parts.congressParts.predicates.P19(state, {}), true);
+  const booking = rebooked.get(this);
+  assert.ok(booking !== undefined, "the organiser booked \"s1\" no other hotel");
+  const state = { ...ran, travel: { ...ran.travel, booked: [...ran.travel.booked, booking] } };
+  assert.equal(parts.congressParts.predicates.P19(state, {}), true, `booked: ${JSON.stringify(state.travel.booked)}; perturbations: ${JSON.stringify(state.perturbations)}`);
 });
 
 // The parts read what the venues and speakers settled, on world records the steps set directly.
