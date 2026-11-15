@@ -1300,7 +1300,8 @@ function assertMeasure(measures: Record<string, MetricValue>, name: string, verb
   }
 }
 
-Then(new RegExp(`^("(?:${MEASURES.join("|")})" (?:is|gives) .+)$`), function (this: Context, written: string) {
+// A value follows "is", so the congress's '"done" is evaluated …' is not read here.
+Then(new RegExp(`^("(?:${MEASURES.join("|")})" (?:is (?:-?[\\d.]+|null)|gives )(?:.+)?)$`), function (this: Context, written: string) {
   const measures = measuresOf(this, "last");
   const mentions = [...written.matchAll(new RegExp(`"(${MEASURES.join("|")})" (is|gives) `, "g"))];
   mentions.forEach((mention, index) => {
