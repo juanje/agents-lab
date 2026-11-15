@@ -127,6 +127,7 @@ Experiments are written outside this repository, in the experiment language (FR-
 22. FR-CONGRESS-21 (a replica the organiser can complete, in more than one way: other customers on their own sequence, the solvability check and its redraw), before E1's baseline
 23. FR-CONGRESS-22 (corrections from the baseline's first check run: the asker's own booking, permits checked, belief at registration, a real on-time programme, a margin on the solvable price, per-replica inventory and milestones in the report), before E1's baseline
 24. FR-CONGRESS-23 (corrections from the baseline's second check run: standard for no diet, free outside catering said so, unknown rooms named, repeated invitations answered, an extra confirmed once, on time means real by day 12), before E1's baseline
+25. FR-CONGRESS-24 (from the baseline's first full run: D5 reads the confirmed order, done with exceptions, parts re-evaluated from the run's records), before E1's rerun
 
 **Small known gaps** (to close when convenient): `lab summarize` prints numbers at full precision; a completed run whose log has no metric sample gives no values without saying so; a run in the index whose log is missing fails with Node's own error. The `wait` tool's description does not state `wait_max_minutes`, so the worker learns the limit only from a refusal; `wait_max_minutes` is not checked when the configuration loads. FR-WORKPLACE-07's scenario whose wait ends `interrupted` "about 50 milliseconds into the run" failed once in a full gate (2026-11-13) and passed on three reruns: it needs more slack. The run test that ends an effector's call early at a stimulus failed once under load (2026-11-13) and passed on reruns, as did one scenario in a full gate the same day.
 
@@ -846,6 +847,17 @@ A plan meets each check of FR-CONGRESS-20 as the world allows it:
 - re-invitations went unanswered;
 - a doubly accepted extra was committed twice;
 - a programme true by day 12 failed D7 because a speaker accepted the morning after it was published.
+
+#### FR-CONGRESS-24: D5 reads the confirmed order; done with exceptions; parts re-evaluated from the run's records
+**An order's venue, date and permit are those of the order the caterer confirmed.** For each caterer with a live order, the order is the last `order` the organiser sent before the caterer's last `order_confirmed`, by mail or by phone. Its venue, date and permit are the order's. Its counts are the latest numbers the caterer accepted, as before (FR-CONGRESS-12). An earlier order with no permit, or with a permit the venue never gave, no longer decides which meals count.
+
+**`done` takes exceptions.** The predicate `done` takes a param `except`, a list of check names from D0–D9. It holds when every other check holds. With no `except`, it is the `done` of FR-CONGRESS-20. A name that is not a check is refused when the parts are loaded, naming the part.
+
+**The run keeps what the parts read.** At each time a part is evaluated, the run writes one line `parts_state` with that time and the world's state as the predicates read it. It is written before the part lines of that time.
+
+**`lab reevaluate <runs-dir> <parts.toml>`.** It evaluates the given parts against each run's `parts_state` lines, at their times. It writes `<run id>.parts.jsonl` next to each run's log and never changes the log. A part whose evaluation time has no `parts_state` line is reported as not evaluated, naming the part and the run. `lab parts` reads `<run id>.parts.jsonl` when it exists, and the run's own part lines otherwise, and says which it read.
+
+*Why:* the baseline found that D5 counted no meals when the organiser first ordered without the venue's permit and then reordered with it, though the caterer had checked the permit of the order it confirmed (FR-CONGRESS-22). A defect in a check should cost a re-evaluation, not a new run. The task asks neither for an attendance range nor for speakers' travel, so DONE is also reported without them.
 
 #### FR-POPULATION-01: Attendees, the ticket page, the programme and announcements
 The congress's attendees are a population: a component (FR-PROCESS-01) with its own sequence (`cycle of attendees`), from an `attendees` material and the variant.
