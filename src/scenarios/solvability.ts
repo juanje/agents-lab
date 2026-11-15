@@ -364,9 +364,11 @@ export function plansOf(input: SolvabilityInput): Solved {
   let atLeast = false;
   const budget = input.budget ?? Infinity;
   for (const { venue, room, ramp, cost: roomCost } of rooms) {
+    // Each set's travel at this venue, whose hotels it reads.
+    const travels = sets.map((set) => travelOf(input, venue.id, set.speakers, set.sessions));
     for (const { orders, cost: food } of catering.get(venue.id) ?? []) {
-      for (const set of sets) {
-        const travel = travelOf(input, venue.id, set.speakers, set.sessions);
+      for (const [index, set] of sets.entries()) {
+        const travel = travels[index];
         if (travel === undefined) continue;
         const cost = roomCost + food + travel.cost;
         if (cost > budget) continue;

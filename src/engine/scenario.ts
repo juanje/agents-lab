@@ -93,7 +93,7 @@ export interface Scenario<State> {
    * A replica's variant, for a scenario that draws one (FR-CONGRESS-01): from the resolved configuration and the
    * replica's sequence for `variant`, what was drawn, which the run's log gives, and the configuration completed with it.
    */
-  variant?: (configuration: Configuration, random: Random) => { configuration: Configuration; drawn: Readonly<Record<string, unknown>> };
+  variant?: (configuration: Configuration, random: Random, seed: number) => { configuration: Configuration; drawn: Readonly<Record<string, unknown>> };
   /**
    * How many times their duration the engine's own tools (the mail's and the phone's) take for a caller, from the state
    * as a call starts, for a scenario where that changes (FR-CONGRESS-01); 1 when it does not say.
@@ -228,7 +228,8 @@ export function loadScenario<State>(
   if (Object.keys(base).length === 0) throw lacks("base configuration");
   const { configuration: resolved, materials } = condition === undefined ? { configuration: base, materials: [] } : applyCondition(base, condition, scenario.name, scenario.openTables ?? []);
   // From the seed alone, so every condition of a replica meets the same variant (FR-CONGRESS-01).
-  const varied = scenario.variant?.(resolved, Random.derive(seed, "variant"));
+  // The seed too, for a check that reads the parties' own sequences (FR-CONGRESS-21).
+  const varied = scenario.variant?.(resolved, Random.derive(seed, "variant"), seed);
   const configuration = varied?.configuration ?? resolved;
   const channels = scenario.channels(configuration);
   // Each agent wakes by its rhythm's stimulus: without that channel the run would fail at the first wake.

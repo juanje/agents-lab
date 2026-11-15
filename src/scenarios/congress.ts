@@ -30,6 +30,7 @@ import {
 import { actsOf as recordedActs, bookingsOf, congressParts } from "./congress-parts.ts";
 import { type AttendeesMaterial, type Population, minutesOfTime, populationComponent, populationTools } from "./population.ts";
 import { describeUniformRhythm, rhythmChannels, uniformRhythm } from "./rhythm.ts";
+import { type SolvabilityInput, type Solved, plansOf } from "./solvability.ts";
 
 /** The congress's one agent. */
 const ORGANISER = "organiser";
@@ -325,13 +326,14 @@ function chooseFrom<Item>(templates: readonly Item[], count: number, random: Ran
  * participant named by its id, with its kind's settings and its template's parameters, and gets a mailbox and a line
  * when the configuration has mail and a phone. A draw it cannot make is refused, naming its key.
  */
-function variant(configuration: Configuration, random: Random): { configuration: Configuration; drawn: Readonly<Record<string, unknown>> } {
+function drawOnce(configuration: Configuration, random: Random): { configuration: Configuration; drawn: Readonly<Record<string, unknown>> } {
   const pools = textOf(configuration, "pools");
   const draw = textOf(configuration, "draw");
   const kinds = templatesOf(pools);
   const settings = (configuration.kinds ?? {}) as TomlTable;
   for (const kind of Object.keys(settings)) if (!Object.hasOwn(kinds, kind)) throw refused(`kinds.${kind}`, settings[kind], `the pools have no template of the kind "${kind}"`);
-  const { attendance = [0, 0], price_gap: priceGap, budget, advance, budget_over_plan: budgetOverPlan, advance_over_deposits: advanceOverDeposits, break_even_share: breakEvenShare, ...counts } = draw;
+  // [solvable] is the check's, not a kind's (FR-CONGRESS-21).
+  const { attendance = [0, 0], price_gap: priceGap, budget, advance, budget_over_plan: budgetOverPlan, advance_over_deposits: advanceOverDeposits, break_even_share: breakEvenShare, solvable: _solvable, ...counts } = draw;
   if (priceGap !== undefined && !isRange(priceGap)) throw refused("draw.price_gap", priceGap, "it is not two numbers above 0, the first not above the second");
   // The money a draw may give from the cheapest feasible plan, in place of the numbers themselves (FR-CONGRESS-13).
   for (const [key, value, replaced, bounds] of [
@@ -481,6 +483,76 @@ function variant(configuration: Configuration, random: Random): { configuration:
   // variant's last draw, so it gives the roles away no more than the seed does (FR-CONGRESS-09).
   const filled = withDrawnTexts(completed, drawn, calendar, chosenOf, templates, random);
   return { configuration: filled, drawn: { ...drawn, ...(drawn.reference_price === undefined ? referencePrice(configuration, drawn.topic) : {}) } };
+}
+
+/** How many times the variant is drawn to find a replica that can be completed (FR-CONGRESS-21). */
+const SOLVABLE_DRAWS = 100;
+
+/** What the variant line and the inventory give of the solvability check (FR-CONGRESS-21). */
+type SolvableRecord = Omit<Solved, "plans"> & { draws: number };
+
+/**
+ * The replica's variant (FR-CONGRESS-01). When the draw gives [solvable] (FR-CONGRESS-21), the whole variant is drawn
+ * again, up to 100 times, until at least `min_solutions` global solutions (2 unless given) exist on at least
+ * `min_venues` distinct venues (2 unless given); else it is refused, naming draw.solvable. The kept variant gives the
+ * check's counts, its global solutions, their venues, the cheapest and how many draws it took.
+ */
+function variant(configuration: Configuration, random: Random, seed = 0): { configuration: Configuration; drawn: Readonly<Record<string, unknown>> } {
+  const solvable = textOf(configuration, "draw").solvable as TomlTable | undefined;
+  if (solvable === undefined) return drawOnce(configuration, random);
+  const { min_solutions: minSolutions = 2, min_venues: minVenues = 2 } = solvable as { min_solutions?: number; min_venues?: number };
+  for (let draws = 1; draws <= SOLVABLE_DRAWS; draws += 1) {
+    const once = drawOnce(configuration, random);
+    const { plans: _plans, ...found } = solvabilityOf(once.configuration, seed);
+    if (found.solutions < minSolutions || found.venues.length < minVenues) continue;
+    const record: SolvableRecord = { ...found, draws };
+    const drawn = { ...once.drawn, solvable: record };
+    return { configuration: { ...once.configuration, drawn: { ...(once.configuration.drawn as TomlTable), solvable: record as unknown as TomlTable } }, drawn };
+  }
+  throw refused("draw.solvable", solvable, `fewer than ${minSolutions} global solutions on ${minVenues} venues in each of ${SOLVABLE_DRAWS} draws`);
+}
+
+/**
+ * The solvability check of a configuration the variant completed (FR-CONGRESS-21): the plans that complete the task
+ * with the replica's parties as the participants give them, its draw and its seed.
+ */
+export function solvabilityOf(configuration: Configuration, seed: number): Solved {
+  const drawn = configuration.drawn as unknown as Drawn;
+  const calendar = configuration.calendar === undefined ? undefined : readCalendar(configuration.calendar);
+  const city = cityOf(configuration, calendar);
+  const travel = travelOf(configuration, city);
+  const parties = Object.values((configuration.participants ?? {}) as TomlTable).map((participant) => ({ rules: (participant as TomlTable).rules, params: ((participant as TomlTable).params ?? {}) as TomlTable }));
+  const of = (rules: string) => parties.filter((party) => party.rules === rules).map(({ params }) => params);
+  const start = (configuration.calendar as TomlTable | undefined)?.start;
+  const until = ((configuration.calendar as TomlTable | undefined)?.segments as TomlTable[] | undefined)?.[0]?.until;
+  const eventDay = configuration.event_day as number;
+  const input: SolvabilityInput = {
+    seed,
+    target: drawn.attendance,
+    helpers: (configuration.helpers as number | undefined) ?? 0,
+    ...(drawn.budget === undefined ? {} : { budget: drawn.budget }),
+    eventDay,
+    startsAt: typeof start === "string" ? minutesOfTime(start) : 0,
+    endOfPreparation: typeof until === "string" ? minutesOfTime(until) : (eventDay - 1) * 1440,
+    referencePrice: drawn.reference_price ?? referencePrice(configuration, drawn.topic).reference_price ?? 0,
+    venues: of("venue").map((venue) => {
+      const place = city.venues.find(({ id }) => id === venue.id) as Venue;
+      const inside = [place.entrance, ...place.rooms.map(({ id }) => id)];
+      return {
+        ...(venue as unknown as SolvabilityInput["venues"][number]),
+        entrance: place.entrance,
+        interior: city.passages.filter(({ between }) => between.every((each) => inside.includes(each))).map(({ between, step_free: stepFree }) => ({ between, step_free: stepFree })),
+      };
+    }),
+    caterers: of("caterer") as unknown as SolvabilityInput["caterers"],
+    speakers: of("speaker") as unknown as SolvabilityInput["speakers"],
+    sponsorMorning: of("sponsor").some(({ insists }) => ((insists ?? []) as string[]).includes("morning_slot")),
+    partners: of("partner").length,
+    trains: travel.trains,
+    hotels: travel.hotels,
+    ...(attendeesOf(configuration) === undefined ? {} : { attendees: attendeesOf(configuration) }),
+  };
+  return plansOf(input);
 }
 
 /**
@@ -1756,6 +1828,8 @@ function worldInventory(configuration: Configuration): Readonly<Record<string, u
     perturbations: configuration.perturbations ?? {},
     prompt: Object.fromEntries(TEXTS.map((key) => [key, configuration[key]])),
     placement: configuration.placement,
+    // The solvability check's counts, when the draw gives [solvable] (FR-CONGRESS-21).
+    ...((configuration.drawn as TomlTable | undefined)?.solvable === undefined ? {} : { solvable: (configuration.drawn as TomlTable).solvable }),
   };
 }
 
