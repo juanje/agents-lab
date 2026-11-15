@@ -94,6 +94,13 @@ What the words mean here, how the pieces fit together, and how the tools behave 
 - A scenario may give each agent first stimuli (`firstStimuli`, channel names from the configuration, each declared, or loading refuses them).
 - The agent receives them once, as it first wakes, right after the rhythm's and before any that arrived while it rested (the workplace's person's first message, FR-WORKPLACE-03).
 
+**Delivered by an effector's effect (FR-STIMULUS-02)**
+- An effector may declare `delivers`: a channel and `deliveries(state, call)`, each delivery an agent, a source and the values that fill the channel's `{name}`s, read from the state right after its effect.
+- Only an effect that applied delivers (`effect` in the adapter, an early end included); a call that fails, is refused or is cut off delivers nothing.
+- `callTool` makes the deliveries through `Stimuli.deliver`, with the delivery's source, right after it takes the call's `endedAtMs`, so each `stimulus` line is no earlier than the call's end; from there they behave as any stimulus (next turn, next wake, a waking channel, an early end).
+- `run` refuses, before its log opens, a scenario or party tool that delivers through an undeclared channel; a delivery to the caller, or to a name outside the run's agents (`SessionSettings.agents`), stops the run before any of the call's deliveries is made.
+- The inventory gives the effector's channel as `- Delivers through: <channel>`.
+
 ### Processes
 
 - Processes change the world on their own schedule, through the arbiter.
