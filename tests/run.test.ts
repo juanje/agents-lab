@@ -804,6 +804,29 @@ describe("run", () => {
     expect(b.received[1]?.at(-1)).toMatchObject(text("a: took slot 2."));
   });
 
+  it.each([
+    ["fails", { tools: [tellingTake(["b"])] }, ["c", null, null], {}, "slot_taken"],
+    ["is refused before it runs", { tools: [{ ...tellingTake(["b"]), refuses: () => ({ outcome: "not_now", reason: "Not now." }) }] }, emptySlots(3), {}, "not_now"],
+    ["is cut off by the time limit", { tools: [{ ...tellingTake(["b"]), durationMs: () => 300 }] }, emptySlots(3), { timeLimitMs: 50 }, "cut_off"],
+  ] as const)("delivers nothing for a call whose effect does not apply: one that %s (FR-STIMULUS-02)", async (_case, parts, start, limits, outcome) => {
+    const logDirectory = newLogDirectory();
+    const loaded = slots({ ...agentsNamed("a", "b"), channels: () => [rhythmChannel, news], initialState: () => [...start], ...parts });
+    const a = new ScriptedModel([
+      { toolCalls: [{ name: "take", arguments: { slot: 1 } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+    const b = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
+
+    const { runId, toolCalls } = await run(loaded, [
+      { name: "a", model: a, activations: 1 },
+      { name: "b", model: b, activations: 1 },
+    ], seed, { ...settings, logDirectory, ...limits });
+
+    expect(toolCalls.find((call) => call.agent === "a")).toMatchObject({ outcome });
+    const delivered = logOf(logDirectory, runId).filter((line) => (line as { channel?: string }).channel === "news");
+    expect(delivered).toEqual([]);
+  });
+
   it("gives an effector with no action, which changes nothing, its outcome without the arbiter: the world's version stays", async () => {
     const { action: _action, ...still } = patientTake;
     const loaded = slots({ tools: [{ ...still, durationMs: () => 20 }] });
