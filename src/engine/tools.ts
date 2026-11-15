@@ -161,6 +161,13 @@ export interface Effector<State> extends Declared<State> {
    */
   action?: Action<State, LandingCall>;
   /**
+   * The change the call makes as it ends, whatever its outcome (FR-WORKSHOP-02): in the same change as its action when
+   * the action applies, and as a change of its own otherwise (the action failed, or there is none). A call refused before
+   * it runs, or cut off by the time limit, applies no end. Its precondition must hold: an end the world refuses is a
+   * defect of the scenario, and stops the run.
+   */
+  end?: Action<State, LandingCall>;
+  /**
    * The text the agent receives for each outcome of its call's effect, success included, by the outcome; an outcome
    * without one gives the outcome itself (FR-TOOL-02). It tells the agent only what happened to it, never the world's
    * state, except what its sight follows it with.

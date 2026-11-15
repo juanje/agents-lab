@@ -32,8 +32,8 @@ import type { ParallelismLimit } from "./parallelism.ts";
 import { SCRIPT_EXHAUSTED_MESSAGE } from "./scripted-model.ts";
 import type { Sensings } from "./sensings.ts";
 import type { Stimuli, Stimulus } from "./stimuli.ts";
-import type { AgentCall, EarlyEnd, EffectDelivery, Effector, Sensor, Start, TargetAsSensed, Tool } from "./tools.ts";
-import type { World } from "./world.ts";
+import type { AgentCall, EarlyEnd, EffectDelivery, Effector, LandingCall, Sensor, Start, TargetAsSensed, Tool } from "./tools.ts";
+import type { Action, World } from "./world.ts";
 
 /**
  * The model an agent works with, and the provider that serves it when Pi's model runtime does not already: a scripted
@@ -889,6 +889,29 @@ function endingEarly<State>(world: World<State>, stimuli: Stimuli, ends: EarlyEn
   };
 }
 
+/** An effector's action with its end applied in the same change, right after the action's effect (FR-WORKSHOP-02). */
+function withEnd<State>(action: Action<State, LandingCall>, end: Action<State, LandingCall>): Action<State, LandingCall> {
+  return {
+    precondition: (state, call) => action.precondition(state, call),
+    effect: (state, call) => {
+      const acted = action.effect(state, call);
+      const check = end.precondition(acted, call);
+      if (!check.holds) throw new Error(`its end was refused with "${check.reason}"`);
+      return end.effect(acted, call);
+    },
+  };
+}
+
+/**
+ * Applies an effector's end as a change of its own, through the arbiter, as its call ends, and counts it among the
+ * changes other agents see since they sensed (FR-WORKSHOP-02). An end the world refuses throws: it is the scenario's defect.
+ */
+function applyEnd<State>(world: World<State>, end: Action<State, LandingCall>, landing: LandingCall, changes: ChangesSinceSensing): void {
+  const result = world.apply(end, landing);
+  if (!result.applied) throw new Error(`its end was refused with "${result.reason}"`);
+  changes.applied(landing.agent);
+}
+
 /**
  * Applies the start of an effector's call under way through the arbiter, as the call starts (FR-SPACE-03), and counts it
  * among the changes other agents see since they sensed; it gives the change as the scenario describes it, from the
@@ -921,7 +944,10 @@ function effect<State>(world: World<State>, effector: Effector<State>, call: Age
   const changesSinceSensing = changes.since(call.agent);
   const changesSinceSensingBy = changes.appliedBy(call.agent);
   const landing = { ...call, atMs: performance.now(), ...clock.worldTimeKey() };
-  const applied = effector.action === undefined ? "success" : applyCounted(world, changes, call.agent, effector.action, landing);
+  const { action, end } = effector;
+  const applied = action === undefined ? "success" : applyCounted(world, changes, call.agent, end === undefined ? action : withEnd(action, end), landing);
+  // An end no applied action carried applies on its own (FR-WORKSHOP-02).
+  if (end !== undefined && (action === undefined || applied !== "success")) applyEnd(world, end, landing, changes);
   const outcome = applied === "success" ? (endedEarly ?? applied) : applied;
   // Only an effect that applied delivers, from the world right after it (FR-STIMULUS-02).
   const delivering = applied === "success" && effector.delivers !== undefined ? { deliveries: { channel: effector.delivers.channel, each: effector.delivers.deliveries(world.state, call) } } : {};
