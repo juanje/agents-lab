@@ -298,6 +298,9 @@ Given("the organiser's commitments went to {int} on {string}, then down to {int}
 
 // D7 programme_on_time.
 Given('a programme of six sessions, each with a time, a speaker and "hall-a", was first published on {string}', function (this: Context, published: string) {
+  // A real one (FR-CONGRESS-22): its speakers accepted their sessions, and "hall-a" is booked, before it was published.
+  liveBooking(this);
+  sixConfirmed(this);
   sixPublished(this, "hall-a", minutes(published));
 });
 
