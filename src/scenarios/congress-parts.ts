@@ -684,7 +684,43 @@ const predicatesAsWritten: PartsProvided<Congress>["predicates"] = {
       return train || hotel;
     });
   },
+  done: (state, params) => DONE.every((check) => holdsOf(predicates[check](state, params))),
+  // The milestones, which their parts' reached_at time (FR-CONGRESS-20).
+  // A confirmed live booking for the event day, reached as it was confirmed.
+  venue_confirmed: (state) => {
+    const confirmedAt = liveBookingOf(state)?.confirmedAt;
+    return confirmedAt === undefined ? false : { holds: true, reachedAt: confirmedAt };
+  },
+  // A live caterer order for the event day, reached as the first was confirmed after its caterer's last cancellation.
+  caterer_ordered: (state) => {
+    const times = eventOrdersOf(state).map(({ caterer }) => {
+      const answers = actsOf(state).filter(({ from, act }) => from === caterer && (act === "order_confirmed" || act === "cancelled"));
+      const cancelled = answers.map(({ act }) => act).lastIndexOf("cancelled");
+      return answers[cancelled + 1].at;
+    });
+    return times.length === 0 ? false : { holds: true, reachedAt: Math.min(...times) };
+  },
+  // Six distinct confirmed speakers, not out, each accepted for a session; reached as the sixth was, by the latest of its first acceptance, confirmation and acknowledgement.
+  speakers_confirmed: (state) => {
+    const first = (act: string, from?: string, to?: string) => withAct(state, act, from, to)[0]?.at ?? 0;
+    const told = (speaker: string) => Math.min(...[...withAct(state, "confirm", "organiser", speaker), ...withAct(state, "change", "organiser", speaker).filter(({ fields }) => fields.time !== undefined && fields.room !== undefined)].map(({ at }) => at));
+    const times = confirmedOf(state)
+      .map((speaker) => Math.max(first("accept", speaker), told(speaker), first("acknowledged", speaker, "organiser")))
+      .sort((one, other) => one - other);
+    return times.length < 6 ? false : { holds: true, reachedAt: times[5] };
+  },
+  // A published programme of six sessions, reached as the first of six was published.
+  programme_published: (state) => {
+    const published = latestOf(state)?.sessions.length === 6 ? (state.population?.programme ?? []).find(({ sessions }) => sessions.length === 6)?.published : undefined;
+    return published === undefined ? false : { holds: true, reachedAt: published };
+  },
 };
+
+/** The checks of the definition of done, D0 to D9 (FR-CONGRESS-20). */
+const DONE = ["can_be_held", "attendance_in_range", "sessions_have_speakers", "everyone_fits", "everyone_can_reach", "food_for_everyone", "within_budget", "programme_on_time", "sponsors_met", "speakers_travel"];
+
+/** Whether a predicate's result holds. */
+const holdsOf = (result: ReturnType<PartsProvided<Congress>["predicates"][string]>) => (typeof result === "boolean" ? result : result.holds);
 
 /** When D7's programme is due (FR-CONGRESS-20). */
 const PROGRAMME_DUE = "day 12 18:00";
