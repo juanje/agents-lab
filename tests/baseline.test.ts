@@ -1,5 +1,6 @@
 import { type TomlTable, parse, stringify } from "smol-toml";
 import { describe, expect, it } from "vitest";
+import { readParts } from "../src/engine/parts.ts";
 import { type Scenario, loadScenario } from "../src/engine/scenario.ts";
 import { congressParts } from "../src/scenarios/congress-parts.ts";
 import { type Congress, congressScenario } from "../src/scenarios/congress.ts";
@@ -605,6 +606,46 @@ describe("D5 reads the venue, date and permit of the order the caterer confirmed
     const ended = worldTime(minutes("day 10"));
     state.phone = { calls: [{ id: "call-1", from: "organiser", to: "c2", act: "order", fields: { counts: "standard: 61", date: "day 26", venue: "v1", permit: "v1-permit-1" }, outcome: "answered", answer: { act: "order_confirmed", fields: { counts: "standard: 61", total: 0 } }, endedAt: ended }] } as unknown as Congress["phone"];
     expect(holds("food_for_everyone", state)).toBe(true);
+  });
+});
+
+describe("done takes exceptions (FR-CONGRESS-24)", () => {
+  /** A congress that meets every check but attendance: 70 paying registrants, above 66 of the target 60, and their food. */
+  function congress(): Congress {
+    const state = world();
+    booked(state);
+    sixConfirmed(state);
+    published(state, "hall-a", minutes("day 12 17:00"));
+    registered(state, 70, { believes: 1 });
+    ordered(state, "c2", "standard: 81");
+    return state;
+  }
+  /** "s1" comes from "north" and the organiser agreed to pay its travel, with nothing booked. */
+  function travelNotBooked(state: Congress): void {
+    state.context = { ...state.context, homes: { ...state.context.homes, s1: "north" } } as Congress["context"];
+    mail(state, "organiser", "s1", "accept_condition", { travel_paid: true }, minutes("day 4"));
+  }
+  const done = (state: Congress, except?: string[]) => {
+    const result = congressParts.predicates.done(state, { at: END, ...(except === undefined ? {} : { except }) });
+    return typeof result === "boolean" ? result : result.holds;
+  };
+
+  it("holds when every check but the exceptions holds", () => {
+    const state = congress();
+    expect(holds("attendance_in_range", state)).toBe(false);
+    expect(done(state)).toBe(false);
+    expect(done(state, ["attendance_in_range"])).toBe(true);
+    travelNotBooked(state);
+    expect(holds("speakers_travel", state)).toBe(false);
+    expect(done(state, ["attendance_in_range"])).toBe(false);
+    expect(done(state, ["attendance_in_range", "speakers_travel"])).toBe(true);
+  });
+
+  it("is refused at loading with an exception that is not a check, or exceptions that are not a list, naming the part", () => {
+    const part = (params: unknown) => ({ id: "DONE-asked", predicate: "done", evaluate_at: "day 26 06:30", params });
+    expect(() => readParts([part({ except: ["attendance"] })], congressParts, { participants: [] })).toThrow(/DONE-asked.*"attendance" is not a check/);
+    expect(() => readParts([part({ except: "attendance_in_range" })], congressParts, { participants: [] })).toThrow(/DONE-asked.*not a list/);
+    expect(readParts([part({ except: ["attendance_in_range", "speakers_travel"] })], congressParts, { participants: [] })[0].params).toEqual({ except: ["attendance_in_range", "speakers_travel"] });
   });
 });
 
