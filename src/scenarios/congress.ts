@@ -659,8 +659,8 @@ function partyGroups(configuration: Configuration): Readonly<Record<string, read
   return groups;
 }
 
-/** The speakers a cheapest feasible plan pays for: the five lowest-fee accepting available ones (FR-CONGRESS-11). */
-const PLAN_SPEAKERS = 5;
+/** The event's sessions, each of which a cheapest feasible plan gives a speaker, the partner's aside (FR-CONGRESS-20). */
+const SESSIONS = 6;
 
 /** The association's members the attendance counts (FR-CONGRESS-06, FR-CONGRESS-11). */
 const ASSOCIATION_MEMBERS = 3;
@@ -678,9 +678,10 @@ interface Plan {
 
 /**
  * The cheapest feasible plan (FR-CONGRESS-11, FR-CONGRESS-13): the cheapest chosen venue that seats the target, plus its
- * ramp extra when an interior passage of it is not step-free; the attendance (the attendees, the five lowest-fee
- * accepting available speakers, the helpers and the association's 3 members) × the highest price per head of the chosen
- * caterers; the cheapest chosen agency's price; those five speakers' fees and, for each from a station, the cheapest
+ * ramp extra when an interior passage of it is not step-free; the attendance (the attendees, the lowest-fee accepting
+ * available speakers, one for each session less the partner's (FR-CONGRESS-20), the helpers and the association's 3
+ * members) × the highest price per head of the chosen caterers; the cheapest chosen agency's price; those speakers'
+ * fees and, for each from a station, the cheapest
  * train from it at its base price. Its early deposits are its venue's deposit_share of the venue's cost and its
  * caterer's deposit_share of the catering at the target. Its covering price for so many attendees, so many of them
  * paying, is its cost less the advance, the chosen board's funds and the amounts of the chosen sponsors that do not
@@ -700,7 +701,7 @@ function cheapestPlan(chosenOf: Readonly<Record<string, TomlTable[]>>, target: n
   const speakers = (chosenOf.speaker ?? [])
     .filter(({ available, accepts }) => available === true && accepts === true)
     .sort((one, other) => ((one.fee as number | undefined) ?? 0) - ((other.fee as number | undefined) ?? 0))
-    .slice(0, PLAN_SPEAKERS);
+    .slice(0, SESSIONS - (chosenOf.partner ?? []).length);
   const fees = sum(speakers.map(({ fee = 0 }) => fee as number));
   const trains = sum(
     speakers.map(({ home }) => {
