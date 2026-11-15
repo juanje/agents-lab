@@ -522,10 +522,12 @@ The recorder writes a line per event. The inventory and the run's setup go first
 - A caterer reads an order's permit with the sensor `read_permit` (no time), one of the scenario's `partyTools`, which only rule-decided participants are given and no agent is offered or the inventory lists, from the venue's `extra_confirmed`, and refuses an order with meals of another kind or more than the attendance (`permit_exceeded`). A caterer with `in_house_for` refuses an order naming another venue (`own_venue_only`).
 
 **Rooms and prices**
-- A room's price is the day price × its seats ÷ all the venue's seats, rounded.
+- A room's price is the day price × its seats ÷ all the venue's seats, rounded. A room the allocation named anew (`<room>-allocated`, or a room it moved to) is priced and seated as the room it was allocated from (FR-CONGRESS-19).
 - `change_booking` (rooms, hours) answers `contract_changed` with the price moved by the rooms added and dropped, committing the difference or releasing and committing again.
 - `request_extra room` (seats) quotes the smallest free room with those seats.
 - `room_lost` offers `smaller` (largest free smaller room) and `cut` (the lost room's price), and `accept_change` takes `option` `smaller_room` or `price_cut`. On a one-room booking it offers `smaller` only, no `cut`; unanswered, the booking moves to it at the same price, and `change_applied` names the `room` and the `smaller` (FR-CONGRESS-17).
+- Before any of that, a drawn `room_lost` moves the booking to the free room with the fewest seats of those with at least as many as the lost one, at the same price, and mails `room_moved` (`room`, `room_now`), with nothing pending. A free room is none of the booking's, none the date lost, and none in the venue's `rooms_booked_by_others` (the rooms other customers have on the event day). Since every lost room is the booking's last, a booking of two equal rooms with no third free gets `room_lost` as before (FR-CONGRESS-19).
+- Every lookup of the organiser's booking skips cancelled contracts. `cancel_booking` acts on the `contract` it names, only while that one is live, or else on the live booking. A cancellation ends its pending change and frees the date only when no other contract not cancelled holds it (FR-CONGRESS-19).
 
 **The board and speakers**
 - The board refuses `request_approval` with `reason` `no_budget` until it has approved a budget.
@@ -607,6 +609,7 @@ The recorder writes a line per event. The inventory and the run's setup go first
 - `effortMoney` counts commitments net of releases, a release only when its commitment is counted in the same window (FR-CONGRESS-17), and payments only to an actor with no commitment counted.
 - Since FR-CONGRESS-17: `bookingsOf` reads `change_applied` (the lost room leaves, its `smaller` joins); `confirmedOf` also confirms a speaker who accepted and acknowledged a `change` naming a time and a room; P19 leaves out a speaker who is out; P20 holds on the partner's confirmed session and kept agreements, whatever the other sessions, and counts an invitation of one speaker for the partner's session once.
 - W4 counts sponsor money only under conditions met; since FR-CONGRESS-14 it needs a congress that happens and no overrun.
+- Since FR-CONGRESS-19: `bookingsOf` reads `room_moved`; `seatsOf` (exported) gives a renamed room its original's seats. A congress given up (its event-day booking was confirmed and none is live) holds no predicate but P04's, `within_budget`, P06's and P11's; values are still given. A congress whose booking was never confirmed is left to each predicate.
 
 ### The congress ready for an experiment (FR-CONGRESS-08)
 
