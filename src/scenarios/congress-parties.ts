@@ -315,6 +315,8 @@ interface VenueParams {
   enquiries_per_day?: number;
   pick_up?: number;
   booked_by_others?: string[];
+  /** The rooms other customers booked on the event day, which no room loss moves a booking to (FR-CONGRESS-19). */
+  rooms_booked_by_others?: string[];
   organiser: string;
   event_day: number;
   floor_plan: { between: [string, string]; step_free: true | string }[];
@@ -404,6 +406,8 @@ export const venueRules: RuleSet = {
     /** The rooms lost for each date, which no booking can have back (FR-CONGRESS-09). */
     const lostRooms = new Map<string, Set<string>>();
     const contractOf = (id: unknown) => contracts.find((contract) => contract.id === id);
+    /** A contract not cancelled whose date is contracted or confirmed: the only one an act on a booking finds (FR-CONGRESS-19). */
+    const isLive = (contract: Contract) => contract.cancelled !== true && ["contracted", "confirmed"].includes(statusOf(contract.date));
     const live = () => contracts.find((contract) => contract.confirmed && statusOf(contract.date) === "confirmed");
     const today = () => Math.floor(party.now / 1440) + 1;
     const roomText = ({ id, seats, equipment = [] }: Room) => `${id}: ${seats} seats${equipment.length === 0 ? "" : `, ${equipment.join(", ")}`}`;
@@ -425,8 +429,12 @@ export const venueRules: RuleSet = {
     const unavailable = (date: string): Answer => ({ act: "unavailable", fields: { date } });
     const free = (date: string) => statusOf(date) === "free" || statusOf(date) === "held";
     const totalSeats = venue.rooms.reduce((sum, { seats }) => sum + seats, 0);
-    /** A room's price: its share of the day price by seats, rounded (FR-CONGRESS-07). */
-    const roomPrice = (room: string) => Math.round((venue.price * (venue.rooms.find(({ id }) => id === room)?.seats ?? 0)) / totalSeats);
+    /** The room each room the allocation named anew was allocated from (FR-CONGRESS-19). */
+    const allocatedFrom = new Map<string, string>();
+    /** A room's seats: for a room the allocation named anew, those of the room it was allocated from (FR-CONGRESS-19). */
+    const seatsOf = (room: string) => venue.rooms.find(({ id }) => id === (allocatedFrom.get(room) ?? room))?.seats ?? 0;
+    /** A room's price: its share of the day price by seats, rounded (FR-CONGRESS-07), seated as seatsOf gives it. */
+    const roomPrice = (room: string) => Math.round((venue.price * seatsOf(room)) / totalSeats);
     /** The extras it quoted, by item, with their price and, for a room, which room; for outside diet meals, their diet and attendance. */
     const quoted = new Map<string, { price: number; room?: string; diet?: string; attendance?: number }>();
     /** Whether its in-house caterer cannot serve a diet in full: it serves it with a limit, or not at all (FR-CONGRESS-17). */
@@ -446,7 +454,7 @@ export const venueRules: RuleSet = {
     }
 
     /** A customer's contracted or confirmed booking. */
-    const bookingOf = (customer: string) => contracts.find((each) => each.to === customer && ["contracted", "confirmed"].includes(statusOf(each.date)));
+    const bookingOf = (customer: string) => contracts.find((each) => each.to === customer && isLive(each));
     /** A change pending on a booking holds it: what would change it is answered change_pending, with the change's fields (FR-CONGRESS-16). */
     const pending = (contract: Contract | undefined): Answer | undefined => (contract?.change === undefined ? undefined : { act: "change_pending", fields: { kind: contract.change.kind, ...contract.change.mailed } });
 
@@ -581,15 +589,16 @@ export const venueRules: RuleSet = {
           return { act: "contract_changed", fields: { contract: contract.id, rooms: rooms.join(", "), hours: contract.hours, price: contract.price }, then };
         }
         case "cancel_booking": {
-          const contract = contracts.find((each) => each.to === from && ["contracted", "confirmed"].includes(statusOf(each.date)));
-          if (contract === undefined) return notAvailable("booking");
+          // The contract it names, when it names one, only while it is live (FR-CONGRESS-19).
+          const contract = fields.contract === undefined ? bookingOf(from) : contracts.find((each) => each.id === fields.contract && each.to === from && isLive(each));
+          if (contract === undefined) return notAvailable(fields.contract ?? "booking");
           const total = contract.price + Object.values(contract.extras).reduce((sum, price) => sum + price, 0);
           const charge = contract.confirmed ? Math.round(total * shareCharged(venue.cancellation, venue.event_day - today())) : 0;
           return cancelling(contract, charge);
         }
         case "accept_change":
         case "decline_change": {
-          const contract = contracts.find((each) => each.to === from && each.change !== undefined);
+          const contract = contracts.find((each) => each.to === from && each.change !== undefined && isLive(each));
           if (contract?.change === undefined) return notAvailable("change");
           const change = contract.change;
           // Only an option the change offered; any other leaves it pending (FR-CONGRESS-15).
@@ -618,9 +627,12 @@ export const venueRules: RuleSet = {
      * invoices the charge when above 0.
      */
     function cancelling(contract: Contract, charge: number): Answer {
-      dates.set(contract.date, "free");
       contract.confirmed = false;
       contract.cancelled = true;
+      // A change pending on it ends with it.
+      contract.change = undefined;
+      // The date is freed only when no other live contract holds it (FR-CONGRESS-19).
+      if (!contracts.some((other) => other.cancelled !== true && other.date === contract.date)) dates.set(contract.date, "free");
       counts.cancellations += 1;
       record("cancelled", { contract: contract.id, charge });
       return {
@@ -720,7 +732,6 @@ export const venueRules: RuleSet = {
         case "room_allocation": {
           const booked = live();
           if (booked === undefined || venue.indicative !== true) return;
-          const seatsOf = (room: string) => venue.rooms.find(({ id }) => id === room)?.seats ?? 0;
           const stepFree = (room: string) => venue.floor_plan.some(({ between, step_free: free }) => between.includes(room) && free === true) || !venue.floor_plan.some(({ between }) => between.includes(room));
           const taken = new Set(booked.rooms);
           const allocation = booked.rooms.map((room) => {
@@ -731,6 +742,8 @@ export const venueRules: RuleSet = {
           // At least one booked room changes: renamed, when none could move.
           if (allocation.every(([from, to]) => from === to)) allocation[allocation.length - 1][1] = `${allocation[allocation.length - 1][0]}-allocated`;
           booked.rooms = allocation.map(([, to]) => to);
+          // A room named anew keeps the price and seats of the room it was allocated from (FR-CONGRESS-19).
+          for (const [from, to] of allocation) if (from !== to) allocatedFrom.set(to, allocatedFrom.get(from) ?? from);
           // A room renamed or moved away is no room of the booking any more (FR-CONGRESS-11).
           const away = allocation.filter(([from, to]) => from !== to).map(([from]) => from);
           lostRooms.set(booked.date, new Set([...(lostRooms.get(booked.date) ?? []), ...away]));
@@ -743,14 +756,26 @@ export const venueRules: RuleSet = {
 
     /** The venue change, when it reaches the venue (FR-CONGRESS-13): to its live booking, of the kind given, or one it draws. */
     function* announceChange(given: string): Generator<RuleStep, void, Perceived> {
-      const booked = contracts.find((each) => ["contracted", "confirmed"].includes(statusOf(each.date)));
+      const booked = contracts.find(isLive);
       if (booked === undefined) return;
       party.changed();
       const drawnKind = CHANGE_KINDS.includes(given) ? given : random.next() < 0.5 ? "room_lost" : "price_change";
       const lost = booked.rooms.at(-1) as string;
-      const seats = venue.rooms.find(({ id }) => id === lost)?.seats ?? 0;
+      const seats = seatsOf(lost);
+      // Its free rooms: none of the booking's, none the date lost, none other customers booked (FR-CONGRESS-19).
+      const lostThatDay = lostRooms.get(booked.date) ?? new Set<string>();
+      const freeRooms = venue.rooms.filter(({ id }) => !booked.rooms.includes(id) && !lostThatDay.has(id) && !(venue.rooms_booked_by_others ?? []).includes(id));
+      // A free room with at least as many seats takes the lost one's place, the one with the fewest (FR-CONGRESS-19).
+      const equal = freeRooms.filter(({ seats: other }) => other >= seats).sort((one, other) => one.seats - other.seats)[0];
+      if (drawnKind === "room_lost" && equal !== undefined) {
+        lostRooms.set(booked.date, new Set([...lostThatDay, lost]));
+        booked.rooms = booked.rooms.map((room) => (room === lost ? equal.id : room));
+        record("room_moved", { contract: booked.id, room: lost, room_now: equal.id });
+        yield* party.write(booked.to, "room_moved", { contract: booked.id, room: lost, room_now: equal.id });
+        return;
+      }
       // Its largest free room with fewer seats (FR-CONGRESS-07).
-      const smaller = venue.rooms.filter(({ id, seats: other }) => other < seats && !booked.rooms.includes(id)).sort((one, other) => other.seats - one.seats)[0];
+      const smaller = freeRooms.filter(({ seats: other }) => other < seats).sort((one, other) => other.seats - one.seats)[0];
       const oneRoom = booked.rooms.length < 2;
       // A booking with one room loses it only for a smaller room; with none free, its price rises instead (FR-CONGRESS-11,
       // FR-CONGRESS-17).
