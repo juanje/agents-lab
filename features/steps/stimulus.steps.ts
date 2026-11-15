@@ -59,7 +59,9 @@ export function userTexts(messages: readonly { role: string; content: unknown }[
 
 /** The text a declared channel's stimulus is read as, for a stimulus the scenario names by its words and source. */
 function declaredStimulus(context: Context, content: string, source: string): string {
-  const channel = context.channels.find((declared) => declared.stimulus === content && declared.source === source);
+  // A channel whose text has values to fill, and whose deliveries give their own source, delivers it too (FR-STIMULUS-02).
+  const fills = (stimulus: string) => new RegExp(`^${stimulus.replace(/[.*+?^$()|[\]\\]/g, "\\$&").replace(/\{\w+\}/g, ".+")}$`).test(content);
+  const channel = context.channels.find((declared) => (declared.stimulus === content && declared.source === source) || (declared.stimulus.includes("{") && fills(declared.stimulus)));
   assert.ok(channel !== undefined, `the scenario declares no channel delivering "${content}" from "${source}"`);
   return asRead(source, content);
 }

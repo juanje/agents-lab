@@ -764,6 +764,46 @@ describe("run", () => {
     expect(call.endedAtMs - call.startedAtMs).toBeGreaterThanOrEqual(100);
   });
 
+  /** A channel whose text an effector's deliveries fill, and whose deliveries give their own source (FR-STIMULUS-02). */
+  const news = { name: "news", source: "the agent that takes a slot", stimulus: "took slot {slot}." };
+
+  /** The test world's "take", whose effect delivers on the news channel, to each agent given, the slot taken, from its caller. */
+  const tellingTake = (to: readonly string[]): Effector<Slots> => ({
+    ...(slotTools[1] as Effector<Slots>),
+    delivers: {
+      channel: news.name,
+      deliveries: (state, call) => to.map((agent) => ({ agent, source: call.agent, values: { slot: String(state.indexOf(call.agent) + 1) } })),
+    },
+  });
+
+  it("delivers, as an effector's effect is applied, each delivery it gives from the state after its effect and the call, through its channel, from the source it gives, once the call has ended (FR-STIMULUS-02)", async () => {
+    const logDirectory = newLogDirectory();
+    const loaded = slots({ ...agentsNamed("a", "b"), channels: () => [rhythmChannel, news], tools: [tellingTake(["b"])] });
+    const a = new ScriptedModel([
+      { toolCalls: [{ name: "take", arguments: { slot: 2 } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+    // b's first turn outlasts a's call, so the delivery reaches b at its next turn.
+    const b = new ScriptedModel([
+      { toolCalls: [{ name: "look", arguments: {} }], delayMs: 100 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+
+    const { runId, toolCalls } = await run(loaded, [
+      { name: "a", model: a, activations: 1 },
+      { name: "b", model: b, activations: 1 },
+    ], seed, { ...settings, logDirectory });
+
+    const delivered = logOf(logDirectory, runId).filter((line) => (line as { type: string; channel?: string }).type === "stimulus" && (line as { channel: string }).channel === "news");
+    expect(delivered).toEqual([{ type: "stimulus", agent: "b", channel: "news", source: "a", content: "took slot 2.", deliveredAtMs: expect.any(Number) }]);
+    const taken = toolCalls.find((call) => call.agent === "a")!;
+    const { deliveredAtMs } = delivered[0] as { deliveredAtMs: number };
+    expect(deliveredAtMs).toBeGreaterThanOrEqual(taken.endedAtMs);
+    expect(deliveredAtMs - taken.endedAtMs).toBeLessThan(20);
+    const text = (value: string) => ({ role: "user", content: [{ type: "text", text: value }] });
+    expect(b.received[1]?.at(-1)).toMatchObject(text("a: took slot 2."));
+  });
+
   it("gives an effector with no action, which changes nothing, its outcome without the arbiter: the world's version stays", async () => {
     const { action: _action, ...still } = patientTake;
     const loaded = slots({ tools: [{ ...still, durationMs: () => 20 }] });
