@@ -392,18 +392,18 @@ describe("D5 food_for_everyone: the live orders cover each diet's attendance, fr
 
 describe("D7 programme_on_time: a full programme published by day 12 18:00, and every registrant believes the latest version (FR-CONGRESS-20)", () => {
   /** A programme of six sessions in "hall-a" published at a time, and 40 registrants who believe a version. */
-  function congress(at: string, believes: number | undefined = 1): Congress {
+  function congress(at: string, believes: number | null = 1): Congress {
     const state = world();
     sixConfirmed(state);
     published(state, "hall-a", minutes(at));
-    registered(state, 40, believes === undefined ? {} : { believes });
+    registered(state, 40, believes === null ? {} : { believes });
     return state;
   }
 
   it("holds when published on day 12 at 17:00 and every registrant believes it", () => expect(holds("programme_on_time", congress("day 12 17:00"))).toBe(true));
   it("holds when published on day 12 at 18:00", () => expect(holds("programme_on_time", congress("day 12 18:00"))).toBe(true));
   it("does not hold when first published on day 13", () => expect(holds("programme_on_time", congress("day 13 09:00"))).toBe(false));
-  it("does not hold when a registrant believes no version", () => expect(holds("programme_on_time", congress("day 12 17:00", undefined))).toBe(false));
+  it("does not hold when a registrant believes no version", () => expect(holds("programme_on_time", congress("day 12 17:00", null))).toBe(false));
 
   it("does not hold when a registrant believes an earlier version than the latest", () => {
     const state = congress("day 12 17:00");
