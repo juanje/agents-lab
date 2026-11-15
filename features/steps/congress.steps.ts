@@ -5,6 +5,7 @@ import { inventoryMarkdown } from "../../src/engine/inventory.ts";
 import type { Perceived, RuleSet, RuleStep } from "../../src/engine/participants.ts";
 import { type Condition, type LoadedScenario, loadScenario } from "../../src/engine/scenario.ts";
 import { scenarioLibrary } from "../../src/scenarios/library.ts";
+import { configurationChanges } from "../support/changes.ts";
 import type { Context } from "../support/context.ts";
 import { madeInventory } from "./calendar.steps.ts";
 import { linesOf, logLines } from "./record.steps.ts";
@@ -740,6 +741,12 @@ export const congressChanges: [RegExp, (setup: CongressSetup) => void][] = [
 ];
 
 Given("the configuration is changed so that {}", function (this: Context, change: string) {
+  // Another library scenario's contract uses these words too (FR-WORKSHOP-01).
+  const other = configurationChanges.find(({ applies }) => applies(this));
+  if (other !== undefined) {
+    other.read(this, change);
+    return;
+  }
   const known = congressChanges.find(([written]) => written.test(change));
   assert.ok(known !== undefined, `the steps do not read the change "${change}"`);
   known[1](setupOf(this));
