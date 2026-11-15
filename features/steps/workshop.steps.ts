@@ -960,14 +960,19 @@ Then(
 Given(
   "{string}, {string} and {string} each run on scripted models whose turns are: the text {string} with no tool call, after {int} milliseconds; the text {string} with no tool call",
   function (this: Context, a: string, b: string, c: string, text: string, delayMs: number, then: string) {
-    // A turn without a tool call ends its activation, so each turn is one activation.
-    const turns = [
-      { text, delayMs },
-      { text: then, delayMs: 0 },
-    ];
-    for (const worker of [a, b, c]) scriptActivations(this, worker, turns.length, (index) => [turns[index]]);
+    for (const worker of [a, b, c]) scriptTwoTurns(this, worker, text, delayMs, then);
   },
 );
+
+/** Gives a worker two model turns without a tool call: a text after a delay, then another at once. */
+function scriptTwoTurns(context: Context, worker: string, text: string, delayMs: number, then: string): void {
+  // A turn without a tool call ends its activation, so each turn is one activation.
+  const turns = [
+    { text, delayMs },
+    { text: then, delayMs: 0 },
+  ];
+  scriptActivations(context, worker, turns.length, (index) => [turns[index]]);
+}
 
 /** The texts of the user messages a worker's nth model turn received, from 0. */
 function receivedIn(context: Context, worker: string, turn: number): string[] {
@@ -994,14 +999,14 @@ Then("{string} received nothing on the channel {string}", function (this: Contex
 });
 
 /** The stimulus lines of a channel in the run's log, with when each was delivered. */
-function voiceLines(context: Context, channel: string) {
+function channelLines(context: Context, channel: string) {
   return logLines(context).filter((line) => line.type === "stimulus" && line.channel === channel) as unknown as { agent: string; channel: string; source: string; content: string; deliveredAtMs: number }[];
 }
 
 Then(
   "the log has a stimulus line for each of {string}, {string} and {string}, with the channel {string}, the source {string} and the content {string}",
   function (this: Context, a: string, b: string, c: string, channel: string, source: string, content: string) {
-    const lines = voiceLines(this, channel);
+    const lines = channelLines(this, channel);
     assert.deepEqual(
       lines.map(({ agent, source: from, content: said }) => ({ agent, source: from, content: said })).sort((x, y) => x.agent.localeCompare(y.agent)),
       [a, b, c].sort().map((agent) => ({ agent, source, content })),
@@ -1011,7 +1016,7 @@ Then(
 
 Then('each was delivered no earlier than the end of the "say" call, and within {int} milliseconds of it', function (this: Context, withinMs: number) {
   const { endedAtMs } = onlyCallOf(this, "say");
-  const lines = voiceLines(this, "voice");
+  const lines = channelLines(this, "voice");
   assert.ok(lines.length > 0, "the log has no stimulus line on the channel voice");
   for (const { agent, deliveredAtMs } of lines) {
     const after = deliveredAtMs - endedAtMs;
@@ -1020,7 +1025,7 @@ Then('each was delivered no earlier than the end of the "say" call, and within {
 });
 
 Then("the log has no stimulus line on the channel {string} for {string}", function (this: Context, channel: string, worker: string) {
-  assert.deepEqual(voiceLines(this, channel).filter(({ agent }) => agent === worker), []);
+  assert.deepEqual(channelLines(this, channel).filter(({ agent }) => agent === worker), []);
 });
 
 Then("the {string} call took at least {int} milliseconds and less than {int} + {int}", function (this: Context, tool: string, leastMs: number, base: number, more: number) {
@@ -1068,7 +1073,7 @@ Then("it ended within {int} milliseconds after the {string} call ended", functio
 
 /** Whether a worker received a speech, by the log's stimulus lines. */
 function heard(context: Context, worker: string, content: string, source: string): boolean {
-  return voiceLines(context, "voice").some((line) => line.agent === worker && line.content === content && line.source === source);
+  return channelLines(context, "voice").some((line) => line.agent === worker && line.content === content && line.source === source);
 }
 
 Then(
@@ -1434,12 +1439,7 @@ Given("{string} takes {int} world minutes", function (this: Context, tool: strin
 Given(
   "{string} runs on a scripted model whose turns are: the text {string} with no tool call, after {int} milliseconds; the text {string} with no tool call",
   function (this: Context, worker: string, text: string, delayMs: number, then: string) {
-    // A turn without a tool call ends its activation, so each turn is one activation.
-    const turns = [
-      { text, delayMs },
-      { text: then, delayMs: 0 },
-    ];
-    scriptActivations(this, worker, turns.length, (index) => [turns[index]]);
+    scriptTwoTurns(this, worker, text, delayMs, then);
   },
 );
 
@@ -1459,7 +1459,7 @@ const lastStimulusLines = new WeakMap<Context, { deliveredAtMs: number }>();
 Then(
   "the log has a stimulus line for {string} with the channel {string}, the source {string} and the content {string}",
   function (this: Context, worker: string, channel: string, source: string, content: string) {
-    const lines = voiceLines(this, channel).filter((line) => line.agent === worker);
+    const lines = channelLines(this, channel).filter((line) => line.agent === worker);
     assert.deepEqual(lines.map((line) => ({ source: line.source, content: line.content })), [{ source, content }], `"${worker}"'s stimulus lines on the channel "${channel}"`);
     lastStimulusLines.set(this, lines[0]);
   },
@@ -1474,7 +1474,7 @@ Then("it was delivered no earlier than the end of the {string} call, and within 
 
 Then("the log has no stimulus line on the channel {string} for {string}, {string} or {string}", function (this: Context, channel: string, a: string, b: string, c: string) {
   assert.ok(this.toolCalls !== undefined, "the workers did not run");
-  assert.deepEqual(voiceLines(this, channel).filter(({ agent }) => [a, b, c].includes(agent)), []);
+  assert.deepEqual(channelLines(this, channel).filter(({ agent }) => [a, b, c].includes(agent)), []);
 });
 
 Then("{string}'s {string} call succeeded, and {string} is mounted", function (this: Context, worker: string, tool: string, module: string) {
