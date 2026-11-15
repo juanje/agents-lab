@@ -466,6 +466,9 @@ const CANCEL_IF_NOT_COMING = 0.5;
 /** How long a person takes to answer a request, or to ask what the page did not, in world minutes. */
 const WITHIN_A_DAY = 1440;
 
+/** A diet as the organiser learns it: no special diet, "none" in the material, as standard, the word the caterers' counts use (FR-CONGRESS-23). */
+const shownDiet = (diet: string) => (diet === "none" ? "standard" : diet);
+
 /** What a registrant asks the organiser about, and within how many world minutes of registering (FR-CONGRESS-09). */
 const QUESTIONS = ["address", "access", "diet", "refund"];
 const WITHIN_THREE_DAYS = 3 * 1440;
@@ -537,7 +540,7 @@ export function populationComponent<State extends PopulationWorld>(options: Popu
               const asked = [...state.mail.inTransit, ...Object.values(state.mail.mailboxes).flat()].filter(({ from, act }) => from === message.to && act === "question").map(({ fields }) => String(fields.about));
               changes.push((current, money, mail, landing) => {
                 const person = current.people.find(({ id }) => id === message.to) as Person;
-                const known = Object.fromEntries((["diet", "access"] as const).filter((need) => asked.includes(need)).map((need) => [need, person[need]]));
+                const known = Object.fromEntries((["diet", "access"] as const).filter((need) => asked.includes(need)).map((need) => [need, need === "diet" ? shownDiet(person.diet) : person[need]]));
                 return {
                   population: {
                     ...current,
@@ -593,7 +596,7 @@ export function populationComponent<State extends PopulationWorld>(options: Popu
             // A registrant's own question, drawn only when the material gives a share (FR-CONGRESS-09).
             const share = population.material.question_share ?? 0;
             if (share > 0 && random.next() < share) questionsAt.set(person.id, { at: now + random.next() * WITHIN_THREE_DAYS, about: QUESTIONS[Math.floor(random.next() * QUESTIONS.length)] });
-            const given = { ...(required("diet") ? { diet: person.diet } : {}), ...(required("access") ? { access: person.access } : {}), ...(required("consent_sponsors") ? { consent: person.consents } : {}) };
+            const given = { ...(required("diet") ? { diet: shownDiet(person.diet) } : {}), ...(required("access") ? { access: person.access } : {}), ...(required("consent_sponsors") ? { consent: person.consents } : {}) };
             const amount = Math.round(page.price * (1 - population.material.payment_fee_share) * 100) / 100;
             changes.push((current, money, mail, landing) => {
               const at = landing === undefined ? {} : { worldTime: landing };
@@ -630,7 +633,7 @@ export function populationComponent<State extends PopulationWorld>(options: Popu
                 people: current.people.map((each) =>
                   each.id !== id
                     ? each
-                    : { ...each, given: { ...each.given, ...(current.page.required_fields.includes("diet") ? { diet: each.diet } : {}), ...(current.page.required_fields.includes("access") ? { access: each.access } : {}), ...(current.page.required_fields.includes("consent_sponsors") ? { consent: each.consents } : {}) } },
+                    : { ...each, given: { ...each.given, ...(current.page.required_fields.includes("diet") ? { diet: shownDiet(each.diet) } : {}), ...(current.page.required_fields.includes("access") ? { access: each.access } : {}), ...(current.page.required_fields.includes("consent_sponsors") ? { consent: each.consents } : {}) } },
                 ),
               },
               money,
