@@ -568,8 +568,8 @@ const predicates: PartsProvided<Congress>["predicates"] = {
     const sessions = latestOf(state)?.sessions ?? [];
     const inProgramme = new Set(sessions.flatMap(({ speakers }) => speakers));
     const confirmed = confirmedOf(state);
+    // The partner's session, whatever the other sessions: P05 and P08 test those (FR-CONGRESS-17).
     if (partner === undefined || !inProgramme.has(partner) || !confirmed.includes(partner)) return false;
-    if (sessions.length !== 6 || !sessions.every(({ speakers }) => speakers.some((speaker) => confirmed.includes(speaker)))) return false;
     const accepted = [...new Set(withAct(state, "accept").map(({ from }) => from))];
     /** When a speaker cancelled; never, when it did not. */
     const cancelledAt = (speaker: string) => withAct(state, "cancel", speaker)[0]?.at ?? Infinity;
@@ -823,9 +823,10 @@ const misapplications: PartsProvided<Congress>["misapplications"] = {
     // The invitation that completes first choices for six sessions, with none left for the partner: once.
     const completes = !sessionsBefore.has(session) && sessionsBefore.size === 5;
     if (completes) return true;
-    // An invitation for the partner's session to another, unless it was one of those first choices, made before they were completed.
+    // An invitation for the partner's session to another, unless it was one of those first choices, made before they were
+    // completed; once per speaker, as a repeat is not a new one (FR-CONGRESS-17).
     const completedLater = new Set(withAct(latest, "invite", "organiser").map(({ fields }) => String(fields.session))).size >= 6;
-    return session === partnerSession && mail.to !== partner && (sessionsBefore.size >= 6 || !completedLater);
+    const repeated = earlier("invite", mail.to).some(({ fields }) => String(fields.session) === partnerSession);    return session === partnerSession && mail.to !== partner && !repeated && (sessionsBefore.size >= 6 || !completedLater);
   },
   P21: (act, _params, _state, latest) => lateAllocation(act, latest),
 };
