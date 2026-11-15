@@ -1,6 +1,7 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { type TomlTable, parse, stringify } from "smol-toml";
 import { describe, expect, it } from "vitest";
 import type { RuleSet } from "../src/engine/participants.ts";
 import { Random } from "../src/engine/random.ts";
@@ -8,6 +9,8 @@ import { run } from "../src/engine/run.ts";
 import { type Scenario, loadScenario } from "../src/engine/scenario.ts";
 import { ScriptedModel } from "../src/engine/scripted-model.ts";
 import * as parties from "../src/scenarios/congress-parties.ts";
+import * as congress from "../src/scenarios/congress.ts";
+import { congressScenario } from "../src/scenarios/congress.ts";
 import { postScenario } from "./fixtures/post.ts";
 import { drive, tools } from "./fixtures/rules.ts";
 
@@ -301,5 +304,85 @@ describe("the solvability check's plans (FR-CONGRESS-21)", () => {
     expect(solved.solutions).toBe(0);
     expect(solved.counts.D6).toBe(0);
     expect(solved.counts.D5).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * A congress whose draw gives these venues (each "<id>-hall" of 90 seats at 2000 unless given, step-free from the
+ * office), eight plain speakers, the caterer "c1", a target of 50, a budget, similar events around 40 and a demand that
+ * reaches the target at a price.
+ */
+function solvableCongress(venues: Record<string, unknown>[], draw: Record<string, unknown> = {}): Scenario<unknown> {
+  const configuration = parse(congressScenario.baseConfiguration);
+  const templates = venues.map((venue) => ({ rooms: [{ id: `${String(venue.id)}-hall`, seats: 90 }], access_claim: "step-free", catering: "outside_free", price: 2000, extras: {}, hold_days: 2, deposit_share: 0.25, deposit_due_days: 3, cancellation: [{ share: 0.5 }], ...venue })) as Record<string, any>[];
+  Object.assign(configuration, {
+    city: stringify({
+      places: [{ id: "office" }],
+      venues: templates.map(({ id, rooms }) => ({ id, entrance: `${String(id)}-entrance`, hours: "always", rooms })),
+      passages: templates.flatMap(({ id, rooms }) => [{ between: ["office", `${String(id)}-entrance`], length: 5, step_free: true }, ...rooms.map(({ id: room }) => ({ between: [`${String(id)}-entrance`, room], length: 1, step_free: true }))]),
+    }),
+    pools: stringify({
+      topics: ["soil"],
+      venue: templates,
+      board: [],
+      speaker: Array.from({ length: 8 }, (_, index) => ({ id: `s${index + 1}`, fee: 0, home: "local", available: true, acceptance: 1, draw: 1 })),
+      partner: [],
+      caterer: [{ id: "c1", price_per_head: 30, final_days: 7, deposit_share: 0.25, deposit_due_days: 3, cancellation: [{ share: 0.3 }], diets: { vegan: {} } }],
+      sponsor: [],
+      agency: [],
+    }),
+    draw: stringify({ attendance: [50, 50], venue: venues.length, speaker: 8, caterer: 1, budget: [20000, 20000], advance: [3000, 3000], ...draw }),
+    attendees: stringify({ pool_factor: 2, base_per_day: 0.2, unannounced: 0.5, promotion_factor: 1, payment_fee_share: 0, cancel_share: 0, consent_share: 1, pay_share: 1, diets: { none: 1 }, access: { none: 1 } }),
+    similar_events: stringify({ events: [30, 40, 50].map((price, index) => ({ topic: "soil", name: `e${index}`, price, size: 60 })) }),
+    helpers: 2,
+  });
+  (configuration.calendar as TomlTable).hours = { always: { days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], from: "00:00", to: "23:59" } };
+  (configuration.calendar as TomlTable).segments = [{ scale: 60, until: "day 26 06:30" }, { scale: 60 }];
+  return { ...(congressScenario as Scenario<unknown>), baseConfiguration: stringify(configuration) };
+}
+
+describe("the variant's solvability check (FR-CONGRESS-21)", () => {
+  const solvable = { solvable: { min_solutions: 2, min_venues: 2 } };
+
+  it("keeps a draw with at least min_solutions global solutions on min_venues venues, giving the counts, the solutions and the cheapest in the variant and the inventory", () => {
+    const loaded = loadScenario(solvableCongress([{ id: "v1" }, { id: "v2", price: 2500 }], solvable), 1);
+    const record = (loaded.variant as Record<string, any>).solvable;
+    // Two venues × 28 speaker sets × one order.
+    expect(record).toMatchObject({ draws: 1, solutions: 56, venues: ["v1", "v2"], cheapest: { cost: 2000 + 61 * 30, venue: "v1" } });
+    expect(Object.keys(record.counts)).toEqual(["D0", "D1", "D2", "D3", "D4", "D5", "D6", "D7", "D8", "D9"]);
+    expect((congressScenario.worldInventory?.(loaded.configuration) as Record<string, unknown>).solvable).toEqual(record);
+    // What lab inventory and the variant line give, the check gives of the completed configuration.
+    const solvabilityOf = (congress as Record<string, unknown>).solvabilityOf as (configuration: unknown, seed: number) => { solutions: number; plans: { venue: string; cost: number }[] };
+    expect(solvabilityOf(loaded.configuration, 1).solutions).toBe(56);
+  });
+
+  it("defaults to 2 solutions on 2 venues", () => {
+    expect(() => loadScenario(solvableCongress([{ id: "v1" }], { solvable: {} }), 1)).toThrow(/solvable/);
+    expect((loadScenario(solvableCongress([{ id: "v1" }], { solvable: { min_venues: 1 } }), 1).variant as Record<string, any>).solvable.draws).toBe(1);
+  });
+
+  it("redraws the whole variant until it has them, and refuses it, naming solvable, when no draw of 100 has them", () => {
+    const venues = [{ id: "v1" }, { id: "v2" }, { id: "v3", rooms: [{ id: "v3-hall", seats: 30 }] }];
+    const firstDraw = (seed: number) => (loadScenario(solvableCongress(venues, { venue: 2 }), seed).variant as { chosen: { venue: string[] } }).chosen.venue;
+    const seed = [...Array(50).keys()].map((n) => n + 1).find((each) => firstDraw(each).includes("v3")) as number;
+    const record = (loadScenario(solvableCongress(venues, { venue: 2, ...solvable }), seed).variant as Record<string, any>).solvable;
+    expect(record.draws).toBeGreaterThan(1);
+    expect(record.venues).toEqual(["v1", "v2"]);
+    expect(() => loadScenario(solvableCongress([{ id: "v1" }, { id: "v2" }], { budget: [100, 100], ...solvable }), 1)).toThrow(/draw\.solvable.*100 draws/);
+  });
+
+  it("reads the replica's parties: a speaker who does not accept is in no plan, and an in_house venue's own caterer serves it", () => {
+    const solvabilityOf = (congress as Record<string, unknown>).solvabilityOf as (configuration: unknown, seed: number) => { counts: Record<string, number>; plans: { speakers: { id: string }[]; orders: { caterer: string }[] }[] };
+    const scenario = solvableCongress([{ id: "v1", catering: "in_house" }], { solvable: { min_solutions: 0, min_venues: 0 } });
+    const configuration = parse(scenario.baseConfiguration);
+    const pools = parse(configuration.pools as string);
+    (pools.speaker as TomlTable[])[0].acceptance = 0;
+    (pools.caterer as TomlTable[]).push({ id: "c9", price_per_head: 25, final_days: 7, deposit_share: 0.25, deposit_due_days: 3, cancellation: [{ share: 0.3 }], in_house_for: "v1" });
+    configuration.pools = stringify(pools);
+    const loaded = loadScenario({ ...scenario, baseConfiguration: stringify(configuration) }, 1);
+    const { plans } = solvabilityOf(loaded.configuration, 1);
+    expect(plans.length).toBe(7);
+    expect(plans.some(({ speakers }) => speakers.some(({ id }) => id === "s1"))).toBe(false);
+    expect(new Set(plans.flatMap(({ orders }) => orders.map(({ caterer }) => caterer)))).toEqual(new Set(["c9"]));
   });
 });
