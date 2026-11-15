@@ -1514,3 +1514,68 @@ Then("no tool's description or parameters hold any of {string}, {string}, {strin
   const tools = under(under(this.labOutput ?? "", '## Condition "base"'), "### Tools");
   for (const word of [a, b, c, d]) assert.ok(!new RegExp(`\\b${word}\\b`).test(tools), `the tools name "${word}":\n${tools}`);
 });
+
+/** Sets texts or values the workshop's base configuration already has, as a step gives them. */
+function setInWorkshop(context: Context, values: Record<string, string>): void {
+  changeWorkshop(context, (configuration) => {
+    for (const [key, value] of Object.entries(values)) {
+      assert.ok(Object.hasOwn(configuration, key), `the workshop's configuration has no "${key}"`);
+      configuration[key] = value;
+    }
+  });
+}
+
+Given("the configuration sets {string} to {string} and {string} to {string}", function (this: Context, first: string, firstValue: string, second: string, secondValue: string) {
+  setInWorkshop(this, { [first]: firstValue, [second]: secondValue });
+});
+
+Given(
+  "the configuration places {string} as {string}, places {string} as {string} and sets {string} to {string}",
+  function (this: Context, first: string, firstPlace: string, second: string, secondPlace: string, key: string, value: string) {
+    changeWorkshop(this, (configuration) => Object.assign(configuration.placement as TomlTable, { [first]: firstPlace, [second]: secondPlace }));
+    setInWorkshop(this, { [key]: value });
+  },
+);
+
+Then("the inventory gives the texts {string} and {string} as empty, each placed as {string}", function (this: Context, first: string, second: string, place: string) {
+  const { scenario, configuration } = loadedWorkshop(this);
+  const world = scenario.worldInventory?.(configuration) as { texts: Record<string, string>; placement: Record<string, string> };
+  for (const text of [first, second]) assert.deepEqual([text, world.texts[text], world.placement[text]], [text, "", place]);
+});
+
+/** The worker whose system prompt a step named last, which "it holds" speaks of. */
+const promptsNamed = new WeakMap<Context, string>();
+
+Then(/^worker "(\w+)"'s system prompt is, each separated by a blank line: (.+)$/, function (this: Context, worker: string, written: string) {
+  const parts = [...written.matchAll(new RegExp(`the identity with "\\{name\\}" as "(\\w+)"|the task|the world rules|${QUOTED}`, "g"))].map(([part, name, text]) => {
+    if (name !== undefined) return textOf(this, "identity.md").replaceAll("{name}", name);
+    if (part === "the task") return textOf(this, "task.md");
+    if (part === "the world rules") return textOf(this, "world-rules.md");
+    return unquoted(text);
+  });
+  assert.ok(parts.length >= 3, `the steps do not read the parts of: ${written}`);
+  assert.equal(promptOf(this, worker), parts.join("\n\n"));
+  promptsNamed.set(this, worker);
+});
+
+Then("it holds no three line breaks in a row", function (this: Context) {
+  const worker = promptsNamed.get(this);
+  assert.ok(worker !== undefined, "no worker's system prompt was named");
+  assert.ok(!promptOf(this, worker).includes("\n\n\n"), promptOf(this, worker));
+});
+
+Then("worker {string}'s system prompt holds {string} and {string}", function (this: Context, worker: string, first: string, second: string) {
+  const prompt = promptOf(this, worker);
+  for (const text of [first, second]) assert.ok(prompt.includes(text), `worker "${worker}"'s system prompt does not hold ${JSON.stringify(text)}:\n${prompt}`);
+});
+
+Then(
+  'worker {string}\'s first activation received, right after its rhythm\'s stimulus, {string}, a blank line and the text of "task.md", from {string} on the channel {string}',
+  function (this: Context, worker: string, first: string, source: string, channel: string) {
+    const [rhythm, second] = stimuliOf(this, worker);
+    assert.equal(rhythm?.channel, "rhythm", `worker "${worker}"'s first stimulus: ${JSON.stringify(rhythm)}`);
+    assert.deepEqual({ ...second }, { ...second, channel, source, content: `${first}\n\n${textOf(this, "task.md")}` });
+    // In one message, as the worker reads it.
+    assert.ok(receivedIn(this, worker, 0).includes(asRead(source, `${first}\n\n${textOf(this, "task.md")}`)), `"${worker}" woke to ${JSON.stringify(receivedIn(this, worker, 0))}`);
+  },
+);

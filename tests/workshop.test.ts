@@ -59,7 +59,9 @@ describe("the workshop's base configuration (FR-WORKSHOP-01)", () => {
     expect(base.calendar).toEqual({ start: "day 1 Monday 09:00", segments: [{ scale: 4 }] });
     expect(base.rhythm).toEqual({ source: "your own pace", text: "You are ready to act.", min_ms: 1000, max_ms: 3000 });
     expect([base.identity, base.task, base.world_rules]).toEqual([IDENTITY, TASK, WORLD_RULES]);
-    expect(base.placement).toEqual({ identity: "system", task: "system", world_rules: "system" });
+    // FR-WORKSHOP-05's character and limits, empty in the base.
+    expect([base.character, base.limits]).toEqual(["", ""]);
+    expect(base.placement).toEqual({ identity: "system", character: "system", task: "system", limits: "system", world_rules: "system" });
   });
 });
 
@@ -84,6 +86,18 @@ describe("the workshop at the start (FR-WORKSHOP-01)", () => {
     expect(systemPrompts.get("Dal")).toBe([IDENTITY.replace("{name}", "Dal"), WORLD_RULES].join("\n\n"));
     expect(firstStimuli.get("Dal")).toEqual(["order"]);
     expect(channels.find(({ name }) => name === "order")).toEqual({ name: "order", source: "the order on the wall", stimulus: TASK });
+  });
+
+  it("joins identity, character, task, limits and world rules in each place, skipping empty ones, each {name} the worker's (FR-WORKSHOP-05)", () => {
+    const character = "You are {name}, practical and hands-on.";
+    const limits = "Only {name} and three others work here.";
+    const both = load(workshopScenario, 42, { character, limits });
+    expect(both.systemPrompts.get("Dal")).toBe([IDENTITY.replace("{name}", "Dal"), "You are Dal, practical and hands-on.", TASK, "Only Dal and three others work here.", WORLD_RULES].join("\n\n"));
+    expect(load(workshopScenario, 42, { limits: "It closes at five." }).systemPrompts.get("Dal")).toBe([IDENTITY.replace("{name}", "Dal"), TASK, "It closes at five.", WORLD_RULES].join("\n\n"));
+    const first = load(workshopScenario, 42, { character, limits, placement: { character: "first", task: "first" }, order_source: "the order on the wall" });
+    expect(first.systemPrompts.get("Ren")).toBe([IDENTITY.replace("{name}", "Ren"), "Only Ren and three others work here.", WORLD_RULES].join("\n\n"));
+    // The order's {name} is the receiving worker's, filled as it first wakes.
+    expect(first.channels.find(({ name }) => name === "order")).toEqual({ name: "order", source: "the order on the wall", stimulus: [character, TASK].join("\n\n") });
   });
 
   it("declares no order channel when every text is in the system prompt", () => {
@@ -146,6 +160,10 @@ describe("the workshop's refusals (FR-WORKSHOP-01)", () => {
     ["a placement that is no place", (c) => ((c.placement as TomlTable).task = "person"), ['"placement.task"', "person"]],
     ["a placement of a text the workshop does not have", (c) => ((c.placement as TomlTable).norms = "system"), ['"placement.norms"']],
     ["a text that names in braces anything but {name}", (c) => (c.identity = `${c.identity as string} {team}`), ['"identity"', "{team}"]],
+    ["a character that names in braces anything but {name} (FR-WORKSHOP-05)", (c) => (c.character = "You are {name}, of {team}."), ['"character"', "{team}"]],
+    ["limits that name in braces anything but {name} (FR-WORKSHOP-05)", (c) => (c.limits = "It closes at {closing}."), ['"limits"', "{closing}"]],
+    ["a character placed in no place (FR-WORKSHOP-05)", (c) => ((c.placement as TomlTable).character = "person"), ['"placement.character"', "person"]],
+    ["limits placed in no place (FR-WORKSHOP-05)", (c) => ((c.placement as TomlTable).limits = "wall"), ['"placement.limits"', "wall"]],
   ];
 
   for (const [what, changing, named] of refusals) {
@@ -186,7 +204,7 @@ describe("the workshop's inventory (FR-WORKSHOP-01)", () => {
       workers: ["Dal", "Mik", "Nar", "Ren"],
       durations: base.durations,
       wait_max_minutes: 10,
-      texts: { identity: IDENTITY, task: TASK, world_rules: WORLD_RULES },
+      texts: { identity: IDENTITY, character: "", task: TASK, limits: "", world_rules: WORLD_RULES },
       placement: base.placement,
       order_source: base.order_source,
     });
