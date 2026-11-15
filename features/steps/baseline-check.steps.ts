@@ -29,12 +29,12 @@ const literal = (text: string) => new RegExp(`^${text.replace(/[.*+?^${}()|[\]\\
 /** The parties of the Background. */
 const V1_ROOMS = [{ id: "hall-a", seats: 90 }];
 const V2_ROOMS = [{ id: "room-x", seats: 60 }];
-const VENUE_1: TomlTable = { ...structuredClone(V1), rooms: V1_ROOMS.map((room) => ({ ...room, equipment: [] })), catering: "outside_fee", outside_fee_per_head: 5 };
-const VENUE_2: TomlTable = { ...structuredClone(V1), id: "v2", rooms: V2_ROOMS.map((room) => ({ ...room, equipment: [] })) };
-const SIX = ["s1", "s2", "s3", "s4", "s5", "s6"];
-const TIMES = ["09:30", "10:30", "11:30", "14:00", "15:00", "16:00"];
+export const VENUE_1: TomlTable = { ...structuredClone(V1), rooms: V1_ROOMS.map((room) => ({ ...room, equipment: [] })), catering: "outside_fee", outside_fee_per_head: 5 };
+export const VENUE_2: TomlTable = { ...structuredClone(V1), id: "v2", rooms: V2_ROOMS.map((room) => ({ ...room, equipment: [] })) };
+export const SIX = ["s1", "s2", "s3", "s4", "s5", "s6"];
+export const TIMES = ["09:30", "10:30", "11:30", "14:00", "15:00", "16:00"];
 const SPEAKERS: TomlTable[] = SIX.map((id, index) => ({ id, title: `Soil ${index + 1}`, draw: 1, fee: 0, home: "local", available: true, acceptance: 1, pick_up: 1 }));
-const C1: TomlTable = { id: "c1", price_per_head: 30, final_days: 7, deposit_share: 0.2, deposit_due_days: 3, cancellation: [{ share: 0.3 }], pick_up: 1, diets: {} };
+export const C1: TomlTable = { id: "c1", price_per_head: 30, final_days: 7, deposit_share: 0.2, deposit_due_days: 3, cancellation: [{ share: 0.3 }], pick_up: 1, diets: {} };
 
 /** The records of a scenario: an empty world with "v1"'s one room "hall-a". */
 function worldHere(): Congress {
@@ -45,34 +45,39 @@ function worldHere(): Congress {
   return state;
 }
 
+/** The draw of the Background: no board, partner or agency, the budget and advance, two venues, six speakers and a caterer. */
+export function drawParties(context: Context, venues: readonly [TomlTable, TomlTable], caterer: TomlTable): void {
+  changePools(context, (pool) => {
+    pool.venue = venues.map((venue) => structuredClone(venue));
+    pool.speaker = structuredClone(SPEAKERS);
+    pool.partner = [];
+    pool.caterer = [structuredClone(caterer)];
+    pool.sponsor = [];
+    pool.agency = [];
+    pool.board = [];
+  });
+  change(context, (configuration) => {
+    configuration.draw = stringify({ attendance: [50, 50], budget: [8000, 8000], advance: [3000, 3000], venue: 2, speaker: 6, caterer: 1 });
+    configuration.perturbations = {};
+    const city = structuredClone(CITY) as unknown as { venues: TomlTable[]; passages: TomlTable[] };
+    city.venues[0].rooms = V1_ROOMS;
+    city.venues.push({ id: "v2", entrance: "v2-entrance", hours: "always", rooms: V2_ROOMS });
+    city.passages = [
+      ...city.passages.filter(({ between }) => !(between as string[]).includes("hall-b")),
+      { between: ["office", "v2-entrance"], length: 30, step_free: true },
+      { between: ["v2-entrance", "room-x"], length: 1, step_free: true },
+    ];
+    configuration.city = stringify(city as unknown as TomlTable);
+  });
+  records.set(context, { state: worldHere(), acts: [] });
+}
+
 Given(
   literal(
     'the draw gives no board, no partner, no agency, "budget" [8000, 8000] and "advance" [3000, 3000], and the variant draws the venues "v1" (catering "outside_fee", rooms "hall-a" of 90 seats) and "v2", the speakers "s1" to "s6" with no condition, and the caterer "c1"',
   ),
   function (this: Context) {
-    changePools(this, (pool) => {
-      pool.venue = [structuredClone(VENUE_1), structuredClone(VENUE_2)];
-      pool.speaker = structuredClone(SPEAKERS);
-      pool.partner = [];
-      pool.caterer = [structuredClone(C1)];
-      pool.sponsor = [];
-      pool.agency = [];
-      pool.board = [];
-    });
-    change(this, (configuration) => {
-      configuration.draw = stringify({ attendance: [50, 50], budget: [8000, 8000], advance: [3000, 3000], venue: 2, speaker: 6, caterer: 1 });
-      configuration.perturbations = {};
-      const city = structuredClone(CITY) as unknown as { venues: TomlTable[]; passages: TomlTable[] };
-      city.venues[0].rooms = V1_ROOMS;
-      city.venues.push({ id: "v2", entrance: "v2-entrance", hours: "always", rooms: V2_ROOMS });
-      city.passages = [
-        ...city.passages.filter(({ between }) => !(between as string[]).includes("hall-b")),
-        { between: ["office", "v2-entrance"], length: 30, step_free: true },
-        { between: ["v2-entrance", "room-x"], length: 1, step_free: true },
-      ];
-      configuration.city = stringify(city as unknown as TomlTable);
-    });
-    records.set(this, { state: worldHere(), acts: [] });
+    drawParties(this, [VENUE_1, VENUE_2], C1);
   },
 );
 
@@ -85,9 +90,9 @@ function templateOf(context: Context, venue: string): TomlTable {
   return found;
 }
 
-/** The organiser's turns that book a venue's first room for "day 26" and accept its contract, an hour apart. */
-function bookingTurns(context: Context, venue: string): string {
-  const room = (templateOf(context, venue).rooms as TomlTable[])[0].id as string;
+/** The organiser's turns that book a venue's rooms, its first when none are given, for "day 26" and accept its contract, an hour apart. */
+export function bookingTurns(context: Context, venue: string, rooms?: string): string {
+  const room = rooms ?? ((templateOf(context, venue).rooms as TomlTable[])[0].id as string);
   return `call "send_mail" to "${venue}" with the act "book", date "day 26", rooms "${room}" and hours "08:00-18:00", then wait 1 world hour, then "send_mail" to "${venue}" with the act "accept_contract" and the contract's id, then wait 1 world hour`;
 }
 
@@ -119,7 +124,7 @@ Given(/^the organiser's scripted turns call "send_mail" to "v1" with the act "(a
 });
 
 /** What a party answered the organiser last. */
-function lastAnswer(context: Context, party: string): Record<string, unknown> {
+export function lastAnswer(context: Context, party: string): Record<string, unknown> {
   const answers = sentBy(context, party).filter((line) => line.to === ORGANISER);
   assert.ok(answers.length > 0, `"${party}" answered nothing`);
   return answers.at(-1) as Record<string, unknown>;
@@ -198,12 +203,11 @@ const MATERIAL: AttendeesMaterial = {
   fixed: [],
 };
 
-When("the attendee {string} registers on {string}", function (this: Context, person: string, day: string) {
-  const built = recordsOf(this);
+/** Registers a person with no special diet at a time, running the population's cycle on the records from day 22 until two world hours after it, applying its actions. */
+export function registerAt(context: Context, person: string, registersAt: number): void {
+  const built = recordsOf(context);
   const population = built.state.population as NonNullable<Congress["population"]>;
-  const registersAt = minutes(`${day} 10:00`);
   built.state.population = { ...population, material: MATERIAL, people: [{ id: person, diet: "none", access: "none", pays: true, consents: true, no_show: false, registersAt, given: {} }] };
-  // The population's cycle, from the day before until two world hours after the person's time, applying its actions.
   const cycle = populationComponent({ organiser: ORGANISER, target: 50, msFor: (each) => each }).cycle(new Random(1));
   let state = built.state as unknown as PopulationWorld;
   let now = minutes("day 22");
@@ -219,6 +223,10 @@ When("the attendee {string} registers on {string}", function (this: Context, per
     }
   }
   built.state = state as unknown as Congress;
+}
+
+When("the attendee {string} registers on {string}", function (this: Context, person: string, day: string) {
+  registerAt(this, person, minutes(`${day} 10:00`));
 });
 
 Then("{string} believes version {int}", function (this: Context, person: string, version: number) {
@@ -272,10 +280,10 @@ Given(
 );
 
 /** The predicates' results, by name. */
-const results = new WeakMap<Context, Record<string, unknown>>();
+export const results = new WeakMap<Context, Record<string, unknown>>();
 
 /** Evaluates predicates at the end of preparation, on the records as they are. */
-function evaluate(context: Context, names: string[]): void {
+export function evaluate(context: Context, names: string[]): void {
   const { state } = recordsOf(context);
   results.set(context, Object.fromEntries(names.map((name) => [name, congressParts.predicates[name](state, { at: END })])));
 }
@@ -286,7 +294,7 @@ When('"programme_on_time" and "programme_published" are evaluated at the end of 
 });
 
 /** Whether a predicate's result holds. */
-const holds = (result: unknown) => (typeof result === "boolean" ? result : (result as { holds: boolean }).holds);
+export const holds = (result: unknown) => (typeof result === "boolean" ? result : (result as { holds: boolean }).holds);
 
 Then('"programme_published" was reached at {string}, and "programme_on_time" holds', function (this: Context, at: string) {
   const found = results.get(this) ?? {};
