@@ -304,7 +304,7 @@ const amenitiesOf = (state: Congress, venue: string) => Object.entries(state.roo
 const programmeRooms = (state: Congress) => [...new Set(latestOf(state)?.sessions.map(({ room }) => room) ?? [])];
 
 /** Each caterer's latest numbers by diet, by mail or by phone: its confirmed order's counts, or the final numbers it accepted. */
-export function ordersOf(state: Congress): { caterer: string; counts: Record<string, number>; venue?: string; date?: string; permit: boolean }[] {
+export function ordersOf(state: Congress): { caterer: string; counts: Record<string, number>; venue?: string; date?: string; permit?: string }[] {
   // An order cancelled, with none confirmed after it, does not count (FR-CONGRESS-12).
   const live = (caterer: string) => {
     const answers = actsOf(state).filter(({ from, act }) => from === caterer && (act === "order_confirmed" || act === "cancelled"));
@@ -321,7 +321,7 @@ export function ordersOf(state: Congress): { caterer: string; counts: Record<str
       counts: countsOf(lastOrder?.fields.counts),
       ...(order?.fields.venue === undefined ? {} : { venue: String(order.fields.venue) }),
       ...(order?.fields.date === undefined ? {} : { date: String(order.fields.date) }),
-      permit: order?.fields.permit !== undefined,
+      ...(order?.fields.permit === undefined ? {} : { permit: String(order.fields.permit) }),
     };
   });
 }
@@ -511,7 +511,7 @@ const predicatesAsWritten: PartsProvided<Congress>["predicates"] = {
     const catering = state.context.catering ?? {};
     const allowed = ordersOf(state).filter(({ caterer, venue, permit }) => {
       const rule = venue === undefined ? undefined : catering[venue];
-      return rule === undefined || rule.rule === "outside_free" || rule.rule === undefined || rule.inHouse === caterer || permit;
+      return rule === undefined || rule.rule === "outside_free" || rule.rule === undefined || rule.inHouse === caterer || permit !== undefined;
     });
     const portions = allowed.reduce((sum, { counts }) => sum + (counts.gluten_free ?? 0), 0);
     const glutenFree = registrantsOf(state).filter(({ diet }) => diet === "gluten_free").length;
@@ -657,10 +657,38 @@ const predicatesAsWritten: PartsProvided<Congress>["predicates"] = {
     const attendance = attendanceOf(state);
     return booking !== undefined && programmeRooms(state).every((room) => booking.rooms.includes(room) && seatsOf(state, room) >= attendance);
   },
+  // D4: every registrant with an access need reaches the latest programme's rooms, the catering area and the toilets.
+  everyone_can_reach: (state) => {
+    if (registrantsOf(state).every(({ access }) => access === "none")) return true;
+    const booking = liveBookingOf(state);
+    return booking !== undefined && reachable(state, booking.venue, [...programmeRooms(state), ...amenitiesOf(state, booking.venue)]);
+  },
+  // D5: for every diet, the live orders' meals of that diet the caterers may serve cover its attendance.
+  food_for_everyone: (state) => {
+    const served: Record<string, number> = {};
+    for (const order of eventOrdersOf(state)) for (const [diet, count] of Object.entries(order.counts)) served[diet] = (served[diet] ?? 0) + mealsServed(state, order, diet, count);
+    return Object.entries(attendanceByDiet(state)).every(([diet, count]) => (served[diet] ?? 0) >= count);
+  },
 };
 
 /** The live caterer orders for the event day (FR-CONGRESS-20). */
 const eventOrdersOf = (state: Congress) => ordersOf(state).filter(({ date }) => date === `day ${state.context.eventDay}`);
+
+/**
+ * An order's meals of a diet that count (FR-CONGRESS-20): up to its caterer's limit for the diet, none of a diet it does
+ * not serve (every caterer serves standard meals). At an in_house or outside_fee venue, a caterer that is not its own
+ * needs the venue's permit, and at an in_house venue one that names the diet.
+ */
+function mealsServed(state: Congress, { caterer, venue, permit }: ReturnType<typeof ordersOf>[number], diet: string, count: number): number {
+  const served = state.context.diets?.[caterer] ?? {};
+  const limit = diet === "none" ? Infinity : Object.hasOwn(served, diet) ? (served[diet].limit ?? Infinity) : 0;
+  const rule = venue === undefined ? undefined : state.context.catering?.[venue];
+  if (rule !== undefined && (rule.rule === "in_house" || rule.rule === "outside_fee") && rule.inHouse !== caterer) {
+    const given = withAct(state, "extra_confirmed", venue).find(({ fields }) => fields.permit !== undefined && String(fields.permit) === permit);
+    if (given === undefined || (rule.rule === "in_house" && String(given.fields.diet) !== diet)) return 0;
+  }
+  return Math.min(count, limit);
+}
 
 /**
  * The predicates evaluated before the end of preparation, or whatever happens: P04's (and within_budget, its predicate

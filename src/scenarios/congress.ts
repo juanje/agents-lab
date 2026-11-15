@@ -106,6 +106,8 @@ export interface PartsContext {
   catering?: Readonly<Record<string, { rule?: string; inHouse?: string }>>;
   /** Each speaker's fee, by its id, against which a fee condition is met (FR-CONGRESS-10). */
   fees?: Readonly<Record<string, number>>;
+  /** Each caterer's diets, with their limits when it has them, by its id (FR-CONGRESS-20). */
+  diets?: Readonly<Record<string, Readonly<Record<string, { limit?: number }>>>>;
   /** The drawn speakers, the partner's among them, and sponsors, by id (FR-CONGRESS-09). */
   ids?: { speakers: readonly string[]; sponsors: readonly string[] };
   /** The organiser's ceiling from the start, the budget when the draw gives one, and its opening balance (FR-CONGRESS-12). */
@@ -1089,8 +1091,8 @@ function organiserContext(configuration: Configuration): Pick<PartsContext, "cei
   };
 }
 
-/** The travelling speakers' stations and fees, the chosen venues' catering rules and in-house caterers, and the speakers' and sponsors' ids, from the participants. */
-function partiesContext(configuration: Configuration): Pick<PartsContext, "homes" | "catering" | "ids" | "fees"> {
+/** The travelling speakers' stations and fees, the chosen venues' catering rules and in-house caterers, the caterers' diets, and the speakers' and sponsors' ids, from the participants. */
+function partiesContext(configuration: Configuration): Pick<PartsContext, "homes" | "catering" | "ids" | "fees" | "diets"> {
   const parties = Object.entries((configuration.participants ?? {}) as TomlTable).map(([name, participant]) => ({ name, rules: (participant as TomlTable).rules, params: ((participant as TomlTable).params ?? {}) as TomlTable }));
   const homes = Object.fromEntries(parties.filter(({ rules, params }) => rules === "speaker" && typeof params.home === "string" && params.home !== "local").map(({ name, params }) => [name, params.home as string]));
   const catering = Object.fromEntries(
@@ -1103,7 +1105,8 @@ function partiesContext(configuration: Configuration): Pick<PartsContext, "homes
   );
   const named = (...rules: string[]) => parties.filter((party) => rules.includes(String(party.rules))).map(({ name }) => name);
   const fees = Object.fromEntries(parties.filter(({ rules, params }) => rules === "speaker" && typeof params.fee === "number").map(({ name, params }) => [name, params.fee as number]));
-  return { homes, catering, ids: { speakers: named("speaker", "partner"), sponsors: named("sponsor") }, fees };
+  const diets = Object.fromEntries(parties.filter(({ rules }) => rules === "caterer").map(({ name, params }) => [name, (params.diets ?? {}) as Record<string, { limit?: number }>]));
+  return { homes, catering, ids: { speakers: named("speaker", "partner"), sponsors: named("sponsor") }, fees, diets };
 }
 
 /** The place the organiser is in; in a passage, none. */
