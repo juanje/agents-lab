@@ -5,6 +5,7 @@ import { loadScenario } from "../../src/engine/scenario.ts";
 import type { Context } from "../support/context.ts";
 import { change, congressChanges, congressOf, hourMsOf, organiserTurns, setupOf } from "./congress.steps.ts";
 import { before, changePools, fieldsOf, moneyLines, ranLines, sentBy, sentWith, untilTime } from "./congress-parties.steps.ts";
+import { answeredUnavailable, otherCustomerBooked } from "./baseline-check.steps.ts";
 import { ATTENDEES, V1, setUpCorrectionsCongress } from "./run-corrections.steps.ts";
 import { Random } from "../../src/engine/random.ts";
 import { speakerRules } from "../../src/scenarios/congress-parties.ts";
@@ -336,6 +337,11 @@ Given(
 );
 
 Then('"v1" answered "unavailable"', function (this: Context) {
+  // FR-CONGRESS-22's step of the same text, for a date another customer booked.
+  if (otherCustomerBooked.has(this)) {
+    answeredUnavailable(this);
+    return;
+  }
   assert.equal(fieldsOf(sentWith(this, "v1", "rooms_allocated")).allocation, "hall-a -> hall-a; hall-b -> annex");
   sentWith(this, "v1", "unavailable");
   assert.equal(sentBy(this, "v1").filter((line) => line.act === "contract_changed").length, 0);

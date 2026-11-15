@@ -366,8 +366,9 @@ export function hourMsOf(context: Context): number {
 
 // "again": a repeat of a message the turns before sent (FR-CONGRESS-11). FR-CONGRESS-13's "with the same" and
 // FR-CONGRESS-15's "of the first message", contract "c-1" and accept_change's option, FR-CONGRESS-16's call on or at a
-// day, FR-CONGRESS-17's order with "the counts", and FR-CONGRESS-18's call that "fails as", are their own steps.
-Given(/^the organiser's scripted turns (call (?!.*(?: with the same | of the first message| the contract "c-1"|"accept_change" and (?:the option|no option)| (?:on|at) "day [^"]+", then end$| the counts "|, which fails as ")).+?)(?: again)?, then end$/, function (this: Context, written: string) {
+// day, FR-CONGRESS-17's order with "the counts", FR-CONGRESS-18's call that "fails as", and FR-CONGRESS-22's
+// ask_quote or hold with only a date, are their own steps.
+Given(/^the organiser's scripted turns (call (?!.*(?: with the same | of the first message| the contract "c-1"|"accept_change" and (?:the option|no option)| (?:on|at) "day [^"]+", then end$| the counts "|, which fails as "|"send_mail" to "v1" with the act "(?:ask_quote|hold)" and the date "day 26", then end$)).+?)(?: again)?, then end$/, function (this: Context, written: string) {
   script(this, ORGANISER, [...(turnsBefore.get(this) ?? []), ...organiserTurns(written, hourMsOf(this)), { text: "Done.", delayMs: 0 }]);
 });
 

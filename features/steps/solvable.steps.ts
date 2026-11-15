@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
 import { Given, Then, When } from "@cucumber/cucumber";
 import { type TomlTable, parse, stringify } from "smol-toml";
+import { readExperiment, replicaSeed } from "../../src/engine/experiment.ts";
+import { type Inventory, inventory, inventoryMarkdown } from "../../src/engine/inventory.ts";
 import { Random } from "../../src/engine/random.ts";
 import { loadScenario } from "../../src/engine/scenario.ts";
 import * as congress from "../../src/scenarios/congress.ts";
+import { type Population, registrationProbability } from "../../src/scenarios/population.ts";
 import type { Context } from "../support/context.ts";
 import { change, congressOf, hourMsOf, organiserTurns, setupOf } from "./congress.steps.ts";
 import { before, changePools, minutesOf, ranLines } from "./congress-parties.steps.ts";
@@ -332,4 +335,115 @@ Then("its plans add a permit and an outside order for 2 gluten-free meals, or ha
       [{ diet: "gluten_free", price: 6 }],
     );
   }
+});
+
+// FR-CONGRESS-22: the solvable price leaves a margin, and the inventory gives each replica's variant.
+/** The page opened and registration announced, as the check takes them: "day 2 09:00" (FR-CONGRESS-22). */
+const OPENED = minutesOf("day 2 09:00");
+
+/**
+ * The expected paying registrants of a one-venue draw at a price, as the contract defines them: the pool, each person
+ * registering by FR-POPULATION-01's hourly probability from the page's opening to the end of preparation, the
+ * programme's draw from six of the eight speakers (a draw of 1 each), every registrant paying and none cancelling.
+ */
+function expectedAt(price: number, attendees: TomlTable, referencePrice: number, target: number, eventDay: number): number {
+  const population = {
+    material: attendees,
+    page: { open: true, price, required_fields: [], info: [], waiting_list: false },
+    announced: true,
+    referencePrice,
+    programme: [{ version: 1, sessions: [{ start: "09:00", end: "09:45", title: "", speakers: ["s1", "s2", "s3", "s4", "s5", "s6"], room: "" }], breaks: [], sponsor_slots: [], logos: [] }],
+    draws: { s1: 1, s2: 1, s3: 1, s4: 1, s5: 1, s6: 1 },
+    promotions: [],
+    eventDay,
+  } as unknown as Population;
+  let staying = 1;
+  for (let hour = OPENED + 60; hour < (eventDay - 1) * 1440; hour += 60) staying *= 1 - registrationProbability({ population }, hour);
+  return Math.round((attendees.pool_factor as number) * target) * (1 - staying);
+}
+
+/** The highest whole price at which the expected paying registrants reach a share of the target. */
+function highestAt(share: number, expected: (price: number) => number, target: number): number {
+  let price = 0;
+  while (expected(price + 1) >= share * target) price += 1;
+  return price;
+}
+
+Given("a draw whose plans' expected paying registrants reach {float} of the target at a price of {int} and {float} at a price of {int}", function (this: Context, upper: number, upperPrice: number, lower: number, lowerPrice: number) {
+  // A pool of 46 for the target of 50, registering at 0.0375 a day, and similar events whose middle price is 44.5.
+  const attendees = { ...ATTENDEES, pool_factor: 0.92, base_per_day: 0.0375 };
+  oneVenue(this);
+  change(this, (configuration) => {
+    configuration.attendees = stringify(attendees);
+    const topics = (parse(configuration.pools as string).topics ?? []) as string[];
+    configuration.similar_events = stringify({ events: topics.flatMap((topic) => [44, 44.5, 45].map((price, index) => ({ topic, name: `${topic} ${index + 1}`, price, size: 60 }))) });
+  });
+  const eventDay = loadScenario(congressOf(setupOf(this)), this.seed).configuration.event_day as number;
+  const expected = (price: number) => expectedAt(price, attendees, 44.5, 50, eventDay);
+  assert.deepEqual([highestAt(upper, expected, 50), highestAt(lower, expected, 50)], [upperPrice, lowerPrice]);
+  differences.set(this, "margin");
+});
+
+Then("each plan's price is {int} or lower", function (this: Context, highest: number) {
+  const { plans } = counted(this);
+  assert.ok(plans.length > 0, "the check gives no plan");
+  assert.deepEqual(
+    plans.filter(({ price }) => price > highest).map(({ price }) => price),
+    [],
+  );
+});
+
+/** The inventory of an experiment of two replicas, and the Markdown "lab inventory" prints of it. */
+const inventories = new WeakMap<Context, { made: Inventory; printed: string }>();
+
+Given('an experiment with two replicas of different seeds and "[solvable]" in its draw', function (this: Context) {
+  congressWith(this, [venue("v1"), venue("v2")]);
+  changeText(this, "draw", (draw) => (draw.solvable = { min_solutions: 2, min_venues: 2 }));
+});
+
+When('"lab inventory" runs on it', function (this: Context) {
+  const experiment = readExperiment(
+    [
+      'id = "e"',
+      'scenario = "congress"',
+      'models = ["scripted/one"]',
+      'thinking_level = "off"',
+      "replicas = 2",
+      "seed = 1",
+      "[limits]",
+      "time_limit_ms = 1000",
+      "activations_per_agent = 1",
+      "parallelism_limit = 1",
+      "model_turn_timeout_ms = 500",
+      "[compaction]",
+      "enabled = false",
+      "[conditions.only]",
+      "",
+    ].join("\n"),
+  );
+  // What lab inventory prints: the inventory of the experiment over its scenario, as Markdown.
+  const made = inventory(experiment, congressOf(setupOf(this)));
+  inventories.set(this, { made, printed: inventoryMarkdown(made) });
+});
+
+Then("it gives, for each replica, its seed, its drawn venues, its solvability counts, and its kept plans with their price and expected paying registrants", function (this: Context) {
+  const { made, printed } = inventories.get(this) ?? {};
+  assert.ok(made !== undefined && printed !== undefined, "lab inventory did not run");
+  const replicas = (made as { replicas?: { replica: number; seed: number; variant: Record<string, unknown>; plans?: Record<string, unknown>[] }[] }).replicas ?? [];
+  assert.deepEqual(
+    replicas.map(({ replica, seed }) => [replica, seed]),
+    [1, 2].map((replica) => [replica, replicaSeed(1, replica)]),
+  );
+  for (const { replica, seed, variant, plans = [] } of replicas) {
+    // Each replica's own draw, as loading that replica draws it.
+    assert.deepEqual(variant, loadScenario(congressOf(setupOf(this)), seed).variant);
+    assert.deepEqual([...(variant.chosen as { venue: string[] }).venue].sort(), ["v1", "v2"]);
+    const solvable = variant.solvable as Solvable;
+    assert.ok(solvable.solutions >= 2 && Object.keys(solvable.counts).length === 10, JSON.stringify(solvable));
+    assert.ok(plans.length > 0, `replica ${replica} gives no plans`);
+    for (const plan of plans) assert.ok(typeof plan.price === "number" && plan.price > 0 && typeof plan.expected === "number" && plan.expected >= 0.85 * 50, JSON.stringify(plan));
+    // The printed inventory gives each replica, its seed and its plans.
+    assert.ok(printed.includes(`Replica ${replica}`) && printed.includes(String(seed)), `the printed inventory does not give replica ${replica}`);
+  }
+  assert.match(printed, /"expected"/);
 });
