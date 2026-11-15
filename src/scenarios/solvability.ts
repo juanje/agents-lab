@@ -101,6 +101,8 @@ const SESSIONS = 6;
 /** The day's slots for sessions, morning and afternoon, which fit 09:00-17:30 with breaks and lunch; a sponsor that insists on a morning slot takes 11:00. */
 const MORNING = ["09:00", "10:00", "11:00"];
 const AFTERNOON = ["13:30", "14:30", "15:30", "16:30"];
+/** When the check takes the page as opened and registration as announced (FR-CONGRESS-22). */
+const OPENED = 1440 + 9 * 60;
 /** By when a venue must still be free on the event day. */
 const FREE_UNTIL = "day 7 18:00";
 /** How many plans the check keeps, and how many it counts before it reports "at least". */
@@ -238,7 +240,7 @@ function sessionsOf(speakers: readonly SpeakerOption[], sponsorMorning: boolean)
   return sessions;
 }
 
-/** The expected paying registrants at a price, with a programme of these speakers (FR-POPULATION-01's model), the page open and announced from the start. */
+/** The expected paying registrants at a price, with a programme of these speakers (FR-POPULATION-01's model), the page opened and announced on day 2 09:00 (FR-CONGRESS-22). */
 function expectedPaying(input: SolvabilityInput, speakers: readonly SpeakerOption[], price: number): number {
   const material = input.attendees;
   if (material === undefined || price <= 0) return 0;
@@ -253,15 +255,15 @@ function expectedPaying(input: SolvabilityInput, speakers: readonly SpeakerOptio
     eventDay: input.eventDay,
   } as unknown as Population;
   let staying = 1;
-  for (let hour = (Math.floor(input.startsAt / 60) + 1) * 60; hour < input.endOfPreparation; hour += 60) staying *= 1 - registrationProbability({ population }, hour);
+  for (let hour = (Math.floor(Math.max(input.startsAt, OPENED) / 60) + 1) * 60; hour < input.endOfPreparation; hour += 60) staying *= 1 - registrationProbability({ population }, hour);
   const pool = Math.round(material.pool_factor * input.target) * (1 - staying) * (material.pay_share ?? 1);
   const group = material.group === undefined ? 0 : (material.group.size[0] + material.group.size[1]) / 2;
   return (pool + (material.fixed ?? []).length + group) * (1 - material.cancel_share);
 }
 
-/** The highest whole price at which the expected paying registrants are within 0.75-1.10 of the target (D1); none when even 1 gives fewer. */
+/** The highest whole price at which the expected paying registrants are within 0.85-1.10 of the target (D1, FR-CONGRESS-22); none when even 1 gives fewer. */
 function priceOf(input: SolvabilityInput, speakers: readonly SpeakerOption[]): number | undefined {
-  const enough = (price: number) => expectedPaying(input, speakers, price) >= 0.75 * input.target;
+  const enough = (price: number) => expectedPaying(input, speakers, price) >= 0.85 * input.target;
   if (!enough(1)) return undefined;
   let low = 1;
   let high = 2;

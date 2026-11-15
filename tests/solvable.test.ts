@@ -192,7 +192,7 @@ describe("the solvability check's plans (FR-CONGRESS-21)", () => {
     for (const check of ["D0", "D1", "D2", "D3", "D4", "D5", "D6", "D7", "D8", "D9"]) expect(solved.counts[check], check).toBeGreaterThan(0);
   });
 
-  it("gives each plan the highest whole price at which the expected paying registrants reach 0.75 of the target, and none when even the lowest does not", async () => {
+  it("gives each plan the highest whole price at which the expected paying registrants reach 0.85 of the target (FR-CONGRESS-22), and none when even the lowest does not", async () => {
     const plansOf = (await plansOfModule()) as NonNullable<Awaited<ReturnType<typeof plansOfModule>>>;
     const [plan] = plansOf(input()).plans;
     expect(plan.price).toBeGreaterThan(40);
