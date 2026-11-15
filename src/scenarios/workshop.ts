@@ -721,7 +721,26 @@ function firstTakeTime(state: Workshop): number | null {
   return state.landed.takes.length === 0 ? null : Math.min(...state.landed.takes.map(({ at }) => at));
 }
 
-/** The workshop's measures (FR-WORKSHOP-04), from the world's state and the record of tool calls. */
+/**
+ * The world minute of the last applied join into the module of a name a worker held at a moment, or undefined when none
+ * was joined: the worker's own joins since it started that module or was handed it, and, for a module handed to it, the
+ * last join before the giver handed it. Only the hands kept before the given one are followed, so the search ends.
+ */
+function lastJoinOf(state: Workshop, holder: string, module: string, before: number, handsBefore: number): number | undefined {
+  const own = state.landed.joins.filter((join) => join.worker === holder && join.module === module && join.at <= before);
+  const startedAt = Math.max(-Infinity, ...own.filter((join) => join.started).map((join) => join.at));
+  const handed = state.landed.handovers
+    .slice(0, handsBefore)
+    .map((handover, index) => ({ ...handover, index }))
+    .filter((handover) => handover.sort === "module" && handover.receiver === holder && handover.name === module && handover.at <= before && handover.at > startedAt)
+    .at(-1);
+  const joins = own.filter((join) => join.at >= (handed?.at ?? startedAt)).map((join) => join.at);
+  const earlier = handed === undefined ? undefined : lastJoinOf(state, handed.giver, module, handed.at, handed.index);
+  const all = earlier === undefined ? joins : [...joins, earlier];
+  return all.length === 0 ? undefined : Math.max(...all);
+}
+
+/** The workshop's measures (FR-WORKSHOP-04, FR-WORKSHOP-05's handovers), from the world's state and the record of tool calls. */
 const METRICS: Scenario<Workshop>["metrics"] = {
   done: (state) => (isDone(state) ? 1 : 0),
   modules_mounted: (state) => state.bench.mounted.length,
@@ -775,14 +794,14 @@ const METRICS: Scenario<Workshop>["metrics"] = {
     return refused;
   },
   bench_refusals: (_state, calls) => calls.filter(({ tool, outcome }) => tool === "mount" && outcome === "bench_full").length,
-  // A mount that landed started its duration of `mount` minutes before; its module's last join is its mounter's last
-  // applied join into a module of that name before then (a module never changes hands).
+  // A mount that landed started its duration of `mount` minutes before; its module's last join is the last applied join
+  // into the module its mounter held then, whoever made it (FR-WORKSHOP-05).
   finish_to_mount: (state) => {
     const table: Record<string, number> = {};
     for (const { worker, module, at } of state.landed.mounts) {
       const start = at - state.settings.durations.mount;
-      const joins = state.landed.joins.filter((join) => join.worker === worker && join.module === module && join.at <= start);
-      if (joins.length > 0) table[module] = start - Math.max(...joins.map((join) => join.at));
+      const last = lastJoinOf(state, worker, module, start, state.landed.handovers.length);
+      if (last !== undefined) table[module] = start - last;
     }
     return table;
   },
@@ -798,6 +817,11 @@ const METRICS: Scenario<Workshop>["metrics"] = {
   time_by_activity: (state, calls) => {
     const table: Record<string, number> = {};
     for (const call of calls) countIn(table, `${call.agent}.${call.tool}`, durationOf(state, call));
+    return table;
+  },
+  handovers: (state) => {
+    const table: Record<string, number> = {};
+    for (const { giver, receiver, sort } of state.landed.handovers) countIn(table, `${giver}.${sort === "module" ? "modules" : "pieces"}_to.${receiver}`);
     return table;
   },
 } satisfies Record<string, (state: Workshop, calls: readonly ToolCall[]) => MetricValue>;
