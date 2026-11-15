@@ -34,6 +34,11 @@ export interface Scenario<State> {
   initialState: (configuration: Configuration, random: Random) => State;
   /** The agents' only interface with the world: its sensors and effectors. */
   tools: readonly Tool<State>[];
+  /**
+   * Tools only the participants decided by rule sets may be given, by their declared tools: never offered to an agent,
+   * nor in the inventory, for a scenario whose parties read what the agents do not (FR-CONGRESS-17).
+   */
+  partyTools?: readonly Tool<State>[];
   /** The declared paths by which stimuli reach agents, from the resolved configuration. */
   channels: (configuration: Configuration) => readonly Channel[];
   /** Each metric by its name, computed from the world's state and the agents' tool calls so far, in the order they ended. */
@@ -259,6 +264,7 @@ export function loadScenario<State>(
   const participants = readParticipants(configuration.participants, {
     tools: [
       ...scenario.tools,
+      ...(scenario.partyTools ?? []),
       ...(mail === undefined ? [] : mailTools(mail.settings, mail.keeper)),
       ...(phone === undefined ? [] : phoneTools({ ...phone, acts: {}, inHours: () => true })),
       ...(money === undefined ? [] : moneyTools(money.settings, money.keeper)),

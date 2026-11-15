@@ -1661,7 +1661,7 @@ const readPermit: Sensor<Congress> = {
   },
 };
 
-/** The organiser's own tools, besides the mail's and the phone's; read_programme and read_permit are the parties' too. */
+/** The organiser's own tools, besides the mail's and the phone's. */
 const TOOLS: readonly Tool<Congress>[] = [
   checkTime,
   look,
@@ -1672,7 +1672,6 @@ const TOOLS: readonly Tool<Congress>[] = [
   travelOptions,
   bookTravel,
   similarEventsTool,
-  readPermit,
   // The ticket page, the programme and announcements (FR-POPULATION-01).
   ...populationTools<Congress>({
     organiser: ORGANISER,
@@ -1719,7 +1718,6 @@ function describeDuration(configuration: Configuration, tool: string): string {
     publish_programme: `${durations.publish_programme} world minutes.`,
     announce: `${durations.announce} world minutes.`,
     read_programme: `${durations.read_programme} world minutes.`,
-    read_permit: "No time.",
   };
   if (!Object.hasOwn(described, tool)) throw new Error(`The congress has no tool "${tool}"`);
   return described[tool];
@@ -1891,6 +1889,8 @@ export const congressScenario: Scenario<Congress> = {
   agents: () => [ORGANISER],
   initialState,
   tools: TOOLS,
+  // The caterers read an order's permit; the organiser is not offered it (FR-CONGRESS-17).
+  partyTools: [readPermit],
   channels: (configuration): Channel[] => [
     ...rhythmChannels(configuration),
     { name: PERSON_CHANNEL, source: configuration.task_giver as string, stimulus: textsIn(configuration, "person") },

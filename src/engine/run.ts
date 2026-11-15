@@ -285,7 +285,8 @@ async function runAgents<State>(
   // A participant's stimuli are held by its hours and reply delay, and its rule set woken by them (FR-PARTICIPANT-01).
   const parties = new Participants({
     world,
-    tools,
+    // A rule set may also be given the scenario's party tools, which no agent is offered (FR-CONGRESS-17).
+    tools: [...tools, ...(scenario.partyTools ?? [])],
     participants,
     ruleSets: scenario.ruleSets ?? {},
     clock,
