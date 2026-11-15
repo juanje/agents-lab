@@ -70,7 +70,7 @@ describe("a refused act is no misapplication (FR-CONGRESS-18)", () => {
   it("a pattern matches only acts that took effect: one that failed with an outcome the tool names is never listed", () => {
     const parts = readParts([{ id: "p1", predicate: "flag_set", params: { flag: "door" }, activation: "always", evaluate_at: "day 1 18:00", misapplications: [{ pattern: "act_named", params: { tool: "send_mail" } }] }], provided, { participants: [] });
     const lines: Record<string, unknown>[] = [];
-    const book = new PartsBook<Flags>({ parts, provided, agents: ["ana"], record: (line) => lines.push(line) });
+    const book = new PartsBook<Flags>({ parts, provided, agents: ["ana"], record: (line) => line.type !== "parts_state" && lines.push(line) });
     book.start({ flags: {} }, on(1));
     book.acted({ agent: "ana", tool: "send_mail", arguments: { to: "s1", act: "invite" }, world: on(1, "10:00"), outcome: "missing_field" });
     book.acted({ agent: "ana", tool: "send_mail", arguments: { to: "s9", act: "invite" }, world: on(1, "11:00"), outcome: "unknown_recipient" });

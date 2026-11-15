@@ -1,7 +1,7 @@
 import { stringify } from "smol-toml";
 import { describe, expect, it } from "vitest";
 import type { WorldTime } from "../src/engine/calendar.ts";
-import { type PartsProvided, PartsBook, effortMoney, readParts } from "../src/engine/parts.ts";
+import { type PartsLine, type PartsProvided, PartsBook, effortMoney, readParts } from "../src/engine/parts.ts";
 import { loadScenario } from "../src/engine/scenario.ts";
 import { slotsScenario } from "./fixtures/slots.ts";
 
@@ -52,9 +52,16 @@ describe("readParts (FR-PARTS-01)", () => {
   });
 });
 
-/** A book of the parts given, at the level "rules", for the agent "ana". */
-function book(parts: Record<string, unknown>[], lines: Record<string, unknown>[]) {
-  return new PartsBook<Flags>({ parts: read(parts), provided, level: "rules", agents: ["ana"], moneyOf: (state) => state.money, record: (line) => lines.push(line) });
+/** Records a book's lines; those the parts read from, parts_state, only when kept is asked (FR-CONGRESS-24). */
+const recorder =
+  (lines: Record<string, unknown>[], kept = false) =>
+  (line: PartsLine) => {
+    if (kept || line.type !== "parts_state") lines.push(line);
+  };
+
+/** A book of the parts given, at the level "rules", for the agent "ana"; its lines with parts_state only when kept is asked. */
+function book(parts: Record<string, unknown>[], lines: Record<string, unknown>[], kept = false) {
+  return new PartsBook<Flags>({ parts: read(parts), provided, level: "rules", agents: ["ana"], moneyOf: (state) => state.money, record: recorder(lines, kept) });
 }
 
 const state = (flags: Record<string, boolean> = {}, raised: Flags["raised"] = [], events: Record<string, unknown>[] = []): Flags => ({ flags, raised, money: { events } });
@@ -167,7 +174,7 @@ describe("traps and patterns that read the world (FR-CONGRESS-06)", () => {
   it("gives a pattern the world's state at the act's time, and writes the traps that hold at evaluation as traps", () => {
     const parts = readParts([{ ...P1, misapplications: [{ pattern: "while_set", params: { tool: "clear_flag" } }], traps: [{ trap: "alarm_raised" }] }], withTraps, { participants: ["shop"], kindFactor: { name: "guidance", levels: ["none", "rules"] } });
     const lines: Record<string, unknown>[] = [];
-    const book = new PartsBook<Flags>({ parts, provided: withTraps, level: "rules", agents: ["ana"], record: (line) => lines.push(line) });
+    const book = new PartsBook<Flags>({ parts, provided: withTraps, level: "rules", agents: ["ana"], record: recorder(lines) });
     book.start(state(), at(1, "09:00"));
     book.acted({ agent: "ana", tool: "clear_flag", arguments: { flag: "door" }, world: at(1, "09:30") });
     book.changed(state({ door: true }), at(1, "10:00"));
@@ -193,7 +200,7 @@ describe("what the congress's parts need besides (FR-CONGRESS-06)", () => {
     };
     const parts = readParts([{ id: "w1", predicate: "counted", activation: "always", evaluate_at: "day 1 18:00", misapplications: [{ pattern: "cleared_for_good" }], traps: [{ trap: "late" }] }], wider, { participants: [] });
     const lines: Record<string, unknown>[] = [];
-    const book = new PartsBook<Flags>({ parts, provided: wider, agents: ["ana"], record: (line) => lines.push(line) });
+    const book = new PartsBook<Flags>({ parts, provided: wider, agents: ["ana"], record: recorder(lines) });
     book.start(state({ door: true }), at(1, "09:00"));
     book.acted({ agent: "ana", tool: "clear_flag", arguments: { flag: "door" }, world: at(1, "10:00") });
     book.due(state({}, [{ flag: "door", at: at(1, "09:00") }]), at(1, "18:00"));
@@ -234,7 +241,7 @@ describe("a part's effort money and reached_at (FR-CONGRESS-10)", () => {
     const lines: Record<string, unknown>[] = [];
     const reaching: PartsProvided<Flags> = { ...provided, predicates: { flag_set: (current) => ({ holds: current.flags.door === true, values: {}, reachedAt: 9 * 60 + 30 }) } };
     const parts = readParts([P1], reaching, { participants: ["shop"], kindFactor: { name: "guidance", levels: ["none", "rules"] } });
-    const kept = new PartsBook<Flags>({ parts, provided: reaching, level: "rules", agents: ["ana"], record: (line) => lines.push(line) });
+    const kept = new PartsBook<Flags>({ parts, provided: reaching, level: "rules", agents: ["ana"], record: recorder(lines) });
     kept.start(state(), at(1, "09:00"));
     kept.changed(state({ door: true }), at(1, "12:00"));
     kept.due(state({ door: true }), at(1, "18:00"));
@@ -261,7 +268,7 @@ describe("a part's group beside its kinds (FR-PARTS-01's addition)", () => {
       provided,
       { participants: ["shop"], kindFactor: { name: "guidance", levels: ["none", "rules"] } },
     );
-    const kept = new PartsBook<Flags>({ parts, provided, level: "rules", agents: ["ana"], record: (line) => lines.push(line) });
+    const kept = new PartsBook<Flags>({ parts, provided, level: "rules", agents: ["ana"], record: recorder(lines) });
     kept.start(state(), at(1, "09:00"));
     kept.finish(state(), at(1, "19:00"));
     expect(lines.find(({ part }) => part === "p1")).toMatchObject({ group: "changed", kind: "changed" });
@@ -272,7 +279,7 @@ describe("a part's group beside its kinds (FR-PARTS-01's addition)", () => {
 describe("the run keeps what the parts read (FR-CONGRESS-24)", () => {
   it("writes one parts_state line for each time parts are evaluated, with the world's state, before that time's part lines", () => {
     const lines: Record<string, unknown>[] = [];
-    const parts = book([P1, { ...P1, id: "p2" }, { ...P1, id: "p3", evaluate_at: "day 1 20:00" }], lines);
+    const parts = book([P1, { ...P1, id: "p2" }, { ...P1, id: "p3", evaluate_at: "day 1 20:00" }], lines, true);
     parts.start(state(), at(1, "09:00"));
     parts.changed(state({ door: true }), at(1, "10:00"));
     parts.due(state({ door: true }), at(1, "18:00"));
@@ -291,7 +298,7 @@ describe("the run keeps what the parts read (FR-CONGRESS-24)", () => {
 
   it("writes it before an inactive part's line, and at the run's end for a part evaluated then", () => {
     const lines: Record<string, unknown>[] = [];
-    const parts = book([{ ...P1, activation: { event: "flag_raised", params: { flag: "alarm" } } }, { ...P1, id: "p2", evaluate_at: "end" }], lines);
+    const parts = book([{ ...P1, activation: { event: "flag_raised", params: { flag: "alarm" } } }, { ...P1, id: "p2", evaluate_at: "end" }], lines, true);
     parts.start(state(), at(1, "09:00"));
     parts.finish(state({ door: true }), at(1, "21:00"));
     expect(lines.map(({ type, evaluated_at }) => [type, evaluated_at])).toEqual([

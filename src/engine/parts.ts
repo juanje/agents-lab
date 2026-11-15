@@ -203,7 +203,8 @@ export interface MisappliedAct {
 
 /**
  * A line of the run's log the parts write (FR-PARTS-01): a part's result as it is evaluated, which gives its group, when
- * it has one, whether or not it was active; and, as the run ends, the parts not evaluated.
+ * it has one, whether or not it was active; before a time's first part line, the world's state the parts read then
+ * (FR-CONGRESS-24); and, as the run ends, the parts not evaluated.
  */
 export type PartsLine =
   | { type: "part"; part: string; evaluated_at: string; active: false; group?: string }
@@ -221,7 +222,8 @@ export type PartsLine =
       group?: string;
       kind?: string;
     }
-  | { type: "parts_not_evaluated"; parts: string[] };
+  | { type: "parts_not_evaluated"; parts: string[] }
+  | { type: "parts_state"; evaluated_at: string; state: unknown };
 
 /** A part's state in a run: when it became active, the intervals in which it held, and whether it was evaluated. */
 interface Tracked {
@@ -247,6 +249,8 @@ export class PartsBook<State> {
   readonly #events = new Map<string, number>();
   #seenMoney = 0;
   #state?: State;
+  /** The evaluation times whose state the run has kept, as part lines give them. */
+  readonly #kept = new Set<string>();
 
   constructor(settings: PartsBookSettings<State>) {
     this.#settings = settings;
@@ -337,6 +341,11 @@ export class PartsBook<State> {
     const { part } = tracked;
     const when = { day: Math.floor(at / 1440) + 1, weekday: "Monday" as const, seconds: Math.round((at % 1440) * 60) };
     const line = { type: "part" as const, part: part.id, evaluated_at: timeText(when) };
+    // The state the parts read at this time, kept once before its part lines (FR-CONGRESS-24).
+    if (!this.#kept.has(line.evaluated_at)) {
+      this.#kept.add(line.evaluated_at);
+      this.#settings.record({ type: "parts_state", evaluated_at: line.evaluated_at, state: this.#state });
+    }
     // The group is in the line whether or not the part was active (FR-PARTS-01's addition).
     const grouped = part.group === undefined ? {} : { group: part.group };
     if (tracked.activeAt === undefined || tracked.activeAt > at) {
