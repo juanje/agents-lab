@@ -838,6 +838,30 @@ describe("run", () => {
     expect(readdirSync(logDirectory)).toEqual([]);
   });
 
+  it.each([
+    ["its own caller", "a", 'agent "a"\'s "take" call failed: its effect delivers to "a", its own caller'],
+    ["a name that is no agent of the run", "z", 'agent "a"\'s "take" call failed: its effect delivers to "z", which is no agent of the run'],
+  ])("stops the run on a delivery to %s, naming the tool and the name, and delivers none of the call's stimuli (FR-STIMULUS-02)", async (_case, recipient, error) => {
+    const logDirectory = newLogDirectory();
+    const loaded = slots({ ...agentsNamed("a", "b"), channels: () => [rhythmChannel, news], tools: [tellingTake(["b", recipient])] });
+    const a = new ScriptedModel([
+      { toolCalls: [{ name: "take", arguments: { slot: 2 } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+    const b = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
+
+    const running = run(loaded, [
+      { name: "a", model: a, activations: 1 },
+      { name: "b", model: b, activations: 1 },
+    ], seed, { ...settings, logDirectory });
+
+    await expect(running).rejects.toThrow(error);
+    const [file] = readdirSync(logDirectory);
+    const lines = readFileSync(join(logDirectory, file), "utf8").trimEnd().split("\n").map((line) => JSON.parse(line));
+    expect(lines.at(-1)).toEqual({ type: "run_stopped", error });
+    expect(lines.filter((line) => line.channel === "news")).toEqual([]);
+  });
+
   it("gives an effector with no action, which changes nothing, its outcome without the arbiter: the world's version stays", async () => {
     const { action: _action, ...still } = patientTake;
     const loaded = slots({ tools: [{ ...still, durationMs: () => 20 }] });
