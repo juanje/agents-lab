@@ -1340,6 +1340,21 @@ Each worker has these tools, each with its duration in world minutes from `[dura
 **The engine gains the means:** an effector can declare an end, a change applied through the arbiter as its call ends, whatever its outcome: in the same change as its action when the action is applied, and as a change of its own otherwise (the action failed, the effector has none, or the call ended early). A call refused before it runs, or cut off by the time limit, applies no end. An end applied on its own grows the world's version and is counted among the changes others see since they sensed (FR-RECORD-01), as a start is.
 *Why:* the workers' job is in their hands: what they take, join and mount is checked against a world the others change meanwhile. Who is doing what, and who holds the bench, is what a worker sees of the others when it looks; a place at the bench is held for as long as someone works at it, whether or not the mount succeeds.
 
+#### FR-WORKSHOP-03: Workers speak to the room
+Each worker has the effector **`say`** `text`. It takes `say` world minutes (0.25 in the base) plus one minute per `say_words_per_minute` words of the text (30 in the base), in proportion: 15 words take 0.75 minutes in all. A word is a run of characters between whitespace. When the call ends, every other worker receives the text through the channel `voice` (FR-STIMULUS-02), with the speaker's name as its source, so it reads `<speaker>: <text>` (FR-STIMULUS-01); the speaker receives nothing. While the call lasts, `look` shows the speaker `speaking` (FR-WORKSHOP-02).
+
+| Outcome | Refused when | Text |
+|---|---|---|
+| success | | You have said it. |
+| empty_text | the text holds no word | You said nothing; nobody heard anything. |
+
+A text with no word is refused when the call ends, after its `say` minutes alone, and reaches no one; so does a call cut off by the time limit.
+
+**The `voice` channel wakes** (FR-CONGRESS-08): a worker resting between activations wakes at once, with the speech among its stimuli; a worker in a tool call receives it at its next model turn (FR-STIMULUS-01); a worker's `wait` ends `interrupted` (FR-WORKSHOP-02). Besides speech, a worker receives only its rhythm's stimulus and, when a text is placed there, the order (FR-WORKSHOP-01).
+
+**Recorded.** Each speech heard is a stimulus line for each listener (FR-STIMULUS-02). The inventory gives `say` with its duration and texts, and the channel `voice` with its source (the speaker), its text (what was said) and that it wakes.
+*Why:* speech is the only channel between workers in the base: everyone in the room hears it, it takes time in proportion to its length, and it wakes whoever is resting, as a voice in a room does. What each worker says, and when, is the record of how the team organises.
+
 ### Analysis
 
 #### FR-ANALYSIS-01: Logs export as CSV
