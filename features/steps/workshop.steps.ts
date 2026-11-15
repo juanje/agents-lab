@@ -63,12 +63,17 @@ function idle(context: Context, worker: string): void {
   script(context, worker, Array.from({ length: 50 }, () => ({ text: "Nothing to do.", delayMs: 0 })));
 }
 
-Given("the workshop scenario with its base configuration", function (this: Context) {
+/** Sets up the library's workshop with its base configuration, which the engine loads for a run with the setup's changes. */
+function setUpWorkshop(context: Context): void {
   const workshop = scenarioLibrary.get("workshop");
   assert.ok(workshop !== undefined, 'the scenario library has no scenario "workshop"');
-  this.libraryScenario = workshop;
-  setups.set(this, { changes: [], othersIdle: false });
-  this.assembleRun = () => loadWorkshop(this) as LoadedScenario<unknown>;
+  context.libraryScenario = workshop;
+  setups.set(context, { changes: [], othersIdle: false });
+  context.assembleRun = () => loadWorkshop(context) as LoadedScenario<unknown>;
+}
+
+Given("the workshop scenario with its base configuration", function (this: Context) {
+  setUpWorkshop(this);
 });
 
 /** The workshop's world in the last load. */
@@ -381,11 +386,7 @@ Then("worker {string}'s intervals are the same as under the condition {string}, 
 Given(
   "the workshop scenario with its base configuration, but the calendar's scale is {int}, so one world minute is {int} milliseconds of the run",
   function (this: Context, scale: number, minuteMs: number) {
-    const workshop = scenarioLibrary.get("workshop");
-    assert.ok(workshop !== undefined, 'the scenario library has no scenario "workshop"');
-    this.libraryScenario = workshop;
-    setups.set(this, { changes: [], othersIdle: false });
-    this.assembleRun = () => loadWorkshop(this) as LoadedScenario<unknown>;
+    setUpWorkshop(this);
     setScale(this, scale, minuteMs);
   },
 );
