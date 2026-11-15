@@ -116,6 +116,8 @@ export function partsOfRuns(directory: string, materialsFrom: string, name: stri
   };
   // A part line with a group or a kind is a part, active or not.
   const isOutcome = (part: string) => runs.every((run) => partLines(run).every((line) => line.part !== part || (line.kind === undefined && line.group === undefined)));
+  // With no kind or group on any line, the experiment has no kind_factor: every part is listed, with no kinds (FR-CONGRESS-22).
+  const kindless = names.every(isOutcome);
 
   const parts: PartRow[] = [];
   const outcomes: OutcomeRow[] = [];
@@ -127,7 +129,7 @@ export function partsOfRuns(directory: string, materialsFrom: string, name: stri
       const held = lines.filter((line) => line?.active === true && line.held === true).length;
       if (isOutcome(part)) {
         outcomes.push({ outcome: part, condition, completed: completed.length, stopped: stoppedOf(condition), held, values: lines.flatMap((line) => (line?.values === undefined ? [] : [line.values])) });
-        continue;
+        if (!kindless) continue;
       }
       const calls = lines.map((line) => line?.effort?.calls ?? 0);
       const { minimum, median, maximum } = quartiles(calls);
@@ -153,7 +155,7 @@ export function partsOfRuns(directory: string, materialsFrom: string, name: stri
     }
   }
   const kinds: KindRow[] = [];
-  for (const condition of conditions) {
+  for (const condition of kindless ? [] : conditions) {
     for (const kind of [...new Set(parts.filter((row) => row.condition === condition).map((row) => row.kind))]) {
       const rows = parts.filter((row) => row.condition === condition && row.kind === kind);
       const active = rows.reduce((sum, row) => sum + row.active, 0);
@@ -188,7 +190,7 @@ function tableOf(heading: string, headers: readonly string[], rows: readonly (re
   return `## ${heading}\n\n${line(headers)}${line(headers.map(() => "---"))}${rows.map(line).join("")}\n`;
 }
 
-/** The report as Markdown: its four tables, or a line saying the runs have no parts. */
+/** The report as Markdown: its four tables, the kinds left out for an experiment with no kind_factor, or a line saying the runs have no parts. */
 export function partsMarkdown({ parts, kinds, outcomes, conditions }: PartsReport): string {
   if (parts.length === 0 && outcomes.length === 0) return "The runs have no parts.\n";
   const or = (value: number | null) => (value === null ? "-" : String(value));
@@ -213,11 +215,10 @@ export function partsMarkdown({ parts, kinds, outcomes, conditions }: PartsRepor
         row.misapplications.length === 0 ? "0" : `${row.misapplications.reduce((sum, { count }) => sum + count, 0)} (${row.misapplications.map(({ replica, acts }) => `replica ${replica}: ${acts.join(", ")}`).join("; ")})`,
       ]),
     ),
-    tableOf(
-      "Kinds",
-      ["Kind", "Condition", "Active", "Held", "Share"],
-      kinds.map((row) => [row.kind, row.condition, String(row.active), String(row.held), shareText(row.share)]),
-    ),
+    // An experiment with no kind_factor has no kinds (FR-CONGRESS-22).
+    ...(kinds.length === 0
+      ? []
+      : [tableOf("Kinds", ["Kind", "Condition", "Active", "Held", "Share"], kinds.map((row) => [row.kind, row.condition, String(row.active), String(row.held), shareText(row.share)]))]),
     tableOf(
       "Outcomes",
       ["Outcome", "Condition", "Completed", "Stopped", "Held", "Values"],
