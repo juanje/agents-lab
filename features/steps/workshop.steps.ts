@@ -449,6 +449,14 @@ const EFFECTOR_TEXTS: Readonly<Record<string, Readonly<Record<string, string>>>>
   },
   wait: { success: "You have waited.", interrupted: "Something reached you; you stopped waiting." },
   say: { success: "You have said it.", empty_text: "You said nothing; nobody heard anything." },
+  hand: {
+    success: "You have handed it over.",
+    no_such_worker: "There is no worker of that name; nothing has been handed.",
+    to_self: "That is you; nothing has been handed.",
+    not_held: "You are not holding that; nothing has been handed.",
+    hands_full: "Their hands are full; nothing has been handed.",
+    holds_module: "They are already holding a module; nothing has been handed.",
+  },
 };
 
 /** The inventory's part on one tool, in the base condition. */
@@ -492,7 +500,13 @@ Then(
 interface Holdings {
   mounted: string[];
   notMounted: string[];
-  workers: { worker: string; loose?: string[]; module?: { name: string; joined?: string[]; finished: boolean } | null }[];
+  /** Whether the step says the pile is as it was before the call it speaks of. */
+  pileAsBefore?: boolean;
+  /**
+   * What each worker it names holds: loose "as before" when the step says the worker keeps its loose pieces, and a
+   * module "not finished" when the step says so.
+   */
+  workers: { worker: string; loose?: string[] | "as before"; module?: { name: string; joined?: string[]; finished: boolean; notFinished?: boolean } | null }[];
 }
 
 /** The quoted words of a text, in order. */
@@ -510,6 +524,11 @@ function holdingsOf(written: string): Holdings {
     text = text.slice(mounted[0].length);
   }
   text = text.replace(/,? (?:and )?(?:the pile holds the rest|the rest in the pile)$/, "").replace(/, so the pile holds one$/, "");
+  const pileAsBefore = /,? and the pile is as it was before it$/.exec(text);
+  if (pileAsBefore !== null) {
+    holdings.pileAsBefore = true;
+    text = text.slice(0, pileAsBefore.index);
+  }
   const notMounted = /,? and "(\w+)" is not mounted$/.exec(text);
   if (notMounted !== null) {
     holdings.notMounted.push(notMounted[1]);
@@ -529,14 +548,21 @@ function holdingsOf(written: string): Holdings {
 /** What one worker holds, as a step says it after "holds". */
 function handsOf(said: string): Omit<Holdings["workers"][number], "worker"> {
   if (said === "nothing") return { loose: [], module: null };
-  const module = /(?:a|another) (finished )?module "(\w+)"(?: with (.+?) joined)?/.exec(said);
+  const module = /(?:a|another) (finished )?module "(\w+)"(?: with (.+?) joined)?(, not finished)?/.exec(said);
   const rest = module === null ? said : said.slice(0, module.index) + said.slice(module.index + module[0].length);
+  if (/^,? and its \w+ loose pieces$/.test(rest)) return { loose: "as before", ...(module === null ? {} : { module: moduleSaid(module) }) };
   const both = /both "(\w+)"/.exec(rest);
   const loose = both === null ? quoted(rest) : [both[1], both[1]];
   const hands: Omit<Holdings["workers"][number], "worker"> = loose.length > 0 || /loose/.test(rest) ? { loose } : {};
-  if (module !== null) hands.module = { name: module[2], finished: module[1] !== undefined, ...(module[3] === undefined ? {} : { joined: quoted(module[3]) }) };
+  if (module !== null) hands.module = moduleSaid(module);
   else if (/no module/.test(rest)) hands.module = null;
   return hands;
+}
+
+/** A module as a step says a worker holds it: its name, whether finished, the pieces joined, and "not finished". */
+function moduleSaid(found: RegExpExecArray): NonNullable<Holdings["workers"][number]["module"]> {
+  const [, finished, name, joined, notFinished] = found;
+  return { name, finished: finished !== undefined, ...(joined === undefined ? {} : { joined: quoted(joined) }), ...(notFinished === undefined ? {} : { notFinished: true }) };
 }
 
 /** A count of each kind in a list of pieces. */
@@ -552,6 +578,7 @@ function withHoldings(state: Workshop, holdings: Holdings): Workshop {
   const workers = { ...state.workers };
   for (const { worker, loose, module } of holdings.workers) {
     assert.ok(Object.hasOwn(workers, worker), `the workshop has no worker "${worker}"`);
+    assert.ok(loose !== "as before", `a setup cannot say "${worker}" keeps its loose pieces`);
     const held = module == null ? null : { name: module.name, joined: module.joined ?? (module.finished ? [...state.plan[module.name].recipe] : []) };
     workers[worker] = { ...workers[worker], ...(loose === undefined ? {} : { loose: counted(loose) }), ...(module === undefined ? {} : { module: held }) };
     taken.push(...(loose ?? []), ...(held?.joined ?? []));
@@ -570,24 +597,38 @@ function workshopNow(context: Context): Workshop {
   return loadedWorkshop(context).world.state;
 }
 
-/** Checks that the workshop holds what a step says: the modules mounted, and what each worker it names holds. */
-function assertHoldings(state: Workshop, holdings: Holdings): void {
+/**
+ * Checks that the workshop holds what a step says: the modules mounted, what each worker it names holds and, when the
+ * step says so, the pile as it was before.
+ */
+function assertHoldings(state: Workshop, holdings: Holdings, before: Workshop): void {
   for (const name of holdings.mounted) assert.ok(state.bench.mounted.includes(name), `"${name}" is not mounted: ${JSON.stringify(state.bench.mounted)}`);
   for (const name of holdings.notMounted) assert.ok(!state.bench.mounted.includes(name), `"${name}" is mounted`);
+  if (holdings.pileAsBefore === true) assert.deepEqual(state.pile, before.pile, "the pile");
   for (const { worker, loose, module } of holdings.workers) {
     const hands = state.workers[worker];
-    if (loose !== undefined) assert.deepEqual({ ...hands.loose }, counted(loose), `"${worker}"'s loose pieces`);
+    if (loose === "as before") assert.deepEqual({ ...hands.loose }, { ...before.workers[worker].loose }, `"${worker}"'s loose pieces`);
+    else if (loose !== undefined) assert.deepEqual({ ...hands.loose }, counted(loose), `"${worker}"'s loose pieces`);
     if (module === null) assert.equal(hands.module, null, `"${worker}" holds a module`);
-    else if (module !== undefined) assert.equal(hands.module?.name, module.name, `"${worker}" holds no module "${module.name}"`);
+    else if (module !== undefined) {
+      assert.equal(hands.module?.name, module.name, `"${worker}" holds no module "${module.name}"`);
+      if (module.joined !== undefined) assert.deepEqual(hands.module?.joined, module.joined, `the pieces joined into "${worker}"'s module`);
+      if (module.notFinished === true) assert.ok(!isFinished(state, hands.module as NonNullable<Workshop["workers"][string]["module"]>), `"${worker}"'s module is finished`);
+    }
   }
+}
+
+/** Whether every piece of a module's recipe is joined into it, in any order. */
+function isFinished(state: Workshop, module: { name: string; joined: readonly string[] }): boolean {
+  return [...module.joined].sort().join() === [...state.plan[module.name].recipe].sort().join();
 }
 
 // The contract says who holds what both to set up the workshop, as a Given, and to check it, as a Then.
 Given(
-  /^(nobody holds anything|(?:(?:"\w+"(?:, | and )?)+ (?:is|are) mounted, (?:and )?)?"\w+" holds (?:the loose|a |another |both |six |one "|no module).*)$/,
+  /^(nobody holds anything|(?:(?:"\w+"(?:, | and )?)+ (?:is|are) mounted, (?:and )?)?"\w+" holds (?:the loose|a |another |both |five |six |one "|no module|nothing).*)$/,
   function (this: Context, written: string) {
     const holdings = holdingsOf(written);
-    if (this.checking) assertHoldings(workshopNow(this), holdings);
+    if (this.checking) assertHoldings(workshopNow(this), holdings, this.stateBefore as Workshop);
     else workshopSetupOf(this).changes.push((state) => withHoldings(state, holdings));
   },
 );
@@ -623,6 +664,7 @@ function turnsOf(written: string): ScriptedAnswer[] {
     let args: Record<string, unknown> = {};
     let found: RegExpExecArray | null;
     if ((found = take(` with the module "(\\w+)" and the kind "(\\w+)"`)) !== null) args = { module: found[1], kind: found[2] };
+    else if ((found = take(` with "(\\w+)" to "(\\w+)"`)) !== null) args = { worker: found[2], what: found[1] };
     else if ((found = take(` with the text of \\d+ words, ${QUOTED}`)) !== null) args = { text: unquoted(found[1]) };
     else if ((found = take(` with the text ${QUOTED}`)) !== null) args = { text: unquoted(found[1]) };
     else if ((found = take(` with (-?[\\d.]+) minutes`)) !== null) args = { minutes: Number(found[1]) };
@@ -1179,6 +1221,10 @@ function rowArguments({ tool, arguments: written }: RecordRow): Record<string, u
   }
   if (tool === "say") return { text: written };
   if (tool === "wait") return { minutes: Number(written) };
+  if (tool === "hand") {
+    const [worker, what] = written.split(", ");
+    return { worker, what };
+  }
   return { kind: written };
 }
 
@@ -1364,4 +1410,96 @@ Then("the tool {string}'s description says it gives the clock, in whole minutes 
   const description = fencedAfter(toolListed(this, tool), "Description");
   assert.match(description, /\bclock\b/, `the description of "${tool}":\n${description}`);
   assert.match(description, /whole minutes since the start/, `the description of "${tool}":\n${description}`);
+});
+
+Given("{string} takes {int} world minutes", function (this: Context, tool: string, minutes: number) {
+  changeWorkshop(this, (configuration) => {
+    const durations = configuration.durations as TomlTable;
+    assert.ok(Object.hasOwn(durations, tool), `the workshop's durations have no "${tool}"`);
+    durations[tool] = minutes;
+  });
+});
+
+Given(
+  "{string} runs on a scripted model whose turns are: the text {string} with no tool call, after {int} milliseconds; the text {string} with no tool call",
+  function (this: Context, worker: string, text: string, delayMs: number, then: string) {
+    // A turn without a tool call ends its activation, so each turn is one activation.
+    const turns = [
+      { text, delayMs },
+      { text: then, delayMs: 0 },
+    ];
+    scriptActivations(this, worker, turns.length, (index) => [turns[index]]);
+  },
+);
+
+Then("{string}'s second model turn received {string} from {string}, which the worker reads as {string}", function (this: Context, worker: string, content: string, source: string, read: string) {
+  assert.equal(asRead(source, content), read);
+  assert.ok(receivedIn(this, worker, 1).includes(read), `"${worker}"'s second model turn received ${JSON.stringify(receivedIn(this, worker, 1))}`);
+});
+
+Then("{string}, {string} and {string} received nothing on the channel {string}", function (this: Context, a: string, b: string, c: string, channel: string) {
+  assert.ok(this.toolCalls !== undefined, "the workers did not run");
+  for (const worker of [a, b, c]) assert.deepEqual(stimuliOf(this, worker).filter((stimulus) => stimulus.channel === channel), [], `"${worker}" received on the channel "${channel}"`);
+});
+
+/** The stimulus line a step named last, which "it was delivered" speaks of. */
+const lastStimulusLines = new WeakMap<Context, { deliveredAtMs: number }>();
+
+Then(
+  "the log has a stimulus line for {string} with the channel {string}, the source {string} and the content {string}",
+  function (this: Context, worker: string, channel: string, source: string, content: string) {
+    const lines = voiceLines(this, channel).filter((line) => line.agent === worker);
+    assert.deepEqual(lines.map((line) => ({ source: line.source, content: line.content })), [{ source, content }], `"${worker}"'s stimulus lines on the channel "${channel}"`);
+    lastStimulusLines.set(this, lines[0]);
+  },
+);
+
+Then("it was delivered no earlier than the end of the {string} call, and within {int} milliseconds of it", function (this: Context, tool: string, withinMs: number) {
+  const line = lastStimulusLines.get(this);
+  assert.ok(line !== undefined, "no stimulus line was named");
+  const after = line.deliveredAtMs - onlyCallOf(this, tool).endedAtMs;
+  assert.ok(after >= 0 && after <= withinMs, `the stimulus was delivered ${after} ms after the "${tool}" call ended`);
+});
+
+Then("the log has no stimulus line on the channel {string} for {string}, {string} or {string}", function (this: Context, channel: string, a: string, b: string, c: string) {
+  assert.ok(this.toolCalls !== undefined, "the workers did not run");
+  assert.deepEqual(voiceLines(this, channel).filter(({ agent }) => [a, b, c].includes(agent)), []);
+});
+
+Then("{string}'s {string} call succeeded, and {string} is mounted", function (this: Context, worker: string, tool: string, module: string) {
+  assert.equal(callOfWorker(this, worker, tool).outcome, "success");
+  assert.ok(workshopNow(this).bench.mounted.includes(module), `"${module}" is not mounted`);
+});
+
+Then("the log has a tool call line for {string}'s {string} call, with its outcome and the text {string} received", function (this: Context, worker: string, tool: string, receiver: string) {
+  assert.equal(worker, receiver);
+  const call = callOfWorker(this, worker, tool);
+  const lines = logLines(this).filter((line) => line.type === "tool_call" && line.agent === worker && line.tool === tool);
+  // The worker's last turn's transcript holds the call's result.
+  const received = (modelOf(this, worker).received.at(-1) ?? []).flatMap((message) =>
+    message.role === "toolResult" && message.toolName === tool ? [message.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("")] : [],
+  );
+  assert.deepEqual(lines.map((line) => ({ outcome: line.outcome, text: line.text })), [{ outcome: call.outcome, text: received[0] }]);
+  assert.equal(received.length, 1, `"${worker}" received ${received.length} "${tool}" results`);
+});
+
+Then("it has an {string} line naming that {string} began handing", function (this: Context, type: string, worker: string) {
+  const starts = logLines(this).filter((line) => line.type === type && line.agent === worker);
+  assert.deepEqual(starts.map((line) => ({ tool: line.tool, change: line.change })), [{ tool: "hand", change: { began: "handing" } }]);
+});
+
+Then("each worker's tools include {string}, with its duration as {float} world minutes, and its texts", function (this: Context, tool: string, minutes: number) {
+  const listed = toolListed(this, tool);
+  assert.ok(listed.includes(`- Duration: ${minutes} world minutes.`), `the inventory lists "${tool}" as:\n${listed}`);
+  assert.ok(EFFECTOR_TEXTS[tool] !== undefined, `the steps know no texts of "${tool}"`);
+  assertToolListed(this, tool);
+});
+
+Then("it gives the duration {string} as {float} world minutes among the durations", function (this: Context, name: string, minutes: number) {
+  assert.equal((inventoryWorld(this).durations as Record<string, number>)[name], minutes);
+});
+
+Then("no tool's description or parameters hold any of {string}, {string}, {string} or {string}", function (this: Context, a: string, b: string, c: string, d: string) {
+  const tools = under(under(this.labOutput ?? "", '## Condition "base"'), "### Tools");
+  for (const word of [a, b, c, d]) assert.ok(!new RegExp(`\\b${word}\\b`).test(tools), `the tools name "${word}":\n${tools}`);
 });

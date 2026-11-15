@@ -230,8 +230,8 @@ describe("the workers' tools (FR-WORKSHOP-02)", () => {
   const started = (name: string, state: Workshop, agent: string, args: Record<string, unknown> = {}) => effector(name).start?.effect(state, call(agent, args)) ?? state;
 
   it("are look, read_plan, take, put_back, join, take_apart, mount and wait, none naming a kind or a module", () => {
-    // FR-WORKSHOP-03 adds "say".
-    expect(workshopScenario.tools.map(({ name }) => name)).toEqual(["look", "read_plan", "take", "put_back", "join", "take_apart", "mount", "wait", "say"]);
+    // FR-WORKSHOP-03 adds "say", FR-WORKSHOP-05 "hand".
+    expect(workshopScenario.tools.map(({ name }) => name)).toEqual(["look", "read_plan", "take", "put_back", "join", "take_apart", "mount", "wait", "say", "hand"]);
     const written = JSON.stringify(workshopScenario.tools.map(({ description, parameters }) => ({ description, parameters })));
     for (const word of ["arn", "bex", "cal", "dov", "eln", "fim", "gor", "tessa", "ulm", "vorn", "wick", "yarl", "zeth"]) expect(written).not.toMatch(new RegExp(`\\b${word}\\b`));
   });
@@ -427,6 +427,112 @@ describe("say (FR-WORKSHOP-03)", () => {
 
   it("gives the inventory its duration in world minutes", () => {
     expect(workshopScenario.describeDuration(parse(workshopScenario.baseConfiguration), "say")).toBe("0.25 world minutes plus one minute per 30 words.");
+  });
+});
+
+describe("hand (FR-WORKSHOP-05)", () => {
+  const handTool = () => {
+    const tool = workshopScenario.tools.find(({ name }) => name === "hand");
+    if (tool?.kind !== "effector") throw new Error("hand is no effector");
+    return tool;
+  };
+  const call = (worker: string, what: string, agent = "Dal") => ({ agent, arguments: { worker, what }, atMs: 0, world: { day: 1, weekday: "Monday" as const, seconds: 9 * 3600 + 30 } });
+  const holding = (state: Workshop, worker: string, hands: Partial<Workshop["workers"][string]>): Workshop => ({ ...state, workers: { ...state.workers, [worker]: { ...state.workers[worker], ...hands } } });
+  const base = () => load().world.state;
+  /** A hand's landing: its outcome, and the state after it with its end. */
+  const land = (state: Workshop, worker: string, what: string) => {
+    const check = handTool().action?.precondition(state, call(worker, what)) ?? { holds: true as const };
+    const acted = check.holds ? (handTool().action?.effect(state, call(worker, what)) ?? state) : state;
+    return { outcome: check.holds ? "success" : check.reason, state: handTool().end?.effect(acted, call(worker, what)) ?? acted };
+  };
+
+  it("is an effector of a worker and a what, which takes hand minutes and names no worker, kind or module", () => {
+    expect(handTool().durationMs(base(), call("Mik", "arn"))).toEqual({ worldSeconds: 30 });
+    expect(Object.keys((handTool().parameters as { properties: object }).properties)).toEqual(["worker", "what"]);
+    const written = JSON.stringify({ description: handTool().description, parameters: handTool().parameters });
+    for (const word of ["Dal", "Mik", "Nar", "Ren", "arn", "bex", "cal", "dov", "eln", "fim", "gor", "tessa", "ulm", "vorn", "wick", "yarl", "zeth"]) expect(written).not.toMatch(new RegExp(`\\b${word}\\b`));
+    expect(workshopScenario.describeDuration(parse(workshopScenario.baseConfiguration), "hand")).toBe("0.5 world minutes.");
+    expect(handTool().readTarget(undefined, call("Mik", "arn"), base(), () => undefined)).toBe("not_sensed");
+  });
+
+  it("shows the giver handing while its call lasts", () => {
+    const under = handTool().start?.effect(base(), call("Mik", "arn")) ?? base();
+    expect(under.workers.Dal.doing).toBe("handing");
+    expect(handTool().start?.describe(base(), call("Mik", "arn"))).toEqual({ began: "handing" });
+    expect(handTool().end?.effect(under, call("Mik", "arn")).workers.Dal.doing).toBe("nothing");
+  });
+
+  it("moves a loose piece of a kind from the giver's hands to the receiver's, the pile untouched", () => {
+    const state = holding(base(), "Dal", { loose: { arn: 2 } });
+    const { outcome, state: after } = land(state, "Mik", "arn");
+    expect(outcome).toBe("success");
+    expect([after.workers.Dal.loose, after.workers.Mik.loose]).toEqual([{ arn: 1 }, { arn: 1 }]);
+    expect(after.pile).toEqual(state.pile);
+  });
+
+  it("moves the giver's module, its joined pieces in order, apart from the loose pieces, to a receiver with full hands", () => {
+    let state = holding(base(), "Dal", { loose: { bex: 1 }, module: { name: "tessa", joined: ["dov", "arn"] } });
+    state = holding(state, "Mik", { loose: { arn: 2, cal: 2, dov: 2 } });
+    const { outcome, state: after } = land(state, "Mik", "tessa");
+    expect(outcome).toBe("success");
+    expect(after.workers.Dal).toMatchObject({ loose: { bex: 1 }, module: null });
+    expect(after.workers.Mik).toMatchObject({ loose: { arn: 2, cal: 2, dov: 2 }, module: { name: "tessa", joined: ["dov", "arn"] } });
+  });
+
+  it("hands a piece to a receiver that holds a module", () => {
+    const state = holding(holding(base(), "Dal", { loose: { arn: 1 } }), "Mik", { module: { name: "ulm", joined: ["bex"] } });
+    const { outcome, state: after } = land(state, "Mik", "arn");
+    expect(outcome).toBe("success");
+    expect(after.workers.Mik).toMatchObject({ loose: { arn: 1 }, module: { name: "ulm", joined: ["bex"] } });
+  });
+
+  it("refuses when it lands, in the order of the table, moving nothing", () => {
+    const full = { arn: 2, bex: 1, cal: 1, dov: 2 };
+    const cases: [Workshop, string, string, string][] = [
+      [holding(base(), "Dal", { loose: { arn: 1 } }), "Kel", "arn", "no_such_worker"],
+      [holding(base(), "Dal", { loose: { arn: 1 } }), "Dal", "arn", "to_self"],
+      // The receiver's name is checked before what is handed.
+      [base(), "Kel", "arn", "no_such_worker"],
+      [base(), "Dal", "arn", "to_self"],
+      [holding(base(), "Dal", { loose: { bex: 1 } }), "Mik", "arn", "not_held"],
+      [base(), "Mik", "arn", "not_held"],
+      [holding(base(), "Dal", { module: { name: "ulm", joined: ["bex"] } }), "Mik", "tessa", "not_held"],
+      [holding(holding(base(), "Dal", { loose: { eln: 1 } }), "Mik", { loose: full }), "Mik", "eln", "hands_full"],
+      [holding(holding(base(), "Dal", { module: { name: "tessa", joined: ["arn", "arn", "bex", "cal", "dov"] } }), "Mik", { module: { name: "ulm", joined: ["bex"] } }), "Mik", "tessa", "holds_module"],
+    ];
+    for (const [state, worker, what, refused] of cases) {
+      const { outcome, state: after } = land(state, worker, what);
+      expect([worker, what, outcome]).toEqual([worker, what, refused]);
+      expect(after).toEqual({ ...state, workers: { ...state.workers, Dal: { ...state.workers.Dal, doing: "nothing" } } });
+    }
+    expect(handTool().texts).toEqual({
+      success: "You have handed it over.",
+      no_such_worker: "There is no worker of that name; nothing has been handed.",
+      to_self: "That is you; nothing has been handed.",
+      not_held: "You are not holding that; nothing has been handed.",
+      hands_full: "Their hands are full; nothing has been handed.",
+      holds_module: "They are already holding a module; nothing has been handed.",
+    });
+  });
+
+  it("names the giver's module when what is that module's name, and a kind of piece otherwise", () => {
+    // A worker holding a module "arn" and a loose arn hands the module.
+    const state = holding(base(), "Dal", { loose: { arn: 1 }, module: { name: "arn", joined: [] } });
+    const { state: after } = land(state, "Mik", "arn");
+    expect(after.workers.Mik).toMatchObject({ loose: {}, module: { name: "arn", joined: [] } });
+    expect(after.workers.Dal.loose).toEqual({ arn: 1 });
+  });
+
+  it("delivers what was handed to the receiver alone, from the giver, on the channel hands", () => {
+    expect(handTool().delivers?.channel).toBe("hands");
+    const piece = handTool().action?.effect(holding(base(), "Dal", { loose: { arn: 1 } }), call("Mik", "arn")) as Workshop;
+    expect(handTool().delivers?.deliveries(piece, call("Mik", "arn"))).toEqual([{ agent: "Mik", source: "Dal", values: { what: "a piece of arn" } }]);
+    const module = handTool().action?.effect(holding(base(), "Dal", { module: { name: "tessa", joined: ["arn"] } }), call("Ren", "tessa")) as Workshop;
+    expect(handTool().delivers?.deliveries(module, call("Ren", "tessa"))).toEqual([{ agent: "Ren", source: "Dal", values: { what: "the module tessa" } }]);
+  });
+
+  it("declares the channel hands, from the giver, which wakes a resting worker and is described as handed you <what>.", () => {
+    expect(load().channels.find(({ name }) => name === "hands")).toEqual({ name: "hands", source: "the giver", stimulus: "handed you {what}.", described: "handed you <what>.", wakes: true });
   });
 });
 
