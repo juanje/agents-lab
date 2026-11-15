@@ -39,6 +39,10 @@ describe("a hotel keeps a room up to its own night (FR-CONGRESS-18)", () => {
     expect([roomsLeft(state, 5), roomsLeft(state, 18), roomsLeft(state, 24), roomsLeft(state, 25)]).toEqual([10, 5, 1, 1]);
   });
 
+  it("has no room left for a night once that night's day has passed", () => {
+    expect(roomsLeft(initial(), 26)).toBe(0);
+  });
+
   it("its rooms left are those less the rooms booked, never below 0, so its last room on its own night can be booked once", () => {
     const book = tool("book_travel").action;
     const call = booking("h2 day 25", "s1", 25);
