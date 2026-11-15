@@ -22,7 +22,9 @@ const DELIVERED_LATE_BY_MS = 100;
 /** The worker's only call of a tool, as the run recorded it, which "it" names in the steps that follow. */
 function onlyCall(context: Context, tool: string): ToolCall {
   assert.ok(context.toolCalls !== undefined, "the worker did not run");
-  const calls = context.toolCalls.filter((call) => call.agent === WORKER && call.tool === tool);
+  // In the workshop, the only call of that tool any worker made (FR-WORKSHOP-02).
+  const anyWorker = context.libraryScenario?.name === "workshop";
+  const calls = context.toolCalls.filter((call) => (anyWorker || call.agent === WORKER) && call.tool === tool);
   assert.equal(calls.length, 1, `the worker made ${calls.length} "${tool}" calls`);
   context.lastToolCall = calls[0];
   return calls[0];

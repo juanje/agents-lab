@@ -1778,6 +1778,119 @@ describe("run", () => {
     expect((logOf(logDirectory, runId) as { type: string }[]).filter((line) => line.type === "effector_start")).toEqual([]);
   });
 
+  /**
+   * An effector with an end in the slots world, "visit" (FR-WORKSHOP-02): as its call starts, its agent takes slot 1;
+   * when it lands, the agent also takes slot 2 (fails as slot_taken when it is held), unless it has no action; and as
+   * its call ends, whatever its outcome, its end gives slot 1 back.
+   */
+  const visiting = (durationMs: number, parts: Partial<Effector<Slots>> = {}): Effector<Slots> => ({
+    kind: "effector",
+    name: "visit",
+    description: "Visit slot 1 and take slot 2.",
+    parameters: { type: "object", properties: {} },
+    durationMs: () => durationMs,
+    start: {
+      precondition: (state, { agent }) => take.precondition(state, { agent, slot: 1 }),
+      effect: (state, { agent }) => take.effect(state, { agent, slot: 1 }),
+      describe: () => ({ took: 1 }),
+    },
+    action: {
+      precondition: (state, { agent }) => take.precondition(state, { agent, slot: 2 }),
+      effect: (state, { agent }) => take.effect(state, { agent, slot: 2 }),
+    },
+    end: {
+      precondition: () => ({ holds: true }),
+      effect: (state) => [null, ...state.slice(1)],
+    },
+    readTarget: () => "not_sensed",
+    ...parts,
+  });
+
+  /** One agent "a" that calls "visit" at once, then ends. */
+  const visitor = () =>
+    new ScriptedModel([
+      { toolCalls: [{ name: "visit", arguments: {} }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+
+  it("applies an effector's end in the same change as its action, when the action applies (FR-WORKSHOP-02)", async () => {
+    const loaded = slots({ tools: [...slotTools, visiting(30)] });
+
+    const { toolCalls } = await run(loaded, [{ name: "a", model: visitor(), activations: 1 }], seed, settings);
+
+    expect(toolCalls[0]).toMatchObject({ tool: "visit", outcome: "success" });
+    expect(loaded.world.state).toEqual([null, "a", null]);
+    // The start, then the action with its end.
+    expect(loaded.world.version).toBe(2);
+  });
+
+  it("applies an effector's end as a change of its own when its action fails (FR-WORKSHOP-02)", async () => {
+    const loaded = slots({ tools: [...slotTools, visiting(30)], initialState: () => [null, "z", null] });
+
+    const { toolCalls } = await run(loaded, [{ name: "a", model: visitor(), activations: 1 }], seed, settings);
+
+    expect(toolCalls[0]).toMatchObject({ tool: "visit", outcome: "slot_taken" });
+    expect(loaded.world.state).toEqual([null, "z", null]);
+    expect(loaded.world.version).toBe(2);
+  });
+
+  it("applies the end of an effector with no action as a change of its own, and of a call that ended early (FR-WORKSHOP-02)", async () => {
+    const napping = visiting(5_000, { action: undefined, endsEarly: { outcome: "interrupted", byChange: () => false, byStimulus: () => true } });
+    const loaded = slots({ tools: [...slotTools, napping, visiting(30, { name: "quick", action: undefined })], channels: () => [rhythmChannel, bell] });
+    const quick = new ScriptedModel([
+      { toolCalls: [{ name: "quick", arguments: {} }], delayMs: 0 },
+      { toolCalls: [{ name: "visit", arguments: {} }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+
+    const { toolCalls } = await run(loaded, [{ name: "a", model: quick, activations: 1 }], seed, {
+      ...settings,
+      onStart: (stimuli: Stimuli) => setTimeout(() => stimuli.deliver("a", "bell"), 100),
+    });
+
+    expect(toolCalls.map(({ tool, outcome }) => [tool, outcome])).toEqual([
+      ["quick", "success"],
+      ["visit", "interrupted"],
+    ]);
+    expect(loaded.world.state).toEqual(emptySlots(3));
+    // Each call's start and its end.
+    expect(loaded.world.version).toBe(4);
+  });
+
+  it("applies no end to a call cut off by the time limit, nor to one refused before it runs (FR-WORKSHOP-02)", async () => {
+    const cutOff = slots({ tools: [...slotTools, visiting(300)] });
+    await run(cutOff, [{ name: "a", model: visitor(), activations: 1 }], seed, { ...settings, timeLimitMs: 100 });
+    expect(cutOff.world.state).toEqual(["a", null, null]);
+    expect(cutOff.world.version).toBe(1);
+
+    const refusedAtOnce = slots({ tools: [...slotTools, visiting(30, { refuses: () => ({ outcome: "invalid_arguments", reason: "never" }) })] });
+    const { toolCalls } = await run(refusedAtOnce, [{ name: "a", model: visitor(), activations: 1 }], seed, settings);
+    expect(toolCalls[0]).toMatchObject({ outcome: "invalid_arguments" });
+    expect(refusedAtOnce.world.version).toBe(0);
+  });
+
+  it("counts an end applied on its own among the changes since sensing of another agent's effector call (FR-WORKSHOP-02)", async () => {
+    // "a" visits 10 ms in, over 50 ms, with slot 2 held, so its end applies alone; "b" looks at once, then takes slot 3 over 100 ms.
+    const b = new ScriptedModel([
+      { toolCalls: [{ name: "look", arguments: {} }], delayMs: 0 },
+      { toolCalls: [{ name: "take", arguments: { slot: 3 } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+    const loaded = slots({ tools: [...withTakeTaking(100), visiting(50)], initialState: () => [null, "z", null], ...agentsNamed("a", "b"), ...rhythms({ a: () => 10 }) });
+
+    const { toolCalls } = await run(
+      loaded,
+      [
+        { name: "a", model: visitor(), activations: 1 },
+        { name: "b", model: b, activations: 1 },
+      ],
+      seed,
+      settings,
+    );
+
+    expect(toolCalls.find((call) => call.tool === "take")).toMatchObject({ outcome: "success", changesSinceSensing: 2, changesSinceSensingBy: ["a", "a"] });
+  });
+
   it("gives an effector's action the moment it is checked and applied, by the run's clock", async () => {
     const a = new ScriptedModel([
       { toolCalls: [{ name: "stamp", arguments: {} }], delayMs: 0 },

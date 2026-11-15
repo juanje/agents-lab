@@ -192,3 +192,185 @@ describe("the workshop's inventory (FR-WORKSHOP-01)", () => {
     );
   });
 });
+
+describe("the workers' tools (FR-WORKSHOP-02)", () => {
+  type Tool = (typeof workshopScenario.tools)[number];
+  const toolNamed = (name: string): Tool => {
+    const tool = workshopScenario.tools.find((each) => each.name === name);
+    if (tool === undefined) throw new Error(`the workshop has no tool "${name}"`);
+    return tool;
+  };
+  const effector = (name: string) => {
+    const tool = toolNamed(name);
+    if (tool.kind !== "effector") throw new Error(`"${name}" is no effector`);
+    return tool;
+  };
+  const sensor = (name: string) => {
+    const tool = toolNamed(name);
+    if (tool.kind !== "sensor") throw new Error(`"${name}" is no sensor`);
+    return tool;
+  };
+  /** The base workshop with the draw of FR-WORKSHOP-02's Background, changed. */
+  const start = (changing: (state: Workshop) => Workshop = (state) => state): Workshop =>
+    changing({ ...load().world.state, orders: { kinds: ["gor", "arn", "fim", "bex", "dov", "cal", "eln"], workers: ["Ren", "Dal", "Nar", "Mik"], modules: ["zeth", "ulm", "wick", "tessa", "yarl", "vorn"] } });
+  const holding = (state: Workshop, worker: string, hands: Partial<Workshop["workers"][string]>): Workshop => ({ ...state, workers: { ...state.workers, [worker]: { ...state.workers[worker], ...hands } } });
+  const call = (agent: string, args: Record<string, unknown> = {}) => ({ agent, arguments: args, atMs: 0 });
+  /** What an effector's landing gives: its outcome, and the state after it with its end, as the engine applies them. */
+  const land = (name: string, state: Workshop, agent: string, args: Record<string, unknown> = {}) => {
+    const { action, end } = effector(name);
+    const check = action === undefined ? { holds: true as const } : action.precondition(state, call(agent, args));
+    const acted = check.holds && action !== undefined ? action.effect(state, call(agent, args)) : state;
+    return { outcome: check.holds ? "success" : check.reason, state: end === undefined ? acted : end.effect(acted, call(agent, args)) };
+  };
+  const started = (name: string, state: Workshop, agent: string, args: Record<string, unknown> = {}) => effector(name).start?.effect(state, call(agent, args)) ?? state;
+
+  it("are look, read_plan, take, put_back, join, take_apart, mount and wait, none naming a kind or a module", () => {
+    expect(workshopScenario.tools.map(({ name }) => name)).toEqual(["look", "read_plan", "take", "put_back", "join", "take_apart", "mount", "wait"]);
+    const written = JSON.stringify(workshopScenario.tools.map(({ description, parameters }) => ({ description, parameters })));
+    for (const word of ["arn", "bex", "cal", "dov", "eln", "fim", "gor", "tessa", "ulm", "vorn", "wick", "yarl", "zeth"]) expect(written).not.toMatch(new RegExp(`\\b${word}\\b`));
+  });
+
+  it("take each its duration in world minutes from the configuration", () => {
+    const state = start();
+    const minutes = (name: string, args: Record<string, unknown> = {}) => toolNamed(name).durationMs(state, { agent: "Dal", arguments: args });
+    expect(["look", "read_plan", "take", "put_back", "join", "take_apart", "mount"].map((name) => minutes(name))).toEqual(
+      [0.5, 1, 1, 0.5, 2, 2, 3].map((each) => ({ worldSeconds: each * 60 })),
+    );
+    expect(minutes("wait", { minutes: 2.5 })).toEqual({ worldSeconds: 150 });
+    // A mount that finds every bench place taken as it starts takes mount_refused.
+    const full = { ...state, bench: { ...state.bench, places: ["Mik", "Nar"] } };
+    expect(toolNamed("mount").durationMs(full, { agent: "Dal", arguments: {} })).toEqual({ worldSeconds: 30 });
+  });
+
+  it("look gives the room as JSON, in the drawn orders, each worker with what it holds and is doing", () => {
+    let state = holding(start(), "Dal", { loose: { arn: 2 }, module: { name: "tessa", joined: ["bex"] } });
+    state = { ...state, pile: { ...state.pile, arn: 2, bex: 2 } };
+    state = started("take", state, "Mik", { kind: "dov" });
+    expect(JSON.parse(sensor("look").sense(state, "Dal", {}, 0))).toEqual({
+      pile: { gor: 2, arn: 2, fim: 2, bex: 2, dov: 5, cal: 4, eln: 2 },
+      bench: { mounted: [], places: [null, null] },
+      workers: [
+        { name: "Ren", loose: {}, module: null, doing: "nothing" },
+        { name: "Dal", loose: { arn: 2 }, module: { name: "tessa", joined: ["bex"], finished: false }, doing: "nothing" },
+        { name: "Nar", loose: {}, module: null, doing: "nothing" },
+        { name: "Mik", loose: {}, module: null, doing: "taking" },
+      ],
+    });
+    expect(Object.keys(JSON.parse(sensor("look").sense(state, "Dal", {}, 0)).pile)).toEqual(["gor", "arn", "fim", "bex", "dov", "cal", "eln"]);
+  });
+
+  it("read_plan gives the modules in the drawn order", () => {
+    const { modules } = JSON.parse(sensor("read_plan").sense(start(), "Dal", {}, 0)) as { modules: { name: string }[] };
+    expect(modules.map(({ name }) => name)).toEqual(["zeth", "ulm", "wick", "tessa", "yarl", "vorn"]);
+    expect(modules[0]).toEqual({ name: "zeth", recipe: ["bex", "dov", "dov"], after: ["tessa"] });
+  });
+
+  it("take, put_back, join and take_apart move pieces between the pile, the hands and the module", () => {
+    let state = start();
+    state = land("take", state, "Mik", { kind: "bex" }).state;
+    state = land("take", state, "Mik", { kind: "eln" }).state;
+    expect(state.workers.Mik.loose).toEqual({ bex: 1, eln: 1 });
+    state = land("join", state, "Mik", { module: "ulm", kind: "bex" }).state;
+    expect(state.workers.Mik).toMatchObject({ loose: { eln: 1 }, module: { name: "ulm", joined: ["bex"] } });
+    state = land("put_back", state, "Mik", { kind: "eln" }).state;
+    state = land("take_apart", state, "Mik").state;
+    expect(state.workers.Mik).toMatchObject({ loose: {}, module: null });
+    expect(state.pile).toEqual(start().pile);
+  });
+
+  it("refuses each effector's call when it lands, in the order of the table, changing nothing", () => {
+    const base = start();
+    const cases: [string, Workshop, Record<string, unknown>, string][] = [
+      ["take", { ...base, pile: { ...base.pile, gor: 0 } }, { kind: "gor" }, "none_left"],
+      ["take", base, { kind: "hox" }, "none_left"],
+      ["take", holding({ ...base, pile: { ...base.pile, gor: 0 } }, "Dal", { loose: { arn: 6 } }), { kind: "gor" }, "none_left"],
+      ["take", holding(base, "Dal", { loose: { arn: 2, bex: 1, cal: 1, dov: 2 } }), { kind: "eln" }, "hands_full"],
+      ["put_back", holding(base, "Dal", { loose: { arn: 1 } }), { kind: "cal" }, "not_held"],
+      ["join", holding(base, "Dal", { loose: { bex: 1 } }), { module: "ulm", kind: "eln" }, "not_held"],
+      ["join", holding(base, "Dal", { loose: { arn: 1 }, module: { name: "tessa", joined: ["arn", "arn"] } }), { module: "tessa", kind: "arn" }, "not_needed"],
+      ["join", holding(base, "Dal", { loose: { bex: 1 } }), { module: "quill", kind: "bex" }, "not_needed"],
+      ["join", holding(base, "Dal", { loose: { cal: 1 }, module: { name: "ulm", joined: ["bex"] } }), { module: "vorn", kind: "cal" }, "other_module"],
+      ["take_apart", base, {}, "no_module"],
+    ];
+    for (const [name, state, args, outcome] of cases) {
+      const landed = land(name, state, "Dal", args);
+      expect([name, landed.outcome]).toEqual([name, outcome]);
+      expect(landed.state).toEqual(state);
+    }
+  });
+
+  it("refuses a mount as bench_full when the worker occupies no bench place, and otherwise as the table says", () => {
+    const base = start();
+    const finishedTessa = { name: "tessa", joined: ["arn", "arn", "bex", "cal", "dov"] };
+    const mounting = (state: Workshop) => started("mount", state, "Dal");
+    const cases: [Workshop, string][] = [
+      [holding({ ...base, bench: { ...base.bench, places: ["Mik", "Nar"] } }, "Dal", { module: finishedTessa }), "bench_full"],
+      [mounting(base), "no_module"],
+      [mounting(holding(base, "Dal", { module: { name: "tessa", joined: ["arn"] } })), "not_finished"],
+      [mounting(holding(base, "Dal", { module: { name: "ulm", joined: ["bex", "eln"] } })), "out_of_order"],
+      [mounting(holding({ ...base, bench: { ...base.bench, mounted: ["tessa"] } }, "Dal", { module: finishedTessa })), "already_mounted"],
+    ];
+    for (const [state, outcome] of cases) expect(land("mount", state, "Dal").outcome).toBe(outcome);
+  });
+
+  it("mount occupies a free bench place as it starts, mounts the finished module when it lands, and frees the place as it ends", () => {
+    const state = holding(start(), "Dal", { module: { name: "tessa", joined: ["arn", "arn", "bex", "cal", "dov"] } });
+    const under = started("mount", state, "Dal");
+    expect(under.bench.places).toEqual(["Dal", null]);
+    expect(under.workers.Dal.doing).toBe("mounting");
+    expect(effector("mount").start?.describe(state, call("Dal"))).toEqual({ began: "mounting", place: 1 });
+    const { outcome, state: after } = land("mount", under, "Dal");
+    expect(outcome).toBe("success");
+    expect(after.bench).toEqual({ mounted: ["tessa"], places: [null, null] });
+    expect(after.workers.Dal).toMatchObject({ module: null, doing: "nothing" });
+  });
+
+  it("a mount that finds the bench full still shows the worker mounting, and occupies no place", () => {
+    const full = holding({ ...start(), bench: { mounted: [], places: ["Mik", "Nar"] } }, "Dal", { module: { name: "tessa", joined: ["arn", "arn", "bex", "cal", "dov"] } });
+    const under = started("mount", full, "Dal");
+    expect(under.bench.places).toEqual(["Mik", "Nar"]);
+    expect(under.workers.Dal.doing).toBe("mounting");
+    expect(effector("mount").start?.describe(full, call("Dal"))).toEqual({ began: "mounting", place: null });
+  });
+
+  it("shows a worker doing what its effector's call does, from its start until its end", () => {
+    for (const [name, doing] of [["take", "taking"], ["put_back", "putting back"], ["join", "joining"], ["take_apart", "taking apart"], ["wait", "waiting"]]) {
+      const under = started(name, start(), "Dal", { kind: "arn", module: "tessa", minutes: 1 });
+      expect([name, under.workers.Dal.doing]).toEqual([name, doing]);
+      expect(effector(name).start?.describe(start(), call("Dal"))).toEqual({ began: doing });
+      expect(effector(name).end?.effect(under, call("Dal")).workers.Dal.doing).toBe("nothing");
+    }
+  });
+
+  it("wait takes minutes above 0 and at most wait_max_minutes, refusing any other at once, and ends early at a stimulus", () => {
+    const wait = effector("wait");
+    for (const minutes of [0, -1, 10.5]) expect(wait.refuses?.(start(), { agent: "Dal", arguments: { minutes } })?.outcome).toBe("invalid_arguments");
+    for (const minutes of [0.5, 2, 10]) expect(wait.refuses?.(start(), { agent: "Dal", arguments: { minutes } })).toBeUndefined();
+    expect(wait.action).toBeUndefined();
+    expect(wait.endsEarly?.outcome).toBe("interrupted");
+    expect(wait.endsEarly?.byStimulus({ channel: "voice", source: "Mik", content: "hello" }, { agent: "Dal", arguments: {} })).toBe(true);
+    expect(wait.texts).toEqual({ success: "You have waited.", interrupted: "Someone spoke; you stopped waiting." });
+  });
+
+  it("reads take's and mount's targets in the worker's last look", () => {
+    const state = start();
+    const lookAt = (pile: Record<string, number>, places: (string | null)[]) => ({ tool: "look", result: JSON.stringify({ pile, bench: { mounted: [], places }, workers: [] }), atMs: 0 });
+    const target = (name: string, args: Record<string, unknown>, look: ReturnType<typeof lookAt> | undefined) =>
+      effector(name).readTarget(look, { agent: "Mik", arguments: args }, state, (tool) => (tool === "look" ? look : undefined));
+    expect(target("take", { kind: "gor" }, lookAt({ gor: 1 }, [null, null]))).toBe("free");
+    expect(target("take", { kind: "gor" }, lookAt({ gor: 0 }, [null, null]))).toBe("held");
+    expect(target("take", { kind: "gor" }, undefined)).toBe("not_sensed");
+    expect(target("mount", {}, lookAt({}, ["Dal", null]))).toBe("free");
+    expect(target("mount", {}, lookAt({}, ["Dal", "Nar"]))).toBe("held");
+    expect(target("join", { module: "ulm", kind: "bex" }, lookAt({}, [null, null]))).toBe("not_sensed");
+  });
+
+  it("gives the inventory each tool's duration in world minutes", () => {
+    const configuration = parse(workshopScenario.baseConfiguration);
+    expect(["look", "read_plan", "take", "put_back", "join", "take_apart"].map((tool) => workshopScenario.describeDuration(configuration, tool))).toEqual(
+      ["0.5 world minutes.", "1 world minutes.", "1 world minutes.", "0.5 world minutes.", "2 world minutes.", "2 world minutes."],
+    );
+    expect(workshopScenario.describeDuration(configuration, "mount")).toBe("3 world minutes; 0.5 world minutes when every bench place is taken as it starts.");
+    expect(workshopScenario.describeDuration(configuration, "wait")).toBe("The minutes it is given, above 0 and at most 10 world minutes; it ends early when a stimulus reaches the worker.");
+  });
+});
