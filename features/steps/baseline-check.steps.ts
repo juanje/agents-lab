@@ -302,6 +302,13 @@ Then('"programme_published" was reached at {string}, and "programme_on_time" hol
   assert.equal(holds(found.programme_on_time), true);
 });
 
+// FR-CONGRESS-23's amendment of the "day 3 10:00" example: reached as the last acceptance made that version real, at day 8 00:00.
+Then('"programme_published" was reached on {string}, when that version became real, and "programme_on_time" holds', function (this: Context, day: string) {
+  const found = results.get(this) ?? {};
+  assert.deepEqual(found.programme_published, { holds: true, reachedAt: minutes(day) });
+  assert.equal(holds(found.programme_on_time), true);
+});
+
 // The parts report shows milestones without kinds.
 Given('a runs directory of an experiment with no "kind_factor", whose parts include "M1" reached at "day 5 10:00"', function (this: Context) {
   const directory = join(this.home, "runs", "e-milestones");
