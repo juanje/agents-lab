@@ -254,10 +254,11 @@ describe("a congress that does not happen holds nothing for its event (FR-CONGRE
     for (const name of ["P04", "within_budget", "P06", "P11"]) expect(cancelled[name], name).toEqual(happening[name]);
   });
 
-  it("holds no part at the event without six sessions in the latest programme, however the booking stands", () => {
+  it("leaves a congress whose booking was never confirmed to each predicate", () => {
+    // Six sessions with confirmed speakers and no booking: P05 reads the programme as before (FR-CONGRESS-06).
     const state = congress();
-    const population = state.population as NonNullable<Congress["population"]>;
-    (population as { programme: unknown[] }).programme = [{ ...population.programme[0], sessions: population.programme[0].sessions.slice(0, 5) }];
-    expect(holds(congressParts.predicates.P01(state, {}))).toBe(false);
+    const { mailboxes } = state.mail;
+    state.mail = { ...state.mail, mailboxes: { ...mailboxes, organiser: mailboxes.organiser.filter(({ act }) => act !== "contract" && act !== "confirmed") } };
+    expect(holds(congressParts.predicates.P05(state, {}))).toBe(true);
   });
 });
