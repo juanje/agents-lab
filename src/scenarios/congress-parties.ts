@@ -603,6 +603,8 @@ export const venueRules: RuleSet = {
           const price = offer?.price ?? venue.extras?.[item];
           const contract = live();
           if (price === undefined || contract === undefined) return notAvailable(price === undefined ? item : "contract");
+          // An extra the booking has, or a room it has, is confirmed once (FR-CONGRESS-23).
+          if (offer?.room === undefined ? Object.hasOwn(contract.extras, item) : contract.rooms.includes(offer.room)) return { act: "already_confirmed", fields: { item } };
           contract.extras[item] = price;
           if (offer?.room !== undefined) contract.rooms = [...contract.rooms, offer.room];
           record("extra", { contract: contract.id, item });
@@ -882,7 +884,8 @@ export const venueRules: RuleSet = {
         const changes = party.stimuli.filter(({ channel }) => channel === VENUE_CHANGE);
         party.stimuli.splice(0, party.stimuli.length, ...party.stimuli.filter((stimulus) => !changes.includes(stimulus)));
         for (const { content } of changes) yield* announceChange(content.trim());
-        yield* party.handle(answer, venue.pick_up ?? 1, random);
+        // A repeated accept_extra is answered already_confirmed, not already_sent (FR-CONGRESS-23).
+        yield* party.handle(answer, venue.pick_up ?? 1, random, ({ act }) => act === "accept_extra");
         yield* party.clock();
         // Firing a timer may set others, so the next is found again each time.
         const next = () => timers.sort((one, other) => one.at - other.at)[0] as Timer | undefined;
