@@ -1,6 +1,6 @@
 import { type TomlTable, stringify } from "smol-toml";
 import type { ToolCall } from "../engine/adapter.ts";
-import { readCalendar, sinceDayOne } from "../engine/calendar.ts";
+import { type WorldTime, readCalendar, sinceDayOne } from "../engine/calendar.ts";
 import type { Random } from "../engine/random.ts";
 import { type Configuration, type MetricValue, type Scenario, isTable } from "../engine/scenario.ts";
 import type { Sensing } from "../engine/sensings.ts";
@@ -233,10 +233,15 @@ function minutes(value: number): { worldSeconds: number } {
   return { worldSeconds: value * 60 };
 }
 
+/** The world minutes since the calendar's start at a world time, which a run without a calendar does not give. */
+function minutesSinceStart(state: Workshop, world: WorldTime | undefined): number {
+  if (world === undefined) throw new Error("The workshop needs the world's time, which a run without a calendar does not give");
+  return (sinceDayOne(world) - state.settings.startSeconds) / 60;
+}
+
 /** The world minute a call lands at, since the calendar's start (FR-WORKSHOP-04). */
 function landedAt(state: Workshop, call: LandingCall): number {
-  if (call.world === undefined) throw new Error("The workshop's effects need the world's time, which a run without a calendar does not give");
-  return (sinceDayOne(call.world) - state.settings.startSeconds) / 60;
+  return minutesSinceStart(state, call.world);
 }
 
 /** The workshop with one more applied effect kept, of a kind. */
@@ -333,16 +338,17 @@ const KIND = { type: "string", description: "A kind of piece, as look names it."
 /** The parameter of a module's name, as `read_plan` names it. */
 const MODULE = { type: "string", description: "A module's name, as read_plan names it." };
 
-/** "look": the room as it is when the call ends, in the drawn orders. */
+/** "look": the clock and the room as they are when the call ends, the room in the drawn orders. */
 const look: Sensor<Workshop> = {
   kind: "sensor",
   name: "look",
   description:
-    "Look at the room, as JSON: the pile, with how many pieces of each kind it holds; the bench, with the modules mounted on the device in the order they were mounted and who occupies each of its places (null for a free one); and each worker, you included, with the loose pieces it holds, the module it holds (with the pieces joined into it so far and whether it is finished) and what it is doing.",
+    "Look at the room, as JSON: the clock, in whole minutes since the start; the pile, with how many pieces of each kind it holds; the bench, with the modules mounted on the device in the order they were mounted and who occupies each of its places (null for a free one); and each worker, you included, with the loose pieces it holds, the module it holds (with the pieces joined into it so far and whether it is finished) and what it is doing.",
   parameters: { type: "object", properties: {} },
   durationMs: (state) => minutes(state.settings.durations.look),
-  sense: (state) =>
+  sense: (state, _agent, _args, _sinceStartMs, world) =>
     JSON.stringify({
+      clock: Math.floor(minutesSinceStart(state, world)),
       pile: Object.fromEntries(state.orders.kinds.map((kind) => [kind, state.pile[kind] ?? 0])),
       bench: { mounted: state.bench.mounted, places: state.bench.places },
       workers: state.orders.workers.map((name) => {
