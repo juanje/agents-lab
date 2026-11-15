@@ -1,5 +1,6 @@
 import { Random } from "../engine/random.ts";
 import { otherCustomers } from "./congress-parties.ts";
+import { reachedFrom } from "./congress-parts.ts";
 import { type AttendeesMaterial, type Population, minutesOfTime, registrationProbability } from "./population.ts";
 
 // FR-CONGRESS-21: the solvability check. From a replica's parties and its seed, the plans that complete the task, each
@@ -134,22 +135,7 @@ function freeOf(venue: VenueOption, input: SolvabilityInput): boolean {
 /** Whether a venue's room, toilets and catering area are reachable from its entrance, step-free or through any passage. */
 function reaches(venue: VenueOption, room: string, anyPassage: boolean): boolean {
   const needed = [room, ...venue.rooms.map(({ id }) => id).filter((id) => /toilet|catering/.test(id)), ...venue.interior.flatMap(({ between }) => between).filter((id) => /toilet|catering/.test(id))];
-  const reached = new Set([venue.entrance]);
-  for (let grown = true; grown; ) {
-    grown = false;
-    for (const { between: [one, other], step_free: stepFree } of venue.interior) {
-      if (stepFree !== true && !anyPassage) continue;
-      for (const [from, to] of [
-        [one, other],
-        [other, one],
-      ]) {
-        if (reached.has(from) && !reached.has(to)) {
-          reached.add(to);
-          grown = true;
-        }
-      }
-    }
-  }
+  const reached = reachedFrom(venue.entrance, venue.interior, anyPassage);
   return needed.every((place) => reached.has(place));
 }
 

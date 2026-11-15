@@ -277,11 +277,17 @@ export const seatsOf = (state: Congress, room: string) => state.rooms[room]?.sea
 function reachable(state: Congress, venue: string, rooms: readonly string[]): boolean {
   const ramp = withAct(state, "extra_confirmed", venue).some(({ fields }) => fields.item === "ramp");
   const entrance = state.venues[venue]?.entrance;
-  const reached = new Set<string>(entrance === undefined ? [] : [entrance]);
+  const reached = entrance === undefined ? new Set<string>() : reachedFrom(entrance, state.passages, ramp);
+  return rooms.every((room) => reached.has(room));
+}
+
+/** The places reached from a place through passages: step-free ones, or any when \`anyPassage\` (a ramp hired). */
+export function reachedFrom(start: string, passages: readonly { between: readonly string[]; step_free: true | string }[], anyPassage: boolean): Set<string> {
+  const reached = new Set<string>([start]);
   for (let grown = true; grown; ) {
     grown = false;
-    for (const { between, step_free: stepFree } of state.passages) {
-      if (stepFree !== true && !ramp) continue;
+    for (const { between, step_free: stepFree } of passages) {
+      if (stepFree !== true && !anyPassage) continue;
       const [one, other] = between;
       for (const [from, to] of [
         [one, other],
@@ -294,7 +300,7 @@ function reachable(state: Congress, venue: string, rooms: readonly string[]): bo
       }
     }
   }
-  return rooms.every((room) => reached.has(room));
+  return reached;
 }
 
 /** The rooms of a venue's interior that are its toilets or its catering area. */
