@@ -803,6 +803,16 @@ The recorder writes a line per event. The inventory and the run's setup go first
 **Timing**
 - "When the run ends" may take 90 s.
 
+### The workshop (FR-WORKSHOP-01, `src/scenarios/workshop.ts`)
+
+- Workers (`workers`, each an agent) assemble a device from a plan (`[plan.<module>]`: `recipe`, `after`) out of a common pile (`[pile]`), at a bench of `bench_places`, with hands of `hand_pieces` loose pieces and one module. The base configuration is `world.md`'s base, the three texts word for word.
+- `settingsOf` checks the configuration on every call the engine makes while loading (`channels` first), so a key the workshop cannot build from is refused before any model call, naming the key.
+- **State:** `plan`, `pile` (count by kind), `bench` (`mounted`, `places`), `workers` (each one's `loose` and `module`) and `orders`.
+- **Listing orders:** `initialState` shuffles, from the initial state's sequence, the sorted kinds, then the sorted modules, then the workers; drawing the workers last keeps the other two orders when a condition changes the workers.
+- **Texts:** `identity`, `task`, `world_rules`, placed `system` or `first`; a place joins its texts in that order with a blank line. `{name}` is filled in the system prompt only: a text placed `first` goes out on the channel `order` (source `order_source`, declared only when some text is placed there) as written.
+- Every time and duration is in world minutes of the one calendar segment.
+- **Steps:** "the configuration is changed so that …" is the congress's step; it hands the change to the first reader in `features/support/changes.ts` that applies, which the workshop's steps register.
+
 ### The runner
 
 **Expanding and ordering runs (FR-RUN-06)**
