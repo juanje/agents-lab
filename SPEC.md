@@ -43,7 +43,7 @@ Experiments are written outside this repository, in the experiment language (FR-
 |:--|:--|:--|:--|
 | v0.1 | E13 micro vs macro (Schelling): three technical pilots, then parked | below | built enough for E13's pilots |
 | v0.2 | E2–E4 in an invented workplace (A19, A20, I4); E1's pilots ran here before E1 moved to the congress | below, in this build order | built for E1's pilots; E2–E4 next |
-| v0.3 | E1 in a congress (A18, A19): instructions and character | below, in this build order | under way: items 1–9 and 11–20 built, six technical runs and a check run; E1 restarts from a baseline with no traps or events |
+| v0.3 | E1 in a congress (A18, A19): instructions and character | below, in this build order | under way: items 1–9 and 11–21 built, six technical runs and a check run; E1 restarts from a baseline with no traps or events |
 | v0.4 | E16 model monoculture and vote visibility | not written | later |
 | v0.5 | A single-agent experiment with tools and memory across runs (E15 or E7; the congress world's sequences) | not written | later |
 | v0.6 | World and agent forks | not written | later |
@@ -124,6 +124,7 @@ Experiments are written outside this repository, in the experiment language (FR-
 19. FR-CONGRESS-18 (readings from FR-CONGRESS-17's build: hotels keep rooms for their own night, refused acts are no misapplications), before the check run
 20. FR-CONGRESS-19 (corrections from the check run: an equal room for a lost one, cancelled contracts never live, allocated rooms keep their price, a congress that does not happen holds nothing, request_extra's fields in the contacts), before E1's baseline
 21. FR-CONGRESS-20 (the E1 baseline's definition of done: D0–D9, done, the milestones, and a plan for every session), before E1's baseline
+22. FR-CONGRESS-21 (a replica the organiser can complete, in more than one way: other customers on their own sequence, the solvability check and its redraw), before E1's baseline
 
 **Small known gaps** (to close when convenient): `lab summarize` prints numbers at full precision; a completed run whose log has no metric sample gives no values without saying so; a run in the index whose log is missing fails with Node's own error. The `wait` tool's description does not state `wait_max_minutes`, so the worker learns the limit only from a refusal; `wait_max_minutes` is not checked when the configuration loads. FR-WORKPLACE-07's scenario whose wait ends `interrupted` "about 50 milliseconds into the run" failed once in a full gate (2026-11-13) and passed on three reruns: it needs more slack. The run test that ends an effector's call early at a stimulus failed once under load (2026-11-13) and passed on reruns, as did one scenario in a full gate the same day.
 
@@ -768,6 +769,38 @@ The E1 baseline (`agents-lab-experiments/experiments/E1-congress/baseline-design
 
 **The plan counts every session.** The cheapest feasible plan (FR-CONGRESS-11, -13) takes as many speakers as the event has sessions less the partner's: six when no partner is drawn, five with one.
 *Why:* E1's technical runs showed that parts built around traps and events moved together and did not separate the conditions (`parts-audit.md`). The baseline first measures the task against its definition of done. Traps and events then come back one layer at a time.
+
+#### FR-CONGRESS-21: A replica the organiser can complete, in more than one way
+**A venue's other customers draw from their own sequence.** A venue's enquiries by other customers on the event day, and whether each books a free, unheld date, come from a sequence of their own, `enquiries of <venue>`. Nothing the organiser does changes when they arrive. A hold or booking by the organiser still turns an enquiry away or challenges the hold, as before.
+
+**The solvability check.** When the draw gives `[solvable]`, the variant enumerates, from the replica's parties and its seed, the plans that complete the task. A plan is:
+- a venue with the rooms it books;
+- the ramp extra, when it needs one;
+- one or more caterer orders, with the venue's permits;
+- six speakers, one per session, with their fees, conditions and trains;
+- a ticket price.
+
+A plan meets each check of FR-CONGRESS-20 as the world allows it:
+- **Venue (D0, D3):** the venue is still free on the event day at `day 7 18:00`, given its other customers' sequence. One booked room seats the target attendance: the target, six speakers, the 3 members and the helpers.
+- **Access (D4):** when the attendees include an access need, the booked room, the catering area and the toilets are step-free, or the plan books the venue's `ramp` extra.
+- **Food (D5):** the orders cover the target attendance by diet. Each diet's count is the target × its share, rounded up, plus the fixed attendees' and group's diets. Each order:
+  - comes from a caterer the venue's catering rule allows, with the permit the venue gives and its fee;
+  - stays within each diet's limit;
+  - meets the caterer's minimum.
+- **Speakers (D2, D9):** six available speakers whose first answer to an invitation is accept. A speaker with a `fee` condition is paid its fee. One with `travel_paid` gets the cheapest event-day train arriving at least 30 minutes before its session; a `morning_slot` speaker takes a session before 12:00. Each speaker from a station has such a train, or the plan books a hotel for the night before.
+- **Money (D6):** the plan's commitments stay within the budget: venue, rooms, ramp, permits, orders, fees, trains and hotels.
+- **Attendance (D1):** at the plan's price, the expected paying registrants are within 0.75–1.10 of the target. They are computed from the demand model (FR-POPULATION-01), with the page open and registration announced from day 1 and the programme's draw from the plan's six speakers.
+- **Programme and sponsors (D7, D8):** six sessions fit 09:00–17:30 with breaks and lunch, and a morning session is free for the sponsor that insists on one.
+
+**Counts and the rule.**
+- The check counts, for each of D0–D9 on its own, the options that meet it, and the plans that meet all of them (the global solutions).
+- The draw redraws the whole variant, up to 100 times, until at least `[solvable].min_solutions` global solutions exist (default 2), on at least `[solvable].min_venues` distinct venues (default 2).
+- Otherwise the variant is refused, before any model call, naming `solvable`.
+- `lab inventory` gives each count, the number of global solutions, and the cheapest one's cost and venue. The run's log records them once, at the start, for the efficiency measures.
+
+**What it does not do.** It never tells the organiser anything, and it does not show that an organiser finds a plan: only that one exists with what the organiser can learn by asking.
+
+*Why:* E1's technical runs found out in the runs, hours in, that some replicas left no way through: P12 unreachable at an in-house venue, a budget no careful plan could close. The baseline needs every replica proven completable, in more than one way, before any model call.
 
 #### FR-POPULATION-01: Attendees, the ticket page, the programme and announcements
 The congress's attendees are a population: a component (FR-PROCESS-01) with its own sequence (`cycle of attendees`), from an `attendees` material and the variant.
