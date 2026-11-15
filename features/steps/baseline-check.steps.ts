@@ -166,7 +166,8 @@ Given(
   },
 );
 
-Then('"c1" answered "order_refused" with the reason {string}', function (this: Context, reason: string) {
+// Only FR-CONGRESS-22's reason: FR-CONGRESS-17's steps read the others.
+Then(/^"c1" answered "order_refused" with the reason "(permit_unknown)"$/, function (this: Context, reason: string) {
   const answer = lastAnswer(this, "c1");
   assert.deepEqual([answer.act, fieldsOf(answer).reason], ["order_refused", reason], JSON.stringify(answer));
 });
