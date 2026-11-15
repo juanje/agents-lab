@@ -1104,6 +1104,17 @@ While several runs are in progress, the progress lines (FR-RUN-04) give each run
 `--resume` is refused before any model call, naming what differs, when a completed run's setup line (FR-RECORD-02) does not match the run the experiment file would make now: its resolved configuration, model, seed, sampling, materials' hashes or code commit.
 *Why:* a long experiment can be stopped by a laptop that must sleep or a lost connection; rerunning what already completed wastes hours and money, and a resumed experiment must be the same experiment, or its runs would mix two setups under one name.
 
+#### FR-RUN-08: A run ends when its world is finished
+A scenario may say, from its world's state, that its world is finished (a device complete, a task done). The engine asks it after each change the world applies. Once it says so, the run ends as at its time limit (FR-CLOCK-02):
+- a tool call still running is recorded `cut_off` and applies nothing;
+- a model turn still running, or still waiting for a model slot, is aborted and recorded `cut_off`;
+- a component's action still running is recorded `cut_off` (FR-PROCESS-01), and a message still in transit is never delivered (FR-MESSAGE-01);
+- no agent starts another model turn or activation;
+- the parts are evaluated as at the run's end (FR-PARTS-01).
+
+The call whose effect finished the world keeps its own outcome and text. The log gets a `world_finished` line, with when the change that finished the world was applied (its run time and, for a run with a calendar, its world time), followed by the run's final metric sample, computed from the finished world (FR-METRIC-02). The run counts as completed (FR-RUN-01). A scenario that does not say runs to its activation budget or its time limit, as before; when the time limit passes first, there is no `world_finished` line.
+*Why:* a world whose task is done has nothing left to measure, and going on until the time limit spends model calls on it; when the world was finished is itself a measure.
+
 #### FR-ADAPTER-03: Context compaction is declared and recorded
 An experiment file gives its `[compaction]`: `enabled` (true or false), and, when enabled, `trigger_at` (the share of the model's context window, above 0 and below 1, whose filling starts a compaction) and `keep_recent_tokens` (how much of the most recent context the compaction keeps as it is). The table is required, like the thinking level (FR-EXPERIMENT-05). Every session of every run uses it; the engine turns `trigger_at` into Pi's reserve for each model's window, so models with different windows compact at the same share. With compaction off, a context that overflows ends the model turn with `model_error` (FR-ADAPTER-02).
 
