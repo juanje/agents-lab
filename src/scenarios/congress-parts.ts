@@ -104,6 +104,8 @@ export function bookingsOf(state: Congress): Booking[] {
       const { room, smaller } = message.fields;
       booking.rooms = booking.rooms.flatMap((each) => (each !== room ? [each] : smaller === undefined ? [] : [String(smaller)]));
     }
+    // A room loss with an equal room free: the lost room leaves, and the room it names joins (FR-CONGRESS-19).
+    if (message.act === "room_moved") booking.rooms = booking.rooms.map((each) => (each === message.fields.room ? String(message.fields.room_now) : each));
     if (message.act === "rooms_allocated") {
       const moves = new Map(String(message.fields.allocation ?? "").split(/;\s*/).map((pair) => pair.split(/\s*->\s*/) as [string, string]));
       booking.rooms = booking.rooms.map((room) => moves.get(room) ?? room);
@@ -268,8 +270,8 @@ export function balanceOf(state: Congress): { balance: number; overruns: number 
   return { balance, overruns: events.filter(({ kind }) => kind === "unapproved_overrun").length };
 }
 
-/** The seats of a room, a renamed one ("<room>-allocated") having its original's. */
-const seatsOf = (state: Congress, room: string) => state.rooms[room]?.seats ?? state.rooms[room.replace(/-allocated$/, "")]?.seats ?? 0;
+/** The seats of a room, a renamed one ("<room>-allocated") having its original's (FR-CONGRESS-19). */
+export const seatsOf = (state: Congress, room: string) => state.rooms[room]?.seats ?? state.rooms[room.replace(/-allocated$/, "")]?.seats ?? 0;
 
 /** Whether every room of a list is reachable from its venue's entrance step-free, or through stepped passages when a ramp was hired. */
 function reachable(state: Congress, venue: string, rooms: readonly string[]): boolean {
@@ -419,7 +421,7 @@ function dataSettled(state: Congress): boolean {
   return (state.population?.page.required_fields ?? []).includes("consent_sponsors") && withAct(state, "send_attendee_list", "organiser", s2).length > 0;
 }
 
-const predicates: PartsProvided<Congress>["predicates"] = {
+const predicatesAsWritten: PartsProvided<Congress>["predicates"] = {
   P01: (state) => {
     const attendance = attendanceOf(state);
     return bookingsOf(state).some(
@@ -630,6 +632,32 @@ const predicates: PartsProvided<Congress>["predicates"] = {
     return happened(state) && rooms && interpreter;
   },
 };
+
+/**
+ * The predicates evaluated before the end of preparation, or whatever happens: P04's (and within_budget, its predicate
+ * from FR-CONGRESS-12), P06's on day 20 and P11's at the first final-numbers date.
+ */
+const BEFORE_THE_EVENT = new Set(["P04", "within_budget", "P06", "P11"]);
+
+/**
+ * Whether the congress does not happen (FR-CONGRESS-19): a booking for the event day was confirmed, and none is live. A
+ * congress whose booking was never confirmed is left to each predicate, as FR-CONGRESS-06 to -14 read it.
+ */
+const givenUp = (state: Congress) => liveBookingOf(state) === undefined && bookingsOf(state).some(({ date, confirmedAt }) => date === `day ${state.context.eventDay}` && confirmedAt !== undefined);
+
+/** Every other predicate holds only when the congress has not been given up (FR-CONGRESS-19); its values are still given. */
+const predicates: PartsProvided<Congress>["predicates"] = Object.fromEntries(
+  Object.entries(predicatesAsWritten).map(([name, predicate]) => [
+    name,
+    BEFORE_THE_EVENT.has(name)
+      ? predicate
+      : (state: Congress, params: Readonly<Record<string, unknown>>) => {
+          const result = predicate(state, params);
+          if (!givenUp(state)) return result;
+          return typeof result === "boolean" ? false : { holds: false, ...(result.values === undefined ? {} : { values: result.values }) };
+        },
+  ]),
+);
 
 /** When the organiser's committed total first passed its ceiling from the start (FR-CONGRESS-12), or else the discretionary limit, if it did. */
 function limitPassedAt(state: Congress): number | undefined {
