@@ -223,7 +223,8 @@ Given(/^the organiser's scripted turns call "send_mail" to "(c1|c2)" with the ac
   before(this, [{ toolCalls: [{ name: "send_mail", arguments: order }] as never, delayMs: 0 }, ...organiserTurns('wait 1 world hour, then "check_time"', hourMsOf(this))]);
 });
 
-Then(/^"(c1|c2)" answered "(order_confirmed|order_refused)" with (.+)$/, function (this: Context, caterer: string, act: string, written: string) {
+// Only FR-CONGRESS-17's answers: a total, permit_exceeded, or own_venue_only with the venue.
+Then(/^"(c1|c2)" answered "(order_confirmed|order_refused)" with (the total \d+|the reason "permit_exceeded"|the reason "own_venue_only" and the venue "\w+")$/, function (this: Context, caterer: string, act: string, written: string) {
   const [, total] = /^the total (\d+)$/.exec(written) ?? [];
   const [, reason, venue] = /^the reason "(\w+)"(?: and the venue "(\w+)")?$/.exec(written) ?? [];
   assert.ok(total !== undefined || reason !== undefined, `the steps do not read "${written}"`);
