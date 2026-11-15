@@ -706,6 +706,9 @@ describe("on time means real by day 12 (FR-CONGRESS-23)", () => {
     const cancelled = congress(minutes("day 8"));
     published(cancelled, "hall-a", minutes("day 10 10:00"));
     mail(cancelled, "v1", "organiser", "cancelled", { contract: "v1-contract-1", charge: 0 }, minutes("day 12"));
+    // A booking of another room keeps the congress from being given up (FR-CONGRESS-19).
+    mail(cancelled, "v1", "organiser", "contract", { contract: "v1-contract-2", date: "day 26", rooms: "hall-b", hours: "08:00-18:00", price: 2000 }, minutes("day 12 01:00"));
+    mail(cancelled, "v1", "organiser", "confirmed", { contract: "v1-contract-2" }, minutes("day 12 02:00"));
     believing(cancelled);
     expect(holds("programme_on_time", cancelled)).toBe(false);
     // It was real from its publication until the cancellation.
