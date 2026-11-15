@@ -105,6 +105,7 @@ What the words mean here, how the pieces fit together, and how the tools behave 
 - `callTool` makes the deliveries through `Stimuli.deliver`, with the delivery's source, right after it takes the call's `endedAtMs`, so each `stimulus` line is no earlier than the call's end; from there they behave as any stimulus (next turn, next wake, a waking channel, an early end).
 - `run` refuses, before its log opens, a scenario or party tool that delivers through an undeclared channel; a delivery to the caller, or to a name outside the run's agents (`SessionSettings.agents`), stops the run before any of the call's deliveries is made.
 - The inventory gives the effector's channel as `- Delivers through: <channel>`.
+- A channel may declare `described`, what its stimulus is, which the inventory gives in place of the stimulus (the workshop's `voice`: "what was said"); a channel that `wakes` is listed with `- Wakes: a resting agent at once` (FR-WORKSHOP-03).
 
 ### Processes
 
@@ -820,6 +821,7 @@ The recorder writes a line per event. The inventory and the run's setup go first
 - **Doing:** each effector's start sets its worker's `doing` (`taking`, … `waiting`) and the shared `END` sets it back to `nothing`; sensors set nothing, so a worker looking or deciding shows `nothing`. The `effector_start` line gives `{ began }`, and for `mount` the bench `place` it occupies, numbered from 1 (null when every place was taken).
 - **Mount:** its start occupies the first free place; its duration is `mount_refused` when none is free, and its action refuses `bench_full` when the worker occupies no place as it lands; `END` frees the place whatever the outcome.
 - **Wait:** no action; refuses minutes outside (0, `wait_max_minutes`] at once; ends early, `interrupted`, at any stimulus.
+- **Say (FR-WORKSHOP-03):** duration `say + words / say_words_per_minute` minutes (a word is a run between whitespace); its action refuses `empty_text` and changes nothing else; `delivers` sends the text to every other worker on `voice` (stimulus `{text}`, source the speaker, `wakes`), so it reaches a resting worker at once and ends a `wait`.
 - **Targets:** `take` and `mount` read the worker's last `look` (`lastBy("look")`): the kind's count in the pile, a free bench place.
 - **Steps:** the mail's "… scripted turns …", the workplace's "the call failed with …" and "it took no time" and the wait's "the … call ended with …" hand the workshop's words to `workshop.steps.ts`; "who holds what" is one step that sets the world up as a Given and checks it as a Then, every held or mounted piece taken from the pile.
 - **Steps:** "the configuration is changed so that …" is the congress's step; it hands the change to the first reader in `features/support/changes.ts` that applies, which the workshop's steps register.
