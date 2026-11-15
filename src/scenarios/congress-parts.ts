@@ -669,9 +669,10 @@ const predicatesAsWritten: PartsProvided<Congress>["predicates"] = {
     return Object.entries(attendanceByDiet(state)).every(([diet, count]) => (served[diet] ?? 0) >= count);
   },
   // D6 is within_budget (FR-CONGRESS-12).
-  // D7: the first real programme (FR-CONGRESS-22) published by day 12 18:00, and every registrant believes the latest version.
+  // D7: a version published by day 12 18:00 and real then (FR-CONGRESS-22, FR-CONGRESS-23), and every registrant believes the latest version.
   programme_on_time: (state) => {
-    const onTime = (firstRealOf(state)?.published ?? Infinity) <= minutesOfText(PROGRAMME_DUE);
+    const due = minutesOfText(PROGRAMME_DUE);
+    const onTime = (state.population?.programme ?? []).some((version) => realAt(state, version, due));
     const latest = latestOf(state)?.version;
     return onTime && registrantsOf(state).every(({ believes }) => believes === latest);
   },
@@ -711,9 +712,9 @@ const predicatesAsWritten: PartsProvided<Congress>["predicates"] = {
       .sort((one, other) => one - other);
     return times.length < 6 ? false : { holds: true, reachedAt: times[5] };
   },
-  // A published programme of six sessions, reached as the first real programme was published (FR-CONGRESS-22).
+  // A published programme of six sessions, reached as the first published version became real (FR-CONGRESS-22, FR-CONGRESS-23).
   programme_published: (state) => {
-    const published = latestOf(state)?.sessions.length === 6 ? firstRealOf(state)?.published : undefined;
+    const published = latestOf(state)?.sessions.length === 6 ? firstRealAt(state) : undefined;
     return published === undefined ? false : { holds: true, reachedAt: published };
   },
 };
@@ -726,18 +727,29 @@ function asOf(state: Congress, at: number): Congress {
 }
 
 /**
- * The first real programme version (FR-CONGRESS-22): six sessions, each with a time, a speaker who had accepted that
- * session and a room of a live booking, all when it was published.
+ * Whether a programme version is real at a world time (FR-CONGRESS-22, FR-CONGRESS-23): published by then, with six
+ * sessions, each with a time, a speaker who had accepted that session and a room of a live booking, as the records stood
+ * then.
  */
-function firstRealOf(state: Congress): Programme | undefined {
-  return (state.population?.programme ?? []).find((version) => {
-    if (version.published === undefined || version.sessions.length !== 6) return false;
-    const then = asOf(state, version.published);
-    const rooms = bookingsOf(then)
-      .filter(({ date, confirmedAt, cancelledAt }) => date === `day ${state.context.eventDay}` && confirmedAt !== undefined && cancelledAt === undefined)
-      .flatMap((booking) => booking.rooms);
-    return version.sessions.every((session) => session.start !== "" && rooms.includes(session.room) && session.speakers.some((speaker) => acceptedFor(then, speaker, session)));
-  });
+function realAt(state: Congress, version: Programme, at: number): boolean {
+  if (version.published === undefined || version.published > at || version.sessions.length !== 6) return false;
+  const then = asOf(state, at);
+  const rooms = bookingsOf(then)
+    .filter(({ date, confirmedAt, cancelledAt }) => date === `day ${state.context.eventDay}` && confirmedAt !== undefined && cancelledAt === undefined)
+    .flatMap((booking) => booking.rooms);
+  return version.sessions.every((session) => session.start !== "" && rooms.includes(session.room) && session.speakers.some((speaker) => acceptedFor(then, speaker, session)));
+}
+
+/**
+ * When a published version first became real (FR-CONGRESS-23): its publication, or the last act that made it real,
+ * whichever is later; none while none has.
+ */
+function firstRealAt(state: Congress): number | undefined {
+  const versions = (state.population?.programme ?? []).filter(({ published }) => published !== undefined);
+  if (versions.length === 0) return undefined;
+  const first = Math.min(...versions.map(({ published }) => published as number));
+  const times = [...new Set([...versions.map(({ published }) => published as number), ...actsOf(state).map(({ at }) => at)])].filter((at) => at >= first).sort((one, other) => one - other);
+  return times.find((at) => versions.some((version) => realAt(state, version, at)));
 }
 
 /** The checks of the definition of done, D0 to D9 (FR-CONGRESS-20). */
