@@ -130,13 +130,14 @@ Experiments are written outside this repository, in the experiment language (FR-
 24. FR-CONGRESS-23 (corrections from the baseline's second check run: standard for no diet, free outside catering said so, unknown rooms named, repeated invitations answered, an extra confirmed once, on time means real by day 12), before E1's baseline
 25. FR-CONGRESS-24 (from the baseline's first full run: D5 reads the confirmed order, done with exceptions, parts re-evaluated from the run's records), before E1's rerun
 
-**Workshop build order (EQ series).** The world is designed in `agents-lab-experiments/worlds/workshop/world.md` and its first experiment in `experiments/EQ1-baseline/design.md`; EQ0's technical run needs all six.
+**Workshop build order (EQ series).** The world is designed in `agents-lab-experiments/worlds/workshop/world.md` and its first experiment in `experiments/EQ1-baseline/design.md`; EQ0's technical run needs all seven.
 1. FR-STIMULUS-02 (an effector's effect delivers stimuli to other agents)
 2. FR-RUN-08 (a run ends when its world is finished)
 3. FR-WORKSHOP-01 (the workshop from its materials)
 4. FR-WORKSHOP-02 (the workers' tools)
 5. FR-WORKSHOP-03 (workers speak to the room)
 6. FR-WORKSHOP-04 (done, and the workshop's measures)
+7. FR-WORKSHOP-05 (handing over, a clock on the wall, and the character and limits texts)
 
 **Small known gaps** (to close when convenient): `lab summarize` prints numbers at full precision; a completed run whose log has no metric sample gives no values without saying so; a run in the index whose log is missing fails with Node's own error. The `wait` tool's description does not state `wait_max_minutes`, so the worker learns the limit only from a refusal; `wait_max_minutes` is not checked when the configuration loads. FR-WORKPLACE-07's scenario whose wait ends `interrupted` "about 50 milliseconds into the run" failed once in a full gate (2026-11-13) and passed on three reruns: it needs more slack. The run test that ends an effector's call early at a stimulus failed once under load (2026-11-13) and passed on reruns, as did one scenario in a full gate the same day.
 
@@ -1391,6 +1392,37 @@ A text with no word is refused when the call ends, after its `say` minutes alone
 
 Read from the transcripts, not computed: whether a split was agreed, whether someone directed, what each worker said against what it did, how each stumble was resolved.
 *Why:* EQ1 describes how a team of equal agents organises from what they did in the world: who built what, when they started, where they stumbled and how much they talked. Each measure is a fact of the world or of the record, the same in every run, so forms of organisation can be compared across replicas and models.
+
+#### FR-WORKSHOP-05: Handing over, a clock on the wall, and the character and limits texts
+**Handing over.** Each worker has the effector **`hand`** `worker`, `what`: it hands the worker of that name one loose piece of a kind it holds, or the module it holds, finished or in progress. It takes `hand` world minutes (a new key of `[durations]`, FR-WORKSHOP-01; 0.5 in the base). `what` names the giver's module when it is the name of the module the giver holds, and a kind of piece otherwise. Arguments are free text, and a worker is named exactly as `look` gives it; the tool's description and parameters name no kind, module or worker (FR-WORKSHOP-02). Its refusals are checked when it lands, in the order of the table (FR-WORKSHOP-02): a refused call takes its full duration, moves nothing and tells the giver why.
+
+| Outcome | Refused when | Text |
+|---|---|---|
+| success | | You have handed it over. |
+| no_such_worker | no worker has that name | There is no worker of that name; nothing has been handed. |
+| to_self | the worker named is the giver | That is you; nothing has been handed. |
+| not_held | the giver holds neither a module of that name nor a loose piece of that kind | You are not holding that; nothing has been handed. |
+| hands_full | for a piece, the receiver already holds `hand_pieces` loose pieces | Their hands are full; nothing has been handed. |
+| holds_module | for a module, the receiver already holds a module | They are already holding a module; nothing has been handed. |
+
+When it applies, the piece or the module leaves the giver's hands and is in the receiver's: a piece counts among its loose pieces; a module keeps its joined pieces, in the order joined, and whether it is finished, and counts apart from the loose pieces, so a receiver with full hands can still be handed a module and one holding a module can still be handed a piece. Whoever then mounts a module is its mounter. While the call lasts, `look` shows the giver `handing` (FR-WORKSHOP-02). Its target (FR-TOOL-04) is `not_sensed`. A call cut off by the time limit moves nothing and reaches no one.
+
+**What is handed reaches the receiver** through the new channel **`hands`** (FR-STIMULUS-02), with the giver's name as its source and the text `handed you <what>.`, where `<what>` is `a piece of <kind>` or `the module <module>`; so it reads `Dal: handed you a piece of arn.` (FR-STIMULUS-01). The giver receives nothing, nor does any other worker. The channel wakes, as `voice` does (FR-WORKSHOP-03): a worker resting between activations wakes at once with it among its stimuli, a worker in a tool call receives it at its next model turn, and a worker's `wait` ends `interrupted` (FR-WORKSHOP-02). Besides speech, a worker now also receives what is handed to it.
+
+**A clock on the wall.** `look`'s JSON (FR-WORKSHOP-02) also gives, first, `clock`: the whole world minutes since the run's start (the calendar's start) when the call ends, rounded down; 2.5 world minutes show as 2. Its description says so. Nothing else changes in `look`.
+
+**Two more texts.** The configuration gains the texts **`character`** and **`limits`**, usually materials, as `identity` is; `{name}` in either is filled in with the worker's name, and a text that names in braces anything but `{name}` is refused, naming it (FR-WORKSHOP-01). Each is placed by `[placement]`, `system` or `first`, with the same rules as the other texts. Each place joins its texts in the order `identity`, `character`, `task`, `limits`, `world_rules`, skipping empty ones, with a blank line between them: an empty text adds nothing, not even a blank line. In the base configuration both are empty and placed `system`, so the base's system prompt is as FR-WORKSHOP-01 gives it.
+
+**The measures** (FR-WORKSHOP-04) gain **`handovers`**: `<giver>.pieces_to.<receiver>`, the applied `hand` calls of loose pieces from that giver to that receiver, and `<giver>.modules_to.<receiver>`, of modules; a pair with no applied `hand` of that sort gives no key, as `builders_by_module` gives none. The other measures keep their definitions, and read a handed module so:
+- `builders_by_module`, `joins_share_by_worker` and the `finished` of `modules_by_worker` count each join by the worker who made it, whoever holds the module later; `mounted_by` and `mounted` name the worker whose `mount` mounted it.
+- `finish_to_mount` reads the module's last applied join whoever made it, so the giver's join counts when the receiver mounts.
+- `pieces_wasted` reads the world at the time: a handed piece or module is wasted while it is in someone's hands, as any other.
+- `duplicated_modules`: handing starts no instance; the receiver's next join into it starts none, since the receiver holds a module, and the giver's next join, holding none, starts a new one.
+- `module_switches` follows each worker's own applied joins: a worker that joins into a module it was handed counts a switch when its previous applied join was into a module of another name.
+- `refused_by_cause` and `time_by_activity` count `hand` as any tool; effort counts its minutes.
+
+**Recorded.** Each `hand` call is a tool call line, and its start an `effector_start` line that names that the giver began handing (FR-WORKSHOP-02). Each handover received is a stimulus line for the receiver, with the channel `hands`, the giver as source and the text as content (FR-STIMULUS-02). The inventory gives the tool `hand` with its duration and texts and the channel it delivers through, the channel `hands` with its source (the giver), its text (`handed you <what>.`) and that it wakes, the duration `hand` among the durations, and the texts `character` and `limits` with their placement.
+*Why:* the world now lets a worker give another what it holds, as people in one room do; who hands what to whom is a way of splitting the work that joins and mounts alone do not show. The clock lets a worker read the time it has left, which its limits name; character and limits are texts every worker receives in the world's design, empty in the base so that an experiment gives them as materials.
 
 ### Analysis
 
