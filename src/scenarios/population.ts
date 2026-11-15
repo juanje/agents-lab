@@ -598,10 +598,12 @@ export function populationComponent<State extends PopulationWorld>(options: Popu
             changes.push((current, money, mail, landing) => {
               const at = landing === undefined ? {} : { worldTime: landing };
               const paying = person.pays && amount > 0;
+              // A registrant believes the latest published version (FR-CONGRESS-22).
+              const latest = current.programme.at(-1)?.version;
               return {
                 population: {
                   ...current,
-                  people: current.people.map((each) => (each.id === person.id ? { ...each, registered: now, given, ...(cancelsAt === undefined ? {} : { cancelsAt }) } : each)),
+                  people: current.people.map((each) => (each.id === person.id ? { ...each, registered: now, given, ...(cancelsAt === undefined ? {} : { cancelsAt }), ...(latest === undefined ? {} : { believes: latest }) } : each)),
                   events: [...(current.events ?? []), { event: "registration", person: person.id, diet: person.diet, ...(person.group === true ? { group: true } : {}), ...at }, ...(paying ? [{ event: "payment" as const, person: person.id, amount, ...at }] : [])],
                 },
                 money: paying ? withTransfer(money, { from: ATTENDEES, to: options.organiser, amount, for: `ticket ${person.id}` }) : money,
