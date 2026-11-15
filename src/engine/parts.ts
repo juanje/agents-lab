@@ -73,7 +73,7 @@ function refused(id: string, key: string, value: unknown, why: string): Error {
 }
 
 /** World minutes since day 1's midnight of a world time. */
-const minutesOf = ({ day, seconds }: WorldTime) => (day - 1) * 1440 + seconds / 60;
+export const minutesOf = ({ day, seconds }: WorldTime) => (day - 1) * 1440 + seconds / 60;
 
 /** Whether an act took effect: it succeeded, or its outcome is not known. */
 const tookEffect = ({ outcome }: Act) => outcome === undefined || outcome === "success";
@@ -82,6 +82,15 @@ const tookEffect = ({ outcome }: Act) => outcome === undefined || outcome === "s
 function timeText(world: WorldTime): string {
   const minutes = Math.floor(world.seconds / 60);
   return `day ${world.day} ${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+}
+
+/** World minutes since day 1's midnight as a part line gives them: "day <n> HH:MM". */
+export const minutesText = (at: number) => timeText({ day: Math.floor(at / 1440) + 1, weekday: "Monday", seconds: Math.round((at % 1440) * 60) });
+
+/** The world minutes of a time a part line gives, "day <n> HH:MM"; none for another text. */
+export function minutesOfText(text: string): number | undefined {
+  const [, day, hours, minutes] = /^day (\d+) (\d\d):(\d\d)$/.exec(text) ?? [];
+  return day === undefined ? undefined : (Number(day) - 1) * 1440 + Number(hours) * 60 + Number(minutes);
 }
 
 /** An event a part names, refused, naming the part and the key, when the scenario provides no such event. */
@@ -113,9 +122,9 @@ export function readParts<State>(written: readonly Record<string, unknown>[], pr
     let evaluateAt: Part["evaluateAt"];
     if (part.evaluate_at === "end") evaluateAt = "end";
     else if (typeof part.evaluate_at === "string") {
-      const [, day, hours, minutes] = /^day (\d+) (\d\d):(\d\d)$/.exec(part.evaluate_at) ?? [];
-      if (day === undefined) throw refused(id, "evaluate_at", part.evaluate_at, 'it is not "day <n> HH:MM", "end" or an event');
-      evaluateAt = { at: (Number(day) - 1) * 1440 + Number(hours) * 60 + Number(minutes) };
+      const at = minutesOfText(part.evaluate_at);
+      if (at === undefined) throw refused(id, "evaluate_at", part.evaluate_at, 'it is not "day <n> HH:MM", "end" or an event');
+      evaluateAt = { at };
     } else {
       const after = (part.evaluate_at as { after_minutes?: unknown } | undefined)?.after_minutes ?? 0;
       if (!(typeof after === "number" && after >= 0)) throw refused(id, "evaluate_at", part.evaluate_at, "its after_minutes is not a number of at least 0");
@@ -339,8 +348,7 @@ export class PartsBook<State> {
   #evaluate(tracked: Tracked, at: number): void {
     tracked.evaluated = true;
     const { part } = tracked;
-    const when = { day: Math.floor(at / 1440) + 1, weekday: "Monday" as const, seconds: Math.round((at % 1440) * 60) };
-    const line = { type: "part" as const, part: part.id, evaluated_at: timeText(when) };
+    const line = { type: "part" as const, part: part.id, evaluated_at: minutesText(at) };
     // The state the parts read at this time, kept once before its part lines (FR-CONGRESS-24).
     if (!this.#kept.has(line.evaluated_at)) {
       this.#kept.add(line.evaluated_at);
@@ -379,6 +387,6 @@ export class PartsBook<State> {
     // The values a predicate gives besides whether it holds, read at evaluation (FR-CONGRESS-06).
     const given = this.#settings.provided.predicates[part.predicate](state, part.params);
     const values = typeof given === "boolean" || given.values === undefined ? {} : { values: given.values };
-    this.#settings.record({ ...line, active: true, held, ...(reachedAt === undefined ? {} : { reached_at: timeText({ day: Math.floor(reachedAt / 1440) + 1, weekday: "Monday", seconds: Math.round((reachedAt % 1440) * 60) }) }), effort: { calls, money }, misapplications, ...(part.traps.length === 0 ? {} : { traps }), ...values, ...grouped, ...kind });
+    this.#settings.record({ ...line, active: true, held, ...(reachedAt === undefined ? {} : { reached_at: minutesText(reachedAt) }), effort: { calls, money }, misapplications, ...(part.traps.length === 0 ? {} : { traps }), ...values, ...grouped, ...kind });
   }
 }
