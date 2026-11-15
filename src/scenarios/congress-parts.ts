@@ -304,7 +304,7 @@ const amenitiesOf = (state: Congress, venue: string) => Object.entries(state.roo
 const programmeRooms = (state: Congress) => [...new Set(latestOf(state)?.sessions.map(({ room }) => room) ?? [])];
 
 /** Each caterer's latest numbers by diet, by mail or by phone: its confirmed order's counts, or the final numbers it accepted. */
-export function ordersOf(state: Congress): { caterer: string; counts: Record<string, number>; venue?: string; permit: boolean }[] {
+export function ordersOf(state: Congress): { caterer: string; counts: Record<string, number>; venue?: string; date?: string; permit: boolean }[] {
   // An order cancelled, with none confirmed after it, does not count (FR-CONGRESS-12).
   const live = (caterer: string) => {
     const answers = actsOf(state).filter(({ from, act }) => from === caterer && (act === "order_confirmed" || act === "cancelled"));
@@ -316,7 +316,13 @@ export function ordersOf(state: Congress): { caterer: string; counts: Record<str
     const accepted = actsOf(state).filter(({ from, act }) => from === caterer && (act === "order_confirmed" || act === "numbers_accepted"));
     const lastOrder = orders.filter(({ at }) => at <= (accepted.at(-1)?.at ?? Infinity)).at(-1);
     const order = orders.find(({ act }) => act === "order");
-    return { caterer, counts: countsOf(lastOrder?.fields.counts), ...(order?.fields.venue === undefined ? {} : { venue: String(order.fields.venue) }), permit: order?.fields.permit !== undefined };
+    return {
+      caterer,
+      counts: countsOf(lastOrder?.fields.counts),
+      ...(order?.fields.venue === undefined ? {} : { venue: String(order.fields.venue) }),
+      ...(order?.fields.date === undefined ? {} : { date: String(order.fields.date) }),
+      permit: order?.fields.permit !== undefined,
+    };
   });
 }
 
@@ -631,7 +637,30 @@ const predicatesAsWritten: PartsProvided<Congress>["predicates"] = {
     const interpreter = !needs.includes("interpreter") || withAct(state, "booked").some(({ fields }) => fields.date === `day ${state.context.eventDay}`);
     return happened(state) && rooms && interpreter;
   },
+  // The E1 baseline's definition of done (FR-CONGRESS-20).
+  // D0: a live booking for the event day, a programme of six sessions and a live caterer order for the event day.
+  can_be_held: (state) => happened(state) && eventOrdersOf(state).length > 0,
+  // D1: paying registrants between 0.75 and 1.10 of the target, both included.
+  attendance_in_range: (state) => {
+    const paying = registrantsOf(state).filter(({ pays }) => pays).length;
+    return paying >= 0.75 * state.context.target && paying <= 1.1 * state.context.target;
+  },
+  // D2: six sessions, each with a confirmed speaker who is not out and believes its time and room.
+  sessions_have_speakers: (state) => {
+    const sessions = latestOf(state)?.sessions ?? [];
+    const confirmed = confirmedOf(state);
+    return sessions.length === 6 && sessions.every((session) => heldBy(state, session, true).some((speaker) => confirmed.includes(speaker)));
+  },
+  // D3: every room of the latest programme is in the live booking and seats the attendance.
+  everyone_fits: (state) => {
+    const booking = liveBookingOf(state);
+    const attendance = attendanceOf(state);
+    return booking !== undefined && programmeRooms(state).every((room) => booking.rooms.includes(room) && seatsOf(state, room) >= attendance);
+  },
 };
+
+/** The live caterer orders for the event day (FR-CONGRESS-20). */
+const eventOrdersOf = (state: Congress) => ordersOf(state).filter(({ date }) => date === `day ${state.context.eventDay}`);
 
 /**
  * The predicates evaluated before the end of preparation, or whatever happens: P04's (and within_budget, its predicate
