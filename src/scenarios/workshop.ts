@@ -22,8 +22,8 @@ const ORDER_CHANNEL = "order";
 /** The channel through which every other worker hears what a worker says (FR-WORKSHOP-03). */
 const VOICE_CHANNEL = "voice";
 
-/** The durations the configuration gives, in world minutes, by name (FR-WORKSHOP-01). */
-const DURATIONS = ["look", "read_plan", "take", "put_back", "join", "take_apart", "mount", "mount_refused", "say", "say_words_per_minute"] as const;
+/** The durations the configuration gives, in world minutes, by name (FR-WORKSHOP-01, FR-WORKSHOP-05's hand). */
+const DURATIONS = ["look", "read_plan", "take", "put_back", "join", "take_apart", "mount", "mount_refused", "say", "say_words_per_minute", "hand"] as const;
 type Duration = (typeof DURATIONS)[number];
 
 /** A module of the plan: the kinds of its pieces, a kind as many times as it is needed, and the modules mounted before it. */
@@ -541,7 +541,7 @@ const mount: Effector<Workshop> = {
 const wait: Effector<Workshop> = {
   kind: "effector",
   name: "wait",
-  description: "Wait for a number of minutes, doing nothing; you stop waiting as soon as someone speaks.",
+  description: "Wait for a number of minutes, doing nothing; you stop waiting as soon as something reaches you (someone speaks or hands you something).",
   parameters: { type: "object", properties: { minutes: { type: "number", description: "How many minutes to wait." } }, required: ["minutes"] },
   durationMs: (_state, call) => minutes(Number(call.arguments.minutes)),
   refuses: (state, call) => {
@@ -551,7 +551,7 @@ const wait: Effector<Workshop> = {
   start: doing("waiting"),
   end: END,
   endsEarly: { outcome: "interrupted", byChange: () => false, byStimulus: () => true },
-  texts: { success: "You have waited.", interrupted: "Someone spoke; you stopped waiting." },
+  texts: { success: "You have waited.", interrupted: "Something reached you; you stopped waiting." },
   readTarget: NOT_SENSED,
 };
 
@@ -782,7 +782,7 @@ const BASE_CONFIGURATION = stringify({
     zeth: { recipe: ["bex", "dov", "dov"], after: ["tessa"] },
   },
   pile: { arn: 4, bex: 3, cal: 4, dov: 5, eln: 2, fim: 2, gor: 2 },
-  durations: { look: 0.5, read_plan: 1, take: 1, put_back: 0.5, join: 2, take_apart: 2, mount: 3, mount_refused: 0.5, say: 0.25, say_words_per_minute: 30 },
+  durations: { look: 0.5, read_plan: 1, take: 1, put_back: 0.5, join: 2, take_apart: 2, mount: 3, mount_refused: 0.5, say: 0.25, say_words_per_minute: 30, hand: 0.5 },
   calendar: { start: "day 1 Monday 09:00", segments: [{ scale: 4 }] },
   rhythm: { source: "your own pace", text: "You are ready to act.", min_ms: 1000, max_ms: 3000 },
   placement: { identity: "system", task: "system", world_rules: "system" },
