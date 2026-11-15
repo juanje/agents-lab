@@ -178,8 +178,9 @@ describe("the solvability check's plans (FR-CONGRESS-21)", () => {
     const plansOf = (await plansOfModule()) as NonNullable<Awaited<ReturnType<typeof plansOfModule>>>;
     const solved = plansOf(input((given) => (given.venues[0].rooms = [{ id: "hall", seats: 60 }, { id: "big", seats: 61 }])));
     expect(new Set(solved.plans.map(({ room }) => room))).toEqual(new Set(["big"]));
-    // Its price is its share of the day's by seats.
-    expect(solved.plans[0].cost).toBe(Math.round((2000 * 61) / 121) + 61 * 30);
+    // A booking is contracted at the venue's day price, whatever rooms it names, as the venue's book makes it.
+    expect(solved.plans[0].cost).toBe(2000 + 61 * 30);
+    expect(solved.cheapest).toEqual({ cost: 2000 + 61 * 30, venue: "v1" });
   });
 
   it("leaves out a venue its other customers book before day 7 18:00, or that is booked by others on the event day", async () => {
