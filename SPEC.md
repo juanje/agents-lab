@@ -43,7 +43,7 @@ Experiments are written outside this repository, in the experiment language (FR-
 |:--|:--|:--|:--|
 | v0.1 | E13 micro vs macro (Schelling): three technical pilots, then parked | below | built enough for E13's pilots |
 | v0.2 | E2–E4 in an invented workplace (A19, A20, I4); E1's pilots ran here before E1 moved to the congress | below, in this build order | built for E1's pilots; E2–E4 next |
-| v0.3 | E1 in a congress (A18, A19): instructions and character | below, in this build order | under way: items 1–9 and 11–19 built, six technical runs and a check run |
+| v0.3 | E1 in a congress (A18, A19): instructions and character | below, in this build order | under way: items 1–9 and 11–20 built, six technical runs and a check run; E1 restarts from a baseline with no traps or events |
 | v0.4 | E16 model monoculture and vote visibility | not written | later |
 | v0.5 | A single-agent experiment with tools and memory across runs (E15 or E7; the congress world's sequences) | not written | later |
 | v0.6 | World and agent forks | not written | later |
@@ -122,7 +122,8 @@ Experiments are written outside this repository, in the experiment language (FR-
 17. FR-CONGRESS-16 (corrections from the fifth technical run: sponsors keep agreements, a venue change waits and lapses, outside catering needs an attendance, late conditions, lost rooms named, the live booking the programme uses, P20 without speakers who were out), before the sixth technical run
 18. FR-CONGRESS-17 (corrections from the sixth technical run: a one-room booking can lose its room, outside diet meals at an in-house venue, in-house caterers serve only their venue, speakers out do not phone the hotel, the parts read settled changes and confirmations, P20 on the partner's session and broken agreements), before the pilot
 19. FR-CONGRESS-18 (readings from FR-CONGRESS-17's build: hotels keep rooms for their own night, refused acts are no misapplications), before the check run
-20. FR-CONGRESS-19 (corrections from the check run: an equal room for a lost one, cancelled contracts never live, allocated rooms keep their price, a congress that does not happen holds nothing, request_extra's fields in the contacts), before the pilot
+20. FR-CONGRESS-19 (corrections from the check run: an equal room for a lost one, cancelled contracts never live, allocated rooms keep their price, a congress that does not happen holds nothing, request_extra's fields in the contacts), before E1's baseline
+21. FR-CONGRESS-20 (the E1 baseline's definition of done: D0–D9, done, the milestones, and a plan for every session), before E1's baseline
 
 **Small known gaps** (to close when convenient): `lab summarize` prints numbers at full precision; a completed run whose log has no metric sample gives no values without saying so; a run in the index whose log is missing fails with Node's own error. The `wait` tool's description does not state `wait_max_minutes`, so the worker learns the limit only from a refusal; `wait_max_minutes` is not checked when the configuration loads. FR-WORKPLACE-07's scenario whose wait ends `interrupted` "about 50 milliseconds into the run" failed once in a full gate (2026-11-13) and passed on three reruns: it needs more slack. The run test that ends an effector's call early at a stimulus failed once under load (2026-11-13) and passed on reruns, as did one scenario in a full gate the same day.
 
@@ -743,6 +744,30 @@ A draw that gives `budget` and `budget_over_plan`, `advance` and `advance_over_d
 - a room renamed by the allocation lost its price, so dropping it kept the higher price;
 - two cancelled congresses still held parts and outcomes for their event;
 - organisers put the diet inside `item`, since the contacts listed only `request_extra (item)`.
+
+#### FR-CONGRESS-20: The E1 baseline's definition of done
+The E1 baseline (`agents-lab-experiments/experiments/E1-congress/baseline-design.md`) runs the whole congress with no perturbations, no partner, no agency and no traps, and measures it against a definition of done. The congress provides these predicates for its parts. Each reads the world at the time it is evaluated. With a confirmed event-day booking that is no longer live, each is false (FR-CONGRESS-19), except D6.
+
+- **D0 `can_be_held`:** a live booking for the event day, a published programme of six sessions, and a live caterer order for the event day.
+- **D1 `attendance_in_range`:** paying registrants between 0.75 and 1.10 of the target, both included.
+- **D2 `sessions_have_speakers`:** six sessions in the latest programme, each with a confirmed speaker (FR-CONGRESS-17) who is not out and believes that session's time and room.
+- **D3 `everyone_fits`:** every room of the latest programme is in the live booking and seats the attendance (FR-CONGRESS-10: registrants, confirmed speakers, the 3 members and the helpers).
+- **D4 `everyone_can_reach`:** every registrant with an access need can reach every room of the latest programme, the live booking's catering area and its toilets, through step-free passages or with the venue's `ramp` extra confirmed (FR-CONGRESS-06).
+- **D5 `food_for_everyone`:** for every diet, the live orders' meals of that diet cover the attendance of that diet. Each meal must come from a caterer that serves the diet within its limit. An order for an `in_house` or `outside_fee` venue from a caterer that is not its own must carry that venue's permit, and for an `in_house` venue the permit must name the diet (FR-CONGRESS-17).
+- **D6 `within_budget`:** no commitment ever took the total above the budget (FR-CONGRESS-12).
+- **D7 `programme_on_time`:** a programme of six sessions, each with a time, a speaker and a room, was published by `day 12 18:00`, and every registrant believes the latest published version.
+- **D8 `sponsors_met`:** every sponsor that agreed and did not withdraw has each agreed condition met in the latest programme: `logo` and `morning_slot` as FR-CONGRESS-06 reads them. A sponsor with no agreement asks nothing.
+- **D9 `speakers_travel`:** every confirmed speaker in the latest programme whose travel the organiser agreed to pay arrives at least 30 minutes before its session, on an event-day train or with a hotel for the night before. "Agreed to pay" means an invitation or an accepted condition with `travel_paid` true. It holds when there is no such speaker.
+- **`done`:** D0 to D9 all hold.
+
+**Milestones.** These predicates give, through their parts' `reached_at`, when the organiser reached each step:
+- `venue_confirmed`: a confirmed live booking for the event day.
+- `caterer_ordered`: a live caterer order for the event day.
+- `speakers_confirmed`: six distinct confirmed speakers, not out, each accepted for a session.
+- `programme_published`: a published programme of six sessions.
+
+**The plan counts every session.** The cheapest feasible plan (FR-CONGRESS-11, -13) takes as many speakers as the event has sessions less the partner's: six when no partner is drawn, five with one.
+*Why:* E1's technical runs showed that parts built around traps and events moved together and did not separate the conditions (`parts-audit.md`). The baseline first measures the task against its definition of done. Traps and events then come back one layer at a time.
 
 #### FR-POPULATION-01: Attendees, the ticket page, the programme and announcements
 The congress's attendees are a population: a component (FR-PROCESS-01) with its own sequence (`cycle of attendees`), from an `attendees` material and the variant.
