@@ -192,11 +192,12 @@ Given(/^the organiser invites "(\w+)" to session (\d+) at "([^"]+)", then to ses
 Then(/^"(\w+)" answered session (\d+) once and session (\d+) once, both "accept" or both "decline", as its one draw gave$/, function (this: Context, speaker: string, first: string, second: string) {
   const answers = sentBy(this, speaker).filter((line) => ["accept", "decline", "accept_if"].includes(String(line.act)));
   // Cucumber gives a group of digits as a number.
-  const bySession = (session: string) => answers.filter((line) => String(fieldsOf(line).session) === String(session));
-  assert.equal(bySession(first).length, 1, `"${speaker}" answered session ${first} ${bySession(first).length} times`);
-  assert.equal(bySession(second).length, 1, `"${speaker}" answered session ${second} ${bySession(second).length} times`);
-  assert.equal(answers.length, 2);
-  assert.equal(bySession(first)[0].act, bySession(second)[0].act);
+  // Answered once: one answer for each session, which a repeated invitation gets again (FR-CONGRESS-23).
+  const bySession = (session: string) => [...new Set(answers.filter((line) => String(fieldsOf(line).session) === String(session)).map((line) => String(line.act)))];
+  assert.equal(bySession(first).length, 1, `"${speaker}" answered session ${first} ${bySession(first).join(", ")}`);
+  assert.equal(bySession(second).length, 1, `"${speaker}" answered session ${second} ${bySession(second).join(", ")}`);
+  assert.deepEqual(answers.map((line) => String(fieldsOf(line).session)), [first, second, first].map(String));
+  assert.equal(bySession(first)[0], bySession(second)[0]);
 });
 
 /** The organiser's turns that confirm a speaker's session, then wait for its answer. */

@@ -207,7 +207,7 @@ describe("a speaker's answers after its invitation, and its outcome (FR-CONGRESS
     expect(unmet.rules.outcome()).toMatchObject({ condition_met: false, answer: "accept_if" });
   });
 
-  it("draws whether it would accept once, at its first invitation, answers each session's invitation on its own, and ignores a second invitation to the same session (FR-CONGRESS-09)", () => {
+  it("draws whether it would accept once, at its first invitation, answers each session's invitation on its own, and answers a second invitation to the same session as before (FR-CONGRESS-09, FR-CONGRESS-23)", () => {
     const at = (session: number, time: string) => `From: organiser. Act: invite. session: ${session}. time: ${time}. fee: 0. travel_paid: false.`;
     for (let seed = 1; seed <= 20; seed += 1) {
       const { steps } = conversation({ acceptance: 0.5 }, [at(2, "10:00"), at(5, "14:00"), at(2, "10:00")], seed);
@@ -215,7 +215,8 @@ describe("a speaker's answers after its invitation, and its outcome (FR-CONGRESS
       expect(mails(steps)).toEqual([
         { to: "organiser", act: answered, fields: { session: 2 } },
         { to: "organiser", act: answered, fields: { session: 5 } },
-        // The same invitation again, after another reached it, is handled afresh (FR-CONGRESS-13): ignored.
+        // The same invitation again gets its answer again (FR-CONGRESS-23).
+        { to: "organiser", act: answered, fields: { session: 2 } },
       ]);
     }
   });

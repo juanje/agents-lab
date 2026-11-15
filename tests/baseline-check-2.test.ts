@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Random } from "../src/engine/random.ts";
-import { catererRules, venueRules } from "../src/scenarios/congress-parties.ts";
+import { catererRules, speakerRules, venueRules } from "../src/scenarios/congress-parties.ts";
 import { type ToolAnswer, calls, conversation, drive, notice, tools } from "./fixtures/rules.ts";
 
 // FR-CONGRESS-23: the corrections from the E1 baseline's second check run.
@@ -86,5 +86,28 @@ describe("an unknown room is named (FR-CONGRESS-23)", () => {
   it("answers a book naming a room it does not have unavailable with that room and no date", () => {
     const { mailed } = run([message("book", " date: day 26. rooms: hall-a, ballroom. hours: 08:00-18:00.")]);
     expect(mailed).toEqual([{ act: "unavailable", fields: { room: "ballroom" } }]);
+  });
+});
+
+describe("a repeated invitation gets its answer again (FR-CONGRESS-23)", () => {
+  const speaker = (changes: Record<string, unknown> = {}) => speakerRules.start({ id: "s1", title: "Soil", fee: 300, home: "local", available: true, acceptance: 1, organiser: "organiser", event_day: 26, ...changes }, new Random(1));
+  const invite = (session: number, fee = 0): [string, string] => [DAY, `From: organiser. Act: invite. session: ${session}. time: 09:00. fee: ${fee}. travel_paid: false.`];
+  const answered = (rules: ReturnType<typeof speaker>, messages: [string, string][]) => calls(conversation(rules, messages).steps, "send_mail").map(({ act, fields }) => ({ act, fields }));
+
+  it("answers an invitation to a session it declined with the same decline, and changes nothing", () => {
+    const rules = speaker({ acceptance: 0 });
+    expect(answered(rules, [invite(1), invite(1)])).toEqual([
+      { act: "decline", fields: { session: 1 } },
+      { act: "decline", fields: { session: 1 } },
+    ]);
+    expect(rules.outcome()).toMatchObject({ answer: "decline", invitation: JSON.stringify({ session: 1, time: "09:00", fee: 0, travel_paid: false }) });
+  });
+
+  it("answers it with the same act and fields, after another message reached it, and with another offer", () => {
+    const rules = speaker({ condition: "fee" });
+    const needs = { act: "accept_if", fields: { session: 1, condition: "fee", fee: 300 } };
+    expect(answered(rules, [invite(1), invite(2), invite(1, 100)])).toEqual([needs, { ...needs, fields: { ...needs.fields, session: 2 } }, needs]);
+    // The first offer stays the one it answered.
+    expect(rules.outcome()).toMatchObject({ answer: "accept_if", invitation: JSON.stringify({ session: 2, time: "09:00", fee: 0, travel_paid: false }) });
   });
 });
