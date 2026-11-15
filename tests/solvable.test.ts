@@ -85,9 +85,20 @@ describe("a venue's other customers, on a sequence of their own (FR-CONGRESS-21)
     const onTime = recorded(1, 0);
     expect(onTime.filter(({ event }) => event === "enquiry").length).toBeGreaterThan(0);
     expect(recorded(2, 0)).toEqual(onTime);
-    expect(recorded(1, 30)).toEqual(onTime.slice(0, recorded(1, 30).length));
+    const late = recorded(1, 30);
+    const both = Math.min(late.length, onTime.length);
+    expect(both).toBeGreaterThan(2);
+    expect(late.slice(0, both)).toEqual(onTime.slice(0, both));
     // The first enquiry is at the first interval drawn from "enquiries of v1".
     const first = (-Math.log(1 - Random.derive(5, "enquiries of v1").next()) / 2) * 1440;
-    expect(onTime[0]).toEqual({ at: timeText(minutes("day 1 09:00") + first, 0), event: "enquiry" });
+    expect(onTime[0]).toEqual({ at: timeText(minutes("day 1 09:00") + first, 0), event: "enquiry", date: "day 26" });
+  });
+
+  it("counts its other customers from the run's start, starts_at, however late it first reads the time", () => {
+    const rules = (parties.venueRules.start as (params: unknown, random: Random, sequence: (purpose: string) => Random) => ReturnType<RuleSet["start"]>)({ ...venue, starts_at: minutes("day 1 09:00") }, new Random(1), (purpose) => Random.derive(5, `${purpose} of v1`));
+    const steps = drive(rules, tools(() => "", () => "day 1 Monday 09:05"));
+    const first = (-Math.log(1 - Random.derive(5, "enquiries of v1").next()) / 2) * 1440;
+    const wait = [...steps].reverse().find((step) => step.kind === "wait");
+    expect(wait).toEqual({ kind: "wait", minutes: minutes("day 1 09:00") + first - minutes("day 1 09:05") });
   });
 });
