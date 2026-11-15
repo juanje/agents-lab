@@ -84,10 +84,16 @@ To summarize an experiment's runs across replicas, print, for each condition, mo
 lab summarize <runs-dir> [--json]
 ```
 
-To report an experiment's parts, print them by part, kind, outcome and condition, from the index, the logs and the guidance materials the setup lines name, found from the directory `lab` runs in. It prints Markdown, or JSON with `--json`:
+To report an experiment's parts, print them by part, kind, outcome and condition, from the index, the logs and the guidance materials the setup lines name, found from the directory `lab` runs in. A run's re-evaluated parts (`<run id>.parts.jsonl`) stand for its own part lines, and the report says which file it read for each run. It prints Markdown, or JSON with `--json`:
 
 ```bash
 lab parts <runs-dir> [--json]
+```
+
+To re-evaluate a parts file on runs already made, without running them again, evaluate each part on the world state the run kept at its time (`parts_state` lines) and write `<run id>.parts.jsonl` beside each log, which is never changed. A part with no kept state at its time is reported as not evaluated:
+
+```bash
+lab reevaluate <runs-dir> <parts.toml>
 ```
 
 To judge what the agents of the completed runs wrote, run the reserved judge with a judge file, which gives its model, instructions and limits. It calls that model, and prints where the verdicts are:

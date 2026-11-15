@@ -329,7 +329,8 @@ The recorder writes a line per event. The inventory and the run's setup go first
 - A scenario provides `Scenario.parts`:
   - `predicates`: state × params → holds;
   - `events`: state × params → the world time of the event's first record;
-  - `misapplications`: an `Act` — agent, tool, arguments, world time it landed — × params → matches.
+  - `misapplications`: an `Act` — agent, tool, arguments, world time it landed — × params → matches;
+  - `refusedParams` (optional), by predicate: params → why the predicate cannot follow them; `readParts` then refuses the part naming `<id>.params` (FR-CONGRESS-24).
 - An experiment file's `kind_factor` reaches every condition as `Condition.kindFactor` (`name`, and `levels` when it is one of the file's factors).
 
 **Configuration and refusals**
@@ -348,7 +349,15 @@ The recorder writes a line per event. The inventory and the run's setup go first
   - `misapplications` with `tool`, `arguments`, `at`, and `kind` unless it is an outcome; only acts that took effect (outcome `success`, or none given) are matched, so a refused call (`missing_field`, `unknown_recipient`, `act_not_taken`, an unanswered call...) never is (FR-CONGRESS-18).
 - A part due at a world time keeps the run going until then (or the time limit).
 - As the run ends the book evaluates what is due and `end` parts and writes `parts_not_evaluated` with the others.
-- Part times are written `"day <n> HH:MM"`.
+- Before an evaluation time's first part line, active or not, it writes one `parts_state` line: `evaluated_at` (the part lines' text) and `state`, the world's state the predicates read then (FR-CONGRESS-24).
+- Part times are written `"day <n> HH:MM"`; `minutesOf`, `minutesText` and `minutesOfText` convert between world times, world minutes and that text.
+
+### Re-evaluating a run's parts (`lab reevaluate`, `src/analysis/reevaluate.ts`; FR-CONGRESS-24)
+
+- `lab reevaluate <runs-dir> <parts.toml>` reads, for each run of the index, the parts file against the run's scenario (by its setup line's `scenario`, in the library) and its configuration's participants and party groups, with no kind factor: a parts file with `kinds` is refused, as is one the scenario cannot follow or a scenario not in the library, naming the run.
+- Each part is evaluated on the `parts_state` line kept at its time: a fixed time; `end`, the last `parts_state` line (the run's end only when the run's own parts evaluated one then); an event's time, read in the last kept state. Activation is read by its event in the kept state.
+- It writes `<run id>.parts.jsonl` beside the log, which it never changes. Each part line has `reevaluated: true`. `held`, `values` and `traps` come from the kept state. `reached_at` is given only when the predicate gives one, since a single state cannot give the start of an interval. `effort` and `misapplications` are copied from the run's own line for that part id, or `{ calls: 0, money: 0 }` and `[]`.
+- A part with no kept state at its time is not evaluated: the command prints `Part "<id>" of run "<run>" was not evaluated: …`, and the file ends with a `parts_not_evaluated` line listing such parts. It prints where each run's file is.
 
 ### A part's group (FR-PARTS-01's addition)
 
@@ -610,7 +619,7 @@ The recorder writes a line per event. The inventory and the run's setup go first
 - Since FR-CONGRESS-17: `bookingsOf` reads `change_applied` (the lost room leaves, its `smaller` joins); `confirmedOf` also confirms a speaker who accepted and acknowledged a `change` naming a time and a room; P19 leaves out a speaker who is out; P20 holds on the partner's confirmed session and kept agreements, whatever the other sessions, and counts an invitation of one speaker for the partner's session once.
 - W4 counts sponsor money only under conditions met; since FR-CONGRESS-14 it needs a congress that happens and no overrun.
 - Since FR-CONGRESS-19: `bookingsOf` reads `room_moved`; `seatsOf` (exported) gives a renamed room its original's seats. A congress given up (its event-day booking was confirmed and none is live) holds no predicate but P04's, `within_budget`, P06's and P11's; values are still given. A congress whose booking was never confirmed is left to each predicate.
-- Since FR-CONGRESS-20, E1 baseline's definition of done: `can_be_held`, `attendance_in_range`, `sessions_have_speakers`, `everyone_fits`, `everyone_can_reach`, `food_for_everyone`, `within_budget` (D6, FR-CONGRESS-12's), `programme_on_time`, `sponsors_met`, `speakers_travel` and `done` (all ten hold); and the milestones `venue_confirmed`, `caterer_ordered`, `speakers_confirmed` and `programme_published`, whose `reachedAt` is when each was reached. `PartsContext.diets` gives each caterer's diets and limits; `ordersOf` gives each order's `date` and `permit` id. D0 and D5 count only orders for the event day; D5 counts an order's meals of a diet up to its caterer's limit, none of a diet it does not serve, and, at an `in_house` or `outside_fee` venue, an outside caterer's only with a permit that venue gave (at `in_house`, one naming the diet). D9 asks travel only of a speaker from a station (`homes`), by a train from its station or a hotel for the night before.
+- Since FR-CONGRESS-20, E1 baseline's definition of done: `can_be_held`, `attendance_in_range`, `sessions_have_speakers`, `everyone_fits`, `everyone_can_reach`, `food_for_everyone`, `within_budget` (D6, FR-CONGRESS-12's), `programme_on_time`, `sponsors_met`, `speakers_travel` and `done` (all ten hold, but those its `except` names, a list of these names; since FR-CONGRESS-24 another name is refused at load); and the milestones `venue_confirmed`, `caterer_ordered`, `speakers_confirmed` and `programme_published`, whose `reachedAt` is when each was reached. `PartsContext.diets` gives each caterer's diets and limits; `ordersOf` gives each order's `date` and `permit` id (since FR-CONGRESS-24, those of the last `order` sent before the caterer's last `order_confirmed`, by mail or by phone; its counts stay the latest accepted). D0 and D5 count only orders for the event day; D5 counts an order's meals of a diet up to its caterer's limit, none of a diet it does not serve, and, at an `in_house` or `outside_fee` venue, an outside caterer's only with a permit that venue gave (at `in_house`, one naming the diet). D9 asks travel only of a speaker from a station (`homes`), by a train from its station or a hotel for the night before.
 - Since FR-CONGRESS-21: a rule set's `start` gets, beside its own sequence, `sequence(purpose)` = `<purpose> of <name>`. A venue's other customers come from `enquiries of <venue>` (`otherCustomers`), counted from the run's start (the venue's `starts_at`): each enquiry draws its interval at `enquiries_per_day`, then whether it books, whatever the date's state, and is recorded at its drawn time; a challenged hold that lapses books as its enquiry drew. The variant hook gets the seed. With `[solvable]` in the draw, `solvabilityOf` (congress.ts) builds the input of `plansOf` (`solvability.ts`) from the completed configuration, and the variant is drawn again, up to 100 times, until `min_solutions` (2) global solutions exist on `min_venues` (2) venues, else refused naming `draw.solvable`. The variant line and `worldInventory` give `solvable`: `counts` (D0–D9), `solutions`, `venues`, `cheapest` (cost, venue) and `draws`. A plan: one room seating target + 6 + 3 + helpers, booked at the venue's day price (as `book` contracts it), free at `day 7 18:00`; the ramp when an attendee has an access need and the room, toilets or catering area are behind steps; a first caterer the rule allows taking each diet up to its limit, and a second for the rest (permits: per diet at `outside_diet_fee_per_head` at `in_house`, `outside_fee_per_head` × meals at `outside_fee`), each order at least its minimum; six available accepting speakers in slots 09:00, 10:00, 11:00 (a sponsor insisting on a morning slot takes it), 13:30, 14:30, 15:30, 16:30, fee conditions paid, travel_paid trains paid, a hotel when no train arrives 30 minutes before; commitments within the budget; and the highest whole price whose expected paying registrants (`registrationProbability`, the page opened and registration announced on `day 2 09:00`) reach 0.85 of the target and stay within 1.10 (FR-CONGRESS-22).
 - Since FR-CONGRESS-22:
   - A venue answers an `ask_quote` or `hold` from a customer about a date it has under a live contract with `contract_held` and the contract, as `book` does; about a date it holds (the venue keeps who holds each date), with `held` and the hold's end, its own or a challenge's `confirm_by`.
@@ -843,16 +852,17 @@ The recorder writes a line per event. The inventory and the run's setup go first
 
 **What it reads**
 - `lab parts <runs-dir> [--json]` (the option before or after the directory) reads the index (refused, naming the directory as given, without one).
-- It reads the logs' `part` lines, `model_turn` lines and setup lines, and the guidance material each setup line names (the material whose key is `guidance` or ends in `.guidance`), resolved from the directory `lab` runs in.
+- It reads each run's `part` lines from `<run id>.parts.jsonl` when `lab reevaluate` wrote one, else from its log (FR-CONGRESS-24); and the logs' `model_turn` lines and setup lines, and the guidance material each setup line names (the material whose key is `guidance` or ends in `.guidance`), resolved from the directory `lab` runs in.
 
 **What it prints**
 - As Markdown under `## Parts`, `## Kinds`, `## Outcomes` and `## Conditions` (or `The runs have no parts.`):
   - per part and condition, its kind, completed and stopped runs, active and held counts, each completed run's `reached_at` (`-` when none) and effort calls and money in replica order, the calls' minimum, median and maximum, and the misapplications by replica;
   - per kind and condition, active, held and their share;
   - per outcome (a part whose lines have no kind) and condition, held and each run's `values`;
-  - per condition, the guidance's words and estimated tokens (words × 4 / 3, rounded), and the completed runs' model turns, input tokens and cost.
+  - per condition, the guidance's words and estimated tokens (words × 4 / 3, rounded), and the completed runs' model turns, input tokens and cost;
+  - under `## Part lines read`, the file each run's part lines came from.
 - A stopped run is counted apart and gives no values.
-- `--json` gives `{ parts, kinds, outcomes, conditions }`.
+- `--json` gives `{ parts, kinds, outcomes, conditions, read }`.
 
 ### The summary across replicas (`summarizeRuns`, `src/analysis/replicas.ts`; FR-RUN-02)
 
