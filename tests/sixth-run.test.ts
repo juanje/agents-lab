@@ -46,9 +46,13 @@ const venue = (more: Record<string, unknown> = {}) => ({
 /** Its ledger once the organiser accepted "v1-contract-1": the contract's commitment and its deposit invoice. */
 const ledger = () => ({ commitments_recorded: [{ id: "k-1", for: "v1-contract-1" }], invoices_issued: [{ id: "i-1", for: "deposit v1-contract-1", paid: true }] });
 
-/** A venue whose contract for these rooms the organiser accepted, and which announced a change of a kind at "day 1 12:00". */
+/**
+ * A venue whose contract for these rooms the organiser accepted, and which announced a change of a kind at "day 1 12:00";
+ * other customers have its rooms of 90 seats the booking does not, so no equal room is free (FR-CONGRESS-19).
+ */
 function changed(kind: string, rooms: string) {
-  const rules = venueRules.start(venue(), new Random(1));
+  const others = ["hall-a", "hall-b"].filter((room) => !rooms.split(", ").includes(room));
+  const rules = venueRules.start(venue({ rooms_booked_by_others: others }), new Random(1));
   conversation(
     rules,
     [

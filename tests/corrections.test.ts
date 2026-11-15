@@ -138,8 +138,8 @@ describe("a venue's bookings and lost rooms (FR-CONGRESS-09)", () => {
   });
 
   /** A booking with these rooms, accepted, and the room_lost change at noon: what the venue mailed at noon, and then. */
-  function losing(rooms: string, then: [string, string][] = []) {
-    const rules = venueRules.start(venue(), new Random(1));
+  function losing(rooms: string, then: [string, string][] = [], changes: Record<string, unknown> = {}) {
+    const rules = venueRules.start(venue(changes), new Random(1));
     const first = conversation(rules, [book(rooms), accept]);
     first.clock.time = "day 1 Monday 12:00";
     const changed = drive(rules, tools(() => "", () => first.clock.time), [[venueChange("room_lost")]], true);
@@ -151,8 +151,9 @@ describe("a venue's bookings and lost rooms (FR-CONGRESS-09)", () => {
   }
 
   it("takes a room only from a booking with more than one; the lost room stays unavailable for that date", () => {
-    // A booking of its smallest room only has its price raised instead (FR-CONGRESS-11, FR-CONGRESS-17).
-    expect(losing("room-b").changed.map(({ act }) => act)).toEqual(["price_change"]);
+    // A booking of its smallest room only, with "main-hall" booked by another customer, has its price raised instead
+    // (FR-CONGRESS-11, FR-CONGRESS-17, FR-CONGRESS-19).
+    expect(losing("room-b", [], { rooms_booked_by_others: ["main-hall"] }).changed.map(({ act }) => act)).toEqual(["price_change"]);
 
     // The change answered first: a pending change holds the booking (FR-CONGRESS-16).
     const { changed, later } = losing("main-hall, room-b", [

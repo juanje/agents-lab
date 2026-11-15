@@ -186,8 +186,8 @@ describe("venues' corrections (FR-CONGRESS-11)", () => {
   });
 
   it("raises its price instead of taking a room from a booking with one room and no free room with fewer seats", () => {
-    // "hall-b", 40 seats, is its smallest room (FR-CONGRESS-17).
-    const rules = venueRules.start(venue(), new Random(1));
+    // "hall-b", 40 seats, is its smallest room (FR-CONGRESS-17); other customers have the larger ones (FR-CONGRESS-19).
+    const rules = venueRules.start(venue({ rooms_booked_by_others: ["hall-a", "annex"] }), new Random(1));
     conversation(rules, [book("hall-b"), accept]);
     const steps = drive(rules, tools(() => "", () => "day 1 Monday 12:00"), [[venueChange("room_lost")]], true);
     expect(mailed(steps).map(({ act }) => act)).toEqual(["price_change"]);
