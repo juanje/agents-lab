@@ -202,6 +202,23 @@ describe("inventory", () => {
     expect(listed.slice(listed.indexOf('## Condition "crowded"'))).toContain(tools(5));
   });
 
+  it("gives, for an effector whose effect delivers stimuli, the channel it delivers through, and lists that channel with its source and text (FR-STIMULUS-02)", () => {
+    const [look, take] = slotsScenario.tools;
+    const news = { name: "news", source: "the agent that takes a slot", stimulus: "took slot {slot}." };
+    const delivers = { channel: "news", deliveries: () => [] };
+    const scenario = slotsWith({ tools: [look, { ...take, delivers } as typeof take], channels: (configuration) => [...slotsScenario.channels(configuration), news] });
+
+    const listed = inventory(experimentOf(["[conditions.baseline]"]), scenario);
+    const markdown = inventoryMarkdown(listed);
+
+    const [condition] = listed.conditions;
+    expect(condition.tools.map((tool) => tool.deliversThrough)).toEqual([undefined, "news"]);
+    expect(condition.channels).toContainEqual({ name: "news", source: news.source, delivers: news.stimulus });
+    const takeListed = markdown.slice(markdown.indexOf('#### Tool "take"'), markdown.indexOf("### Outcomes the engine gives"));
+    expect(takeListed).toContain(["- Kind: effector", "- Duration: 0 ms.", "- Effort: none", "- Delivers through: news", ""].join("\n"));
+    expect(markdown.slice(markdown.indexOf('#### Tool "look"'), markdown.indexOf('#### Tool "take"'))).not.toContain("Delivers through");
+  });
+
   it("lists each stimulus channel with its source and what it delivers, as the scenario declares them in each condition", () => {
     const experiment = experimentOf(["[conditions.baseline]", "[conditions.loud]", 'rhythm.text = "Wake up!"']);
 
