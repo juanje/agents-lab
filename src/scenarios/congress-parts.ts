@@ -87,7 +87,7 @@ export interface Booking {
   allocated: boolean;
 }
 
-/** Every booking a venue's mail gives: its contract, confirmation or cancellation, and its rooms after changes, extras and allocation. */
+/** Every booking a venue's mail gives: its contract, confirmation or cancellation, and its rooms after changes, extras, allocation and changes applied. */
 export function bookingsOf(state: Congress): Booking[] {
   const bookings: Booking[] = [];
   for (const message of actsOf(state)) {
@@ -99,6 +99,11 @@ export function bookingsOf(state: Congress): Booking[] {
     if (message.act === "cancelled") booking.cancelledAt = message.at;
     if ((message.act === "confirmed" || message.act === "contract_changed") && message.fields.rooms !== undefined) booking.rooms = listOf(message.fields.rooms);
     if (message.act === "extra_confirmed" && message.fields.room !== undefined) booking.rooms = [...booking.rooms, String(message.fields.room)];
+    // An unanswered change: the lost room leaves, and the smaller room it names joins (FR-CONGRESS-17).
+    if (message.act === "change_applied") {
+      const { room, smaller } = message.fields;
+      booking.rooms = booking.rooms.flatMap((each) => (each !== room ? [each] : smaller === undefined ? [] : [String(smaller)]));
+    }
     if (message.act === "rooms_allocated") {
       const moves = new Map(String(message.fields.allocation ?? "").split(/;\s*/).map((pair) => pair.split(/\s*->\s*/) as [string, string]));
       booking.rooms = booking.rooms.map((room) => moves.get(room) ?? room);
@@ -151,11 +156,13 @@ function outEntirely(state: Congress, speaker: string): boolean {
 
 /**
  * The confirmed speakers who are not out (FR-CONGRESS-09): each accepted a session, or is the partner's, and
- * acknowledged a confirmation the organiser sent it.
+ * acknowledged a confirmation the organiser sent it, or a change naming a time and a room, which it takes as its session
+ * as well (FR-CONGRESS-17).
  */
-function confirmedOf(state: Congress): string[] {
+export function confirmedOf(state: Congress): string[] {
   const partner = partnerOf(state);
-  return [...new Set(withAct(state, "confirm", "organiser").map(({ to }) => to))].filter(
+  const told = [...withAct(state, "confirm", "organiser"), ...withAct(state, "change", "organiser").filter(({ fields }) => fields.time !== undefined && fields.room !== undefined)];
+  return [...new Set(told.map(({ to }) => to))].filter(
     (speaker) => !outOf(state, speaker) && (speaker === partner || withAct(state, "accept", speaker).length > 0) && withAct(state, "acknowledged", speaker, "organiser").length > 0,
   );
 }
