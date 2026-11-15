@@ -57,7 +57,7 @@ function world(): Congress {
 /** Adds a mail, received at a world time. */
 function mail(state: Congress, from: string, to: string, act: string, fields: Record<string, string | number | boolean>, at: number): void {
   const count = Object.values(state.mail.mailboxes).flat().length;
-  state.mail.mailboxes[to] = [...(state.mail.mailboxes[to] ?? []), { id: `m-${count + 1}`, from, to, act, fields, subject: act, received: worldTime(at), read: true } as never];
+  state.mail = { ...state.mail, mailboxes: { ...state.mail.mailboxes, [to]: [...(state.mail.mailboxes[to] ?? []), { id: `m-${count + 1}`, from, to, act, fields, subject: act, received: worldTime(at), read: true } as never] } };
 }
 
 /** "v1"'s contract for a day with these rooms, confirmed at a time. */
