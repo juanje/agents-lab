@@ -621,15 +621,7 @@ const predicatesAsWritten: PartsProvided<Congress>["predicates"] = {
     const values = balanceOf(state);
     return { holds: happened(state) && values.balance >= 0 && values.overruns === 0, values };
   },
-  W5: (state) => {
-    const latest = latestOf(state);
-    const sponsors = [...new Set(withAct(state, "agreement").map(({ from }) => from))].filter((sponsor) => withAct(state, "withdraw", sponsor).length === 0);
-    const met = sponsors.every((sponsor) => {
-      const conditions = listOf(withAct(state, "agreement", sponsor).at(-1)?.fields.conditions);
-      return (!conditions.includes("logo") || logoOf(latest, sponsor)) && (!conditions.includes("morning_slot") || slotOf(latest, sponsor));
-    });
-    return happened(state) && met && !dataWithoutConsent(state);
-  },
+  W5: (state) => happened(state) && sponsorsMet(state) && !dataWithoutConsent(state),
   W6: (state) => {
     const booking = liveBookingOf(state);
     const needs = registrantsOf(state).map(({ access }) => access);
@@ -669,7 +661,46 @@ const predicatesAsWritten: PartsProvided<Congress>["predicates"] = {
     for (const order of eventOrdersOf(state)) for (const [diet, count] of Object.entries(order.counts)) served[diet] = (served[diet] ?? 0) + mealsServed(state, order, diet, count);
     return Object.entries(attendanceByDiet(state)).every(([diet, count]) => (served[diet] ?? 0) >= count);
   },
+  // D6 is within_budget (FR-CONGRESS-12).
+  // D7: a programme of six sessions, each with a time, a speaker and a room, published by day 12 18:00, and every registrant believes the latest version.
+  programme_on_time: (state) => {
+    const versions = state.population?.programme ?? [];
+    const full = ({ sessions }: Programme) => sessions.length === 6 && sessions.every(({ start, speakers, room }) => start !== "" && speakers.length > 0 && room !== "");
+    const onTime = versions.some((version) => (version.published ?? Infinity) <= minutesOfText(PROGRAMME_DUE) && full(version));
+    const latest = versions.at(-1)?.version;
+    return onTime && registrantsOf(state).every(({ believes }) => believes === latest);
+  },
+  // D8: every sponsor that agreed and did not withdraw has its conditions met in the latest programme.
+  sponsors_met: (state) => sponsorsMet(state),
+  // D9: every confirmed speaker of the latest programme whose travel the organiser agreed to pay arrives at least 30 minutes before its session, on an event-day train or with a hotel for the night before.
+  speakers_travel: (state) => {
+    const { eventDay } = state.context;
+    return confirmedOf(state).every((speaker) => {
+      const session = latestOf(state)?.sessions.find(({ speakers }) => speakers.includes(speaker));
+      if (session === undefined || !travelPaid(state, speaker)) return true;
+      const booked = state.travel.booked.filter(({ traveller }) => traveller === speaker);
+      const train = booked.some(({ option }) => state.travel.material.trains.some(({ id, arrives }) => option === `${id} day ${eventDay}` && clockOf(arrives) <= clockOf(session.start) - 30));
+      const hotel = booked.some(({ option }) => state.travel.material.hotels.some(({ id }) => option === `${id} day ${eventDay - 1}`));
+      return train || hotel;
+    });
+  },
 };
+
+/** When D7's programme is due (FR-CONGRESS-20). */
+const PROGRAMME_DUE = "day 12 18:00";
+
+/** Whether every sponsor that agreed and did not withdraw has its agreed logo and morning slot in the latest programme. */
+function sponsorsMet(state: Congress): boolean {
+  const latest = latestOf(state);
+  const sponsors = [...new Set(withAct(state, "agreement").map(({ from }) => from))].filter((sponsor) => withAct(state, "withdraw", sponsor).length === 0);
+  return sponsors.every((sponsor) => {
+    const conditions = listOf(withAct(state, "agreement", sponsor).at(-1)?.fields.conditions);
+    return (!conditions.includes("logo") || logoOf(latest, sponsor)) && (!conditions.includes("morning_slot") || slotOf(latest, sponsor));
+  });
+}
+
+/** Whether the organiser agreed to pay a speaker's travel: an invitation or an accepted condition with travel_paid true (FR-CONGRESS-20). */
+const travelPaid = (state: Congress, speaker: string) => [...withAct(state, "invite", "organiser", speaker), ...withAct(state, "accept_condition", "organiser", speaker)].some(({ fields }) => fields.travel_paid === true);
 
 /** The live caterer orders for the event day (FR-CONGRESS-20). */
 const eventOrdersOf = (state: Congress) => ordersOf(state).filter(({ date }) => date === `day ${state.context.eventDay}`);
