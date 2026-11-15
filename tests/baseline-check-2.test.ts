@@ -111,3 +111,38 @@ describe("a repeated invitation gets its answer again (FR-CONGRESS-23)", () => {
     expect(rules.outcome()).toMatchObject({ answer: "accept_if", invitation: JSON.stringify({ session: 2, time: "09:00", fee: 0, travel_paid: false }) });
   });
 });
+
+describe("an extra is confirmed once (FR-CONGRESS-23)", () => {
+  const ramp = [message("request_extra", " item: ramp."), message("accept_extra", " item: ramp.")];
+
+  it("answers an accept_extra for an extra the booking has already_confirmed with the item, and commits nothing", () => {
+    const { mailed, commitments } = run([book, accept, ...ramp, message("accept_extra", " item: ramp.")]);
+    expect(mailed.slice(2)).toEqual([
+      { act: "extra_quote", fields: { item: "ramp", price: 100 } },
+      { act: "extra_confirmed", fields: { item: "ramp", price: 100 } },
+      { act: "already_confirmed", fields: { item: "ramp" } },
+    ]);
+    expect(commitments).toEqual([
+      { amount: 2000, for: "v1-contract-1" },
+      { amount: 100, for: "v1-contract-1 extra ramp" },
+    ]);
+  });
+
+  it("confirms a second room it quotes anew, a room the booking does not have", () => {
+    const rooms = [
+      { id: "hall-a", seats: 90, equipment: [] },
+      { id: "room-b", seats: 40, equipment: [] },
+      { id: "room-c", seats: 30, equipment: [] },
+    ];
+    const room = [message("request_extra", " item: room. seats: 20."), message("accept_extra", " item: room.")];
+    const { mailed } = run([book, accept, ...room, ...room, ...room], { rooms });
+    expect(mailed.slice(2).map(({ act, fields }) => [act, (fields as Record<string, unknown>).room ?? (fields as Record<string, unknown>).what])).toEqual([
+      ["extra_quote", "room-c"],
+      ["extra_confirmed", "room-c"],
+      ["extra_quote", "room-b"],
+      ["extra_confirmed", "room-b"],
+      ["not_available", "room"],
+      ["already_confirmed", undefined],
+    ]);
+  });
+});
