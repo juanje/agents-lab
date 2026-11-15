@@ -207,6 +207,7 @@ async function runAgents<State>(
     compaction: settings.compaction,
     runEnd: runEnd.signal,
     stop,
+    agents: agents.map(({ name }) => name),
   };
   const runtime = await openRuntime(agents.map((agent) => agent.model.provider));
   const parallelism = new ParallelismLimit(settings.parallelismLimit);
@@ -309,7 +310,7 @@ async function runAgents<State>(
     seed,
     runEnd: runEnd.signal,
     stimuli,
-    call: { sensings, changes, stimuli, records, runEnd: runEnd.signal, stop, clock },
+    call: { sensings, changes, stimuli, records, runEnd: runEnd.signal, stop, clock, agents: sessionSettings.agents },
     records,
   });
   // The mail watches the world for messages sent before any agent or component can send one (FR-MESSAGE-01).

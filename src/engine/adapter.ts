@@ -221,6 +221,8 @@ export interface SessionSettings {
   stop(error: Error): void;
   /** The run's time, which a sensor is given as it reads the world (FR-WORKPLACE-05). */
   clock: RunClock;
+  /** The run's agents, the only ones an effector's effect may deliver to (FR-STIMULUS-02). */
+  agents: readonly string[];
 }
 
 /**
@@ -646,7 +648,7 @@ function definition<State>(
   changes: ChangesSinceSensing,
   stimuli: Stimuli,
   records: Records,
-  { runEnd, stop, clock }: SessionSettings,
+  { runEnd, stop, clock, agents }: SessionSettings,
 ): ToolDefinition {
   return {
     name: tool.name,
@@ -654,7 +656,7 @@ function definition<State>(
     description: tool.description,
     parameters: tool.parameters as ToolDefinition["parameters"],
     execute: async (id, args: Record<string, unknown>) => {
-      const { executed: ran, text } = await callTool(world, tool, agent, args, { sensings, changes, stimuli, records, runEnd, stop, clock });
+      const { executed: ran, text } = await callTool(world, tool, agent, args, { sensings, changes, stimuli, records, runEnd, stop, clock, agents });
       executed.set(id, ran);
       // A failure is marked as one: an agent told that a failure succeeded would act on a world it misreads.
       return { content: [{ type: "text", text }], details: undefined, isError: ran.outcome !== "success" };
@@ -663,7 +665,7 @@ function definition<State>(
 }
 
 /** What a tool call runs in besides the world: its caller's sensings and changes since sensing, the stimuli, the log and the run. */
-export interface CallContext extends Around, Pick<SessionSettings, "runEnd" | "stop" | "clock"> {
+export interface CallContext extends Around, Pick<SessionSettings, "runEnd" | "stop" | "clock" | "agents"> {
   records: Pick<Records, "start">;
   /** What the caller is, as an error names it: an agent, unless it is a participant decided by rules (FR-PARTICIPANT-01). */
   caller?: "agent" | "participant";
@@ -679,7 +681,7 @@ export async function callTool<State>(
   tool: Tool<State>,
   agent: string,
   args: Record<string, unknown>,
-  { sensings, changes, stimuli, records, runEnd, stop, clock, caller = "agent" }: CallContext,
+  { sensings, changes, stimuli, records, runEnd, stop, clock, agents, caller = "agent" }: CallContext,
 ): Promise<{ executed: Executed; text: string; record?: Readonly<Record<string, unknown>> }> {
   const startedAtMs = performance.now();
   let called: CallResult;
@@ -692,6 +694,7 @@ export async function callTool<State>(
       : (undeclared(tool, args) ??
         refused(world, tool, { agent, arguments: args }, clock) ??
         (await perform(world, tool, { agent, arguments: args }, { sensings, changes, stimuli }, runEnd, started, clock)));
+    assertRecipients(called.deliveries, agent, agents);
   } catch (error) {
     // A tool that throws is a defect of the scenario, not the agent's behaviour: no outcome fits it, and the run
     // stops on it rather than going on with a world it cannot trust.
@@ -720,6 +723,17 @@ export async function callTool<State>(
   // What an effector's sight saw is no sensing: the agent's last sensing, and the changes since it, stay as they were.
   if (seen !== undefined) sensings.sighted(agent, { tool: tool.name, result: seen, atMs: endedAtMs });
   return { executed, text, ...(record === undefined ? {} : { record }) };
+}
+
+/**
+ * Refuses a call's deliveries when one reaches its own caller or a name that is no agent of the run: a defect of the
+ * scenario, which stops the run before any of them is delivered (FR-STIMULUS-02).
+ */
+function assertRecipients(deliveries: CallResult["deliveries"], caller: string, agents: readonly string[]): void {
+  for (const { agent } of deliveries?.each ?? []) {
+    if (agent === caller) throw new Error(`its effect delivers to "${agent}", its own caller`);
+    if (!agents.includes(agent)) throw new Error(`its effect delivers to "${agent}", which is no agent of the run`);
+  }
 }
 
 /**
