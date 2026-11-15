@@ -14,7 +14,7 @@ import { CITY, V1 } from "./run-corrections.steps.ts";
 // in the shapes the world keeps them, with no agent acting; the plan is read from the variant as loading draws it.
 
 /** The congress's one agent. */
-const ORGANISER = "organiser";
+export const ORGANISER = "organiser";
 
 /** The literal text of a step, as a regular expression that matches it alone. */
 const literal = (text: string) => new RegExp(`^${text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`);
@@ -89,26 +89,31 @@ Given(
     'the draw gives no board, no partner, no agency, "budget" [8000, 8000], "advance" [3000, 3000] and the target 60, and the variant draws the venue "v1" (rooms "hall-a" of 90 seats and "room-c" of 30 seats, catering "outside_free", "hall-a" step-free, the toilets behind "3 steps", extra "ramp" 100), the speakers "s1" to "s7" with no condition, "s8" (condition "travel_paid", from "north"), the caterers "c1" (serves "vegan" with no limit, "gluten_free" with limit 2) and "c2" (serves every diet with no limit), and the sponsor "sp1" (conditions "logo, morning_slot")',
   ),
   function (this: Context) {
-    changePools(this, (pool) => {
-      pool.venue = [{ ...structuredClone(V1), rooms: V1_ROOMS.map((room) => ({ ...room, equipment: [] })), catering: "outside_free", extras: { ramp: 100 } }];
-      pool.speaker = structuredClone(SPEAKERS);
-      pool.partner = [];
-      pool.caterer = [structuredClone(C1), structuredClone(C2)];
-      pool.sponsor = [structuredClone(SP1)];
-      pool.agency = [];
-      pool.board = [];
-    });
-    change(this, (configuration) => {
-      configuration.draw = stringify({ attendance: [60, 60], budget: [8000, 8000], advance: [3000, 3000], venue: 1, speaker: 8, caterer: 2, sponsor: 1 });
-      configuration.travel = stringify({ stations: ["north"], trains: [TRAIN], hotels: [{ id: "h1", near: "v1", rooms: 5, price: 90 }], sold_out_probability: 0 });
-      const city = structuredClone(CITY) as unknown as { venues: TomlTable[]; passages: TomlTable[] };
-      city.venues[0].rooms = V1_ROOMS;
-      city.passages = [...city.passages.filter(({ between }) => (between as string[]).includes("office")), ...structuredClone(V1_PASSAGES)];
-      configuration.city = stringify(city as unknown as TomlTable);
-    });
-    records.set(this, { state: worldHere(), acts: [] });
+    drawOfTheBaseline(this);
   },
 );
+
+/** The draw and the variant of FR-CONGRESS-20's Background, and the records of its world. */
+export function drawOfTheBaseline(context: Context): void {
+  changePools(context, (pool) => {
+    pool.venue = [{ ...structuredClone(V1), rooms: V1_ROOMS.map((room) => ({ ...room, equipment: [] })), catering: "outside_free", extras: { ramp: 100 } }];
+    pool.speaker = structuredClone(SPEAKERS);
+    pool.partner = [];
+    pool.caterer = [structuredClone(C1), structuredClone(C2)];
+    pool.sponsor = [structuredClone(SP1)];
+    pool.agency = [];
+    pool.board = [];
+  });
+  change(context, (configuration) => {
+    configuration.draw = stringify({ attendance: [60, 60], budget: [8000, 8000], advance: [3000, 3000], venue: 1, speaker: 8, caterer: 2, sponsor: 1 });
+    configuration.travel = stringify({ stations: ["north"], trains: [TRAIN], hotels: [{ id: "h1", near: "v1", rooms: 5, price: 90 }], sold_out_probability: 0 });
+    const city = structuredClone(CITY) as unknown as { venues: TomlTable[]; passages: TomlTable[] };
+    city.venues[0].rooms = V1_ROOMS;
+    city.passages = [...city.passages.filter(({ between }) => (between as string[]).includes("office")), ...structuredClone(V1_PASSAGES)];
+    configuration.city = stringify(city as unknown as TomlTable);
+  });
+  records.set(context, { state: worldHere(), acts: [] });
+}
 
 Given("no perturbation is declared", function (this: Context) {
   change(this, (configuration) => (configuration.perturbations = {}));
@@ -116,7 +121,7 @@ Given("no perturbation is declared", function (this: Context) {
 
 // The records the scenarios build.
 /** "v1"'s contract for "day 26" with these rooms, confirmed at a time. */
-function liveBooking(context: Context, rooms = "hall-a", at = minutes("day 3")): void {
+export function liveBooking(context: Context, rooms = "hall-a", at = minutes("day 3")): void {
   mail(context, "v1", ORGANISER, "contract", { contract: "v1-contract-1", date: "day 26", rooms, hours: "08:00-18:00", price: 2000 }, at - 60);
   mail(context, "v1", ORGANISER, "confirmed", { contract: "v1-contract-1" }, at);
 }
@@ -134,7 +139,7 @@ function told(context: Context, speaker: string, time: string, room = "hall-a", 
 }
 
 /** The six speakers, each accepted its session and acknowledged a confirmation of its time and room. */
-function sixConfirmed(context: Context, room = "hall-a"): void {
+export function sixConfirmed(context: Context, room = "hall-a"): void {
   SIX.forEach((speaker, index) => {
     accepted(context, speaker, index + 1, TIMES[index]);
     told(context, speaker, TIMES[index], room);
@@ -142,12 +147,12 @@ function sixConfirmed(context: Context, room = "hall-a"): void {
 }
 
 /** A programme of six sessions in a room, one speaker each, published at a time. */
-function sixPublished(context: Context, room = "hall-a", at = minutes("day 12"), speakers = SIX, more: Parameters<typeof publish>[3] = {}): void {
+export function sixPublished(context: Context, room = "hall-a", at = minutes("day 12"), speakers = SIX, more: Parameters<typeof publish>[3] = {}): void {
   publish(context, speakers.map((speaker, index) => session([speaker], TIMES[index], room)), at, more);
 }
 
 /** An order to a caterer for the event at "v1", with its counts, and the caterer's confirmation at a time. */
-function order(context: Context, caterer: string, counts: string, at = minutes("day 9"), more: Record<string, string> = {}): void {
+export function order(context: Context, caterer: string, counts: string, at = minutes("day 9"), more: Record<string, string> = {}): void {
   mail(context, ORGANISER, caterer, "order", { counts, date: "day 26", venue: "v1", ...more }, at - 60);
   mail(context, caterer, ORGANISER, "order_confirmed", { counts, total: 0 }, at);
 }
@@ -276,7 +281,7 @@ Given('50 registrants who eat "standard", six confirmed speakers and 2 helpers',
 
 // D6 within_budget.
 /** A commitment of the organiser at a time, and the overrun the money records when it takes the total above the budget. */
-function commit(context: Context, to: string, amount: number, at: number): void {
+export function commit(context: Context, to: string, amount: number, at: number): void {
   const state = world(context);
   const events = state.money.events as readonly Record<string, unknown>[];
   const total = events.reduce((sum, event) => sum + (event.kind === "commitment" ? Number(event.amount) : event.kind === "release" ? -Number(event.amount) : 0), 0) + amount;
@@ -384,10 +389,10 @@ Given('a hotel for the night of "day 25" is booked for "s8"', function (this: Co
 
 // done.
 /** Whether a predicate's result holds. */
-const holds = (result: unknown) => (typeof result === "boolean" ? result : (result as { holds: boolean }).holds);
+export const holds = (result: unknown) => (typeof result === "boolean" ? result : (result as { holds: boolean }).holds);
 
 /** The checks of the definition of done, D0 to D9. */
-const CHECKS = ["can_be_held", "attendance_in_range", "sessions_have_speakers", "everyone_fits", "everyone_can_reach", "food_for_everyone", "within_budget", "programme_on_time", "sponsors_met", "speakers_travel"];
+export const CHECKS = ["can_be_held", "attendance_in_range", "sessions_have_speakers", "everyone_fits", "everyone_can_reach", "food_for_everyone", "within_budget", "programme_on_time", "sponsors_met", "speakers_travel"];
 
 Given('D0 to D9 all hold at the end of preparation, except "sponsors_met"', function (this: Context) {
   liveBooking(this);

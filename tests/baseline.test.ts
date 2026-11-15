@@ -555,6 +555,59 @@ describe("done: D0 to D9 all hold (FR-CONGRESS-20)", () => {
   });
 });
 
+describe("D5 reads the venue, date and permit of the order the caterer confirmed (FR-CONGRESS-24)", () => {
+  /** A live booking with "v1", now with outside_fee and its own caterer "c9"; 50 registrants who eat standard, six confirmed speakers; "v1" gave the permit "v1-permit-1". */
+  function congress(): Congress {
+    const state = world();
+    state.context = { ...state.context, catering: { v1: { rule: "outside_fee", inHouse: "c9" } } } as Congress["context"];
+    booked(state);
+    registered(state, 50);
+    sixConfirmed(state);
+    published(state);
+    mail(state, "v1", "organiser", "extra_confirmed", { item: "outside_catering", price: 200, permit: "v1-permit-1" }, minutes("day 8"));
+    return state;
+  }
+  /** An order to "c2" for 61 standard meals, received at a time, with a permit or none, and other fields. */
+  const order = (state: Congress, at: number, more: Record<string, string> = {}) => mail(state, "organiser", "c2", "order", { counts: "standard: 61", date: "day 26", venue: "v1", ...more }, at);
+  const confirmation = (state: Congress, at: number) => mail(state, "c2", "organiser", "order_confirmed", { counts: "standard: 61", total: 0 }, at);
+
+  it.each([
+    [{}, { permit: "v1-permit-1" }, true],
+    [{ permit: "required" }, { permit: "v1-permit-1" }, true],
+    [{ permit: "v1-permit-1" }, {}, false],
+  ])("a first order with %j and a confirmed second with %j: %s", (first, second, expected) => {
+    const state = congress();
+    order(state, minutes("day 9"), first);
+    order(state, minutes("day 10"), second);
+    confirmation(state, minutes("day 10 01:00"));
+    expect(holds("food_for_everyone", state)).toBe(expected);
+  });
+
+  it("reads the last order sent before the caterer's last confirmation, not one sent after it", () => {
+    const state = congress();
+    order(state, minutes("day 9"), { permit: "v1-permit-1" });
+    confirmation(state, minutes("day 9 01:00"));
+    order(state, minutes("day 11"));
+    expect(holds("food_for_everyone", state)).toBe(true);
+  });
+
+  it("reads the date of the confirmed order", () => {
+    const state = congress();
+    order(state, minutes("day 9"), { permit: "v1-permit-1", date: "day 25" });
+    order(state, minutes("day 10"), { permit: "v1-permit-1" });
+    confirmation(state, minutes("day 10 01:00"));
+    expect(holds("can_be_held", state)).toBe(true);
+  });
+
+  it("reads an order confirmed on a call, whose act and answer share the call's end", () => {
+    const state = congress();
+    order(state, minutes("day 9"));
+    const ended = worldTime(minutes("day 10"));
+    state.phone = { calls: [{ id: "call-1", from: "organiser", to: "c2", act: "order", fields: { counts: "standard: 61", date: "day 26", venue: "v1", permit: "v1-permit-1" }, outcome: "answered", answer: { act: "order_confirmed", fields: { counts: "standard: 61", total: 0 } }, endedAt: ended }] } as unknown as Congress["phone"];
+    expect(holds("food_for_everyone", state)).toBe(true);
+  });
+});
+
 describe("the milestones give, through reached_at, when the organiser reached each step (FR-CONGRESS-20)", () => {
   it("venue_confirmed: a confirmed live booking for the event day, reached as it was confirmed", () => {
     const state = world();
