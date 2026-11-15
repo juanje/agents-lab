@@ -700,7 +700,8 @@ export const venueRules: RuleSet = {
           record("enquiry", { date: eventDate }, timer.at);
           if (statusOf(eventDate) === "free") otherCustomer(eventDate, timer.books === true, timer.at);
           else if (statusOf(eventDate) === "held" && !timers.some(({ kind }) => kind === "challenge_lapse")) {
-            const confirmBy = party.now + 48 * 60;
+            // 48 world hours after the enquiry, at its drawn time (FR-CONGRESS-21).
+            const confirmBy = timer.at + 48 * 60;
             // A challenged hold ends when the organiser must confirm by, in place of its own end.
             timers.splice(0, timers.length, ...timers.filter(({ kind, date }) => !(kind === "lapse" && date === eventDate)));
             timers.push({ at: confirmBy, kind: "challenge_lapse", date: eventDate, books: timer.books === true });
