@@ -106,6 +106,11 @@ export interface Scenario<State> {
   refuses?: (state: State, call: { agent: string; arguments: Record<string, unknown> }, tool: string) => Refusal | undefined;
   /** What the inventory gives of the scenario's world, from the resolved configuration, for a scenario that says (FR-CONGRESS-01). */
   worldInventory?: (configuration: Configuration) => Readonly<Record<string, unknown>>;
+  /**
+   * What the inventory gives of a replica's variant beside what it drew, from the configuration the variant completed
+   * and the replica's seed, for a scenario that says (FR-CONGRESS-22).
+   */
+  variantInventory?: (configuration: Configuration, seed: number) => Readonly<Record<string, unknown>>;
   /** The tables of its base configuration, by dotted path, to which a condition may add keys the base lacks (FR-CONGRESS-08). */
   openTables?: readonly string[];
   /**

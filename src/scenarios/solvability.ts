@@ -80,6 +80,8 @@ export interface Plan {
   orders: Order[];
   speakers: { id: string; session: string; fee: number; train?: string; hotel?: string }[];
   price: number;
+  /** The expected paying registrants at its price (FR-CONGRESS-22). */
+  expected: number;
   cost: number;
 }
 
@@ -329,15 +331,18 @@ export function plansOf(input: SolvabilityInput): Solved {
   counts.D5 = [...catering.values()].reduce((sum, options) => sum + options.length, 0);
   // The speaker sets that meet D2, with their sessions, D9's travel at each venue and D1's price.
   const eligible = input.speakers.filter(({ available, accepts }) => available === true && accepts !== false);
-  const sets: { speakers: SpeakerOption[]; sessions: Map<string, string>; price?: number }[] = [];
-  const prices = new Map<number, number | undefined>();
+  const sets: { speakers: SpeakerOption[]; sessions: Map<string, string>; price?: { price: number; expected: number } }[] = [];
+  const prices = new Map<number, { price: number; expected: number } | undefined>();
   for (const chosen of subsets(eligible, Math.max(0, SESSIONS - input.partners))) {
     const sessions = sessionsOf(chosen, input.sponsorMorning);
     if (sessions === undefined) continue;
     counts.D2 += 1;
     if (travelOf(input, "", chosen, sessions) !== undefined) counts.D9 += 1;
     const draws = chosen.reduce((sum, { draw = 0 }) => sum + draw, 0);
-    if (!prices.has(draws)) prices.set(draws, priceOf(input, chosen));
+    if (!prices.has(draws)) {
+      const price = priceOf(input, chosen);
+      prices.set(draws, price === undefined ? undefined : { price, expected: Math.round(expectedPaying(input, chosen, price) * 100) / 100 });
+    }
     const price = prices.get(draws);
     if (price !== undefined) counts.D1 += 1;
     sets.push({ speakers: chosen, sessions, ...(price === undefined ? {} : { price }) });
@@ -365,7 +370,7 @@ export function plansOf(input: SolvabilityInput): Solved {
         solutions += 1;
         venues.add(venue.id);
         if (cheapest === undefined || cost < cheapest.cost) cheapest = { cost, venue: venue.id };
-        if (plans.length < PLANS_KEPT) plans.push({ venue: venue.id, room, ramp, orders, speakers: travel.speakers, price: set.price, cost });
+        if (plans.length < PLANS_KEPT) plans.push({ venue: venue.id, room, ramp, orders, speakers: travel.speakers, ...set.price, cost });
         if (solutions >= COUNT_LIMIT) {
           atLeast = true;
           break;

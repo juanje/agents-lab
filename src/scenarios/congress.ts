@@ -1833,6 +1833,11 @@ function worldInventory(configuration: Configuration): Readonly<Record<string, u
   };
 }
 
+/** What the inventory gives of a replica's variant beside what it drew: the plans the solvability check kept, each with its price and expected paying registrants, when the draw gives [solvable] (FR-CONGRESS-22). */
+function variantInventory(configuration: Configuration, seed: number): Readonly<Record<string, unknown>> {
+  return textOf(configuration, "draw").solvable === undefined ? {} : { plans: solvabilityOf(configuration, seed).plans };
+}
+
 /** The congress's base configuration: a city of one office, one topic and a fixed attendance, no party, and what the organiser knows. */
 const BASE_CONFIGURATION = [
   'task = ""',
@@ -2022,6 +2027,7 @@ export const congressScenario: Scenario<Congress> = {
     return outsideCatering && !Object.hasOwn(fields, "attendance") ? { outcome: "missing_field", reason: 'the act "request_extra" with the item "outside_catering" requires the field "attendance"' } : undefined;
   },
   worldInventory,
+  variantInventory,
   baseConfiguration: BASE_CONFIGURATION,
   // An experiment adds hours and perturbations the base does not have (FR-CONGRESS-08).
   openTables: ["calendar.hours", "perturbations"],

@@ -1,7 +1,7 @@
 import { type CalendarInventory, calendarInventory } from "./calendar.ts";
 import { type SummaryInstructions, summaryInstructions } from "./compaction.ts";
 import type { Component } from "./components.ts";
-import type { Compaction, Experiment, Limits, ThinkingLevel } from "./experiment.ts";
+import { type Compaction, type Experiment, type Limits, type ThinkingLevel, replicaSeed } from "./experiment.ts";
 import { MAIL_DURATIONS, type MailInventory, mailInventory, mailTools } from "./mail.ts";
 import type { ParticipantSettings } from "./participants.ts";
 import { MONEY_DURATIONS, type MoneyInventory, type MoneySettings, moneyInventory, moneyTools } from "./money.ts";
@@ -20,6 +20,20 @@ export interface Inventory {
   experiment: string;
   scenario: string;
   conditions: ConditionInventory[];
+  /** Each replica's variant, for a scenario that draws one (FR-CONGRESS-22). */
+  replicas?: ReplicaInventory[];
+}
+
+/**
+ * A replica's variant: its seed, what it drew, and what the scenario gives of it beside, such as the plans a check kept
+ * (FR-CONGRESS-22). The variant comes from the seed alone, so it is the same in every condition; it is read with the
+ * experiment's first condition.
+ */
+export interface ReplicaInventory {
+  replica: number;
+  seed: number;
+  variant: Readonly<Record<string, unknown>>;
+  [more: string]: unknown;
 }
 
 /** What the agents meet in one condition of an experiment. */
@@ -114,7 +128,18 @@ export function inventory<State>(experiment: Experiment, scenario: Partial<Scena
   const conditions = experiment.conditions.map((condition) =>
     conditionInventory(experiment, condition.name, loadScenario(scenario, experiment.seed, condition)),
   );
-  return { experiment: experiment.id, scenario: String(scenario.name), conditions };
+  const replicas = scenario.variant === undefined ? undefined : replicasOf(experiment, scenario);
+  return { experiment: experiment.id, scenario: String(scenario.name), conditions, ...(replicas === undefined ? {} : { replicas }) };
+}
+
+/** Each replica's variant, as loading that replica draws it with the first condition (FR-CONGRESS-22). */
+function replicasOf<State>(experiment: Experiment, scenario: Partial<Scenario<State>>): ReplicaInventory[] {
+  return Array.from({ length: experiment.replicas }, (_, index) => {
+    const replica = index + 1;
+    const seed = replicaSeed(experiment.seed, replica);
+    const { configuration, variant = {} } = loadScenario(scenario, seed, experiment.conditions[0]);
+    return { replica, seed, variant, ...scenario.variantInventory?.(configuration, seed) };
+  });
 }
 
 /** What the agents meet in a condition, from the scenario as that condition loads it. */
@@ -197,7 +222,7 @@ function textsOf<State>(tool: Tool<State>): Record<string, string> {
 }
 
 /** An inventory in Markdown, as `lab inventory` prints it: a section for each condition. */
-export function inventoryMarkdown({ experiment, scenario, conditions }: Inventory): string {
+export function inventoryMarkdown({ experiment, scenario, conditions, replicas }: Inventory): string {
   const sections = conditions.map((condition) =>
     [
       `## Condition "${condition.condition}"\n`,
@@ -222,7 +247,20 @@ export function inventoryMarkdown({ experiment, scenario, conditions }: Inventor
       ...(condition.world === undefined ? [] : [`### World\n\n${fenced(JSON.stringify(condition.world, null, 2), "json")}`]),
     ].join("\n"),
   );
-  return [`# Environment inventory of experiment "${experiment}", scenario "${scenario}"\n`, ...sections].join("\n");
+  return [`# Environment inventory of experiment "${experiment}", scenario "${scenario}"\n`, ...sections, ...(replicas === undefined ? [] : [replicasMarkdown(replicas)])].join("\n");
+}
+
+/** Each replica's variant, in Markdown: its seed, what it drew, and each list the scenario gives of it, one item a line (FR-CONGRESS-22). */
+function replicasMarkdown(replicas: readonly ReplicaInventory[]): string {
+  const listed = replicas.map(({ replica, seed, variant, ...more }) =>
+    [
+      `### Replica ${replica}, seed ${seed}\n`,
+      "Variant:\n",
+      fenced(JSON.stringify(variant, null, 2), "json"),
+      ...Object.entries(more).flatMap(([name, value]) => [`${name[0].toUpperCase()}${name.slice(1)}:\n`, fenced(Array.isArray(value) ? value.map((each) => JSON.stringify(each)).join("\n") : JSON.stringify(value, null, 2), "json")]),
+    ].join("\n"),
+  );
+  return ["## Replicas\n", ...listed].join("\n");
 }
 
 function agentsMarkdown({ agents }: ConditionInventory): string {
