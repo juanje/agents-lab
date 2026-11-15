@@ -515,10 +515,11 @@ const DRAWN_NAMES = ["topic", "target", "event_day", "funds", "budget", "advance
 
 /**
  * The acts each rule set takes, with the fields each requires, as the directory lists them (FR-CONGRESS-02, -04, -05,
- * -07); a field marked "?" is one the act may give, not one it requires.
+ * -07); a field marked "?" is one the act may give, not one it requires; the fields after ";" are ones some of its items
+ * need, which the directory lists and the act does not require (FR-CONGRESS-19).
  */
 const RULE_SET_ACTS: Readonly<Record<string, readonly string[]>> = {
-  venue: ["ask_quote (date, attendance)", "request_document (kind)", "hold (date)", "book (date, rooms, hours)", "accept_contract (contract)", "change_booking (rooms, hours)", "request_extra (item)", "accept_extra (item)", "cancel_booking", "accept_change (option?)", "decline_change"],
+  venue: ["ask_quote (date, attendance)", "request_document (kind)", "hold (date)", "book (date, rooms, hours)", "accept_contract (contract)", "change_booking (rooms, hours)", "request_extra (item; seats, attendance, diet)", "accept_extra (item)", "cancel_booking", "accept_change (option?)", "decline_change"],
   board: ["submit_budget (costs, income, contingency, funds_requested)", "request_approval (amount, reason)", "report"],
   speaker: ["invite (session, time, fee, travel_paid)", "accept_condition", "decline_condition", "confirm (time, room, length, travel)", "change", "withdraw_invitation", "ask_slides (by)", "ask_panel (slot)", "ask_promote"],
   partner: ["confirm (time, room, length, travel)", "change", "ask_slides (by)"],
@@ -532,8 +533,15 @@ const RULE_SET_ACTS: Readonly<Record<string, readonly string[]>> = {
  * reads when given, not required: a price change's `accept_change` has no option, and an order may leave out its venue.
  */
 function actOf(written: string): [string, string[]] {
-  const [, act, fields = ""] = /^(\w+)(?: \((.*)\))?$/.exec(written) ?? [];
-  return [act, fields === "" ? [] : fields.split(", ").filter((field) => !field.endsWith("?"))];
+  const [act, fields] = fieldsOf(written);
+  return [act, fields.required];
+}
+
+/** An act as the table writes it, as its name, its required fields and the fields it lists besides (FR-CONGRESS-19). */
+function fieldsOf(written: string): [string, { required: string[]; listed: string[] }] {
+  const [, act, required = "", listed = ""] = /^(\w+)(?: \(([^;]*)(?:; (.*))?\))?$/.exec(written) ?? [];
+  const split = (fields: string) => (fields === "" ? [] : fields.split(", "));
+  return [act, { required: split(required).filter((field) => !field.endsWith("?")), listed: split(listed) }];
 }
 
 /** The acts each party decided by a rule set the table lists takes, with their required fields (FR-CONGRESS-09). */
@@ -546,9 +554,10 @@ function actsOf(participants: Readonly<Record<string, TomlTable>>): TomlTable {
   );
 }
 
-/** An act with its required fields, as the directory writes it: the fields marked "?" left out. */
-function requiredText(written: string): string {
-  const [act, fields] = actOf(written);
+/** An act with its fields, as the directory writes it: its required fields, then those it lists besides; the fields marked "?" left out. */
+function directoryText(written: string): string {
+  const [act, { required, listed }] = fieldsOf(written);
+  const fields = [...required, ...listed];
   return fields.length === 0 ? act : `${act} (${fields.join(", ")})`;
 }
 
@@ -570,7 +579,7 @@ function directoryOf(configuration: Configuration, chosenOf: Readonly<Record<str
   const article = (kind: string) => (/^[aeiou]/.test(kind) ? "An" : "A");
   const actsOfKind = kinds.map((kind) => {
     const acts = RULE_SET_ACTS[String((settings[kind] as TomlTable | undefined)?.rules)] ?? [];
-    return `${article(kind)} ${kind} takes ${acts.length === 0 ? "no act the congress lists" : acts.map(requiredText).join(", ")}.`;
+    return `${article(kind)} ${kind} takes ${acts.length === 0 ? "no act the congress lists" : acts.map(directoryText).join(", ")}.`;
   });
   const known = ({ template, kind }: (typeof parties)[number]): string[] => {
     if (kind === "speaker" || kind === "partner") return [...(template.title === undefined ? [] : [`"${String(template.title)}"`]), ...(template.home === undefined ? [] : [template.home === "local" ? "local" : `from ${String(template.home)}`])];
@@ -590,7 +599,7 @@ function directoryOf(configuration: Configuration, chosenOf: Readonly<Record<str
     const facts = known(party);
     return `- ${id}: ${party.kind}, ${has}${facts.length === 0 ? "" : `; ${facts.join(", ")}`}`;
   });
-  const registrants = attendeesOf(configuration) === undefined ? [] : [`Registrants are mailed at their id with the act ${requiredText(REGISTRANT_ACT)}.`];
+  const registrants = attendeesOf(configuration) === undefined ? [] : [`Registrants are mailed at their id with the act ${directoryText(REGISTRANT_ACT)}.`];
   return [...actsOfKind, ...registrants, ...partyLines].join("\n");
 }
 
