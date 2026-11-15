@@ -14,6 +14,7 @@ import { configurationChanges } from "../support/changes.ts";
 import { fencedAfter, under } from "./inventory.steps.ts";
 import { assertRhythmWithin, lastLoaded } from "./neighbourhood.steps.ts";
 import { logLines } from "./record.steps.ts";
+import { asRead, userTexts } from "./stimulus.steps.ts";
 import { modelOf, script, scriptActivations } from "./tool.steps.ts";
 
 /** The base configuration's workers, in the order it names them. */
@@ -25,6 +26,8 @@ interface WorkshopSetup {
   changes: ((state: Workshop) => Workshop)[];
   /** Whether every worker the scenario gives no turns ends every turn without a tool call. */
   othersIdle: boolean;
+  /** How long a worker rests before each activation, for a worker the scenario gives a rest of its own. */
+  rests: Map<string, number>;
 }
 
 const setups = new WeakMap<Context, WorkshopSetup>();
@@ -55,7 +58,9 @@ export function loadWorkshop(context: Context): LoadedScenario<Workshop> {
   const world = new World(state);
   context.libraryLoads.push({ ...loaded, world });
   if (workshopSetupOf(context).othersIdle) for (const worker of loaded.systemPrompts.keys()) if (!context.models.has(worker)) idle(context, worker);
-  return { ...loaded, world };
+  const rhythms = new Map(loaded.rhythms);
+  for (const [worker, restMs] of workshopSetupOf(context).rests) rhythms.set(worker, () => restMs);
+  return { ...loaded, world, rhythms };
 }
 
 /** Gives a worker a scripted model that ends every turn without a tool call. */
@@ -68,7 +73,7 @@ function setUpWorkshop(context: Context): void {
   const workshop = scenarioLibrary.get("workshop");
   assert.ok(workshop !== undefined, 'the scenario library has no scenario "workshop"');
   context.libraryScenario = workshop;
-  setups.set(context, { changes: [], othersIdle: false });
+  setups.set(context, { changes: [], othersIdle: false, rests: new Map() });
   context.assembleRun = () => loadWorkshop(context) as LoadedScenario<unknown>;
 }
 
@@ -453,7 +458,9 @@ Then(
   function (this: Context) {
     const names = ["look", "read_plan", "take", "put_back", "join", "take_apart", "mount", "wait"];
     const tools = under(under(this.labOutput ?? "", '## Condition "base"'), "### Tools");
-    assert.deepEqual(tools.split("\n").filter((line) => line.startsWith("#### Tool ")), names.map((name) => `#### Tool "${name}"`));
+    // These, in this order, before any tool a later FR adds (FR-WORKSHOP-03's "say").
+    const listed = tools.split("\n").filter((line) => line.startsWith("#### Tool "));
+    assert.deepEqual(listed.slice(0, names.length), names.map((name) => `#### Tool "${name}"`));
     for (const name of names) assertToolListed(this, name);
   },
 );
@@ -613,11 +620,11 @@ function turnsOf(written: string): ScriptedAnswer[] {
     let args: Record<string, unknown> = {};
     let found: RegExpExecArray | null;
     if ((found = take(` with the module "(\\w+)" and the kind "(\\w+)"`)) !== null) args = { module: found[1], kind: found[2] };
-    else if ((found = take(` with the text of \\d+ words, ${QUOTED},?`)) !== null) args = { text: unquoted(found[1]) };
+    else if ((found = take(` with the text of \\d+ words, ${QUOTED}`)) !== null) args = { text: unquoted(found[1]) };
     else if ((found = take(` with the text ${QUOTED}`)) !== null) args = { text: unquoted(found[1]) };
     else if ((found = take(` with (-?[\\d.]+) minutes`)) !== null) args = { minutes: Number(found[1]) };
     else if ((found = take(` with ${QUOTED}`)) !== null) args = name === "say" ? { text: unquoted(found[1]) } : { kind: found[1] };
-    const delay = take(` at once| after (\\d+) milliseconds`);
+    const delay = take(`,? at once|,? after (\\d+) milliseconds`);
     answers.push({ toolCalls: [{ name, arguments: args as JsonObject }], delayMs: Number(delay?.[1] ?? 0) });
     if (take(`, then end$|, then the text "Done\\." with no tool call$`) !== null) break;
     assert.ok(take(`, then |, `) !== null, `the steps do not read the turns "${written}" at "${rest}"`);
@@ -901,3 +908,162 @@ Then(
     );
   },
 );
+
+// FR-WORKSHOP-03: workers speak to the room.
+
+Given(
+  "{string}, {string} and {string} each run on scripted models whose turns are: the text {string} with no tool call, after {int} milliseconds; the text {string} with no tool call",
+  function (this: Context, a: string, b: string, c: string, text: string, delayMs: number, then: string) {
+    // A turn without a tool call ends its activation, so each turn is one activation.
+    const turns = [
+      { text, delayMs },
+      { text: then, delayMs: 0 },
+    ];
+    for (const worker of [a, b, c]) scriptActivations(this, worker, turns.length, (index) => [turns[index]]);
+  },
+);
+
+/** The texts of the user messages a worker's nth model turn received, from 0. */
+function receivedIn(context: Context, worker: string, turn: number): string[] {
+  const messages = modelOf(context, worker).received[turn];
+  assert.ok(messages !== undefined, `"${worker}" made no model turn ${turn + 1}`);
+  return userTexts(messages);
+}
+
+Then(
+  "{string}'s, {string}'s and {string}'s second model turns each received {string} from {string}, which the worker reads as {string}",
+  function (this: Context, a: string, b: string, c: string, content: string, source: string, read: string) {
+    assert.equal(asRead(source, content), read);
+    for (const worker of [a, b, c]) assert.ok(receivedIn(this, worker, 1).includes(read), `"${worker}"'s second model turn received ${JSON.stringify(receivedIn(this, worker, 1))}`);
+  },
+);
+
+Then("{string}'s second model turn received {string} from {string}", function (this: Context, worker: string, content: string, source: string) {
+  assert.ok(receivedIn(this, worker, 1).includes(asRead(source, content)), `"${worker}"'s second model turn received ${JSON.stringify(receivedIn(this, worker, 1))}`);
+});
+
+Then("{string} received nothing on the channel {string}", function (this: Context, worker: string, channel: string) {
+  assert.ok(this.toolCalls !== undefined, "the workers did not run");
+  assert.deepEqual(stimuliOf(this, worker).filter((stimulus) => stimulus.channel === channel), []);
+});
+
+/** The stimulus lines of a channel in the run's log, with when each was delivered. */
+function voiceLines(context: Context, channel: string) {
+  return logLines(context).filter((line) => line.type === "stimulus" && line.channel === channel) as unknown as { agent: string; channel: string; source: string; content: string; deliveredAtMs: number }[];
+}
+
+Then(
+  "the log has a stimulus line for each of {string}, {string} and {string}, with the channel {string}, the source {string} and the content {string}",
+  function (this: Context, a: string, b: string, c: string, channel: string, source: string, content: string) {
+    const lines = voiceLines(this, channel);
+    assert.deepEqual(
+      lines.map(({ agent, source: from, content: said }) => ({ agent, source: from, content: said })).sort((x, y) => x.agent.localeCompare(y.agent)),
+      [a, b, c].sort().map((agent) => ({ agent, source, content })),
+    );
+  },
+);
+
+Then('each was delivered no earlier than the end of the "say" call, and within {int} milliseconds of it', function (this: Context, withinMs: number) {
+  const { endedAtMs } = onlyCallOf(this, "say");
+  const lines = voiceLines(this, "voice");
+  assert.ok(lines.length > 0, "the log has no stimulus line on the channel voice");
+  for (const { agent, deliveredAtMs } of lines) {
+    const after = deliveredAtMs - endedAtMs;
+    assert.ok(after >= 0 && after <= withinMs, `the speech reached "${agent}" ${after} ms after the call ended`);
+  }
+});
+
+Then("the log has no stimulus line on the channel {string} for {string}", function (this: Context, channel: string, worker: string) {
+  assert.deepEqual(voiceLines(this, channel).filter(({ agent }) => agent === worker), []);
+});
+
+Then("the {string} call took at least {int} milliseconds and less than {int} + {int}", function (this: Context, tool: string, leastMs: number, base: number, more: number) {
+  assertTook(onlyCallOf(this, tool), leastMs, base + more);
+});
+
+Given(
+  "{string}'s rhythm keeps it resting {int} milliseconds before each activation, and the others' {int}",
+  function (this: Context, worker: string, restMs: number, othersMs: number) {
+    // The Background's rhythm already gives the others theirs.
+    assert.equal((workshopConfiguration(this).rhythm as TomlTable).max_ms, othersMs);
+    workshopSetupOf(this).rests.set(worker, restMs);
+  },
+);
+
+/** A worker's activation lines in the run's log, in order. */
+function activationsOfWorker(context: Context, worker: string) {
+  return logLines(context).filter((line) => line.type === "activation" && line.agent === worker) as unknown as { wokeAtMs: number }[];
+}
+
+Then(
+  "{string} started an activation within {int} milliseconds after the {string} call ended, with {string} from {string} among its stimuli",
+  function (this: Context, worker: string, withinMs: number, tool: string, content: string, source: string) {
+    const { endedAtMs } = onlyCallOf(this, tool);
+    const [first] = activationsOfWorker(this, worker);
+    assert.ok(first !== undefined, `"${worker}" made no activation`);
+    const after = first.wokeAtMs - endedAtMs;
+    assert.ok(after >= 0 && after <= withinMs, `"${worker}"'s activation began ${after} ms after the call ended`);
+    assert.ok(receivedIn(this, worker, 0).includes(asRead(source, content)), `"${worker}" woke to ${JSON.stringify(receivedIn(this, worker, 0))}`);
+  },
+);
+
+Then("{string}'s {string} call ended with the outcome {string} and the text {string}", function (this: Context, worker: string, tool: string, outcome: string, text: string) {
+  const call = callOfWorker(this, worker, tool);
+  assert.deepEqual({ outcome: call.outcome, text: call.text }, { outcome, text });
+});
+
+Then("it ended within {int} milliseconds after the {string} call ended", function (this: Context, withinMs: number, tool: string) {
+  const call = workshopCall(this);
+  const other = onlyCallOf(this, tool);
+  this.lastToolCall = call;
+  const after = call.endedAtMs - other.endedAtMs;
+  assert.ok(after >= 0 && after <= withinMs, `the "${call.tool}" call ended ${after} ms after the "${tool}" call`);
+});
+
+/** Whether a worker received a speech, by the log's stimulus lines. */
+function heard(context: Context, worker: string, content: string, source: string): boolean {
+  return voiceLines(context, "voice").some((line) => line.agent === worker && line.content === content && line.source === source);
+}
+
+Then(
+  "{string} and {string} each received {string} from {string} and {string} from {string}",
+  function (this: Context, a: string, b: string, first: string, firstSource: string, second: string, secondSource: string) {
+    for (const worker of [a, b]) {
+      assert.ok(heard(this, worker, first, firstSource), `"${worker}" did not hear "${first}" from "${firstSource}"`);
+      assert.ok(heard(this, worker, second, secondSource), `"${worker}" did not hear "${second}" from "${secondSource}"`);
+    }
+  },
+);
+
+Then(
+  "{string} received {string} from {string}, and {string} received {string} from {string}",
+  function (this: Context, a: string, first: string, firstSource: string, b: string, second: string, secondSource: string) {
+    assert.ok(heard(this, a, first, firstSource), `"${a}" did not hear "${first}" from "${firstSource}"`);
+    assert.ok(heard(this, b, second, secondSource), `"${b}" did not hear "${second}" from "${secondSource}"`);
+    assert.ok(!heard(this, a, second, secondSource) && !heard(this, b, first, firstSource), "a speaker heard itself");
+  },
+);
+
+Then(
+  'each worker\'s tools include "say", with its duration as {float} world minutes plus one minute per {int} words, and its texts',
+  function (this: Context, minutes: number, words: number) {
+    const listed = toolListed(this, "say");
+    assert.ok(listed.includes(`- Duration: ${minutes} world minutes plus one minute per ${words} words.`), `the inventory lists "say" as:\n${listed}`);
+    assertToolListed(this, "say");
+  },
+);
+
+Then(
+  "it lists the channel {string} with the source {string}, the text {string}, and that it wakes",
+  function (this: Context, channel: string, source: string, text: string) {
+    const listed = under(under(this.labOutput ?? "", '## Condition "base"'), `#### Channel "${channel}"`);
+    assert.ok(listed.includes(`- Source: ${source}`), `the channel "${channel}":\n${listed}`);
+    assert.ok(listed.includes("- Wakes: a resting agent at once"), `the channel "${channel}" is not listed as waking:\n${listed}`);
+    assert.equal(fencedAfter(listed, "Delivers"), text);
+  },
+);
+
+Then("the {string} call failed with {string} and the text {string}", function (this: Context, tool: string, outcome: string, text: string) {
+  const call = onlyCallOf(this, tool);
+  assert.deepEqual({ outcome: call.outcome, text: call.text }, { outcome, text });
+});

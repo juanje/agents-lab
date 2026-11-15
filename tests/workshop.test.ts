@@ -86,7 +86,8 @@ describe("the workshop at the start (FR-WORKSHOP-01)", () => {
   });
 
   it("declares no order channel when every text is in the system prompt", () => {
-    expect(load().channels.map(({ name }) => name)).toEqual(["rhythm"]);
+    // FR-WORKSHOP-03 adds "voice".
+    expect(load().channels.map(({ name }) => name)).toEqual(["rhythm", "voice"]);
   });
 
   it("names nothing of the world in its system prompts", () => {
@@ -225,7 +226,8 @@ describe("the workers' tools (FR-WORKSHOP-02)", () => {
   const started = (name: string, state: Workshop, agent: string, args: Record<string, unknown> = {}) => effector(name).start?.effect(state, call(agent, args)) ?? state;
 
   it("are look, read_plan, take, put_back, join, take_apart, mount and wait, none naming a kind or a module", () => {
-    expect(workshopScenario.tools.map(({ name }) => name)).toEqual(["look", "read_plan", "take", "put_back", "join", "take_apart", "mount", "wait"]);
+    // FR-WORKSHOP-03 adds "say".
+    expect(workshopScenario.tools.map(({ name }) => name)).toEqual(["look", "read_plan", "take", "put_back", "join", "take_apart", "mount", "wait", "say"]);
     const written = JSON.stringify(workshopScenario.tools.map(({ description, parameters }) => ({ description, parameters })));
     for (const word of ["arn", "bex", "cal", "dov", "eln", "fim", "gor", "tessa", "ulm", "vorn", "wick", "yarl", "zeth"]) expect(written).not.toMatch(new RegExp(`\\b${word}\\b`));
   });
@@ -372,5 +374,44 @@ describe("the workers' tools (FR-WORKSHOP-02)", () => {
     );
     expect(workshopScenario.describeDuration(configuration, "mount")).toBe("3 world minutes; 0.5 world minutes when every bench place is taken as it starts.");
     expect(workshopScenario.describeDuration(configuration, "wait")).toBe("The minutes it is given, above 0 and at most 10 world minutes; it ends early when a stimulus reaches the worker.");
+  });
+});
+
+describe("say (FR-WORKSHOP-03)", () => {
+  const say = workshopScenario.tools.find(({ name }) => name === "say");
+  const state = load().world.state;
+  const call = (text: string) => ({ agent: "Dal", arguments: { text }, atMs: 0 });
+
+  it("is an effector that takes say minutes plus one minute per say_words_per_minute words of its text", () => {
+    expect(say?.kind).toBe("effector");
+    expect(say?.durationMs(state, call("Mik, take ulm."))).toEqual({ worldSeconds: (0.25 + 3 / 30) * 60 });
+    expect(say?.durationMs(state, call(" one\ttwo\nthree  four five six seven eight nine ten eleven twelve thirteen fourteen fifteen "))).toEqual({ worldSeconds: 0.75 * 60 });
+    expect(say?.durationMs(state, call("   "))).toEqual({ worldSeconds: 15 });
+  });
+
+  it("shows the speaker speaking while its call lasts", () => {
+    if (say?.kind !== "effector") throw new Error("say is no effector");
+    expect(say.start?.effect(state, call("hi")).workers.Dal.doing).toBe("speaking");
+    expect(say.start?.describe(state, call("hi"))).toEqual({ began: "speaking" });
+    expect(say.end?.effect(say.start?.effect(state, call("hi")) ?? state, call("hi")).workers.Dal.doing).toBe("nothing");
+  });
+
+  it("refuses a text with no word as empty_text when it lands, and otherwise delivers it to every other worker on the channel voice, from the speaker", () => {
+    if (say?.kind !== "effector") throw new Error("say is no effector");
+    for (const text of ["", "   ", "\n  "]) expect(say.action?.precondition(state, call(text))).toEqual({ holds: false, reason: "empty_text" });
+    expect(say.action?.precondition(state, call("Mik, take ulm."))).toEqual({ holds: true });
+    expect(say.delivers?.channel).toBe("voice");
+    expect(say.delivers?.deliveries(state, call("Mik, take ulm."))).toEqual(
+      ["Mik", "Nar", "Ren"].map((agent) => ({ agent, source: "Dal", values: { text: "Mik, take ulm." } })),
+    );
+    expect(say.texts).toEqual({ success: "You have said it.", empty_text: "You said nothing; nobody heard anything." });
+  });
+
+  it("speaks through the channel voice, from the speaker, which wakes a resting worker and is described as what was said", () => {
+    expect(load().channels.find(({ name }) => name === "voice")).toEqual({ name: "voice", source: "the speaker", stimulus: "{text}", described: "what was said", wakes: true });
+  });
+
+  it("gives the inventory its duration in world minutes", () => {
+    expect(workshopScenario.describeDuration(parse(workshopScenario.baseConfiguration), "say")).toBe("0.25 world minutes plus one minute per 30 words.");
   });
 });
