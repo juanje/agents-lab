@@ -76,3 +76,15 @@ describe("a caterer takes an order for a free-catering venue with any permit or 
     expect(answer("v2", "pending")).toMatchObject({ act: "order_refused", fields: { reason: "permit_unknown" } });
   });
 });
+
+describe("an unknown room is named (FR-CONGRESS-23)", () => {
+  it("answers a change_booking naming a room it does not have unavailable with that room and no date", () => {
+    const { mailed } = run([book, accept, message("change_booking", " rooms: hall-a, step-free toilets. hours: 08:00-18:00.")]);
+    expect(mailed.at(-1)).toEqual({ act: "unavailable", fields: { room: "step-free toilets" } });
+  });
+
+  it("answers a book naming a room it does not have unavailable with that room and no date", () => {
+    const { mailed } = run([message("book", " date: day 26. rooms: hall-a, ballroom. hours: 08:00-18:00.")]);
+    expect(mailed).toEqual([{ act: "unavailable", fields: { room: "ballroom" } }]);
+  });
+});

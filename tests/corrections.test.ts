@@ -65,7 +65,8 @@ describe("a venue's catering rule, rooms and lost rooms (FR-CONGRESS-07)", () =>
     expect(calls(dropped.steps, "commit").at(-1)).toEqual({ with: "organiser", amount: 1500, for: "v1-contract-1" });
 
     const unknown = conversation(venueRules.start(venue(), new Random(1)), [book("main-hall"), accept, [DAY, "From: organiser. Act: change_booking. rooms: ballroom. hours: 08:00-18:00."]]);
-    expect(mailed(unknown.steps).at(-1)).toEqual({ act: "unavailable", fields: { date: "day 26" } });
+    // An unknown room is named, without the date (FR-CONGRESS-23).
+    expect(mailed(unknown.steps).at(-1)).toEqual({ act: "unavailable", fields: { room: "ballroom" } });
   });
 
   it("quotes an extra room, the smallest free one with the seats asked, or none", () => {
