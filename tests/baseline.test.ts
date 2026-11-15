@@ -624,16 +624,17 @@ describe("the on-time programme is a real one (FR-CONGRESS-22)", () => {
   /** The registrants, each believing the latest version. */
   const believing = (state: Congress) => registered(state, 40, { believes: state.population?.programme.at(-1)?.version });
 
-  it("reads the first version whose sessions name accepted speakers in rooms of a live booking when it was published", () => {
+  // A version published before it is real is reached as it becomes real (FR-CONGRESS-23).
+  it("reads the first version whose sessions name accepted speakers in rooms of a live booking, reached as the last acceptance made it real", () => {
     const state = congress();
     published(state, "hall-a", minutes("day 3 10:00"));
     published(state, "hall-a", minutes("day 11 10:00"));
     believing(state);
-    expect(evaluated("programme_published", state)).toEqual({ holds: true, reachedAt: minutes("day 11 10:00") });
+    expect(evaluated("programme_published", state)).toEqual({ holds: true, reachedAt: minutes("day 8") });
     expect(holds("programme_on_time", state)).toBe(true);
   });
 
-  it("does not count a version published before one of its speakers accepted its session", () => {
+  it("counts a version published before one of its speakers accepted its session as that speaker accepts", () => {
     const state = congress();
     // "s6" withdraws on day 8 after accepting, and accepts again on day 10.
     mail(state, "s6", "organiser", "decline", { session: 6 }, minutes("day 8 12:00"));
@@ -641,7 +642,7 @@ describe("the on-time programme is a real one (FR-CONGRESS-22)", () => {
     published(state, "hall-a", minutes("day 9 10:00"));
     published(state, "hall-a", minutes("day 11 10:00"));
     believing(state);
-    expect(evaluated("programme_published", state)).toEqual({ holds: true, reachedAt: minutes("day 11 10:00") });
+    expect(evaluated("programme_published", state)).toEqual({ holds: true, reachedAt: minutes("day 10") });
   });
 
   it("does not count a version whose room is not in a live booking, or published after the booking was cancelled", () => {
@@ -669,7 +670,59 @@ describe("the on-time programme is a real one (FR-CONGRESS-22)", () => {
     published(state, "hall-a", minutes("day 14 10:00"));
     believing(state);
     expect(holds("programme_on_time", state)).toBe(false);
-    expect(evaluated("programme_published", state)).toEqual({ holds: true, reachedAt: minutes("day 14 10:00") });
+    // The placeholder names the same sessions, so it becomes real with the last acceptance (FR-CONGRESS-23).
+    expect(evaluated("programme_published", state)).toEqual({ holds: true, reachedAt: minutes("day 13 12:00") });
+  });
+});
+
+describe("on time means real by day 12 (FR-CONGRESS-23)", () => {
+  /** "v1"'s contract for "hall-a" confirmed on day 6, "s1" to "s5" accepting on day 8 and "s6" at a time, all invited on day 7. */
+  function congress(sixthAccepts: number): Congress {
+    const state = world();
+    booked(state, "hall-a", minutes("day 6"));
+    SIX.forEach((speaker, index) => {
+      mail(state, "organiser", speaker, "invite", { session: index + 1, time: TIMES[index], fee: 0, travel_paid: false }, minutes("day 7"));
+      mail(state, speaker, "organiser", "accept", { session: index + 1 }, speaker === "s6" ? sixthAccepts : minutes("day 8"));
+    });
+    return state;
+  }
+  const believing = (state: Congress) => registered(state, 40, { believes: state.population?.programme.at(-1)?.version });
+
+  it("holds for a version published by day 12 18:00 that is real at day 12 18:00, reached as its last acceptance", () => {
+    const state = congress(minutes("day 11 08:08"));
+    published(state, "hall-a", minutes("day 10 10:00"));
+    believing(state);
+    expect(holds("programme_on_time", state)).toBe(true);
+    expect(evaluated("programme_published", state)).toEqual({ holds: true, reachedAt: minutes("day 11 08:08") });
+  });
+
+  it("does not hold when the version becomes real only after day 12 18:00, or its booking is cancelled by then", () => {
+    const late = congress(minutes("day 13 09:00"));
+    published(late, "hall-a", minutes("day 10 10:00"));
+    believing(late);
+    expect(holds("programme_on_time", late)).toBe(false);
+    expect(evaluated("programme_published", late)).toEqual({ holds: true, reachedAt: minutes("day 13 09:00") });
+
+    const cancelled = congress(minutes("day 8"));
+    published(cancelled, "hall-a", minutes("day 10 10:00"));
+    mail(cancelled, "v1", "organiser", "cancelled", { contract: "v1-contract-1", charge: 0 }, minutes("day 12"));
+    believing(cancelled);
+    expect(holds("programme_on_time", cancelled)).toBe(false);
+    // It was real from its publication until the cancellation.
+    expect(evaluated("programme_published", cancelled)).toEqual({ holds: true, reachedAt: minutes("day 10 10:00") });
+  });
+
+  it("is reached as a booking makes a published version real", () => {
+    const state = world();
+    SIX.forEach((speaker, index) => {
+      mail(state, "organiser", speaker, "invite", { session: index + 1, time: TIMES[index], fee: 0, travel_paid: false }, minutes("day 7"));
+      mail(state, speaker, "organiser", "accept", { session: index + 1 }, minutes("day 8"));
+    });
+    published(state, "hall-a", minutes("day 9"));
+    booked(state, "hall-a", minutes("day 12 17:00"));
+    believing(state);
+    expect(holds("programme_on_time", state)).toBe(true);
+    expect(evaluated("programme_published", state)).toEqual({ holds: true, reachedAt: minutes("day 12 17:00") });
   });
 });
 
