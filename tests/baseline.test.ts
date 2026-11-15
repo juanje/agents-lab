@@ -505,6 +505,19 @@ describe("D9 speakers_travel: every confirmed speaker whose travel the organiser
     }
   });
 
+  it("asks nothing of a local speaker, whatever its invitation said", () => {
+    const state = congress("no");
+    mail(state, "organiser", "s2", "invite", { session: 2, time: TIMES[1], fee: 0, travel_paid: true }, minutes("day 3 01:00"));
+    expect(holds("speakers_travel", state)).toBe(true);
+  });
+
+  it("does not count a train from another station than the speaker's", () => {
+    const state = congress("invitation");
+    state.travel = { ...state.travel, material: { ...state.travel.material, trains: [...state.travel.material.trains, { id: "t9", from: "south", arrives: "08:00", price: 40 }] } };
+    book(state, "t9 day 26");
+    expect(holds("speakers_travel", state)).toBe(false);
+  });
+
   it("asks nothing of a speaker not in the latest programme", () => {
     const state = congress("invitation");
     published(state, "hall-a", minutes("day 14"), ["s1", ...SIX.slice(1)]);
