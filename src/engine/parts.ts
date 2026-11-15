@@ -73,6 +73,9 @@ function refused(id: string, key: string, value: unknown, why: string): Error {
 /** World minutes since day 1's midnight of a world time. */
 const minutesOf = ({ day, seconds }: WorldTime) => (day - 1) * 1440 + seconds / 60;
 
+/** Whether an act took effect: it succeeded, or its outcome is not known. */
+const tookEffect = ({ outcome }: Act) => outcome === undefined || outcome === "success";
+
 /** A world time as a part line gives it: "day <n> HH:MM". */
 function timeText(world: WorldTime): string {
   const minutes = Math.floor(world.seconds / 60);
@@ -347,8 +350,9 @@ export class PartsBook<State> {
     const misapplications = part.misapplications.flatMap(({ pattern, params, before, after }) => {
       const beforeAt = before === undefined ? undefined : (this.#eventAt(before) ?? Infinity);
       const afterAt = after === undefined ? undefined : this.#eventAt(after);
+      // Only acts that took effect: a call that failed with an outcome its tool names is none (FR-CONGRESS-18).
       return this.#acts
-        .filter((act) => minutesOf(act.world) <= at && this.#settings.provided.misapplications[pattern](act, params, act.state, this.#state as State))
+        .filter((act) => tookEffect(act) && minutesOf(act.world) <= at && this.#settings.provided.misapplications[pattern](act, params, act.state, this.#state as State))
         .filter((act) => (beforeAt === undefined || minutesOf(act.world) < beforeAt) && (after === undefined || (afterAt !== undefined && minutesOf(act.world) >= afterAt)))
         .map((act) => ({ tool: act.tool, arguments: act.arguments, at: timeText(act.world) }));
     });
