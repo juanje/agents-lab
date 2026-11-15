@@ -17,6 +17,9 @@ type Place = "system" | "first";
 /** The channel of the message a worker receives once, as it first wakes, when a text is placed there. */
 const ORDER_CHANNEL = "order";
 
+/** The channel through which every other worker hears what a worker says (FR-WORKSHOP-03). */
+const VOICE_CHANNEL = "voice";
+
 /** The durations the configuration gives, in world minutes, by name (FR-WORKSHOP-01). */
 const DURATIONS = ["look", "read_plan", "take", "put_back", "join", "take_apart", "mount", "mount_refused", "say", "say_words_per_minute"] as const;
 type Duration = (typeof DURATIONS)[number];
@@ -34,7 +37,7 @@ export interface HeldModule {
 }
 
 /** What a worker is doing, as `look` shows it (FR-WORKSHOP-02). */
-export type Doing = "taking" | "putting back" | "joining" | "taking apart" | "mounting" | "waiting" | "nothing";
+export type Doing = "taking" | "putting back" | "joining" | "taking apart" | "mounting" | "speaking" | "waiting" | "nothing";
 
 /** What a worker holds: its loose pieces, a count for each kind it holds, and at most one module; and what it is doing. */
 export interface Hands {
@@ -506,23 +509,63 @@ const wait: Effector<Workshop> = {
   readTarget: NOT_SENSED,
 };
 
-/** The workers' tools (FR-WORKSHOP-02). */
-const TOOLS: readonly Tool<Workshop>[] = [look, readPlan, take, putBack, join, takeApart, mount, wait];
+/** The words of a text: its runs of characters between whitespace. */
+function wordsOf(text: string): number {
+  return text.split(/\s+/).filter((word) => word !== "").length;
+}
+
+/**
+ * "say": the text, heard by every other worker through the channel voice as the call ends, with the speaker's name as
+ * its source (FR-WORKSHOP-03). It takes `say` minutes plus one per `say_words_per_minute` words, in proportion.
+ */
+const say: Effector<Workshop> = {
+  kind: "effector",
+  name: "say",
+  description: "Say something aloud. Everyone else in the room hears it, with your name, when you finish speaking; the longer it is, the longer it takes.",
+  parameters: { type: "object", properties: { text: { type: "string", description: "What you say." } }, required: ["text"] },
+  durationMs: (state, call) => minutes(state.settings.durations.say + wordsOf(String(call.arguments.text)) / state.settings.durations.say_words_per_minute),
+  start: doing("speaking"),
+  action: {
+    precondition: (_state, call) => firstRefusal([[wordsOf(String(call.arguments.text)) === 0, "empty_text"]]),
+    effect: (state) => state,
+  },
+  end: END,
+  delivers: {
+    channel: VOICE_CHANNEL,
+    deliveries: (state, call) =>
+      Object.keys(state.workers)
+        .filter((worker) => worker !== call.agent)
+        .map((worker) => ({ agent: worker, source: call.agent, values: { text: String(call.arguments.text) } })),
+  },
+  texts: { success: "You have said it.", empty_text: "You said nothing; nobody heard anything." },
+  readTarget: NOT_SENSED,
+};
+
+/** The workers' tools (FR-WORKSHOP-02, and FR-WORKSHOP-03's say). */
+const TOOLS: readonly Tool<Workshop>[] = [look, readPlan, take, putBack, join, takeApart, mount, wait, say];
 
 /** How each tool takes its time, for the inventory, in world minutes. */
 function describeDuration(configuration: Configuration, tool: string): string {
   const { durations, waitMaxMinutes } = settingsOf(configuration);
   if (tool === "mount") return `${durations.mount} world minutes; ${durations.mount_refused} world minutes when every bench place is taken as it starts.`;
   if (tool === "wait") return `The minutes it is given, above 0 and at most ${waitMaxMinutes} world minutes; it ends early when a stimulus reaches the worker.`;
+  if (tool === "say") return `${durations.say} world minutes plus one minute per ${durations.say_words_per_minute} words.`;
   if (!TOOLS.some(({ name }) => name === tool)) throw new Error(`The workshop has no tool "${tool}"`);
   return `${durations[tool as Duration]} world minutes.`;
 }
 
-/** The workshop's channels: its workers' rhythm, and the order, when a text is placed there. */
+/**
+ * The workshop's channels: its workers' rhythm; the voice, whose stimulus is what was said, from the speaker, and which
+ * wakes a resting worker (FR-WORKSHOP-03); and the order, when a text is placed there.
+ */
 function channels(configuration: Configuration): Channel[] {
   settingsOf(configuration);
   const order = textsIn(configuration, "first");
-  return [...rhythmChannels(configuration), ...(order === "" ? [] : [{ name: ORDER_CHANNEL, source: configuration.order_source as string, stimulus: order }])];
+  return [
+    ...rhythmChannels(configuration),
+    { name: VOICE_CHANNEL, source: "the speaker", stimulus: "{text}", described: "what was said", wakes: true },
+    ...(order === "" ? [] : [{ name: ORDER_CHANNEL, source: configuration.order_source as string, stimulus: order }]),
+  ];
 }
 
 /** What the inventory gives of the workshop's world (FR-WORKSHOP-01). */

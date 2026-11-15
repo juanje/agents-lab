@@ -44,7 +44,8 @@ export interface ConditionInventory {
   tools: ToolInventory[];
   /** The outcomes the engine itself gives a call, whatever its tool, with the text the agent receives for each. */
   engineOutcomes: Record<string, string>;
-  channels: { name: string; source: string; delivers: string }[];
+  /** Each channel with its source, what it delivers, and whether it wakes a resting agent (FR-WORKSHOP-03). */
+  channels: { name: string; source: string; delivers: string; wakes?: true }[];
   energyModel: string;
   environmentProcesses: string;
   /** How fast information travels (NFR-12). */
@@ -180,7 +181,7 @@ function conditionInventory<State>(
       ...(tool.kind === "effector" && tool.delivers !== undefined ? { deliversThrough: tool.delivers.channel } : {}),
     })),
     engineOutcomes: { ...ENGINE_OUTCOMES },
-    channels: channels.map(({ name, source, stimulus }) => ({ name, source, delivers: stimulus })),
+    channels: channels.map(({ name, source, stimulus, described, wakes }) => ({ name, source, delivers: described ?? stimulus, ...(wakes === true ? { wakes: true as const } : {}) })),
     energyModel: NONE,
     environmentProcesses: NONE,
     informationSpeed:
@@ -305,8 +306,8 @@ function itemsMarkdown(heading: string, items: Record<string, string>): string {
 }
 
 function channelsMarkdown({ channels }: ConditionInventory): string {
-  const listed = channels.map(({ name, source, delivers }) =>
-    [`#### Channel "${name}"\n`, `- Source: ${source}\n`, "Delivers:\n", fenced(delivers, "text")].join("\n"),
+  const listed = channels.map(({ name, source, delivers, wakes }) =>
+    [`#### Channel "${name}"\n`, `- Source: ${source}${wakes === true ? "\n- Wakes: a resting agent at once" : ""}\n`, "Delivers:\n", fenced(delivers, "text")].join("\n"),
   );
   return ["### Stimulus channels\n", ...listed].join("\n");
 }

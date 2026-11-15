@@ -8,6 +8,11 @@ export interface Channel {
   stimulus: string;
   /** Whether a stimulus on it reaches a resting agent at once and starts an activation, as its rhythm does (FR-CONGRESS-08). */
   wakes?: boolean;
+  /**
+   * What its stimulus is, as the inventory gives it in place of the stimulus, for a channel whose stimulus each delivery
+   * fills in whole, such as what a worker said (FR-WORKSHOP-03).
+   */
+  described?: string;
 }
 
 /** A message delivered into an agent's session through a channel, with the channel's source. */
