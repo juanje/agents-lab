@@ -389,3 +389,123 @@ describe("D5 food_for_everyone: the live orders cover each diet's attendance, fr
     });
   });
 });
+
+describe("D7 programme_on_time: a full programme published by day 12 18:00, and every registrant believes the latest version (FR-CONGRESS-20)", () => {
+  /** A programme of six sessions in "hall-a" published at a time, and 40 registrants who believe a version. */
+  function congress(at: string, believes: number | undefined = 1): Congress {
+    const state = world();
+    sixConfirmed(state);
+    published(state, "hall-a", minutes(at));
+    registered(state, 40, believes === undefined ? {} : { believes });
+    return state;
+  }
+
+  it("holds when published on day 12 at 17:00 and every registrant believes it", () => expect(holds("programme_on_time", congress("day 12 17:00"))).toBe(true));
+  it("holds when published on day 12 at 18:00", () => expect(holds("programme_on_time", congress("day 12 18:00"))).toBe(true));
+  it("does not hold when first published on day 13", () => expect(holds("programme_on_time", congress("day 13 09:00"))).toBe(false));
+  it("does not hold when a registrant believes no version", () => expect(holds("programme_on_time", congress("day 12 17:00", undefined))).toBe(false));
+
+  it("does not hold when a registrant believes an earlier version than the latest", () => {
+    const state = congress("day 12 17:00");
+    published(state, "hall-a", minutes("day 20"));
+    expect(holds("programme_on_time", state)).toBe(false);
+    for (const person of (state.population as NonNullable<Congress["population"]>).people) person.believes = 2;
+    expect(holds("programme_on_time", state)).toBe(true);
+  });
+
+  it("does not count a programme by day 12 with fewer than six sessions, or a session with no speaker or room", () => {
+    const five = world();
+    published(five, "hall-a", minutes("day 10"), SIX.slice(0, 5));
+    published(five, "hall-a", minutes("day 14"));
+    registered(five, 40, { believes: 2 });
+    expect(holds("programme_on_time", five)).toBe(false);
+    const empty = world();
+    published(empty, "hall-a", minutes("day 10"), [...SIX.slice(0, 5), ""]);
+    const population = empty.population as NonNullable<Congress["population"]>;
+    population.programme[0].sessions[5].speakers = [];
+    registered(empty, 40, { believes: 1 });
+    expect(holds("programme_on_time", empty)).toBe(false);
+    const roomless = world();
+    published(roomless, "", minutes("day 10"));
+    registered(roomless, 40, { believes: 1 });
+    expect(holds("programme_on_time", roomless)).toBe(false);
+  });
+});
+
+describe("D8 sponsors_met: every sponsor that agreed and did not withdraw has its conditions met in the latest programme (FR-CONGRESS-20)", () => {
+  /** "sp1"'s agreement with these conditions, if any, and the latest programme with these logos and slots. */
+  function congress(conditions: string | undefined, more: Partial<Programme>): Congress {
+    const state = world();
+    if (conditions !== undefined) mail(state, "sp1", "organiser", "agreement", { amount: 1200, conditions }, minutes("day 6"));
+    sixConfirmed(state);
+    published(state, "hall-a", minutes("day 12"), SIX, more);
+    return state;
+  }
+  const slot = (start: string) => ({ sponsor_slots: [{ sponsor: "sp1", start }] });
+
+  it("holds when the logo shows and the slot is before 12:00", () => expect(holds("sponsors_met", congress("logo, morning_slot", { logos: ["sp1"], ...slot("11:15") }))).toBe(true));
+  it("does not hold with no slot", () => expect(holds("sponsors_met", congress("logo, morning_slot", { logos: ["sp1"] }))).toBe(false));
+  it("does not hold with a slot at 12:00", () => expect(holds("sponsors_met", congress("logo, morning_slot", { logos: ["sp1"], ...slot("12:00") }))).toBe(false));
+  it("does not hold with no logo", () => expect(holds("sponsors_met", congress("logo", {}))).toBe(false));
+  it("holds when no sponsor agreed", () => expect(holds("sponsors_met", congress(undefined, {}))).toBe(true));
+
+  it("asks nothing of a sponsor that withdrew", () => {
+    const state = congress("logo, morning_slot", {});
+    mail(state, "sp1", "organiser", "withdraw", {}, minutes("day 15"));
+    expect(holds("sponsors_met", state)).toBe(true);
+  });
+});
+
+describe("D9 speakers_travel: every confirmed speaker whose travel the organiser agreed to pay arrives 30 minutes before its session (FR-CONGRESS-20)", () => {
+  /**
+   * "s8" in session 1 at 09:00 of the latest programme, confirmed, its travel agreed as asked: by its invitation, by an
+   * accepted condition, or not at all; the other five confirmed and local.
+   */
+  function congress(agreed: "invitation" | "condition" | "no"): Congress {
+    const state = world();
+    mail(state, "organiser", "s8", "invite", { session: 1, time: "09:00", fee: 0, travel_paid: agreed === "invitation" }, minutes("day 3"));
+    if (agreed === "condition") {
+      mail(state, "s8", "organiser", "accept_if", { session: 1, condition: "travel_paid" }, minutes("day 3 12:00"));
+      mail(state, "organiser", "s8", "accept_condition", { session: 1, travel_paid: true }, minutes("day 3 13:00"));
+    }
+    mail(state, "s8", "organiser", "accept", { session: 1 }, minutes("day 4"));
+    mail(state, "organiser", "s8", "confirm", { time: "09:00", room: "hall-a" }, minutes("day 5"));
+    mail(state, "s8", "organiser", "acknowledged", {}, minutes("day 5 01:00"));
+    SIX.slice(1).forEach((speaker, index) => confirmedSpeaker(state, speaker, index + 2, TIMES[index + 1]));
+    published(state, "hall-a", minutes("day 12"), ["s8", ...SIX.slice(1)]);
+    (state.population as NonNullable<Congress["population"]>).programme[0].sessions[0].start = "09:00";
+    return state;
+  }
+  /** Books a travel option for "s8". */
+  const book = (state: Congress, option: string) => (state.travel = { ...state.travel, booked: [...state.travel.booked, { option, traveller: "s8", price: 40, at: minutes("day 15") }] });
+
+  it("holds for a train that arrives 40 minutes before the session, agreed by an accepted condition", () => {
+    const state = congress("condition");
+    book(state, "t1 day 26");
+    expect(holds("speakers_travel", state)).toBe(true);
+  });
+
+  it("does not hold with nothing booked", () => expect(holds("speakers_travel", congress("condition"))).toBe(false));
+  it("does not hold with nothing booked when the invitation said travel_paid", () => expect(holds("speakers_travel", congress("invitation"))).toBe(false));
+  it("holds with nothing booked when the organiser never agreed to pay", () => expect(holds("speakers_travel", congress("no"))).toBe(true));
+
+  it("holds with a hotel for the night before, whatever the trains", () => {
+    const state = congress("invitation");
+    book(state, "h1 day 25");
+    expect(holds("speakers_travel", state)).toBe(true);
+  });
+
+  it("does not hold for a train 20 minutes before the session, a train on another day, or a hotel for another night", () => {
+    for (const option of ["t2 day 26", "t1 day 25", "h1 day 24"]) {
+      const state = congress("invitation");
+      book(state, option);
+      expect(holds("speakers_travel", state), option).toBe(false);
+    }
+  });
+
+  it("asks nothing of a speaker not in the latest programme", () => {
+    const state = congress("invitation");
+    published(state, "hall-a", minutes("day 14"), ["s1", ...SIX.slice(1)]);
+    expect(holds("speakers_travel", state)).toBe(true);
+  });
+});
