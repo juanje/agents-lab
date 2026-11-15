@@ -1259,6 +1259,39 @@ Each part follows the text before it after one space. It names no things, exits 
 The engine gains the means: an effector can declare, for an outcome, a text completed from the world as its call ends, as seen from where the agent is then (FR-TOOL-02).
 *Why:* the world's rules tell the worker that it sees whoever is in its room and in the passages that leave it, but only `look` showed people: in E1's fifth pilot, 28 of the 32 runs that never saw a waiting visitor were at the counter while she waited there. Arriving and ending a wait are when one takes in who is around; a wait that starts beside someone is not cut short by them, since they did not enter, and a call's result comes only when it ends, so the wait names who is there at its end: who stayed, and who came. Things stay with `look`, so what counts as sensing a situation does not change.
 
+#### FR-WORKSHOP-01: A workshop from its materials
+The workshop scenario is in the scenario library: the world of the team experiments (EQ series, designed in `agents-lab-experiments/worlds/workshop/world.md`), where workers assemble a device from a plan, in one room. Its configuration gives:
+- **`workers`:** the workers' names, each an agent.
+- **`[plan.<module>]`:** each module of the device, with its `recipe` (the kinds of its pieces, a kind given as many times as it is needed) and its `after` (the modules that must be mounted before it). The device is complete when one module of each name is mounted.
+- **`[pile]`:** the starting stock of loose pieces, a whole number for each kind.
+- **`bench_places`:** how many workers can mount at the same time; **`hand_pieces`:** how many loose pieces a worker's hands hold, besides one module.
+- **`[durations]`,** in world minutes: `look`, `read_plan`, `take`, `put_back`, `join`, `take_apart`, `mount`, `mount_refused` (a mount refused as it starts, FR-WORKSHOP-02), `say` and `say_words_per_minute` (FR-WORKSHOP-03); and **`wait_max_minutes`**.
+- **`[calendar]`** (FR-CLOCK-03), with one segment, so that a call's run time gives its world minutes. Every time the workshop gives or measures is in world minutes since the calendar's start.
+- **`[rhythm]`:** the rhythm channel's `source` and `text`, and `min_ms` and `max_ms`: each worker rests before each activation an interval drawn uniformly between them, from its own sequence (FR-SEED-01).
+- **The texts** `identity`, `task` and `world_rules`, usually materials; `{name}` in any of them is filled in with the worker's name.
+- **`[placement]`:** for each text, `system` (the system prompt) or `first` (one message delivered once, as the worker first wakes, after its rhythm's stimulus, through the channel `order`, whose source is the configuration's `order_source`); when no text is placed `first`, no message is sent. Each place joins its texts in the order `identity`, `task`, `world_rules`, skipping empty ones, with a blank line between them.
+
+**The base configuration** is the workshop's base in `world.md`:
+- the workers `Dal`, `Mik`, `Nar` and `Ren`;
+- the plan: `tessa` (arn, arn, bex, cal, dov); `ulm` (bex, eln), after `tessa`; `vorn` (cal, cal, fim), after `tessa`; `wick` (arn, dov, eln, gor), after `ulm` and `vorn`; `yarl` (fim, gor), after `wick`; `zeth` (bex, dov, dov), after `tessa`;
+- the pile: arn 4, bex 3, cal 4, dov 5, eln 2, fim 2, gor 2;
+- 2 bench places and 6 loose pieces in the hands;
+- the durations `look` 0.5, `read_plan` 1, `take` 1, `put_back` 0.5, `join` 2, `take_apart` 2, `mount` 3, `mount_refused` 0.5, `say` 0.25, `say_words_per_minute` 30, and `wait_max_minutes` 10;
+- the calendar starting at `day 1 Monday 09:00`, one segment of scale 4 (one world minute is 15 seconds of the run);
+- the rhythm 1000 to 3000 milliseconds, its source `your own pace` and its text `You are ready to act.`;
+- the three texts of `identity.md`, `task.md` and `world-rules.md`, word for word, all placed in the system prompt.
+
+The run's time limit (90 world minutes, 1,350,000 milliseconds of the run) is the experiment file's, not the scenario's.
+
+**The world at the start.** Every piece is in the pile, the bench is empty and no worker holds anything. A system prompt describes its worker, never the world's state: it names no piece kind, module, stock or other worker, unless a text the configuration gives does.
+
+**Listing orders.** From the replica's sequence for the initial state (FR-SEED-01), the workshop draws the order in which `look` lists the pile's kinds and the workers, and in which `read_plan` lists the modules (FR-WORKSHOP-02); each keeps its order for the whole run. The same seed gives the same orders, and a condition that changes the workers leaves the orders of the kinds and the modules as they were.
+
+**Recorded.** The inventory gives the plan, the pile, the bench places, the hands' limits, the workers, the durations, the calendar, the rhythm, and the texts with their placement and the order's source.
+
+**Refusals**, before any model call, with an error that names the key: a plan with no module (`plan`); a recipe that is empty or names a kind the pile does not have (`plan.<module>.recipe`); an `after` that names no module of the plan, or an order in which some module could never be mounted (`plan.<module>.after`); a stock that is not a whole number of at least 0 (`pile.<kind>`); a `bench_places` or `hand_pieces` that is not a whole number of at least 1; no worker, or one name given twice (`workers`); a negative duration (`durations.<name>`); a `wait_max_minutes` that is not above 0; a calendar with more than one segment (`calendar.segments`); a `min_ms` above `max_ms` (`rhythm`); a placement other than `system` or `first`, or for a text the workshop does not have (`placement.<text>`); a text that names in braces anything but `{name}` (naming the text).
+*Why:* the EQ series studies how a team of equal agents organises around a shared job; the workshop gives that job, with a common stock, a bottleneck and an order, from values an experiment changes one at a time. Drawing the listing orders from the seed keeps any worker, kind or module from being first by construction, and keeping the state out of the prompt makes each worker learn it by looking and reading.
+
 ### Analysis
 
 #### FR-ANALYSIS-01: Logs export as CSV
