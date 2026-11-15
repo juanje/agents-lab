@@ -1292,6 +1292,54 @@ The run's time limit (90 world minutes, 1,350,000 milliseconds of the run) is th
 **Refusals**, before any model call, with an error that names the key: a plan with no module (`plan`); a recipe that is empty or names a kind the pile does not have (`plan.<module>.recipe`); an `after` that names no module of the plan, or an order in which some module could never be mounted (`plan.<module>.after`); a stock that is not a whole number of at least 0 (`pile.<kind>`); a `bench_places` or `hand_pieces` that is not a whole number of at least 1; no worker, or one name given twice (`workers`); a negative duration (`durations.<name>`); a `wait_max_minutes` that is not above 0; a calendar with more than one segment (`calendar.segments`); a `min_ms` above `max_ms` (`rhythm`); a placement other than `system` or `first`, or for a text the workshop does not have (`placement.<text>`); a text that names in braces anything but `{name}` (naming the text).
 *Why:* the EQ series studies how a team of equal agents organises around a shared job; the workshop gives that job, with a common stock, a bottleneck and an order, from values an experiment changes one at a time. Drawing the listing orders from the seed keeps any worker, kind or module from being first by construction, and keeping the state out of the prompt makes each worker learn it by looking and reading.
 
+#### FR-WORKSHOP-02: The workers' tools
+Each worker has these tools, each with its duration in world minutes from `[durations]` (FR-WORKSHOP-01); FR-WORKSHOP-03 adds `say`. A worker names pieces by kind and modules by name, as `look` and `read_plan` give them. Arguments are free text: no tool's description or parameters name a kind or a module.
+
+- **`look`** (sensor): as JSON, the room as it is when the call ends:
+  - `pile`: the count of each kind, zeros included, kinds in the drawn order;
+  - `bench`: `mounted`, the modules mounted, in the order they were mounted, and `places`, who occupies each place, `null` for a free one;
+  - `workers`: each worker in the drawn order, the caller included, with its `name`; `loose`, the count of each kind it holds, only kinds it holds, in the drawn order; `module`, `null` or its `name`, the kinds `joined` so far in the order joined, and `finished`; and `doing`.
+- **`read_plan`** (sensor): as JSON, `modules`: each module in the drawn order, with its `name`, its `recipe` as the plan gives it and its `after`.
+- **`take`** `kind` (effector): one piece of that kind from the pile into the worker's hands.
+- **`put_back`** `kind` (effector): one loose piece of that kind from the worker's hands to the pile.
+- **`join`** `module`, `kind` (effector): one loose piece of that kind into the worker's module of that name; the first join, while the worker holds no module, starts the module. A module is finished when every piece of its recipe is joined into it, in any order.
+- **`take_apart`** (effector): every piece of the worker's module returns to the pile, and the worker holds no module.
+- **`mount`** (effector): the worker's finished module goes onto the device. As the call starts, the worker occupies a free bench place, and it keeps it until the call ends, whatever its outcome; when no place is free, the call takes `mount_refused` instead of `mount` and is refused as `bench_full` when it ends.
+- **`wait`** `minutes` (effector): changes nothing and takes that many world minutes, a number above 0 and at most `wait_max_minutes`; any other is an argument the tool does not take (FR-TOOL-02). It ends early, `interrupted`, at the moment a stimulus reaches the worker (FR-WORKPLACE-07).
+
+**Checked when it lands.** An effector's refusals are checked when its call ends, against the world as it is then (FR-TOOL-04), in the order of the table. A refused call takes its full duration, applies nothing and tells the worker why. A kind the pile does not have counts as none left, and a module the plan does not have needs no piece.
+
+| Tool | Outcome | Refused when | Text |
+|---|---|---|---|
+| take | success | | You are holding it. |
+| take | none_left | the pile has no piece of that kind | The pile has no piece of that kind; you have taken nothing. |
+| take | hands_full | the worker already holds `hand_pieces` loose pieces | Your hands are full; you have taken nothing. |
+| put_back | success | | You have put it back on the pile. |
+| put_back | not_held | the worker holds no loose piece of that kind | You hold no loose piece of that kind; nothing has moved. |
+| join | success | | You have joined it. |
+| join | not_held | the worker holds no loose piece of that kind | You hold no loose piece of that kind; nothing has been joined. |
+| join | not_needed | the module's recipe needs no more pieces of that kind | That module needs no more pieces of that kind; nothing has been joined. |
+| join | other_module | the worker holds a module of another name | You are holding a module of another name; nothing has been joined. |
+| take_apart | success | | You have taken your module apart; its pieces are back on the pile. |
+| take_apart | no_module | the worker holds no module | You are holding no module; nothing has changed. |
+| mount | success | | You have mounted your module on the device. |
+| mount | bench_full | as it starts, every bench place was occupied | Every place at the bench was taken; you have mounted nothing. |
+| mount | no_module | the worker holds no module | You are holding no module; you have mounted nothing. |
+| mount | not_finished | the module is not finished | Your module is not finished; you have mounted nothing. |
+| mount | out_of_order | a module it must be mounted after is not mounted | A module yours must be mounted after is not mounted yet; you have mounted nothing. |
+| mount | already_mounted | a module of that name is already mounted | A module of that name is already mounted; you have mounted nothing. |
+| wait | success | | You have waited. |
+| wait | interrupted | | Someone spoke; you stopped waiting. |
+
+**What a worker is doing,** as `look` shows it: `taking`, `putting back`, `joining`, `taking apart`, `mounting` (also during a mount that found the bench full), `speaking` (FR-WORKSHOP-03) or `waiting`, from the start of its call of that tool until the call ends, whatever its outcome; otherwise, also while it looks, reads the plan or decides, `nothing`. A call cut off by the time limit leaves the world as it was when time ran out (FR-CLOCK-02).
+
+**Targets** (FR-TOOL-04): `take` reads its kind in the worker's last `look`: `free` when it showed that kind in the pile, `held` when it showed none; `mount` reads the bench in it: `free` when it showed a free place, `held` when it showed none. With no `look`, and for the other effectors, the target is `not_sensed`.
+
+**Recorded.** Each call is a tool call line (FR-RECORD-01), and each effector's start is an `effector_start` line that names what the worker began and, for a mount, the place it occupies. The inventory gives each tool, its duration in world minutes and its texts.
+
+**The engine gains the means:** an effector can declare an end, a change applied through the arbiter as its call ends, whatever its outcome: in the same change as its action when the action is applied, and as a change of its own otherwise (the action failed, the effector has none, or the call ended early). A call refused before it runs, or cut off by the time limit, applies no end. An end applied on its own grows the world's version and is counted among the changes others see since they sensed (FR-RECORD-01), as a start is.
+*Why:* the workers' job is in their hands: what they take, join and mount is checked against a world the others change meanwhile. Who is doing what, and who holds the bench, is what a worker sees of the others when it looks; a place at the bench is held for as long as someone works at it, whether or not the mount succeeds.
+
 ### Analysis
 
 #### FR-ANALYSIS-01: Logs export as CSV
