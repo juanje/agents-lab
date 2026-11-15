@@ -332,7 +332,7 @@ describe("the congress ready for an experiment (FR-CONGRESS-08)", () => {
     const { chosen } = loaded.variant as { chosen: Record<string, string[]> };
 
     expect(lines.filter((line) => line.startsWith("A "))).toEqual([
-      "A venue takes ask_quote (date, attendance), request_document (kind), hold (date), book (date, rooms, hours), accept_contract (contract), change_booking (rooms, hours), request_extra (item), accept_extra (item), cancel_booking, accept_change, decline_change.",
+      "A venue takes ask_quote (date, attendance), request_document (kind), hold (date), book (date, rooms, hours), accept_contract (contract), change_booking (rooms, hours), request_extra (item, seats, attendance, diet), accept_extra (item), cancel_booking, accept_change, decline_change.",
       "A speaker takes no act the congress lists.",
     ]);
     expect(lines.filter((line) => line.startsWith("- "))).toHaveLength(chosen.venue.length + chosen.speaker.length);
