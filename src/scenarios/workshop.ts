@@ -22,6 +22,9 @@ const ORDER_CHANNEL = "order";
 /** The channel through which every other worker hears what a worker says (FR-WORKSHOP-03). */
 const VOICE_CHANNEL = "voice";
 
+/** The channel through which a worker learns what another handed it (FR-WORKSHOP-05). */
+const HANDS_CHANNEL = "hands";
+
 /** The durations the configuration gives, in world minutes, by name (FR-WORKSHOP-01, FR-WORKSHOP-05's hand). */
 const DURATIONS = ["look", "read_plan", "take", "put_back", "join", "take_apart", "mount", "mount_refused", "say", "say_words_per_minute", "hand"] as const;
 type Duration = (typeof DURATIONS)[number];
@@ -39,7 +42,7 @@ export interface HeldModule {
 }
 
 /** What a worker is doing, as `look` shows it (FR-WORKSHOP-02). */
-export type Doing = "taking" | "putting back" | "joining" | "taking apart" | "mounting" | "speaking" | "waiting" | "nothing";
+export type Doing = "taking" | "putting back" | "joining" | "taking apart" | "mounting" | "speaking" | "waiting" | "handing" | "nothing";
 
 /** What a worker holds: its loose pieces, a count for each kind it holds, and at most one module; and what it is doing. */
 export interface Hands {
@@ -63,6 +66,17 @@ export interface Landed {
   mounts: readonly { worker: string; module: string; at: number }[];
   /** Each applied say, with its start (its end less its duration) and its words. */
   speeches: readonly { speaker: string; start: number; end: number; words: number }[];
+  /** Each applied hand (FR-WORKSHOP-05): a loose piece of a kind, or a module of a name. */
+  handovers: readonly Handover[];
+}
+
+/** An applied hand: from a giver to a receiver, a piece of a kind or a module of a name, at the world minute it landed. */
+export interface Handover {
+  giver: string;
+  receiver: string;
+  sort: "piece" | "module";
+  name: string;
+  at: number;
 }
 
 export interface Workshop {
@@ -219,7 +233,7 @@ function initialState(configuration: Configuration, random: Random): Workshop {
   const modules = shuffled(Object.keys(plan).sort(), random);
   return {
     settings: { handPieces, durations, waitMaxMinutes, startSeconds, scale },
-    landed: { takes: [], joins: [], mounts: [], speeches: [] },
+    landed: { takes: [], joins: [], mounts: [], speeches: [], handovers: [] },
     plan,
     pile: { ...pile },
     bench: { mounted: [], places: Array.from({ length: benchPlaces }, () => null) },
@@ -593,8 +607,78 @@ const say: Effector<Workshop> = {
   readTarget: NOT_SENSED,
 };
 
-/** The workers' tools (FR-WORKSHOP-02, and FR-WORKSHOP-03's say). */
-const TOOLS: readonly Tool<Workshop>[] = [look, readPlan, take, putBack, join, takeApart, mount, wait, say];
+/** Whether what a hand names is the giver's module: the name of the module it holds; otherwise it names a kind. */
+function handsModule(hands: Hands, what: string): boolean {
+  return hands.module?.name === what;
+}
+
+/**
+ * "hand": one loose piece of a kind the giver holds, or the module it holds, into another worker's hands; the receiver
+ * learns it through the channel hands, from the giver (FR-WORKSHOP-05).
+ */
+const hand: Effector<Workshop> = {
+  kind: "effector",
+  name: "hand",
+  description:
+    "Hand another worker, named as look names them, one loose piece of a kind you hold, or the module you hold, finished or not, with the pieces joined into it. They are told what you handed them.",
+  parameters: {
+    type: "object",
+    properties: {
+      worker: { type: "string", description: "The worker you hand it to, as look names them." },
+      what: { type: "string", description: "The name of the module you hold, or a kind of loose piece you hold." },
+    },
+    required: ["worker", "what"],
+  },
+  durationMs: (state) => minutes(state.settings.durations.hand),
+  start: doing("handing"),
+  action: {
+    precondition: (state, call) => {
+      const [receiver, what] = [named(call, "worker"), named(call, "what")];
+      const giver = handsOf(state, call.agent);
+      const module = handsModule(giver, what);
+      const taker = state.workers[receiver];
+      return firstRefusal([
+        [taker === undefined, "no_such_worker"],
+        [receiver === call.agent, "to_self"],
+        [!module && (giver.loose[what] ?? 0) === 0, "not_held"],
+        [!module && taker !== undefined && looseCount(taker) >= state.settings.handPieces, "hands_full"],
+        [module && taker?.module != null, "holds_module"],
+      ]);
+    },
+    effect: (state, call) => {
+      const [receiver, what] = [named(call, "worker"), named(call, "what")];
+      const giver = handsOf(state, call.agent);
+      const module = handsModule(giver, what);
+      const moved = module
+        ? withHands(withHands(state, call.agent, { module: null }), receiver, { module: giver.module })
+        : withHands(withHands(state, call.agent, { loose: counted(giver.loose, what, -1) }), receiver, { loose: counted(handsOf(state, receiver).loose, what, 1) });
+      return keeping(moved, "handovers", { giver: call.agent, receiver, sort: module ? "module" : "piece", name: what, at: landedAt(state, call) });
+    },
+  },
+  end: END,
+  // What the giver's applied hand moved, to its receiver alone.
+  delivers: {
+    channel: HANDS_CHANNEL,
+    deliveries: (state, call) => {
+      const handover = state.landed.handovers.filter(({ giver }) => giver === call.agent).at(-1);
+      if (handover === undefined) throw new Error(`"${call.agent}" has handed nothing`);
+      const what = handover.sort === "module" ? `the module ${handover.name}` : `a piece of ${handover.name}`;
+      return [{ agent: handover.receiver, source: handover.giver, values: { what } }];
+    },
+  },
+  texts: {
+    success: "You have handed it over.",
+    no_such_worker: "There is no worker of that name; nothing has been handed.",
+    to_self: "That is you; nothing has been handed.",
+    not_held: "You are not holding that; nothing has been handed.",
+    hands_full: "Their hands are full; nothing has been handed.",
+    holds_module: "They are already holding a module; nothing has been handed.",
+  },
+  readTarget: NOT_SENSED,
+};
+
+/** The workers' tools (FR-WORKSHOP-02, FR-WORKSHOP-03's say and FR-WORKSHOP-05's hand). */
+const TOOLS: readonly Tool<Workshop>[] = [look, readPlan, take, putBack, join, takeApart, mount, wait, say, hand];
 
 /** How each tool takes its time, for the inventory, in world minutes. */
 function describeDuration(configuration: Configuration, tool: string): string {
@@ -720,7 +804,8 @@ const METRICS: Scenario<Workshop>["metrics"] = {
 
 /**
  * The workshop's channels: its workers' rhythm; the voice, whose stimulus is what was said, from the speaker, and which
- * wakes a resting worker (FR-WORKSHOP-03); and the order, when a text is placed there.
+ * wakes a resting worker (FR-WORKSHOP-03); the hands, whose stimulus is what was handed, from the giver, and which wakes
+ * too (FR-WORKSHOP-05); and the order, when a text is placed there.
  */
 function channels(configuration: Configuration): Channel[] {
   settingsOf(configuration);
@@ -728,6 +813,7 @@ function channels(configuration: Configuration): Channel[] {
   return [
     ...rhythmChannels(configuration),
     { name: VOICE_CHANNEL, source: "the speaker", stimulus: "{text}", described: "what was said", wakes: true },
+    { name: HANDS_CHANNEL, source: "the giver", stimulus: "handed you {what}.", described: "handed you <what>.", wakes: true },
     ...(order === "" ? [] : [{ name: ORDER_CHANNEL, source: configuration.order_source as string, stimulus: order }]),
   ];
 }

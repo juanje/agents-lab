@@ -625,7 +625,7 @@ function isFinished(state: Workshop, module: { name: string; joined: readonly st
 
 // The contract says who holds what both to set up the workshop, as a Given, and to check it, as a Then.
 Given(
-  /^(nobody holds anything|(?:(?:"\w+"(?:, | and )?)+ (?:is|are) mounted, (?:and )?)?"\w+" holds (?:the loose|a |another |both |five |six |one "|no module|nothing).*)$/,
+  /^(nobody holds anything|(?:(?:"\w+"(?:, | and )?)+ (?:is|are) mounted, (?:and )?)?"\w+" holds (?:the loose|a |another |both |five |six |one "|no module|nothing(?=$|, "\w+" holds )).*)$/,
   function (this: Context, written: string) {
     const holdings = holdingsOf(written);
     if (this.checking) assertHoldings(workshopNow(this), holdings, this.stateBefore as Workshop);
