@@ -8,7 +8,7 @@ Feature: A workshop from its materials
     Then "lab inventory" can list an experiment file for the scenario "workshop"
     And the inventory lists the agents "Dal", "Mik", "Nar" and "Ren"
     And it gives the plan with its six modules, their recipes and what each is mounted after, the pile's stock, 2 bench places, and hands of 6 loose pieces and one module
-    And it gives the durations in world minutes: "look" 0.5, "read_plan" 1, "take" 1, "put_back" 0.5, "join" 2, "take_apart" 2, "mount" 3, "mount_refused" 0.5, "say" 0.25 with "say_words_per_minute" 30, and "wait_max_minutes" 10
+    And it gives the durations in world minutes: "look" 0.5, "read_plan" 1, "take" 1, "put_back" 0.5, "join" 2, "take_apart" 2, "mount" 3, "mount_refused" 0.5, "say" 0.25 with "say_words_per_minute" 30, "hand" 0.5, and "wait_max_minutes" 10
     And it gives the calendar's start "day 1 Monday 09:00" and one segment of scale 4 "until the run ends"
     And it gives each worker's rhythm as an interval drawn uniformly between 1000 and 3000 ms, and the channel "rhythm" with the source "your own pace" and the text "You are ready to act."
 

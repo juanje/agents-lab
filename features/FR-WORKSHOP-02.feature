@@ -19,7 +19,8 @@ Feature: The workers' tools
     When the run ends
     Then "Dal"'s "look" result is this JSON:
       """
-      {"pile": {"gor": 2, "arn": 2, "fim": 2, "bex": 2, "dov": 5, "cal": 4, "eln": 2},
+      {"clock": 0,
+       "pile": {"gor": 2, "arn": 2, "fim": 2, "bex": 2, "dov": 5, "cal": 4, "eln": 2},
        "bench": {"mounted": [], "places": [null, null]},
        "workers": [
          {"name": "Ren", "loose": {}, "module": null, "doing": "nothing"},

@@ -48,7 +48,7 @@ Feature: Workers speak to the room
     Given "Ren"'s scripted turns call "wait" with 10 minutes at once, then end
     And "Dal"'s scripted turns call "say" with "Mik, take ulm." after 100 milliseconds, then end
     When the run ends
-    Then "Ren"'s "wait" call ended with the outcome "interrupted" and the text "Someone spoke; you stopped waiting."
+    Then "Ren"'s "wait" call ended with the outcome "interrupted" and the text "Something reached you; you stopped waiting."
     And it ended within 50 milliseconds after the "say" call ended
 
   Scenario: Look shows a worker speaking while its call lasts

@@ -1266,7 +1266,7 @@ The workshop scenario is in the scenario library: the world of the team experime
 - **`[plan.<module>]`:** each module of the device, with its `recipe` (the kinds of its pieces, a kind given as many times as it is needed) and its `after` (the modules that must be mounted before it). The device is complete when one module of each name is mounted.
 - **`[pile]`:** the starting stock of loose pieces, a whole number for each kind.
 - **`bench_places`:** how many workers can mount at the same time; **`hand_pieces`:** how many loose pieces a worker's hands hold, besides one module.
-- **`[durations]`,** in world minutes: `look`, `read_plan`, `take`, `put_back`, `join`, `take_apart`, `mount`, `mount_refused` (a mount refused as it starts, FR-WORKSHOP-02), `say` and `say_words_per_minute` (FR-WORKSHOP-03); and **`wait_max_minutes`**.
+- **`[durations]`,** in world minutes: `look`, `read_plan`, `take`, `put_back`, `join`, `take_apart`, `mount`, `mount_refused` (a mount refused as it starts, FR-WORKSHOP-02), `say` and `say_words_per_minute` (FR-WORKSHOP-03), `hand` (FR-WORKSHOP-05); and **`wait_max_minutes`**.
 - **`[calendar]`** (FR-CLOCK-03), with one segment, so that a call's run time gives its world minutes. Every time the workshop gives or measures is in world minutes since the calendar's start.
 - **`[rhythm]`:** the rhythm channel's `source` and `text`, and `min_ms` and `max_ms`: each worker rests before each activation an interval drawn uniformly between them, from its own sequence (FR-SEED-01).
 - **The texts** `identity`, `task` and `world_rules`, usually materials; `{name}` in any of them is filled in with the worker's name.
@@ -1277,7 +1277,7 @@ The workshop scenario is in the scenario library: the world of the team experime
 - the plan: `tessa` (arn, arn, bex, cal, dov); `ulm` (bex, eln), after `tessa`; `vorn` (cal, cal, fim), after `tessa`; `wick` (arn, dov, eln, gor), after `ulm` and `vorn`; `yarl` (fim, gor), after `wick`; `zeth` (bex, dov, dov), after `tessa`;
 - the pile: arn 4, bex 3, cal 4, dov 5, eln 2, fim 2, gor 2;
 - 2 bench places and 6 loose pieces in the hands;
-- the durations `look` 0.5, `read_plan` 1, `take` 1, `put_back` 0.5, `join` 2, `take_apart` 2, `mount` 3, `mount_refused` 0.5, `say` 0.25, `say_words_per_minute` 30, and `wait_max_minutes` 10;
+- the durations `look` 0.5, `read_plan` 1, `take` 1, `put_back` 0.5, `join` 2, `take_apart` 2, `mount` 3, `mount_refused` 0.5, `say` 0.25, `say_words_per_minute` 30, `hand` 0.5, and `wait_max_minutes` 10;
 - the calendar starting at `day 1 Monday 09:00`, one segment of scale 4 (one world minute is 15 seconds of the run);
 - the rhythm 1000 to 3000 milliseconds, its source `your own pace` and its text `You are ready to act.`;
 - the three texts of `identity.md`, `task.md` and `world-rules.md`, word for word, all placed in the system prompt.
@@ -1297,6 +1297,7 @@ The run's time limit (90 world minutes, 1,350,000 milliseconds of the run) is th
 Each worker has these tools, each with its duration in world minutes from `[durations]` (FR-WORKSHOP-01); FR-WORKSHOP-03 adds `say`. A worker names pieces by kind and modules by name, as `look` and `read_plan` give them. Arguments are free text: no tool's description or parameters name a kind or a module.
 
 - **`look`** (sensor): as JSON, the room as it is when the call ends:
+  - `clock`: the whole world minutes since the run's start, rounded down (FR-WORKSHOP-05);
   - `pile`: the count of each kind, zeros included, kinds in the drawn order;
   - `bench`: `mounted`, the modules mounted, in the order they were mounted, and `places`, who occupies each place, `null` for a free one;
   - `workers`: each worker in the drawn order, the caller included, with its `name`; `loose`, the count of each kind it holds, only kinds it holds, in the drawn order; `module`, `null` or its `name`, the kinds `joined` so far in the order joined, and `finished`; and `doing`.
@@ -1306,7 +1307,7 @@ Each worker has these tools, each with its duration in world minutes from `[dura
 - **`join`** `module`, `kind` (effector): one loose piece of that kind into the worker's module of that name; the first join, while the worker holds no module, starts the module. A module is finished when every piece of its recipe is joined into it, in any order.
 - **`take_apart`** (effector): every piece of the worker's module returns to the pile, and the worker holds no module.
 - **`mount`** (effector): the worker's finished module goes onto the device. As the call starts, the worker occupies a free bench place, and it keeps it until the call ends, whatever its outcome; when no place is free, the call takes `mount_refused` instead of `mount` and is refused as `bench_full` when it ends.
-- **`wait`** `minutes` (effector): changes nothing and takes that many world minutes, a number above 0 and at most `wait_max_minutes`; any other is an argument the tool does not take (FR-TOOL-02). It ends early, `interrupted`, at the moment a stimulus reaches the worker (FR-WORKPLACE-07).
+- **`wait`** `minutes` (effector): changes nothing and takes that many world minutes, a number above 0 and at most `wait_max_minutes`; any other is an argument the tool does not take (FR-TOOL-02). It ends early, `interrupted`, at the moment a stimulus reaches the worker (FR-WORKPLACE-07); its description says it ends as soon as something reaches the worker (someone speaks or hands it something).
 
 **Checked when it lands.** An effector's refusals are checked when its call ends, against the world as it is then (FR-TOOL-04), in the order of the table. A refused call takes its full duration, applies nothing and tells the worker why. A kind the pile does not have counts as none left, and a module the plan does not have needs no piece.
 
@@ -1330,7 +1331,7 @@ Each worker has these tools, each with its duration in world minutes from `[dura
 | mount | out_of_order | a module it must be mounted after is not mounted | A module yours must be mounted after is not mounted yet; you have mounted nothing. |
 | mount | already_mounted | a module of that name is already mounted | A module of that name is already mounted; you have mounted nothing. |
 | wait | success | | You have waited. |
-| wait | interrupted | | Someone spoke; you stopped waiting. |
+| wait | interrupted | | Something reached you; you stopped waiting. |
 
 **What a worker is doing,** as `look` shows it: `taking`, `putting back`, `joining`, `taking apart`, `mounting` (also during a mount that found the bench full), `speaking` (FR-WORKSHOP-03) or `waiting`, from the start of its call of that tool until the call ends, whatever its outcome; otherwise, also while it looks, reads the plan or decides, `nothing`. A call cut off by the time limit leaves the world as it was when time ran out (FR-CLOCK-02).
 

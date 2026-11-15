@@ -89,7 +89,7 @@ Feature: Handing over, a clock on the wall, and the character and limits texts
     And "Ren"'s scripted turns call "wait" with 10 minutes at once, then end
     And "Dal"'s scripted turns call "hand" with "arn" to "Ren" after 100 milliseconds, then end
     When the run ends
-    Then "Ren"'s "wait" call ended with the outcome "interrupted"
+    Then "Ren"'s "wait" call ended with the outcome "interrupted" and the text "Something reached you; you stopped waiting."
     And it ended within 50 milliseconds after the "hand" call ended
     And "Ren" holds the loose piece "arn"
 
