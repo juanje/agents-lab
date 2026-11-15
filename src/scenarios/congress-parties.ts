@@ -442,6 +442,9 @@ export const venueRules: RuleSet = {
     const releaseAll = (contract: Contract) => party.release((what) => what.startsWith(contract.id));
     const notAvailable = (what: unknown): Answer => ({ act: "not_available", fields: { what: String(what) } });
     const unavailable = (date: string): Answer => ({ act: "unavailable", fields: { date } });
+    /** A room it cannot give, named without the date: one it lost (FR-CONGRESS-16) or does not have (FR-CONGRESS-23). */
+    const roomUnavailable = (room: string): Answer => ({ act: "unavailable", fields: { room } });
+    const unknownRoom = (rooms: readonly string[]) => rooms.find((room) => !venue.rooms.some(({ id }) => id === room));
     const free = (date: string) => statusOf(date) === "free" || statusOf(date) === "held";
     const totalSeats = venue.rooms.reduce((sum, { seats }) => sum + seats, 0);
     /** The room each room the allocation named anew was allocated from (FR-CONGRESS-19). */
@@ -537,8 +540,9 @@ export const venueRules: RuleSet = {
           if (own?.act === "contract_held") return own;
           if (!free(date)) return unavailable(date);
           const rooms = String(fields.rooms ?? "").split(/,\s*/).filter((room) => room !== "");
-          const missing = rooms.find((room) => !venue.rooms.some(({ id }) => id === room));
-          if (missing !== undefined || rooms.length === 0) return notAvailable(missing ?? "rooms");
+          const missing = unknownRoom(rooms);
+          if (missing !== undefined) return roomUnavailable(missing);
+          if (rooms.length === 0) return notAvailable("rooms");
           const contract: Contract = { id: `${venue.id}-contract-${contracts.length + 1}`, to: from, date, rooms, hours: String(fields.hours ?? ""), price: venue.price, extras: {}, confirmed: false };
           contracts.push(contract);
           dates.set(date, "contracted");
@@ -614,8 +618,10 @@ export const venueRules: RuleSet = {
           const lost = lostRooms.get(contract.date) ?? new Set<string>();
           // A room lost to a change or an allocation is named, without the date (FR-CONGRESS-16).
           const named = rooms.find((room) => lost.has(room));
-          if (named !== undefined) return { act: "unavailable", fields: { room: named } };
-          if (rooms.length === 0 || rooms.some((room) => !venue.rooms.some(({ id }) => id === room))) return unavailable(contract.date);
+          if (named !== undefined) return roomUnavailable(named);
+          const missing = unknownRoom(rooms);
+          if (missing !== undefined) return roomUnavailable(missing);
+          if (rooms.length === 0) return unavailable(contract.date);
           const added = rooms.filter((room) => !contract.rooms.includes(room)).reduce((sum, room) => sum + roomPrice(room), 0);
           const dropped = contract.rooms.filter((room) => !rooms.includes(room)).reduce((sum, room) => sum + roomPrice(room), 0);
           contract.rooms = rooms;
