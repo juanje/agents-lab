@@ -79,9 +79,9 @@ describe("a caterer takes only a permit the venue gave (FR-CONGRESS-22)", () => 
     expect(answer("v2-permit-1").act).toBe("order_confirmed");
   });
 
-  it("refuses permit_unknown an order whose permit no venue gave, or another venue gave, whatever the venue's rule", () => {
+  // An outside_free venue takes any permit (FR-CONGRESS-23).
+  it("refuses permit_unknown an order whose permit no venue gave, or another venue gave, at a venue that asks for one", () => {
     expect(answer("outside_catering")).toEqual(unknown);
     expect(answer("v1-permit-1")).toEqual(unknown);
-    expect(answer("v2-permit-1", "v3")).toEqual(unknown);
   });
 });
