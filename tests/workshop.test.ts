@@ -250,7 +250,8 @@ describe("the workers' tools (FR-WORKSHOP-02)", () => {
     let state = holding(start(), "Dal", { loose: { arn: 2 }, module: { name: "tessa", joined: ["bex"] } });
     state = { ...state, pile: { ...state.pile, arn: 2, bex: 2 } };
     state = started("take", state, "Mik", { kind: "dov" });
-    expect(JSON.parse(sensor("look").sense(state, "Dal", {}, 0))).toEqual({
+    expect(JSON.parse(sensor("look").sense(state, "Dal", {}, 0, call("Dal").world))).toEqual({
+      clock: 0,
       pile: { gor: 2, arn: 2, fim: 2, bex: 2, dov: 5, cal: 4, eln: 2 },
       bench: { mounted: [], places: [null, null] },
       workers: [
@@ -260,7 +261,14 @@ describe("the workers' tools (FR-WORKSHOP-02)", () => {
         { name: "Mik", loose: {}, module: null, doing: "taking" },
       ],
     });
-    expect(Object.keys(JSON.parse(sensor("look").sense(state, "Dal", {}, 0)).pile)).toEqual(["gor", "arn", "fim", "bex", "dov", "cal", "eln"]);
+    expect(Object.keys(JSON.parse(sensor("look").sense(state, "Dal", {}, 0, call("Dal").world)))).toEqual(["clock", "pile", "bench", "workers"]);
+    expect(Object.keys(JSON.parse(sensor("look").sense(state, "Dal", {}, 0, call("Dal").world)).pile)).toEqual(["gor", "arn", "fim", "bex", "dov", "cal", "eln"]);
+  });
+
+  it("look gives first the clock: the whole world minutes since the calendar's start when it ends, rounded down (FR-WORKSHOP-05)", () => {
+    const clockAt = (seconds: number) => JSON.parse(sensor("look").sense(start(), "Dal", {}, 0, { day: 1, weekday: "Monday", seconds: 9 * 3600 + seconds })).clock;
+    expect([0, 30, 59.9, 60, 150, 156, 210, 3600].map(clockAt)).toEqual([0, 0, 0, 1, 2, 2, 3, 60]);
+    expect(sensor("look").description).toMatch(/the clock, in whole minutes since the start/);
   });
 
   it("read_plan gives the modules in the drawn order", () => {

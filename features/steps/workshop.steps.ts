@@ -714,6 +714,7 @@ Then("its result is this JSON:", function (this: Context, json: string) {
 
 /** What a look showed, parsed. */
 interface Looked {
+  clock: number;
   pile: Record<string, number>;
   bench: { mounted: string[]; places: (string | null)[] };
   workers: { name: string; loose: Record<string, number>; module: { name: string; joined: string[]; finished: boolean } | null; doing: string }[];
@@ -1349,4 +1350,17 @@ Then("it was written when the {string} call ended", function (this: Context, too
   const callAt = lines.findIndex((each) => each.type === "tool_call" && each.tool === tool && each.outcome === "success");
   assert.ok(Math.abs(line.atMs - applied[0].endedAtMs) <= 20, `the speech line was written ${line.atMs - applied[0].endedAtMs} ms from the call's end`);
   assert.ok(speechAt < callAt, "the speech line comes after the call's line");
+});
+
+// FR-WORKSHOP-05: handing over, a clock on the wall, and the character and limits texts.
+
+Then("{string}'s {string} shows the clock as {int}", function (this: Context, worker: string, tool: string, clock: number) {
+  assert.equal(tool, "look");
+  assert.equal(lookOf(this, worker).clock, clock);
+});
+
+Then("the tool {string}'s description says it gives the clock, in whole minutes since the start", function (this: Context, tool: string) {
+  const description = fencedAfter(toolListed(this, tool), "Description");
+  assert.match(description, /\bclock\b/, `the description of "${tool}":\n${description}`);
+  assert.match(description, /whole minutes since the start/, `the description of "${tool}":\n${description}`);
 });
