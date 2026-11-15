@@ -669,12 +669,10 @@ const predicatesAsWritten: PartsProvided<Congress>["predicates"] = {
     return Object.entries(attendanceByDiet(state)).every(([diet, count]) => (served[diet] ?? 0) >= count);
   },
   // D6 is within_budget (FR-CONGRESS-12).
-  // D7: a programme of six sessions, each with a time, a speaker and a room, published by day 12 18:00, and every registrant believes the latest version.
+  // D7: the first real programme (FR-CONGRESS-22) published by day 12 18:00, and every registrant believes the latest version.
   programme_on_time: (state) => {
-    const versions = state.population?.programme ?? [];
-    const full = ({ sessions }: Programme) => sessions.length === 6 && sessions.every(({ start, speakers, room }) => start !== "" && speakers.length > 0 && room !== "");
-    const onTime = versions.some((version) => (version.published ?? Infinity) <= minutesOfText(PROGRAMME_DUE) && full(version));
-    const latest = versions.at(-1)?.version;
+    const onTime = (firstRealOf(state)?.published ?? Infinity) <= minutesOfText(PROGRAMME_DUE);
+    const latest = latestOf(state)?.version;
     return onTime && registrantsOf(state).every(({ believes }) => believes === latest);
   },
   // D8: every sponsor that agreed and did not withdraw has its conditions met in the latest programme.
@@ -713,12 +711,34 @@ const predicatesAsWritten: PartsProvided<Congress>["predicates"] = {
       .sort((one, other) => one - other);
     return times.length < 6 ? false : { holds: true, reachedAt: times[5] };
   },
-  // A published programme of six sessions, reached as the first of six was published.
+  // A published programme of six sessions, reached as the first real programme was published (FR-CONGRESS-22).
   programme_published: (state) => {
-    const published = latestOf(state)?.sessions.length === 6 ? (state.population?.programme ?? []).find(({ sessions }) => sessions.length === 6)?.published : undefined;
+    const published = latestOf(state)?.sessions.length === 6 ? firstRealOf(state)?.published : undefined;
     return published === undefined ? false : { holds: true, reachedAt: published };
   },
 };
+
+/** The records as they were at a world time: the acts exchanged by then. */
+function asOf(state: Congress, at: number): Congress {
+  const by = (time: WorldTime | undefined) => time !== undefined && minutesOf(time) <= at;
+  const mailboxes = Object.fromEntries(Object.entries(state.mail.mailboxes).map(([owner, messages]) => [owner, messages.filter(({ received }) => by(received))]));
+  return { ...state, mail: { mailboxes, inTransit: state.mail.inTransit.filter(({ sent }) => by(sent)) }, phone: { ...state.phone, calls: state.phone.calls.filter(({ endedAt }) => by(endedAt)) } };
+}
+
+/**
+ * The first real programme version (FR-CONGRESS-22): six sessions, each with a time, a speaker who had accepted that
+ * session and a room of a live booking, all when it was published.
+ */
+function firstRealOf(state: Congress): Programme | undefined {
+  return (state.population?.programme ?? []).find((version) => {
+    if (version.published === undefined || version.sessions.length !== 6) return false;
+    const then = asOf(state, version.published);
+    const rooms = bookingsOf(then)
+      .filter(({ date, confirmedAt, cancelledAt }) => date === `day ${state.context.eventDay}` && confirmedAt !== undefined && cancelledAt === undefined)
+      .flatMap((booking) => booking.rooms);
+    return version.sessions.every((session) => session.start !== "" && rooms.includes(session.room) && session.speakers.some((speaker) => acceptedFor(then, speaker, session)));
+  });
+}
 
 /** The checks of the definition of done, D0 to D9 (FR-CONGRESS-20). */
 const DONE = ["can_be_held", "attendance_in_range", "sessions_have_speakers", "everyone_fits", "everyone_can_reach", "food_for_everyone", "within_budget", "programme_on_time", "sponsors_met", "speakers_travel"];

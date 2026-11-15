@@ -396,6 +396,8 @@ describe("D7 programme_on_time: a full programme published by day 12 18:00, and 
   /** A programme of six sessions in "hall-a" published at a time, and 40 registrants who believe a version. */
   function congress(at: string, believes: number | null = 1): Congress {
     const state = world();
+    // A live booking of its room, so the programme is a real one (FR-CONGRESS-22).
+    booked(state);
     sixConfirmed(state);
     published(state, "hall-a", minutes(at));
     registered(state, 40, believes === null ? {} : { believes });
@@ -597,6 +599,9 @@ describe("the milestones give, through reached_at, when the organiser reached ea
 
   it("programme_published: the latest programme has six sessions, reached as the first of six was published", () => {
     const state = world();
+    // A live booking and the speakers' acceptances, so its programmes are real ones (FR-CONGRESS-22).
+    booked(state);
+    sixConfirmed(state);
     published(state, "hall-a", minutes("day 9"), SIX.slice(0, 5));
     expect(holds("programme_published", state)).toBe(false);
     published(state, "hall-a", minutes("day 11 16:00"));
