@@ -312,7 +312,6 @@ export function plansOf(input: SolvabilityInput): Solved {
   const rooms: { venue: VenueOption; room: string; ramp: boolean; cost: number }[] = [];
   for (const venue of input.venues) {
     const free = freeOf(venue, input);
-    const seats = venue.rooms.reduce((sum, { seats: each }) => sum + each, 0);
     for (const { id, seats: held } of venue.rooms.filter(({ seats: each }) => each > 0)) {
       const fits = held >= attendance;
       const stepFree = !access || reaches(venue, id, false);
@@ -320,7 +319,8 @@ export function plansOf(input: SolvabilityInput): Solved {
       if (free) counts.D0 += 1;
       if (fits) counts.D3 += 1;
       if (stepFree || ramp) counts.D4 += 1;
-      if (free && fits && (stepFree || ramp)) rooms.push({ venue, room: id, ramp, cost: Math.round((venue.price * held) / seats) + (ramp ? (venue.extras?.ramp as number) : 0) });
+      // A booking is contracted at the venue's day price, whatever rooms it names (FR-CONGRESS-02's book).
+      if (free && fits && (stepFree || ramp)) rooms.push({ venue, room: id, ramp, cost: venue.price + (ramp ? (venue.extras?.ramp as number) : 0) });
     }
   }
   const catering = new Map(input.venues.map((venue) => [venue.id, cateringOf(venue, input.caterers, meals)]));
