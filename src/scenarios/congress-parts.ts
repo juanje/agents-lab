@@ -674,14 +674,11 @@ const predicatesAsWritten: PartsProvided<Congress>["predicates"] = {
   sponsors_met: (state) => sponsorsMet(state),
   // D9: every confirmed speaker of the latest programme whose travel the organiser agreed to pay arrives at least 30 minutes before its session, on an event-day train or with a hotel for the night before.
   speakers_travel: (state) => {
-    const { eventDay } = state.context;
+    // A speaker who travels: one from a station (FR-CONGRESS-20).
     return confirmedOf(state).every((speaker) => {
       const session = latestOf(state)?.sessions.find(({ speakers }) => speakers.includes(speaker));
-      if (session === undefined || !travelPaid(state, speaker)) return true;
-      const booked = state.travel.booked.filter(({ traveller }) => traveller === speaker);
-      const train = booked.some(({ option }) => state.travel.material.trains.some(({ id, arrives }) => option === `${id} day ${eventDay}` && clockOf(arrives) <= clockOf(session.start) - 30));
-      const hotel = booked.some(({ option }) => state.travel.material.hotels.some(({ id }) => option === `${id} day ${eventDay - 1}`));
-      return train || hotel;
+      if (session === undefined || state.context.homes?.[speaker] === undefined || !travelPaid(state, speaker)) return true;
+      return trainBy(state, speaker, clockOf(session.start) - 30) || hotelBefore(state, speaker);
     });
   },
   done: (state, params) => DONE.every((check) => holdsOf(predicates[check](state, params))),
@@ -734,6 +731,15 @@ function sponsorsMet(state: Congress): boolean {
     return (!conditions.includes("logo") || logoOf(latest, sponsor)) && (!conditions.includes("morning_slot") || slotOf(latest, sponsor));
   });
 }
+
+/** A speaker's trains from its station, and whether one booked for it on the event day arrives by a time, in minutes since midnight. */
+const trainsOf = (state: Congress, speaker: string) => state.travel.material.trains.filter(({ from }) => from === state.context.homes?.[speaker]);
+const trainBy = (state: Congress, speaker: string, latest: number) =>
+  state.travel.booked.some(({ traveller, option }) => traveller === speaker && trainsOf(state, speaker).some(({ id, arrives }) => option === `${id} day ${state.context.eventDay}` && clockOf(arrives) <= latest));
+
+/** Whether a hotel is booked for a speaker for the night before the event. */
+const hotelBefore = (state: Congress, speaker: string) =>
+  state.travel.booked.some(({ traveller, option }) => traveller === speaker && state.travel.material.hotels.some(({ id }) => option === `${id} day ${state.context.eventDay - 1}`));
 
 /** Whether the organiser agreed to pay a speaker's travel: an invitation or an accepted condition with travel_paid true (FR-CONGRESS-20). */
 const travelPaid = (state: Congress, speaker: string) => [...withAct(state, "invite", "organiser", speaker), ...withAct(state, "accept_condition", "organiser", speaker)].some(({ fields }) => fields.travel_paid === true);
