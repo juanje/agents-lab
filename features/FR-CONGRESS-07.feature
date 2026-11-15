@@ -8,7 +8,8 @@ Feature: Corrections to venues, speakers and the phone
     And the congress is on "day 26", and the organiser's account opens at 5000
 
   Scenario Outline: An outside caterer needs a permit for a venue that asks for one
-    Given the organiser's scripted turns call "send_mail" to "<caterer>" with the act "order", counts "standard" 40, date "day 26" and venue "<venue>"<permit>, then end
+    Given "v2" gave the organiser the permit "v2-permit-1" for outside catering
+    And the organiser's scripted turns call "send_mail" to "<caterer>" with the act "order", counts "standard" 40, date "day 26" and venue "<venue>"<permit>, then end
     When the run ends
     Then "<caterer>" answered "<answer>"
 

@@ -43,7 +43,7 @@ Experiments are written outside this repository, in the experiment language (FR-
 |:--|:--|:--|:--|
 | v0.1 | E13 micro vs macro (Schelling): three technical pilots, then parked | below | built enough for E13's pilots |
 | v0.2 | E2–E4 in an invented workplace (A19, A20, I4); E1's pilots ran here before E1 moved to the congress | below, in this build order | built for E1's pilots; E2–E4 next |
-| v0.3 | E1 in a congress (A18, A19): instructions and character | below, in this build order | under way: items 1–9 and 11–21 built, six technical runs and a check run; E1 restarts from a baseline with no traps or events |
+| v0.3 | E1 in a congress (A18, A19): instructions and character | below, in this build order | under way: items 1–9 and 11–22 built, six technical runs and a check run; E1 restarts from a baseline with no traps or events |
 | v0.4 | E16 model monoculture and vote visibility | not written | later |
 | v0.5 | A single-agent experiment with tools and memory across runs (E15 or E7; the congress world's sequences) | not written | later |
 | v0.6 | World and agent forks | not written | later |
@@ -125,6 +125,7 @@ Experiments are written outside this repository, in the experiment language (FR-
 20. FR-CONGRESS-19 (corrections from the check run: an equal room for a lost one, cancelled contracts never live, allocated rooms keep their price, a congress that does not happen holds nothing, request_extra's fields in the contacts), before E1's baseline
 21. FR-CONGRESS-20 (the E1 baseline's definition of done: D0–D9, done, the milestones, and a plan for every session), before E1's baseline
 22. FR-CONGRESS-21 (a replica the organiser can complete, in more than one way: other customers on their own sequence, the solvability check and its redraw), before E1's baseline
+23. FR-CONGRESS-22 (corrections from the baseline's first check run: the asker's own booking, permits checked, belief at registration, a real on-time programme, a margin on the solvable price, per-replica inventory and milestones in the report), before E1's baseline
 
 **Small known gaps** (to close when convenient): `lab summarize` prints numbers at full precision; a completed run whose log has no metric sample gives no values without saying so; a run in the index whose log is missing fails with Node's own error. The `wait` tool's description does not state `wait_max_minutes`, so the worker learns the limit only from a refusal; `wait_max_minutes` is not checked when the configuration loads. FR-WORKPLACE-07's scenario whose wait ends `interrupted` "about 50 milliseconds into the run" failed once in a full gate (2026-11-13) and passed on three reruns: it needs more slack. The run test that ends an effector's call early at a stimulus failed once under load (2026-11-13) and passed on reruns, as did one scenario in a full gate the same day.
 
@@ -801,6 +802,27 @@ A plan meets each check of FR-CONGRESS-20 as the world allows it:
 **What it does not do.** It never tells the organiser anything, and it does not show that an organiser finds a plan: only that one exists with what the organiser can learn by asking.
 
 *Why:* E1's technical runs found out in the runs, hours in, that some replicas left no way through: P12 unreachable at an in-house venue, a budget no careful plan could close. The baseline needs every replica proven completable, in more than one way, before any model call.
+
+#### FR-CONGRESS-22: Corrections from the E1 baseline's first check run
+**A venue answers the asker's own booking.** An `ask_quote` or `hold` for a date the asker holds is answered `held` with the hold's end. For a date it has under a live contract, the answer is `contract_held` with the contract, as `book` already answers. Neither is ever `unavailable`.
+
+**A permit must be one the venue gave.** A caterer refuses (`order_refused`, reason `permit_unknown`) an order whose `permit` is not one that the named venue gave the organiser through `extra_confirmed`.
+
+**A registrant believes the programme it registered under.** On registering, a registrant believes the latest published version (FR-POPULATION-01); a later `announce` updates it as before.
+
+**The on-time programme is a real one.** D7's on-time version and the milestone `programme_published` read the first published version whose six sessions each name a speaker who had accepted that session, in a room of a live booking, when it was published (FR-CONGRESS-20).
+
+**D1's solvable price has a margin.** In the solvability check (FR-CONGRESS-21), a plan's price is the highest whole price at which the expected paying registrants are at least 0.85 × the target and at most 1.10 × the target. The page is taken as opened and registration announced on `day 2 09:00`.
+
+**The tooling shows what was computed.**
+- `lab inventory` gives each replica's variant (its seed, its draw, and its solvability counts) and the kept plans with their price and expected paying registrants.
+- `lab parts` lists every part with its `reached_at` per run when the experiment has no `kind_factor`, and leaves out the kinds table.
+*Why:* the E1 baseline's first check run (`agents-lab-experiments/experiments/E1-congress/baseline-check.md`) found:
+- a venue told an organiser its own confirmed date was unavailable, and the organiser cancelled and went over the budget;
+- a caterer accepted a made-up permit;
+- D7 failed on a registrant who joined after the last announcement, and a placeholder programme counted as on time;
+- the inventory and the parts report hid the replicas' solvability and the milestones;
+- the check's price left expected attendance on the edge of the range.
 
 #### FR-POPULATION-01: Attendees, the ticket page, the programme and announcements
 The congress's attendees are a population: a component (FR-PROCESS-01) with its own sequence (`cycle of attendees`), from an `attendees` material and the variant.
