@@ -1340,10 +1340,11 @@ export const catererRules: RuleSet = {
           if (fields.venue !== undefined && (rule === "in_house" || rule === "outside_fee") && caterer.in_house_for !== fields.venue && fields.permit === undefined) {
             return { act: "order_refused", fields: { reason: "venue_requires_permit" } };
           }
-          // A permit must be one the named venue gave (FR-CONGRESS-22).
-          if (fields.permit !== undefined && permits.get(String(fields.permit))?.venue !== String(fields.venue)) return { act: "order_refused", fields: { reason: "permit_unknown" } };
+          // A permit must be one the named venue gave (FR-CONGRESS-22); a venue with free outside catering asks for none, so any is taken (FR-CONGRESS-23).
+          const permit = rule === "outside_free" ? undefined : fields.permit;
+          if (permit !== undefined && permits.get(String(permit))?.venue !== String(fields.venue)) return { act: "order_refused", fields: { reason: "permit_unknown" } };
           const counts = countsIn(fields.counts);
-          if (fields.permit !== undefined && exceeds(counts, permits.get(String(fields.permit)) ?? {})) return { act: "order_refused", fields: { reason: "permit_exceeded" } };
+          if (permit !== undefined && exceeds(counts, permits.get(String(fields.permit)) ?? {})) return { act: "order_refused", fields: { reason: "permit_exceeded" } };
           const over = overLimit(counts);
           if (over !== undefined) return { act: "order_refused", fields: { diet: over } };
           if (total(counts) < (caterer.minimum ?? 0)) return { act: "order_refused", fields: belowMinimum() };
