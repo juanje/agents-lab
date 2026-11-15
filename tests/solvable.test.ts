@@ -3,6 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type TomlTable, parse, stringify } from "smol-toml";
 import { describe, expect, it } from "vitest";
+import { readExperiment, replicaSeed } from "../src/engine/experiment.ts";
+import { type Inventory, inventory, inventoryMarkdown } from "../src/engine/inventory.ts";
 import type { RuleSet } from "../src/engine/participants.ts";
 import { Random } from "../src/engine/random.ts";
 import { run } from "../src/engine/run.ts";
@@ -412,5 +414,40 @@ describe("the variant's solvability check (FR-CONGRESS-21)", () => {
     expect(plans.length).toBe(7);
     expect(plans.some(({ speakers }) => speakers.some(({ id }) => id === "s1"))).toBe(false);
     expect(new Set(plans.flatMap(({ orders }) => orders.map(({ caterer }) => caterer)))).toEqual(new Set(["c9"]));
+  });
+});
+
+describe("the inventory gives each replica's variant (FR-CONGRESS-22)", () => {
+  /** An experiment of two replicas over a congress whose draw gives [solvable]. */
+  const experiment = () =>
+    readExperiment(
+      ['id = "e"', 'scenario = "congress"', 'models = ["scripted/one"]', 'thinking_level = "off"', "replicas = 2", "seed = 1", "[limits]", "time_limit_ms = 1000", "activations_per_agent = 1", "parallelism_limit = 1", "model_turn_timeout_ms = 500", "[compaction]", "enabled = false", "[conditions.only]", ""].join("\n"),
+    );
+  const scenario = () => solvableCongress([{ id: "v1" }, { id: "v2", price: 2500 }], { solvable: { min_solutions: 2, min_venues: 2 } });
+
+  it("gives each plan the expected paying registrants at its price", async () => {
+    const plansOf = (await plansOfModule()) as NonNullable<Awaited<ReturnType<typeof plansOfModule>>>;
+    for (const plan of plansOf(input()).plans as { price: number; expected?: number }[]) {
+      expect(plan.expected).toBeGreaterThanOrEqual(0.85 * 50);
+      expect(plan.expected).toBeLessThanOrEqual(1.1 * 50);
+    }
+  });
+
+  it("gives, for each replica, its seed, its variant as loading that replica draws it, and its kept plans with their price and expected paying registrants", () => {
+    const made = inventory(experiment(), scenario()) as Inventory & { replicas?: { replica: number; seed: number; variant: unknown; plans?: Record<string, unknown>[] }[] };
+    expect(made.replicas?.map(({ replica, seed }) => [replica, seed])).toEqual([1, 2].map((replica) => [replica, replicaSeed(1, replica)]));
+    for (const { seed, variant, plans } of made.replicas ?? []) {
+      expect(variant).toEqual(loadScenario(scenario(), seed).variant);
+      // Two venues × 28 speaker sets × one order.
+      expect(plans).toHaveLength(56);
+      for (const plan of plans ?? []) expect(plan).toMatchObject({ venue: expect.any(String), price: expect.any(Number), expected: expect.any(Number) });
+    }
+    const printed = inventoryMarkdown(made);
+    for (const { replica, seed } of made.replicas ?? []) expect(printed).toContain(`### Replica ${replica}, seed ${seed}`);
+    expect(printed).toMatch(/"expected"/);
+  });
+
+  it("gives no replicas for a scenario with no variant", () => {
+    expect((inventory(experiment(), postScenario) as { replicas?: unknown }).replicas).toBeUndefined();
   });
 });
