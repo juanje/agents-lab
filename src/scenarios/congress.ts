@@ -1557,11 +1557,13 @@ const SCARCE_DAYS = 14;
 
 /**
  * The rooms of a hotel left on a night, "<hotel> day <n>", on the world's day: its rooms × days left / 14, rounded down,
- * in the last 14 days before that night, less those booked.
+ * in the last 14 days before that night, and never fewer than 1 up to and on that night's day (FR-CONGRESS-18), less
+ * those booked, never below 0.
  */
 function roomsLeft(state: Congress, hotel: Hotel, option: string, today: number): number {
-  const daysLeft = Math.max(0, dayOfDate(/day \d+$/.exec(option)?.[0]) - today);
-  return Math.max(0, Math.floor((hotel.rooms * Math.min(SCARCE_DAYS, daysLeft)) / SCARCE_DAYS) - state.travel.booked.filter((booking) => booking.option === option).length);
+  const daysLeft = dayOfDate(/day \d+$/.exec(option)?.[0]) - today;
+  const scarce = daysLeft < 0 ? 0 : Math.max(1, Math.floor((hotel.rooms * Math.min(SCARCE_DAYS, daysLeft)) / SCARCE_DAYS));
+  return Math.max(0, scarce - state.travel.booked.filter((booking) => booking.option === option).length);
 }
 
 /** The day of a date "day <n>". */
