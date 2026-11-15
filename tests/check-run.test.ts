@@ -130,7 +130,8 @@ describe("a cancelled contract is never the live one (FR-CONGRESS-19)", () => {
   it("answers a cancel_booking naming a cancelled contract not_available, and keeps the live one and its date", () => {
     const venueOf = rebooked();
     expect(calls(venueOf.answer("day 4 Thursday 09:00", "Act: cancel_booking. contract: v1-contract-1."), "send_mail")).toEqual([{ to: "organiser", act: "not_available", fields: { what: "v1-contract-1" } }]);
-    expect(calls(venueOf.answer("day 4 Thursday 10:00", "Act: hold. date: day 26."), "send_mail")).toEqual([{ to: "organiser", act: "unavailable", fields: { date: "day 26" } }]);
+    // The organiser asking about its own date is told its live contract (FR-CONGRESS-22).
+    expect(calls(venueOf.answer("day 4 Thursday 10:00", "Act: hold. date: day 26."), "send_mail")).toEqual([{ to: "organiser", act: "contract_held", fields: { contract: "v1-contract-2", date: "day 26" } }]);
   });
 
   it("changes, extends and announces changes on the live contract", () => {
@@ -162,7 +163,8 @@ describe("a cancelled contract is never the live one (FR-CONGRESS-19)", () => {
     for (const [time, message] of [...booking("hall-a"), ["day 2 Tuesday 09:00", "Act: cancel_booking."], ...booking("hall-a", 2, "day 3 Wednesday 09:0")]) take(time, message);
     take("day 9 Tuesday 10:00", "");
     take("day 11 Thursday 10:00", "");
-    expect(calls(take("day 12 Friday 10:00", "Act: hold. date: day 26."), "send_mail")).toEqual([{ to: "organiser", act: "unavailable", fields: { date: "day 26" } }]);
+    // The organiser asking about its own date is told its live contract (FR-CONGRESS-22).
+    expect(calls(take("day 12 Friday 10:00", "Act: hold. date: day 26."), "send_mail")).toEqual([{ to: "organiser", act: "contract_held", fields: { contract: "v1-contract-2", date: "day 26" } }]);
   });
 });
 

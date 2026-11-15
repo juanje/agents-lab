@@ -470,6 +470,19 @@ export const venueRules: RuleSet = {
 
     /** A customer's contracted or confirmed booking. */
     const bookingOf = (customer: string) => contracts.find((each) => each.to === customer && isLive(each));
+    /** Who holds each date it holds. */
+    const holders = new Map<string, string>();
+    /**
+     * What a customer asking about a date it holds or has under a live contract is told: the contract, as book answers
+     * it (FR-CONGRESS-09), or the hold with its end, its own or the end a challenge gave it (FR-CONGRESS-22).
+     */
+    const ownBooking = (customer: string, date: string): Answer | undefined => {
+      const contract = contracts.find((each) => each.to === customer && each.date === date && isLive(each));
+      if (contract !== undefined) return { act: "contract_held", fields: { contract: contract.id, date } };
+      if (statusOf(date) !== "held" || holders.get(date) !== customer) return undefined;
+      const end = timers.find(({ kind, date: timed }) => (kind === "lapse" || kind === "challenge_lapse") && timed === date);
+      return { act: "held", fields: { date, ...(end === undefined ? {} : { until: party.text(end.at) }) } };
+    };
     /** A change pending on a booking holds it: what would change it is answered change_pending, with the change's fields (FR-CONGRESS-16). */
     const pending = (contract: Contract | undefined): Answer | undefined => (contract?.change === undefined ? undefined : { act: "change_pending", fields: { kind: contract.change.kind, ...contract.change.mailed } });
 
@@ -480,7 +493,9 @@ export const venueRules: RuleSet = {
         if (held !== undefined) return held;
       }
       switch (act) {
-        case "ask_quote":
+        case "ask_quote": {
+          const own = ownBooking(from, date);
+          if (own !== undefined) return own;
           if (!free(date)) return unavailable(date);
           return {
             act: "quote",
@@ -499,13 +514,17 @@ export const venueRules: RuleSet = {
               indicative: venue.indicative === true,
             },
           };
+        }
         case "request_document":
           if (fields.kind === "floor_plan" || fields.kind === "photos") return { act: "document", fields: { kind: String(fields.kind), content: plan() } };
           if (fields.kind === "terms") return { act: "document", fields: { kind: "terms", content: terms() } };
           return notAvailable(fields.kind);
         case "hold": {
+          const own = ownBooking(from, date);
+          if (own !== undefined) return own;
           if (statusOf(date) !== "free") return statusOf(date) === "held" ? { act: "held", fields: { date } } : unavailable(date);
           dates.set(date, "held");
+          holders.set(date, from);
           counts.holds += 1;
           const until = party.now + venue.hold_days * 1440;
           timers.push({ at: until, kind: "lapse", date });
@@ -514,8 +533,8 @@ export const venueRules: RuleSet = {
         }
         case "book": {
           // A customer that already holds a contract for the date is told so (FR-CONGRESS-09).
-          const held = contracts.find((each) => each.to === from && each.date === date && ["contracted", "confirmed"].includes(statusOf(date)));
-          if (held !== undefined) return { act: "contract_held", fields: { contract: held.id, date } };
+          const own = ownBooking(from, date);
+          if (own?.act === "contract_held") return own;
           if (!free(date)) return unavailable(date);
           const rooms = String(fields.rooms ?? "").split(/,\s*/).filter((room) => room !== "");
           const missing = rooms.find((room) => !venue.rooms.some(({ id }) => id === room));
