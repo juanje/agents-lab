@@ -1043,7 +1043,7 @@ export const speakerRules: RuleSet = {
      * Its answer to each session's invitation, by the session, with the offer it answered (FR-CONGRESS-09), and when it
      * last answered accept_if (FR-CONGRESS-16).
      */
-    const sessions = new Map<string, { offer: Fields; answer: string; conditionalAt?: number }>();
+    const sessions = new Map<string, { offer: Fields; answer: string; fields: Fields; conditionalAt?: number }>();
     /** Whether it would accept, drawn once, the first time it needs it (FR-CONGRESS-09). */
     let wouldAccept: boolean | undefined;
     /** The fee it agreed to, and whether it has committed it. */
@@ -1074,9 +1074,10 @@ export const speakerRules: RuleSet = {
     const answering = (act: string, fields: Fields = {}): Answer => {
       record.answer = act;
       const key = String(invitation.session);
-      sessions.set(key, { offer: invitation, answer: act, ...(act === "accept_if" ? { conditionalAt: party.now } : {}) });
+      const given = { session: invitation.session as number, ...fields };
+      sessions.set(key, { offer: invitation, answer: act, fields: given, ...(act === "accept_if" ? { conditionalAt: party.now } : {}) });
       if (act === "accept") agreedFee = Number(invitation.fee ?? 0) > 0 ? Number(invitation.fee) : 0;
-      return { act, fields: { session: invitation.session as number, ...fields } };
+      return { act, fields: given };
     };
 
     /** Whether any session's invitation has this answer. */
@@ -1089,8 +1090,9 @@ export const speakerRules: RuleSet = {
       if (record.cancelled && (act === "confirm" || act === "change")) return { act: "not_available", fields: { what: "acceptance" } };
       switch (act) {
         case "invite": {
-          // A second invitation to a session it has answered changes nothing (FR-CONGRESS-09).
-          if (sessions.has(String(fields.session))) return undefined;
+          // A second invitation to a session it has answered changes nothing (FR-CONGRESS-09), and gets its answer again (FR-CONGRESS-23).
+          const answered = sessions.get(String(fields.session));
+          if (answered !== undefined) return { act: answered.answer, fields: answered.fields };
           invitation = fields;
           record.invitation = JSON.stringify(fields);
           if (speaker.partner === true) return answering("accept");
@@ -1194,7 +1196,8 @@ export const speakerRules: RuleSet = {
         // Not once it is out: it cancelled, had its invitation withdrawn or withdrew from every session (FR-CONGRESS-17).
         const out = record.cancelled || anyAnswered("withdrawn") || (anyAnswered("withdraw") && !anyAnswered("accept") && !anyAnswered("accept_if"));
         if (roomless && !out) yield* tell("no_room");
-        yield* party.handle(answer, speaker.pick_up ?? 1, random);
+        // A repeated invitation is answered as before, not already_sent (FR-CONGRESS-23).
+        yield* party.handle(answer, speaker.pick_up ?? 1, random, ({ act }) => act === "invite");
         // A condition not met by day 19, or two world days after its conditional answer when later, makes it withdraw
         // (FR-CONGRESS-16).
         const waitingOn = [...sessions.entries()].filter(([, session]) => session.answer === "accept_if");
