@@ -125,6 +125,8 @@ function confirmedC1(context: Context, rooms: string): void {
 }
 
 Given('the organiser\'s contract "c-1" with "v1" is confirmed at 2000 with "hall-a" and "hall-b"', function (this: Context) {
+  // At 2000 a day, whatever the day price the Background gives "v1" (FR-CONGRESS-19's is 2100).
+  changePools(this, (pool) => ((pool.venue.find(({ id }) => id === "v1") as TomlTable).price = 2000));
   confirmedC1(this, "hall-a, hall-b");
 });
 

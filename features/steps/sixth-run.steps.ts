@@ -116,9 +116,15 @@ function sentAfter(context: Context, party: string, act: string): Record<string,
 const LATE = 10;
 
 // A one-room booking can lose its room.
-Given(/^the organiser's contract "c-1" with "v1" is confirmed at 2000 with "(hall-a|room-c)" only$/, function (this: Context, room: string) {
-  booking(this, "v1", room, true);
-});
+Given(
+  /^the organiser's contract "c-1" with "v1" is confirmed at 2000 with "(hall-a|room-c)" only, and ("hall-b" is booked by another customer|"hall-a" and "hall-b" are booked by other customers)$/,
+  function (this: Context, room: string, others: string) {
+    // Rooms of "v1" other customers have that day, so no equal room is free to move to (FR-CONGRESS-19).
+    const taken = [...others.matchAll(/"([\w-]+)"/g)].map(([, id]) => id);
+    changePools(this, (pool) => (pool.venue.find(({ id }) => id === "v1") as TomlTable).rooms_booked_by_others = taken);
+    booking(this, "v1", room, true);
+  },
+);
 
 When('"v1" draws "room_lost" on "c-1" at "day 8 10:00"', { timeout: 60_000 }, async function (this: Context) {
   changeAt(this, "day 8 10:00", "room_lost");

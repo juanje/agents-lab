@@ -295,8 +295,10 @@ function roomLostAt(context: Context) {
   change(context, (configuration) => ((configuration.perturbations as TomlTable).change = { at: "day 1 13:00", kind: "room_lost" }));
 }
 
-Given('the organiser\'s contract with "v1" has only "hall-b", its smallest room, and the perturbation "change" of the kind "room_lost" fires', function (this: Context) {
-  // "hall-b", 40 seats, has no free room of "v1" with fewer seats to move to (FR-CONGRESS-17).
+Given('the organiser\'s contract with "v1" has only "hall-b", its smallest room, "hall-a" is booked by another customer, and the perturbation "change" of the kind "room_lost" fires', function (this: Context) {
+  // "hall-b", 40 seats, has no free room of "v1" with fewer seats to move to (FR-CONGRESS-17), nor one with as many, since
+  // another customer has "hall-a" (FR-CONGRESS-19).
+  changePools(this, (pool) => (pool.venue[0].rooms_booked_by_others = ["hall-a"]));
   before(this, bookingTurns(this, "hall-b"));
   roomLostAt(this);
 });
@@ -311,6 +313,8 @@ Then(
   { timeout: 30_000 },
   async function (this: Context) {
     turnsBefore.set(this, []);
+    // Both rooms the organiser's: no other customer has "hall-a".
+    changePools(this, (pool) => delete pool.venue[0].rooms_booked_by_others);
     // The room is lost at 13:00; then the organiser asks to have both rooms.
     before(this, bookingTurns(this, "hall-a, hall-b"));
     untilTime(this, "day 1 13:30");
