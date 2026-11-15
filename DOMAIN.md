@@ -162,11 +162,17 @@ The recorder writes a line per event. The inventory and the run's setup go first
   - one with the outcome `success` also gives `contextTokensBefore` and `contextTokensAfter` as Pi estimates them and the `summary` the context holds from then on;
   - one that did not finish, `model_error`, `timeout` or `cut_off`, gives neither.
 - `metric_sample` and `run_stopped`.
+- `world_finished` (FR-RUN-08): `atMs`, when the change that finished the world was applied, and `worldTime` for a run with a calendar.
 - Every time in them is by `performance.now()`.
 
 **Stopping**
 - The first error that stops a run writes `run_stopped` with its message at once and aborts the run as its time limit does; nothing is written after it.
 - A tool that throws, or a session that fails to open, stops the run: the scenario's defect, not the agent's behaviour, so the call that threw has no `tool_call` line.
+
+**A finished world (FR-RUN-08)**
+- A scenario may give `finished(state)`; `runAgents` watches the world with it, registered after every other watcher, so the change's own lines come first.
+- The first change after which it says so writes `world_finished` and aborts the run's end signal, as the time limit does: calls, turns and component actions still running are cut off; the call or action whose change finished the world has already applied and keeps its outcome.
+- The run then ends as usual (parts, outcomes, the final `metric_sample`) and returns, so `lab run` lists it as completed. With no `finished`, or when the time limit passes first, no line is written.
 
 ### Metrics
 
