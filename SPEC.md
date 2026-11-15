@@ -44,6 +44,7 @@ Experiments are written outside this repository, in the experiment language (FR-
 | v0.1 | E13 micro vs macro (Schelling): three technical pilots, then parked | below | built enough for E13's pilots |
 | v0.2 | E2–E4 in an invented workplace (A19, A20, I4); E1's pilots ran here before E1 moved to the congress | below, in this build order | built for E1's pilots; E2–E4 next |
 | v0.3 | E1 in a congress (A18, A19): instructions and character | below, in this build order | under way: items 1–9 and 11–23 built, six technical runs and a check run; E1 restarts from a baseline with no traps or events |
+| workshop | The team experiments (EQ series) in a workshop: EQ0's technical run, then EQ1, the base by model | below, in this build order | contracts written |
 | v0.4 | E16 model monoculture and vote visibility | not written | later |
 | v0.5 | A single-agent experiment with tools and memory across runs (E15 or E7; the congress world's sequences) | not written | later |
 | v0.6 | World and agent forks | not written | later |
@@ -129,6 +130,14 @@ Experiments are written outside this repository, in the experiment language (FR-
 24. FR-CONGRESS-23 (corrections from the baseline's second check run: standard for no diet, free outside catering said so, unknown rooms named, repeated invitations answered, an extra confirmed once, on time means real by day 12), before E1's baseline
 25. FR-CONGRESS-24 (from the baseline's first full run: D5 reads the confirmed order, done with exceptions, parts re-evaluated from the run's records), before E1's rerun
 
+**Workshop build order (EQ series).** The world is designed in `agents-lab-experiments/worlds/workshop/world.md` and its first experiment in `experiments/EQ1-baseline/design.md`; EQ0's technical run needs all six.
+1. FR-STIMULUS-02 (an effector's effect delivers stimuli to other agents)
+2. FR-RUN-08 (a run ends when its world is finished)
+3. FR-WORKSHOP-01 (the workshop from its materials)
+4. FR-WORKSHOP-02 (the workers' tools)
+5. FR-WORKSHOP-03 (workers speak to the room)
+6. FR-WORKSHOP-04 (done, and the workshop's measures)
+
 **Small known gaps** (to close when convenient): `lab summarize` prints numbers at full precision; a completed run whose log has no metric sample gives no values without saying so; a run in the index whose log is missing fails with Node's own error. The `wait` tool's description does not state `wait_max_minutes`, so the worker learns the limit only from a refusal; `wait_max_minutes` is not checked when the configuration loads. FR-WORKPLACE-07's scenario whose wait ends `interrupted` "about 50 milliseconds into the run" failed once in a full gate (2026-11-13) and passed on three reruns: it needs more slack. The run test that ends an effector's call early at a stimulus failed once under load (2026-11-13) and passed on reruns, as did one scenario in a full gate the same day.
 
 **Not yet ordered:** FR-EFFORT-01, FR-METRIC-01, FR-EXPERIMENT-03, FR-RUN-03, FR-ANALYSIS-01.
@@ -181,6 +190,14 @@ Information an agent does not ask for reaches it only as a stimulus: a message d
 - **What the agent reads:** the source, a colon and the content, the same for every channel (for example `town bell: The bell rings.`). The channel and the source are also kept with the message for the log.
 - **The rhythm channel:** every scenario declares a channel named `rhythm`, with its source and its text; it is the stimulus each activation starts with. The engine writes no text of its own.
 *Why:* information does not come from nowhere; who or what sends it, and through what channel, is part of the system and must be declared like everything else the agent meets (NFR-04).
+
+#### FR-STIMULUS-02: An effector's effect can deliver stimuli to other agents
+An effector may declare that its effect delivers stimuli: the channel it delivers through, one the scenario declares, and, from the state right after its effect is applied and the call, the deliveries, each with the agent it reaches, its source and the values that fill the channel's text (FR-MESSAGE-01). The deliveries are made as the effect is applied, when the call ends (or ends early, FR-WORKPLACE-07); a call whose effect is not applied delivers nothing: one that fails, one refused before it runs, and one cut off by the time limit. Each delivery reaches its agent as any stimulus does (FR-STIMULUS-01): at the agent's next model turn while it works, when it next wakes while it rests, at once when its channel wakes (FR-CONGRESS-08); and it ends a call that ends early at a stimulus (FR-WORKPLACE-07).
+- **Recorded:** each delivery is a stimulus line (FR-RECORD-01) with the agent it reached, the channel, the delivery's source, the content and when it was delivered.
+- **The inventory** gives, for the effector, the channel it delivers through, beside the channel's declared source and text.
+- **Refusals:** an effector that delivers through a channel the scenario does not declare is refused before any model call, with an error that names the tool and the channel. A delivery to the effector's own caller, or to a name that is no agent of the run, is a defect of the scenario: the run stops, with an error that names the tool and the name.
+
+*Why:* when agents talk, what one says reaches the others because the speaker acted, not because a mechanism of the world sent it; the speaker is the source, and speaking takes its time like any act. Until now only components and the engine's own media could deliver stimuli.
 
 #### FR-CLOCK-01: Each agent has its own activations
 Each agent's rhythm wakes it with a stimulus from its rhythm channel. Awake, the agent works through its tools in its session; its activation ends when a model turn makes no tool call. It then waits an interval drawn from its rhythm and wakes again. Before each activation, the first included, the agent waits an interval drawn from its rhythm, so agents do not all wake at the same moment. Its session lasts the whole run, so the agent keeps what it perceived and did. No agent waits for another, and agents' paces differ through their rhythms, their models' latency, their tools' durations, their energy and what they wait for.
