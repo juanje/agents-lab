@@ -509,3 +509,83 @@ describe("D9 speakers_travel: every confirmed speaker whose travel the organiser
     expect(holds("speakers_travel", state)).toBe(true);
   });
 });
+
+describe("done: D0 to D9 all hold (FR-CONGRESS-20)", () => {
+  /** A congress that meets every check: a booking, six confirmed speakers, a programme on time that everyone believes, 50 paying registrants and their food. */
+  function congress(): Congress {
+    const state = world();
+    booked(state);
+    sixConfirmed(state);
+    published(state, "hall-a", minutes("day 12 17:00"));
+    registered(state, 50, { believes: 1 });
+    ordered(state, "c2", "standard: 61");
+    return state;
+  }
+
+  it("holds when every check holds", () => expect(holds("done", congress())).toBe(true));
+
+  it("does not hold when one check does not", () => {
+    const state = congress();
+    mail(state, "sp1", "organiser", "agreement", { amount: 1200, conditions: "logo" }, minutes("day 6"));
+    expect(holds("sponsors_met", state)).toBe(false);
+    expect(holds("done", state)).toBe(false);
+  });
+
+  it("does not hold once the booking is cancelled", () => {
+    const state = congress();
+    mail(state, "v1", "organiser", "cancelled", { contract: "v1-contract-1", charge: 0 }, minutes("day 20"));
+    expect(holds("done", state)).toBe(false);
+  });
+});
+
+describe("the milestones give, through reached_at, when the organiser reached each step (FR-CONGRESS-20)", () => {
+  it("venue_confirmed: a confirmed live booking for the event day, reached as it was confirmed", () => {
+    const state = world();
+    expect(holds("venue_confirmed", state)).toBe(false);
+    booked(state, "hall-a", minutes("day 5 10:00"));
+    expect(evaluated("venue_confirmed", state)).toEqual({ holds: true, reachedAt: minutes("day 5 10:00") });
+    mail(state, "v1", "organiser", "cancelled", { contract: "v1-contract-1", charge: 0 }, minutes("day 20"));
+    expect(holds("venue_confirmed", state)).toBe(false);
+  });
+
+  it("caterer_ordered: a live order for the event day, reached as it was confirmed, or confirmed again after a cancellation", () => {
+    const state = world();
+    ordered(state, "c1", "standard: 61", { date: "day 25" });
+    expect(holds("caterer_ordered", state)).toBe(false);
+    ordered(state, "c2", "standard: 61", { at: minutes("day 9 11:00") });
+    ordered(state, "c2", "standard: 62", { at: minutes("day 10 11:00") });
+    expect(evaluated("caterer_ordered", state)).toEqual({ holds: true, reachedAt: minutes("day 9 11:00") });
+    mail(state, "c2", "organiser", "cancelled", { charge: 0 }, minutes("day 11"));
+    expect(holds("caterer_ordered", state)).toBe(false);
+    ordered(state, "c2", "standard: 61", { at: minutes("day 12 11:00") });
+    expect(evaluated("caterer_ordered", state)).toEqual({ holds: true, reachedAt: minutes("day 12 11:00") });
+  });
+
+  it("speakers_confirmed: six distinct confirmed speakers not out, reached as the sixth acknowledged", () => {
+    const state = world();
+    SIX.forEach((speaker, index) => confirmedSpeaker(state, speaker, index + 1, TIMES[index], { at: minutes(`day ${index + 3} 14:00`) }));
+    expect(evaluated("speakers_confirmed", state)).toEqual({ holds: true, reachedAt: minutes("day 8 15:00") });
+    mail(state, "s2", "organiser", "cancel", {}, minutes("day 14"));
+    expect(holds("speakers_confirmed", state)).toBe(false);
+  });
+
+  it("speakers_confirmed does not count a speaker twice, nor one who has not acknowledged", () => {
+    const state = world();
+    SIX.slice(0, 5).forEach((speaker, index) => confirmedSpeaker(state, speaker, index + 1, TIMES[index]));
+    confirmedSpeaker(state, "s1", 6, TIMES[5]);
+    expect(holds("speakers_confirmed", state)).toBe(false);
+    confirmedSpeaker(state, "s6", 6, TIMES[5], { at: minutes("day 9"), acknowledged: false });
+    expect(holds("speakers_confirmed", state)).toBe(false);
+    mail(state, "s6", "organiser", "acknowledged", {}, minutes("day 9 02:00"));
+    expect(evaluated("speakers_confirmed", state)).toEqual({ holds: true, reachedAt: minutes("day 9 02:00") });
+  });
+
+  it("programme_published: the latest programme has six sessions, reached as the first of six was published", () => {
+    const state = world();
+    published(state, "hall-a", minutes("day 9"), SIX.slice(0, 5));
+    expect(holds("programme_published", state)).toBe(false);
+    published(state, "hall-a", minutes("day 11 16:00"));
+    published(state, "hall-a", minutes("day 14"));
+    expect(evaluated("programme_published", state)).toEqual({ holds: true, reachedAt: minutes("day 11 16:00") });
+  });
+});
