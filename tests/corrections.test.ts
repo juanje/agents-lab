@@ -151,8 +151,8 @@ describe("a venue's bookings and lost rooms (FR-CONGRESS-09)", () => {
   }
 
   it("takes a room only from a booking with more than one; the lost room stays unavailable for that date", () => {
-    // A booking with one room has its price raised instead (FR-CONGRESS-11).
-    expect(losing("main-hall").changed.map(({ act }) => act)).toEqual(["price_change"]);
+    // A booking of its smallest room only has its price raised instead (FR-CONGRESS-11, FR-CONGRESS-17).
+    expect(losing("room-b").changed.map(({ act }) => act)).toEqual(["price_change"]);
 
     // The change answered first: a pending change holds the booking (FR-CONGRESS-16).
     const { changed, later } = losing("main-hall, room-b", [

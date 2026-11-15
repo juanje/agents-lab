@@ -185,9 +185,10 @@ describe("venues' corrections (FR-CONGRESS-11)", () => {
     expect(mailed(steps)[0].fields.extras).toBe("early_access: 50; ramp: 200");
   });
 
-  it("raises its price instead of taking a room from a booking with one room", () => {
+  it("raises its price instead of taking a room from a booking with one room and no free room with fewer seats", () => {
+    // "hall-b", 40 seats, is its smallest room (FR-CONGRESS-17).
     const rules = venueRules.start(venue(), new Random(1));
-    conversation(rules, [book("hall-a"), accept]);
+    conversation(rules, [book("hall-b"), accept]);
     const steps = drive(rules, tools(() => "", () => "day 1 Monday 12:00"), [[venueChange("room_lost")]], true);
     expect(mailed(steps).map(({ act }) => act)).toEqual(["price_change"]);
   });
