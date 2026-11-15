@@ -49,7 +49,7 @@ Feature: Corrections from the E1 baseline's first check run
 
     Examples:
       | first          | result                                                                                 |
-      | "day 3 10:00"  | "programme_published" was reached at "day 11 10:00", and "programme_on_time" holds    |
+      | "day 3 10:00"  | "programme_published" was reached on "day 8", when that version became real, and "programme_on_time" holds |
       | "day 9 10:00"  | "programme_published" was reached at "day 9 10:00", and "programme_on_time" holds     |
 
   Scenario: A programme first made real after day 12 is late
