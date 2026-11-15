@@ -345,7 +345,7 @@ The recorder writes a line per event. The inventory and the run's setup go first
   - `held`;
   - `reached_at` — the start of the last interval in which it held —;
   - `effort` `{ calls, money }` — calls whose arguments name an actor, and payments and commitments from an agent to an actor, from its activation to `reached_at` or its evaluation —;
-  - `misapplications` with `tool`, `arguments`, `at`, and `kind` unless it is an outcome.
+  - `misapplications` with `tool`, `arguments`, `at`, and `kind` unless it is an outcome; only acts that took effect (outcome `success`, or none given) are matched, so a refused call (`missing_field`, `unknown_recipient`, `act_not_taken`, an unanswered call...) never is (FR-CONGRESS-18).
 - A part due at a world time keeps the run going until then (or the time limit).
 - As the run ends the book evaluates what is due and `end` parts and writes `parts_not_evaluated` with the others.
 - Part times are written `"day <n> HH:MM"`.
@@ -558,7 +558,7 @@ The recorder writes a line per event. The inventory and the run's setup go first
 - Caterers and venues commit a cancellation charge as they invoice it.
 
 **Hotels**
-- A hotel's rooms left for a night are rooms × min(14, days left) / 14, rounded down, less those booked.
+- A hotel's rooms left for a night are rooms × min(14, days left) / 14, rounded down and never fewer than 1 up to and on that night's day (0 once it has passed), less those booked, never below 0 (FR-CONGRESS-18).
 - `hotel_overbooks` (a perturbation component, never a venue's) at its time cancels every room booked for the night before the event, releasing its commitment, then delivers its channel to each traveller, not held.
 - A speaker it hits calls the organiser with `no_room` and mails it if the call is not answered, unless it is out: it cancelled, had its invitation withdrawn, or withdrew from every session (FR-CONGRESS-17).
 - On the night's own day a hotel has no room left for it, so after `hotel_overbooks` only a train in time can still meet P19.
