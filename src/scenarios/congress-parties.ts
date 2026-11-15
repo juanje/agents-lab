@@ -313,6 +313,8 @@ interface VenueParams {
   cancellation: CancellationStep[];
   indicative?: boolean;
   enquiries_per_day?: number;
+  /** The run's start, in world minutes since day 1's midnight, from which its other customers' enquiries count (FR-CONGRESS-21). */
+  starts_at?: number;
   pick_up?: number;
   booked_by_others?: string[];
   /** The rooms other customers booked on the event day, which no room loss moves a booking to (FR-CONGRESS-19). */
@@ -374,6 +376,20 @@ interface Timer {
   kind: "lapse" | "challenge_lapse" | "reminder" | "unpaid_cancel" | "enquiry" | "room_allocation" | "change_lapse";
   date?: string;
   contract?: string;
+  /** For an enquiry, and the lapse of the hold it challenged: whether that other customer books a free date (FR-CONGRESS-21). */
+  books?: boolean;
+}
+
+/**
+ * A venue's other customers (FR-CONGRESS-21): each enquiry's world time, an interval drawn at a rate a day after the one
+ * before, from a time; and whether it books a free date, drawn after it. From a sequence of their own, so nothing else
+ * the venue draws or does moves them.
+ */
+export function* otherCustomers(random: Random, from: number, rate: number): Generator<{ at: number; books: boolean }, never> {
+  for (let at = from; ; ) {
+    at += (-Math.log(1 - random.next()) / rate) * 1440;
+    yield { at, books: random.next() < 0.5 };
+  }
 }
 
 /**
@@ -392,7 +408,7 @@ const CHANGE_KINDS = ["room_lost", "price_change"];
  * through its own tools.
  */
 export const venueRules: RuleSet = {
-  start: (given, random) => {
+  start: (given, random, sequence) => {
     const venue = given as unknown as VenueParams;
     const party = new Party(given);
     const dates = new Map<string, string>((venue.booked_by_others ?? []).map((date) => [date, "other"]));
@@ -401,7 +417,7 @@ export const venueRules: RuleSet = {
     const history: Record<string, string | number>[] = [];
     const counts = { holds: 0, contracts: 0, confirmations: 0, cancellations: 0, invoices_issued: 0, lost_to_others: 0 };
     const eventDate = `day ${venue.event_day}`;
-    const record = (event: string, fields: Record<string, string | number> = {}) => history.push({ at: party.text(), event, ...fields });
+    const record = (event: string, fields: Record<string, string | number> = {}, at = party.now) => history.push({ at: party.text(at), event, ...fields });
     const statusOf = (date: string) => dates.get(date) ?? "free";
     /** The rooms lost for each date, which no booking can have back (FR-CONGRESS-09). */
     const lostRooms = new Map<string, Set<string>>();
@@ -422,7 +438,6 @@ export const venueRules: RuleSet = {
         ...(venue.opening === undefined ? [] : [`Opening: ${venue.opening}.`]),
         ...(venue.indicative === true ? ["Rooms are indicative until allocated."] : []),
       ].join(" ");
-    const after = (minutes: number, timer: Omit<Timer, "at">) => timers.push({ at: party.now + minutes, ...timer });
     /** The commitments it recorded for a contract, from its ledger, each released. */
     const releaseAll = (contract: Contract) => party.release((what) => what.startsWith(contract.id));
     const notAvailable = (what: unknown): Answer => ({ act: "not_available", fields: { what: String(what) } });
@@ -658,13 +673,13 @@ export const venueRules: RuleSet = {
       return invoice?.paid === true;
     }
 
-    /** Another customer's draw for a free date: it books it with probability 0.5. */
-    const otherCustomer = (date: string) => {
-      if (random.next() < 0.5) {
+    /** Another customer for a free date, at a time: it books it as its enquiry drew (FR-CONGRESS-21). */
+    const otherCustomer = (date: string, books: boolean, at: number) => {
+      if (books) {
         dates.set(date, "other");
         counts.lost_to_others += 1;
-        record("booked_by_other", { date });
-      } else record("left_free", { date });
+        record("booked_by_other", { date }, at);
+      } else record("left_free", { date }, at);
     };
 
     /** What the venue does when one of its timers comes: a change of its own state (FR-CONGRESS-13). */
@@ -678,17 +693,17 @@ export const venueRules: RuleSet = {
           if (statusOf(date) !== "held") return;
           dates.set(date, "free");
           record("hold_lapsed", { date });
-          if (timer.kind === "challenge_lapse") otherCustomer(date);
+          if (timer.kind === "challenge_lapse") otherCustomer(date, timer.books === true, timer.at);
           return;
         }
         case "enquiry": {
-          record("enquiry", { date: eventDate });
-          if (statusOf(eventDate) === "free") otherCustomer(eventDate);
+          record("enquiry", { date: eventDate }, timer.at);
+          if (statusOf(eventDate) === "free") otherCustomer(eventDate, timer.books === true, timer.at);
           else if (statusOf(eventDate) === "held" && !timers.some(({ kind }) => kind === "challenge_lapse")) {
             const confirmBy = party.now + 48 * 60;
             // A challenged hold ends when the organiser must confirm by, in place of its own end.
             timers.splice(0, timers.length, ...timers.filter(({ kind, date }) => !(kind === "lapse" && date === eventDate)));
-            timers.push({ at: confirmBy, kind: "challenge_lapse", date: eventDate });
+            timers.push({ at: confirmBy, kind: "challenge_lapse", date: eventDate, books: timer.books === true });
             yield* party.write(venue.organiser, "hold_challenged", { date: eventDate, confirm_by: party.text(confirmBy) });
           }
           scheduleEnquiry();
@@ -811,10 +826,15 @@ export const venueRules: RuleSet = {
       };
     }
 
-    /** The next other customer's enquiry, after an interval drawn from its sequence at enquiries_per_day. */
+    /** Its other customers, from their own sequence, `enquiries of <venue>`, from its first moment (FR-CONGRESS-21). */
+    let enquiries: Generator<{ at: number; books: boolean }> | undefined;
+    /** The next other customer's enquiry, at enquiries_per_day. */
     function scheduleEnquiry(): void {
       const rate = venue.enquiries_per_day ?? 0;
-      if (rate > 0) after((-Math.log(1 - random.next()) / rate) * 1440, { kind: "enquiry" });
+      if (rate <= 0) return;
+      enquiries ??= otherCustomers(sequence?.("enquiries") ?? random, venue.starts_at ?? party.now, rate);
+      const { at, books } = enquiries.next().value as { at: number; books: boolean };
+      timers.push({ at, kind: "enquiry", books });
     }
 
     function* script(): Script {

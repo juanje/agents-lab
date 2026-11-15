@@ -956,6 +956,8 @@ function worldOf(rules: unknown, id: string, configuration: Configuration, city:
     ...((configuration.mail as TomlTable | undefined)?.delivery_minutes === undefined ? {} : { mail_delivery_minutes: (configuration.mail as TomlTable).delivery_minutes }),
     // Which diets its own caterer serves, and their limits, by which it gives permits for outside diet meals (FR-CONGRESS-17).
     ...(inHouse === undefined ? {} : { in_house_diets: (inHouse.diets ?? {}) as TomlTable }),
+    // The run's start, from which its other customers' enquiries count (FR-CONGRESS-21).
+    ...(typeof (configuration.calendar as TomlTable | undefined)?.start === "string" ? { starts_at: minutesOfTime((configuration.calendar as TomlTable).start as string) } : {}),
   };
 }
 
