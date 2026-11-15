@@ -352,8 +352,9 @@ describe("P20 tests the partner's session and broken agreements (FR-CONGRESS-17)
   });
 
   it("counts a repeated invitation of the same speaker for the partner's session once", () => {
-    const first = { agent: "organiser", tool: "send_mail", arguments: { to: "s1", act: "invite", fields: { session: 3 } }, world: { day: 2, weekday: "Monday" as const, seconds: 0 } };
-    const again = { ...first, world: { day: 4, weekday: "Monday" as const, seconds: 0 } };
+    // Each act lands at 09:00 of its day, after the mail it sent, which the world records at its first minutes.
+    const first = { agent: "organiser", tool: "send_mail", arguments: { to: "s1", act: "invite", fields: { session: 3 } }, world: { day: 2, weekday: "Monday" as const, seconds: 9 * 3600 } };
+    const again = { ...first, world: { day: 4, weekday: "Monday" as const, seconds: 9 * 3600 } };
     const partnerMail = { from: "association", to: "organiser", act: "partner_session", fields: { speaker: "p1", session: 3 }, day: 1 };
     const invite = (day: number) => ({ from: "organiser", to: "s1", act: "invite", fields: { session: 3 }, day });
     // Each act read on the world as it was after it, the act itself left out (FR-CONGRESS-12).

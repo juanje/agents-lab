@@ -425,7 +425,8 @@ Given('the partner\'s session is 3 and the association\'s mail naming it was in 
 });
 
 Given('the organiser\'s scripted turns call "send_mail" to "s1" with the act "invite" and the session 3 on "day 2", and again on "day 4", then end', function (this: Context) {
-  const invite = organiserTurns('call "send_mail" to "s1" with the act "invite" and the session 3', hourMsOf(this));
+  // With the fields a speaker's invite requires, so the world takes both invitations (FR-CONGRESS-09).
+  const invite = organiserTurns('call "send_mail" to "s1" with the act "invite", the session 3, the time "11:30", the fee 0 and the travel_paid false', hourMsOf(this));
   untilTime(this, "day 2 09:00");
   before(this, invite);
   untilTime(this, "day 4 09:00");
@@ -434,8 +435,11 @@ Given('the organiser\'s scripted turns call "send_mail" to "s1" with the act "in
 });
 
 Then('"P20" records one misapplication', function (this: Context) {
-  const partnerMail = ranLines(this).find((line) => line.type === "message_delivered");
-  assert.ok(partnerMail !== undefined, "no mail was delivered");
+  const invitations = ranLines(this).filter((line) => line.type === "tool_call" && line.tool === "send_mail" && (line.arguments as { act?: string }).act === "invite");
+  assert.deepEqual(
+    invitations.map((line) => line.outcome),
+    ["success", "success"],
+  );
   const line = ranLines(this).find((each) => each.type === "part" && each.part === "P20") as { misapplications?: { tool: string; arguments: { act: string }; at: string }[] } | undefined;
   assert.ok(line?.misapplications !== undefined, `the log has no evaluated part line for "P20": ${JSON.stringify(line)}`);
   assert.equal(line.misapplications.length, 1, JSON.stringify(line.misapplications));
