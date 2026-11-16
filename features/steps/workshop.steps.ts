@@ -1293,11 +1293,6 @@ Then(
   },
 );
 
-Then("it gives {string} as no key", function (this: Context, name: string) {
-  const value = samples(this)[0][name];
-  assert.ok(value !== null && typeof value === "object", `"${name}" is ${JSON.stringify(value)}`);
-  assert.deepEqual({ ...value }, {});
-});
 
 /** A call of a record, as a row of its table gives it: times in world minutes. */
 interface RecordRow {
@@ -1476,7 +1471,8 @@ Then("it gives {string} as exactly {string} {int}", function (this: Context, nam
   assert.deepEqual({ ...(measuresOf(this, "last")[name] as object) }, { [key]: count });
 });
 
-Then("the first metric sample gives {string} as no key", function (this: Context, name: string) {
+// "it" is the first metric sample a step named before it.
+Then(/^(?:the first metric sample|it) gives "(\w+)" as no key$/, function (this: Context, name: string) {
   const value = measuresOf(this, "first")[name];
   assert.ok(value !== null && typeof value === "object", `"${name}" is ${JSON.stringify(value)}`);
   assert.deepEqual({ ...value }, {});
@@ -1633,14 +1629,10 @@ Then("the log has a tool call line for {string}'s {string} call, with its outcom
   assert.equal(received.length, 1, `"${worker}" received ${received.length} "${tool}" results`);
 });
 
-Then("it has an {string} line naming that {string} began speaking", function (this: Context, type: string, worker: string) {
+// The line is the start of the call a step named last: a hand, or one of the speech tools.
+Then(/^it has an "(\w+)" line naming that "(\w+)" began (handing|speaking)$/, function (this: Context, type: string, worker: string, began: string) {
   const starts = logLines(this).filter((line) => line.type === type && line.agent === worker);
-  assert.deepEqual(starts.map((line) => ({ tool: line.tool, change: line.change })), [{ tool: workshopCall(this).tool, change: { began: "speaking" } }]);
-});
-
-Then("it has an {string} line naming that {string} began handing", function (this: Context, type: string, worker: string) {
-  const starts = logLines(this).filter((line) => line.type === type && line.agent === worker);
-  assert.deepEqual(starts.map((line) => ({ tool: line.tool, change: line.change })), [{ tool: "hand", change: { began: "handing" } }]);
+  assert.deepEqual(starts.map((line) => ({ tool: line.tool, change: line.change })), [{ tool: workshopCall(this).tool, change: { began } }]);
 });
 
 Then("each worker's tools include {string}, with its duration as {float} world minutes, and its texts", function (this: Context, tool: string, minutes: number) {
