@@ -1,10 +1,10 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { getCurrentSystemPrompt, getCurrentTools } from "@earendil-works/pi-ai";
 import { AgentSession } from "@earendil-works/pi-coding-agent";
 import { stringify } from "smol-toml";
-import { describe, expect, it, vi } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import type { ToolCall } from "../src/engine/adapter.ts";
 import { type RunSettings, run } from "../src/engine/run.ts";
 import { ParallelismLimit } from "../src/engine/parallelism.ts";
@@ -59,6 +59,9 @@ const settings: RunSettings = {
   thinkingLevel: "off",
   compaction: { enabled: false },
 };
+
+// Made as the file loads, before any test has a home of its own, so it is removed once the file's tests end.
+afterAll(() => rmSync(settings.logDirectory, { recursive: true, force: true }));
 
 /** What a run of an experiment runs, for a test that gives one and checks only where it is written. */
 const setup = {
