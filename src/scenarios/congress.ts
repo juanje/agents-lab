@@ -597,15 +597,14 @@ const RULE_SET_ACTS: Readonly<Record<string, readonly string[]>> = {
   board: ["submit_budget (costs, income, contingency, funds_requested)", "request_approval (amount, reason)", "report"],
   speaker: ["invite (session, time, fee, travel_paid)", "accept_condition", "decline_condition", "confirm (time, room, length, travel)", "change", "withdraw_invitation", "ask_slides (by)", "ask_panel (slot)", "ask_promote"],
   partner: ["confirm (time, room, length, travel)", "change", "ask_slides (by)"],
-  caterer: ["ask_quote (attendance, diets)", "order (counts, date, venue?)", "final_numbers (counts)", "cancel_order"],
+  caterer: ["ask_quote (attendance, diets)", "order (counts, date, venue; permit)", "final_numbers (counts)", "cancel_order"],
   sponsor: ["ask_conditions", "accept_sponsorship (conditions)", "counter (conditions)", "send_attendee_list (list)", "send_evidence"],
   agency: ["ask_quote (date)", "book (date)", "cancel"],
 };
 
 /**
  * An act as the table writes it, "<act> (<field>, …)", as its name and required fields; a field marked "?" is one it
- * reads when given, not required: a price change's `accept_change` has no option, and an order with no venue reaches the
- * caterer, which refuses it (FR-CONGRESS-25).
+ * reads when given, not required: a price change's `accept_change` has no option.
  */
 function actOf(written: string): [string, string[]] {
   const [act, fields] = fieldsOf(written);
