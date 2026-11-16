@@ -722,7 +722,7 @@ describe("done and the workshop's measures (FR-WORKSHOP-04)", () => {
       pieces_wasted: 0,
       modules_taken_apart: 0,
       first_take_time: null,
-      speech_before_first_take: { calls: 0, words: 0 },
+      speech_before_first_take: { "ask.calls": 0, "ask.words": 0, "answer.calls": 0, "answer.words": 0, "tell.calls": 0, "tell.words": 0 },
       own_first_take_time: {},
       builders_by_module: {},
       joins_share_by_worker: null,
@@ -732,9 +732,11 @@ describe("done and the workshop's measures (FR-WORKSHOP-04)", () => {
       refused_by_cause: {},
       bench_refusals: 0,
       finish_to_mount: {},
-      speech_by_worker: { "Dal.calls": 0, "Dal.words": 0, "Mik.calls": 0, "Mik.words": 0, "Nar.calls": 0, "Nar.words": 0, "Ren.calls": 0, "Ren.words": 0 },
+      speech_by_worker: Object.fromEntries(["Dal", "Mik", "Nar", "Ren"].flatMap((worker) => ["ask", "answer", "tell"].flatMap((kind) => [[`${worker}.${kind}.calls`, 0], [`${worker}.${kind}.words`, 0]]))),
       time_by_activity: {},
       handovers: {},
+      addressed: {},
+      questions_unanswered: {},
     });
   });
 
@@ -793,8 +795,29 @@ describe("done and the workshop's measures (FR-WORKSHOP-04)", () => {
     state = apply(state, "tell", "Nar", 2, 2.45, { to: ["Dal"], text: "I will take the zeth pieces" });
     expect(metric("first_take_time", state)).toBe(2.25);
     expect(metric("own_first_take_time", state)).toEqual({ Dal: 2.25, Mik: 2.35 });
-    expect(metric("speech_before_first_take", state)).toEqual({ calls: 1, words: 15 });
-    expect(metric("speech_by_worker", state)).toMatchObject({ "Dal.calls": 1, "Dal.words": 15, "Nar.calls": 1, "Nar.words": 6, "Ren.calls": 0 });
+    expect(metric("speech_before_first_take", state)).toEqual({ "ask.calls": 0, "ask.words": 0, "answer.calls": 0, "answer.words": 0, "tell.calls": 1, "tell.words": 15 });
+    expect(metric("speech_by_worker", state)).toMatchObject({ "Dal.tell.calls": 1, "Dal.tell.words": 15, "Dal.ask.calls": 0, "Nar.tell.calls": 1, "Nar.tell.words": 6, "Ren.tell.calls": 0 });
+  });
+
+  it("counts each speaker's applied calls of each kind by worker addressed, and the questions no later answer from that worker to the asker answered (FR-WORKSHOP-06)", () => {
+    let state = base();
+    state = apply(state, "answer", "Mik", 0, 0.35, { to: ["Dal"], text: "Yes, tessa first." });
+    state = apply(state, "answer", "Ren", 0, 0.35, { to: ["Dal"], text: "Not yet, sorry." });
+    state = apply(state, "ask", "Dal", 0.5, 0.85, { to: ["Mik"], text: "Who has bex?" });
+    state = apply(state, "ask", "Dal", 1, 1.35, { to: ["Mik", "Ren"], text: "Is ulm next?" });
+    state = apply(state, "answer", "Nar", 1.5, 1.85, { to: ["Dal"], text: "Ren has it." });
+    state = apply(state, "answer", "Mik", 2, 2.35, { to: ["Dal", "Nar"], text: "I have bex." });
+    state = apply(state, "tell", "Ren", 2, 2.35, { to: ["Dal"], text: "Busy right now." });
+    state = apply(state, "ask", "Dal", 3, 3.35, { to: ["Nar", "Nar"], text: "Need any help?" });
+    // Refused as to_self: it counts nowhere.
+    state = apply(state, "answer", "Ren", 3, 3.35, { to: ["Dal", "Ren"], text: "Yes it is." });
+    expect(metric("addressed", state)).toEqual({ "Mik.answer.Dal": 2, "Mik.answer.Nar": 1, "Ren.answer.Dal": 1, "Dal.ask.Mik": 2, "Dal.ask.Ren": 1, "Dal.ask.Nar": 1, "Nar.answer.Dal": 1, "Ren.tell.Dal": 1 });
+    expect(metric("questions_unanswered", state)).toEqual({ "Dal.Ren": 1, "Dal.Nar": 1 });
+    // An answer landing at the same time as the question does not answer it.
+    let same = base();
+    same = apply(same, "ask", "Dal", 0, 0.35, { to: ["Mik"], text: "Who has bex?" });
+    same = apply(same, "answer", "Mik", 0, 0.35, { to: ["Dal"], text: "I have bex." });
+    expect(metric("questions_unanswered", same)).toEqual({ "Dal.Mik": 1 });
   });
 
   it("counts the applied hands of pieces and of modules by giver and receiver, and keeps each as it lands (FR-WORKSHOP-05)", () => {
