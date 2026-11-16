@@ -130,8 +130,9 @@ describe("a caterer at a venue with a catering rule (FR-CONGRESS-07)", () => {
   };
 
   it("refuses an order for a venue that asks for a permit unless it gives one, or it is the venue's in-house caterer", () => {
-    expect(answer(caterer(), order("v1"))).toEqual({ act: "order_refused", fields: { reason: "venue_requires_permit" } });
-    expect(answer(caterer(), order("v2"))).toEqual({ act: "order_refused", fields: { reason: "venue_requires_permit" } });
+    // With the venue and what it needs, as FR-CONGRESS-25 adds them.
+    expect(answer(caterer(), order("v1"))).toMatchObject({ act: "order_refused", fields: { reason: "venue_requires_permit", venue: "v1" } });
+    expect(answer(caterer(), order("v2"))).toMatchObject({ act: "order_refused", fields: { reason: "venue_requires_permit", venue: "v2" } });
     expect(answer(caterer(), order("v2", " permit: v2-permit-1.")).act).toBe("order_confirmed");
     expect(answer(caterer(), order("v3")).act).toBe("order_confirmed");
     expect(answer(caterer({ id: "c9", in_house_for: "v1" }), order("v1")).act).toBe("order_confirmed");

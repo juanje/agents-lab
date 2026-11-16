@@ -41,7 +41,7 @@ describe("every charge a commitment (FR-CONGRESS-05's addition)", () => {
 
   it("a caterer commits a cancellation's charge as it invoices it", () => {
     const rules = catererRules.start({ id: "c1", price_per_head: 30, final_days: 7, deposit_share: 0.2, deposit_due_days: 3, cancellation: [{ share: 0.3 }], organiser: "organiser", event_day: 26 }, new Random(1));
-    const { steps } = conversation(rules, [[DAY, "From: organiser. Act: order. counts: standard: 60. date: day 26."], [DAY, "From: organiser. Act: cancel_order."]], () => ({ commitments_recorded: [{ id: "k-1", for: "order c1", amount: 1800 }] }));
+    const { steps } = conversation(rules, [[DAY, "From: organiser. Act: order. counts: standard: 60. date: day 26. venue: v1."], [DAY, "From: organiser. Act: cancel_order."]], () => ({ commitments_recorded: [{ id: "k-1", for: "order c1", amount: 1800 }] }));
     const after = steps.slice(steps.findIndex((step) => step.kind === "call" && step.tool === "release"));
     expect(after.flatMap((step) => (step.kind === "call" && ["release", "commit", "issue_invoice"].includes(step.tool) ? [[step.tool, step.arguments]] : []))).toEqual([
       ["release", { commitment: "k-1" }],

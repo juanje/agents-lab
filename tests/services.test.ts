@@ -78,7 +78,8 @@ function conversation(messages: [string, string][], ledger: () => Record<string,
   return { rules, steps, clock };
 }
 
-const order = (counts: string) => `From: organiser. Act: order. counts: ${counts}. date: day 26.`;
+// An order names its venue (FR-CONGRESS-25).
+const order = (counts: string) => `From: organiser. Act: order. counts: ${counts}. date: day 26. venue: v1.`;
 const finals = (counts: string) => `From: organiser. Act: final_numbers. counts: ${counts}.`;
 
 describe("the caterer's rules (FR-CONGRESS-05)", () => {

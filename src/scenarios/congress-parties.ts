@@ -1356,20 +1356,29 @@ export const catererRules: RuleSet = {
             },
           };
         case "order": {
+          // An order names its venue, before anything else in it is checked (FR-CONGRESS-25).
+          if (fields.venue === undefined) return { act: "order_refused", fields: { reason: "venue_required" } };
+          const venue = String(fields.venue);
           // A customer that holds an order for the date changes it by final numbers or cancels it (FR-CONGRESS-13).
           if (order !== undefined && order.date === String(fields.date)) return { act: "order_refused", fields: { reason: "order_held", counts: order.counts } };
           // An in-house caterer serves only its venue (FR-CONGRESS-17).
-          if (caterer.in_house_for !== undefined && fields.venue !== undefined && fields.venue !== caterer.in_house_for) return { act: "order_refused", fields: { reason: "own_venue_only", venue: caterer.in_house_for } };
-          // A venue that keeps its catering or charges for outside catering asks for a permit, unless it is the venue's own (FR-CONGRESS-07).
-          const rule = caterer.venues?.[String(fields.venue)]?.catering;
-          if (fields.venue !== undefined && (rule === "in_house" || rule === "outside_fee") && caterer.in_house_for !== fields.venue && fields.permit === undefined) {
-            return { act: "order_refused", fields: { reason: "venue_requires_permit" } };
+          if (caterer.in_house_for !== undefined && venue !== caterer.in_house_for) return { act: "order_refused", fields: { reason: "own_venue_only", venue: caterer.in_house_for } };
+          // A venue that keeps its catering or charges for outside catering asks for a permit, unless it is the venue's own (FR-CONGRESS-07);
+          // each refusal for a permit says what it needs (FR-CONGRESS-25).
+          const rule = caterer.venues?.[venue]?.catering;
+          if ((rule === "in_house" || rule === "outside_fee") && caterer.in_house_for !== venue && fields.permit === undefined) {
+            return { act: "order_refused", fields: { reason: "venue_requires_permit", venue, needs: `the permit number ${venue} gives when you accept its extra outside_catering` } };
           }
           // A permit must be one the named venue gave (FR-CONGRESS-22); a venue with free outside catering asks for none, so any is taken (FR-CONGRESS-23).
           const permit = rule === "outside_free" ? undefined : fields.permit;
-          if (permit !== undefined && permits.get(String(permit))?.venue !== String(fields.venue)) return { act: "order_refused", fields: { reason: "permit_unknown" } };
+          const read = permit === undefined ? undefined : permits.get(String(permit));
+          if (permit !== undefined && read?.venue !== venue) {
+            return { act: "order_refused", fields: { reason: "permit_unknown", venue, permit: String(permit), needs: `a permit number ${venue} gave you; ${venue} did not give this one` } };
+          }
           const counts = countsIn(fields.counts);
-          if (permit !== undefined && exceeds(counts, permits.get(String(fields.permit)) ?? {})) return { act: "order_refused", fields: { reason: "permit_exceeded" } };
+          if (read?.diet !== undefined && exceeds(counts, read)) {
+            return { act: "order_refused", fields: { reason: "permit_exceeded", diet: read.diet, attendance: read.attendance ?? 0, needs: `only ${read.diet} meals, at most ${read.attendance ?? 0}` } };
+          }
           const over = overLimit(counts);
           if (over !== undefined) return { act: "order_refused", fields: { diet: over } };
           if (total(counts) < (caterer.minimum ?? 0)) return { act: "order_refused", fields: belowMinimum() };

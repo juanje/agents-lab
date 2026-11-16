@@ -246,7 +246,7 @@ describe("cancellations settle their money (FR-CONGRESS-13)", () => {
     const { steps } = conversation(
       catererRules.start(caterer, new Random(1)),
       [
-        ["day 2 Tuesday 09:00", "From: organiser. Act: order. counts: standard: 40. date: day 26."],
+        ["day 2 Tuesday 09:00", "From: organiser. Act: order. counts: standard: 40. date: day 26. venue: v1."],
         ["day 3 Wednesday 09:00", "From: organiser. Act: cancel_order."],
       ],
       ledgerWith("i-2", "deposit order c1", false),

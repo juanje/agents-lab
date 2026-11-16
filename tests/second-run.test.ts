@@ -219,8 +219,8 @@ describe("caterers, invoices, registrants, promotions and the directory (FR-CONG
   it("a caterer refuses an order or final numbers below its minimum, saying so", () => {
     const answers = (messages: string[]) =>
       calls(conversation(catererRules.start(caterer, new Random(1)), messages.map((message): [string, string] => ["day 2 Tuesday 09:00", message])).steps, "send_mail").map(({ act, fields }) => ({ act, fields }));
-    expect(answers(["From: organiser. Act: order. counts: standard: 20. date: day 26."])).toEqual([{ act: "order_refused", fields: { reason: "below_minimum", minimum: 30 } }]);
-    expect(answers(["From: organiser. Act: order. counts: standard: 40. date: day 26.", "From: organiser. Act: final_numbers. counts: standard: 25."]).at(-1)).toEqual({ act: "numbers_refused", fields: { reason: "below_minimum", minimum: 30 } });
+    expect(answers(["From: organiser. Act: order. counts: standard: 20. date: day 26. venue: v1."])).toEqual([{ act: "order_refused", fields: { reason: "below_minimum", minimum: 30 } }]);
+    expect(answers(["From: organiser. Act: order. counts: standard: 40. date: day 26. venue: v1.","From: organiser. Act: final_numbers. counts: standard: 25."]).at(-1)).toEqual({ act: "numbers_refused", fields: { reason: "below_minimum", minimum: 30 } });
   });
 
   it("refuses the organiser's invoice to a party that is no sponsor as invalid_arguments, and no other party's", () => {

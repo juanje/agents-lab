@@ -170,13 +170,18 @@ describe("a diet permit covers only its diet and its attendance (FR-CONGRESS-17)
 
   it("refuses an order with more meals than the attendance, or meals of another kind, with the reason permit_exceeded", () => {
     for (const counts of ["gluten_free: 9", "gluten_free: 6; standard: 2"]) {
-      expect(calls(answered(caterer(), order(counts)), "send_mail")).toEqual([{ to: "organiser", act: "order_refused", fields: { reason: "permit_exceeded" } }]);
+      // With the permit's diet, attendance and what it needs, as FR-CONGRESS-25 adds them.
+      expect(calls(answered(caterer(), order(counts)), "send_mail")).toEqual([
+        { to: "organiser", act: "order_refused", fields: { reason: "permit_exceeded", diet: "gluten_free", attendance: 8, needs: "only gluten_free meals, at most 8" } },
+      ]);
     }
   });
 
   it("refuses an order under a permit it cannot read, which no venue gave (FR-CONGRESS-22)", () => {
     const steps = answered(caterer(), "From: organiser. Act: order. counts: gluten_free: 40. date: day 26. venue: v2. permit: v2-permit-7.");
-    expect(calls(steps, "send_mail")).toEqual([{ to: "organiser", act: "order_refused", fields: { reason: "permit_unknown" } }]);
+    expect(calls(steps, "send_mail")).toEqual([
+      { to: "organiser", act: "order_refused", fields: { reason: "permit_unknown", venue: "v2", permit: "v2-permit-7", needs: "a permit number v2 gave you; v2 did not give this one" } },
+    ]);
   });
 });
 

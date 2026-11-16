@@ -73,7 +73,8 @@ describe("a caterer takes only a permit the venue gave (FR-CONGRESS-22)", () => 
     drive(rules, tools(() => ""));
     return mailed(drive(rules, permits, [[notice]], true))[0];
   };
-  const unknown = { act: "order_refused", fields: { reason: "permit_unknown" } };
+  // With the venue, the permit and what it needs, as FR-CONGRESS-25 adds them.
+  const unknown = { act: "order_refused", fields: { reason: "permit_unknown", venue: "v2" } };
 
   it("confirms an order with a permit the named venue gave", () => {
     expect(answer("v2-permit-1").act).toBe("order_confirmed");
@@ -81,7 +82,7 @@ describe("a caterer takes only a permit the venue gave (FR-CONGRESS-22)", () => 
 
   // An outside_free venue takes any permit (FR-CONGRESS-23).
   it("refuses permit_unknown an order whose permit no venue gave, or another venue gave, at a venue that asks for one", () => {
-    expect(answer("outside_catering")).toEqual(unknown);
-    expect(answer("v1-permit-1")).toEqual(unknown);
+    expect(answer("outside_catering")).toMatchObject(unknown);
+    expect(answer("v1-permit-1")).toMatchObject(unknown);
   });
 });

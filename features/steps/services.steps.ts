@@ -129,10 +129,16 @@ Then('"c1" answered "order_refused" naming "gluten_free"', function (this: Conte
   assert.equal(fieldsOf(sentWith(this, "c1", "order_refused")).diet, "gluten_free");
 });
 
-/** The organiser's turns that order 60 standard meals from "c1" for "day 26", then wait for its answer. */
+/** The organiser's turns that order 60 standard meals from "c1" for "day 26" at the congress's venue "v1", then wait for its answer. */
 function ordering(context: Context) {
-  return organiserTurns('call "send_mail" to "c1" with the act "order", counts "standard" 60, and date "day 26", then wait 1 world hour, then "check_time"', hourMsOf(context));
+  return organiserTurns('call "send_mail" to "c1" with the act "order", counts "standard" 60, date "day 26" and venue "v1", then wait 1 world hour, then "check_time"', hourMsOf(context));
 }
+
+// An order with no venue is refused since FR-CONGRESS-25, so the scenarios' orders, which name none, name the congress's
+// venue "v1": what they check is the caterer's answer to the counts.
+Given(/^the organiser's scripted turns call ("send_mail" to "c1" with the act "order", counts .+, and date "day 26")(, then .+)?, then end$/, function (this: Context, order: string, rest: string | null) {
+  script(this, ORGANISER, [...(turnsBefore.get(this) ?? []), ...organiserTurns(`call ${order} and venue "v1"${rest ?? ""}`, hourMsOf(this)), { text: "Done.", delayMs: 0 }]);
+});
 
 Given('"c1" has confirmed an order of 60 in all', function (this: Context) {
   before(this, ordering(this));
