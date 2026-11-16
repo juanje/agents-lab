@@ -1,5 +1,7 @@
+import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { syncBuiltinESMExports } from "node:module";
+import os, { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { After, Before } from "@cucumber/cucumber";
 import { filesUnder, personsPiDirectory } from "../steps/adapter.steps.ts";
@@ -11,10 +13,18 @@ import type { Context } from "./context.ts";
 const personsHome = process.env.HOME;
 const personsTmpdir = process.env.TMPDIR;
 
+// Cucumber runs scenarios in worker threads, where os.homedir() reads the process's environment, not the thread's
+// process.env, and would give the person's home whatever HOME the scenario sets. It reads the thread's HOME here, as in
+// a process of its own, for the lab's code and Pi's alike.
+const processHomedir = os.homedir;
+os.homedir = () => process.env.HOME ?? processHomedir();
+syncBuiltinESMExports();
+
 Before({ tags: "not @smoke" }, function (this: Context) {
   this.home = mkdtempSync(join(tmpdir(), "agents-lab-home-"));
   process.env.HOME = this.home;
   process.env.TMPDIR = this.home;
+  assert.equal(homedir(), this.home, "the lab and Pi would not see the scenario's home");
   this.logDirectory = join(this.home, "logs");
   mkdirSync(this.logDirectory);
 });

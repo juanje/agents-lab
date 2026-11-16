@@ -1,5 +1,5 @@
 import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach } from "vitest";
 
@@ -14,6 +14,8 @@ beforeEach(() => {
   home = mkdtempSync(join(tmpdir(), "agents-lab-home-"));
   process.env.HOME = home;
   process.env.TMPDIR = home;
+  // In a worker thread, os.homedir() would still give the person's home: tests run in processes of their own.
+  if (homedir() !== home) throw new Error("the lab and Pi would not see the test's home");
 });
 
 afterEach(() => {
