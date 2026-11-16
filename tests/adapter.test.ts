@@ -1,6 +1,10 @@
+import { existsSync, rmSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 import { describe, expect, it } from "vitest";
 import { type JsonObject, getCurrentSystemMessage, getCurrentSystemPrompt, validateToolArguments } from "@earendil-works/pi-ai";
-import { askOnce, labModel, unrunOutcome } from "../src/engine/adapter.ts";
+import { askOnce, labModel, openRuntime, unrunOutcome } from "../src/engine/adapter.ts";
 import { ScriptedModel } from "../src/engine/scripted-model.ts";
 import { slotTools } from "./fixtures/slots.ts";
 
@@ -18,6 +22,19 @@ describe("labModel", () => {
 
   it("refuses a model the lab's Pi directory does not know, naming it", async () => {
     await expect(labModel("openai/no-such-model")).rejects.toThrow(`The lab's Pi directory knows no model "openai/no-such-model"`);
+  });
+});
+
+describe("openRuntime", () => {
+  it("leaves nothing reading or writing the lab's Pi directory once it returns, with the run's providers registered", async () => {
+    await openRuntime([new ScriptedModel([]).provider, new ScriptedModel([]).provider]);
+    const directory = join(homedir(), ".agents-lab", "pi");
+    rmSync(directory, { recursive: true, force: true });
+
+    // Long enough for a read Pi started and left running to reach the directory.
+    await sleep(200);
+
+    expect(existsSync(directory)).toBe(false);
   });
 });
 
