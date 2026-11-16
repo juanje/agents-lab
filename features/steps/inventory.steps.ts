@@ -81,23 +81,42 @@ function headingLevel(line: string): number {
   return /^(#+) /.exec(line)?.[1].length ?? 0;
 }
 
+/** The heading level of each line of a Markdown text: 0 inside a fenced block, where a "#" line is a text's, not a heading. */
+function headingLevels(lines: readonly string[]): number[] {
+  let fence: string | undefined;
+  return lines.map((line) => {
+    const run = /^(`{3,})/.exec(line)?.[1];
+    if (fence !== undefined) {
+      if (line.trim() === fence) fence = undefined;
+      return 0;
+    }
+    if (run !== undefined) {
+      fence = run;
+      return 0;
+    }
+    return headingLevel(line);
+  });
+}
+
 /**
  * The part of a Markdown text under a heading, given as the whole heading line, up to the next heading of the same
  * level or higher; it fails when the text has no such heading, or more than one.
  */
 export function under(text: string, heading: string): string {
   const lines = text.split("\n");
-  const found = lines.flatMap((line, index) => (line === heading ? [index] : []));
+  const levels = headingLevels(lines);
+  const found = lines.flatMap((line, index) => (line === heading && levels[index] > 0 ? [index] : []));
   assert.equal(found.length, 1, `expected one heading ${JSON.stringify(heading)}, found ${found.length} in:\n${text}`);
   const level = headingLevel(heading);
-  const rest = lines.slice(found[0] + 1);
-  const end = rest.findIndex((line) => headingLevel(line) > 0 && headingLevel(line) <= level);
-  return (end === -1 ? rest : rest.slice(0, end)).join("\n");
+  const end = levels.findIndex((each, index) => index > found[0] && each > 0 && each <= level);
+  return lines.slice(found[0] + 1, end === -1 ? lines.length : end).join("\n");
 }
 
 /** The headings of a level in a Markdown text, in order. */
 export function headings(text: string, level: number): string[] {
-  return text.split("\n").filter((line) => headingLevel(line) === level);
+  const lines = text.split("\n");
+  const levels = headingLevels(lines);
+  return lines.filter((_, index) => levels[index] === level);
 }
 
 /** The value of a "- Label: value" line of a part. */
