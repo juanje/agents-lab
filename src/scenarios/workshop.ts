@@ -805,7 +805,17 @@ function lastJoinOf(state: Workshop, holder: string, module: string, before: num
   return all.length === 0 ? undefined : Math.max(...all);
 }
 
-/** The workshop's measures (FR-WORKSHOP-04, FR-WORKSHOP-05's handovers), from the world's state and the record of tool calls. */
+/** The applied speeches' calls and words by kind, each key after a prefix: 0 for a kind with none (FR-WORKSHOP-06). */
+function speechByKind(speeches: Landed["speeches"], prefix: string): Record<string, number> {
+  return Object.fromEntries(
+    Object.keys(SPEECH_VERBS).flatMap((kind) => {
+      const of = speeches.filter((speech) => speech.kind === kind);
+      return [[`${prefix}${kind}.calls`, of.length], [`${prefix}${kind}.words`, of.reduce((sum, { words }) => sum + words, 0)]];
+    }),
+  );
+}
+
+/** The workshop's measures (FR-WORKSHOP-04, FR-WORKSHOP-05's handovers, FR-WORKSHOP-06's speech), from the world's state and the record of tool calls. */
 const METRICS: Scenario<Workshop>["metrics"] = {
   done: (state) => (isDone(state) ? 1 : 0),
   modules_mounted: (state) => state.bench.mounted.length,
@@ -817,8 +827,7 @@ const METRICS: Scenario<Workshop>["metrics"] = {
   first_take_time: firstTakeTime,
   speech_before_first_take: (state) => {
     const first = firstTakeTime(state);
-    const before = state.landed.speeches.filter(({ end }) => first === null || end < first);
-    return { calls: before.length, words: before.reduce((sum, { words }) => sum + words, 0) };
+    return speechByKind(state.landed.speeches.filter(({ end }) => first === null || end < first), "");
   },
   own_first_take_time: (state) => {
     const times: Record<string, number> = {};
@@ -870,15 +879,8 @@ const METRICS: Scenario<Workshop>["metrics"] = {
     }
     return table;
   },
-  speech_by_worker: (state) => {
-    const table: Record<string, number> = {};
-    for (const worker of Object.keys(state.workers)) {
-      const speeches = state.landed.speeches.filter(({ speaker }) => speaker === worker);
-      table[`${worker}.calls`] = speeches.length;
-      table[`${worker}.words`] = speeches.reduce((sum, { words }) => sum + words, 0);
-    }
-    return table;
-  },
+  speech_by_worker: (state) =>
+    Object.assign({}, ...Object.keys(state.workers).map((worker) => speechByKind(state.landed.speeches.filter(({ speaker }) => speaker === worker), `${worker}.`))),
   time_by_activity: (state, calls) => {
     const table: Record<string, number> = {};
     for (const call of calls) countIn(table, `${call.agent}.${call.tool}`, durationOf(state, call));
@@ -887,6 +889,24 @@ const METRICS: Scenario<Workshop>["metrics"] = {
   handovers: (state) => {
     const table: Record<string, number> = {};
     for (const { giver, receiver, sort } of state.landed.handovers) countIn(table, `${giver}.${sort === "module" ? "modules" : "pieces"}_to.${receiver}`);
+    return table;
+  },
+  // FR-WORKSHOP-06: a call to two workers counts once for each.
+  addressed: (state) => {
+    const table: Record<string, number> = {};
+    for (const { speaker, kind, to } of state.landed.speeches) for (const worker of to) countIn(table, `${speaker}.${kind}.${worker}`);
+    return table;
+  },
+  // An asker's question to a worker is answered by any later applied answer from that worker addressed to the asker.
+  questions_unanswered: (state) => {
+    const table: Record<string, number> = {};
+    const { speeches } = state.landed;
+    for (const question of speeches.filter(({ kind }) => kind === "ask")) {
+      for (const worker of question.to) {
+        const answered = speeches.some(({ speaker, kind, to, end }) => speaker === worker && kind === "answer" && to.includes(question.speaker) && end > question.end);
+        if (!answered) countIn(table, `${question.speaker}.${worker}`);
+      }
+    }
     return table;
   },
 } satisfies Record<string, (state: Workshop, calls: readonly ToolCall[]) => MetricValue>;
