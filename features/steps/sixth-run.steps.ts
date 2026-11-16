@@ -207,11 +207,12 @@ Then(/^"v2" answered "extra_quote" with the item "outside_catering" and the pric
   );
 });
 
+// Since FR-CONGRESS-25, the answer to a request with no diet also gives its reason.
 Then('"v2" answered "not_available" for "outside_catering"', function (this: Context) {
-  assert.deepEqual(
-    sentAfter(this, "v2", "confirmed").map((line) => [line.act, fieldsOf(line)]),
-    [["not_available", { what: "outside_catering" }]],
-  );
+  const answers = sentAfter(this, "v2", "confirmed").map((line) => [line.act, fieldsOf(line)] as [unknown, Record<string, unknown>]);
+  const { reason, ...fields } = answers[0]?.[1] ?? {};
+  assert.deepEqual([answers.length, answers[0]?.[0], fields], [1, "not_available", { what: "outside_catering" }], JSON.stringify(answers));
+  if (reason !== undefined) assert.equal(reason, "name a diet our caterer cannot serve in full");
 });
 
 Given('"v2" gave the organiser the permit "v2-permit-1" for outside "gluten_free" meals with the attendance 8', function (this: Context) {
@@ -243,7 +244,9 @@ Then(/^"(c1|c2)" answered "(order_confirmed|order_refused)" with (the total \d+|
   const [answered, fields] = answers[0] as [string, Record<string, unknown>];
   assert.equal(answered, act, JSON.stringify(answers));
   if (total !== undefined) assert.equal(fields.total, Number(total));
-  if (reason !== undefined) assert.deepEqual(fields, { reason, ...(venue === undefined ? {} : { venue }) });
+  // A permit_exceeded also gives the permit's diet, attendance and needs since FR-CONGRESS-25, which its steps read.
+  if (reason === "permit_exceeded") assert.equal(fields.reason, reason);
+  else if (reason !== undefined) assert.deepEqual(fields, { reason, ...(venue === undefined ? {} : { venue }) });
   if (caterer === "c1") assert.equal(fieldsOf(sentWith(this, "v2", "extra_confirmed")).permit, "v2-permit-1");
 });
 
