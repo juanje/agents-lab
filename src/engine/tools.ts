@@ -117,6 +117,20 @@ export interface Reply<State> {
   record?(state: State, call: AgentCall): Readonly<Record<string, unknown>> | undefined;
 }
 
+/** A stimulus an effector's effect delivers (FR-STIMULUS-02): the agent it reaches, its source and the values that fill its channel's text. */
+export interface EffectDelivery {
+  agent: string;
+  source: string;
+  values: Readonly<Record<string, string>>;
+}
+
+/** The stimuli an effector's effect delivers to other agents, through one channel the scenario declares (FR-STIMULUS-02). */
+export interface Delivering<State> {
+  channel: string;
+  /** The deliveries, from the state right after the effect is applied and the call. */
+  deliveries(state: State, call: AgentCall): readonly EffectDelivery[];
+}
+
 /** Why an effector does not take a call as it starts: the call's outcome, and the reason the agent is told after it. */
 export interface Refusal {
   outcome: string;
@@ -147,11 +161,24 @@ export interface Effector<State> extends Declared<State> {
    */
   action?: Action<State, LandingCall>;
   /**
+   * The change the call makes as it ends, whatever its outcome (FR-WORKSHOP-02): in the same change as its action when
+   * the action applies, and as a change of its own otherwise (the action failed, or there is none). A call refused before
+   * it runs, or cut off by the time limit, applies no end. Its precondition must hold: an end the world refuses is a
+   * defect of the scenario, and stops the run.
+   */
+  end?: Action<State, LandingCall>;
+  /**
    * The text the agent receives for each outcome of its call's effect, success included, by the outcome; an outcome
    * without one gives the outcome itself (FR-TOOL-02). It tells the agent only what happened to it, never the world's
    * state, except what its sight follows it with.
    */
   texts?: Readonly<Record<string, string>>;
+  /**
+   * For an effector whose refusal names what the call gave, such as the names no worker has (FR-WORKSHOP-06): the text
+   * of an outcome other than success, from the state after the call and the call, in place of the one it declares;
+   * undefined keeps the declared text.
+   */
+  refusalText?(state: State, call: AgentCall, outcome: string): string | undefined;
   /**
    * For an effector whose success gives the agent what it acted on, such as the message read_mail reads (FR-MESSAGE-01):
    * the text of its success, from the state after its effect and the call, in place of a text it declares.
@@ -159,6 +186,11 @@ export interface Effector<State> extends Declared<State> {
   reply?: Reply<State>;
   /** What the agent sees as the call ends, which follows the text of the outcomes it names (FR-WORKPLACE-08). */
   sight?: Sight<State>;
+  /**
+   * The stimuli its effect delivers to other agents, made as the effect is applied, when the call ends; a call whose
+   * effect is not applied delivers nothing (FR-STIMULUS-02).
+   */
+  delivers?: Delivering<State>;
   /**
    * What the agent's last sensing says of the call's target, which it finds from the state as the call starts;
    * "not_sensed" when that sensing does not show it, or when the agent has sensed nothing. `lastBy` gives the agent's last

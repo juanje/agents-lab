@@ -67,6 +67,11 @@ What the words mean here, how the pieces fit together, and how the tools behave 
 **No action**
 - An effector with no action (the workplace's `wait`) changes nothing: its call goes through no arbiter and succeeds.
 
+**An effector's end (`end`, FR-WORKSHOP-02)**
+- An effector may declare an end, applied as its call ends whatever its outcome (`effect` in the adapter).
+- When its action applies, the end goes in the same change (`withEnd`: one version, the end's effect right after the action's); otherwise (the action failed, there is none, or the call ended early and its action failed) it is a change of its own (`applyEnd`), counted among other agents' changes since sensing.
+- A call refused before it runs (`refuses`, `invalid_arguments`, `unknown_tool`) or cut off applies no end; an end the world refuses stops the run.
+
 **Refusals (`refuses`)**
 - An effector may refuse a call from the state as it starts (`refuses`), with an outcome and a reason (`Refusal`).
 - `invalid_arguments` is for a limit its schema cannot give, such as one the configuration sets, or a message its recipient cannot take (FR-MESSAGE-01).
@@ -74,6 +79,9 @@ What the words mean here, how the pieces fit together, and how the tools behave 
 
 **Reply (`reply`)**
 - An effector may declare a reply (`reply`): its success's text, from the state right after its effect and the call, in place of a text (`read_mail`'s message).
+
+**Refusal text (`refusalText`, FR-WORKSHOP-06)**
+- An effector may make the text of an outcome other than success (`refusalText`), from the state after the call and the call, in place of the text it declares; undefined keeps the declared one. The workshop's `no_such_worker` names each name no worker has; the inventory lists the declared text, `"<name>"` included.
 
 **Early end (`endsEarly`, FR-WORKPLACE-07)**
 - An effector may declare an early end (`endsEarly`, FR-WORKPLACE-07).
@@ -92,7 +100,15 @@ What the words mean here, how the pieces fit together, and how the tools behave 
 
 - Stimuli from channels enter the session at the agent's next model turn, or when it wakes.
 - A scenario may give each agent first stimuli (`firstStimuli`, channel names from the configuration, each declared, or loading refuses them).
-- The agent receives them once, as it first wakes, right after the rhythm's and before any that arrived while it rested (the workplace's person's first message, FR-WORKPLACE-03).
+- The agent receives them once, as it first wakes, right after the rhythm's and before any that arrived while it rested (the workplace's person's first message, FR-WORKPLACE-03); each `{name}` in them is the agent's name (FR-WORKSHOP-05).
+
+**Delivered by an effector's effect (FR-STIMULUS-02)**
+- An effector may declare `delivers`: a channel and `deliveries(state, call)`, each delivery an agent, a source and the values that fill the channel's `{name}`s, read from the state right after its effect.
+- Only an effect that applied delivers (`effect` in the adapter, an early end included); a call that fails, is refused or is cut off delivers nothing.
+- `callTool` makes the deliveries through `Stimuli.deliver`, with the delivery's source, right after it takes the call's `endedAtMs`, so each `stimulus` line is no earlier than the call's end; from there they behave as any stimulus (next turn, next wake, a waking channel, an early end).
+- `run` refuses, before its log opens, a scenario or party tool that delivers through an undeclared channel; a delivery to the caller, or to a name outside the run's agents (`SessionSettings.agents`), stops the run before any of the call's deliveries is made.
+- The inventory gives the effector's channel as `- Delivers through: <channel>`.
+- A channel may declare `described`, what its stimulus is, which the inventory gives in place of the stimulus (the workshop's `voice`: `asks, answers or tells <names>, "<text>"`); a channel that `wakes` is listed with `- Wakes: a resting agent at once` (FR-WORKSHOP-03).
 
 ### Processes
 
@@ -155,11 +171,17 @@ The recorder writes a line per event. The inventory and the run's setup go first
   - one with the outcome `success` also gives `contextTokensBefore` and `contextTokensAfter` as Pi estimates them and the `summary` the context holds from then on;
   - one that did not finish, `model_error`, `timeout` or `cut_off`, gives neither.
 - `metric_sample` and `run_stopped`.
+- `world_finished` (FR-RUN-08): `atMs`, when the change that finished the world was applied, and `worldTime` for a run with a calendar.
 - Every time in them is by `performance.now()`.
 
 **Stopping**
 - The first error that stops a run writes `run_stopped` with its message at once and aborts the run as its time limit does; nothing is written after it.
 - A tool that throws, or a session that fails to open, stops the run: the scenario's defect, not the agent's behaviour, so the call that threw has no `tool_call` line.
+
+**A finished world (FR-RUN-08)**
+- A scenario may give `finished(state)`; `runAgents` watches the world with it, registered after every other watcher, so the change's own lines come first.
+- The first change after which it says so writes `world_finished` and aborts the run's end signal, as the time limit does: calls, turns and component actions still running are cut off; the call or action whose change finished the world has already applied and keeps its outcome.
+- The run then ends as usual (parts, outcomes, the final `metric_sample`) and returns, so `lab run` lists it as completed. With no `finished`, or when the time limit passes first, no line is written.
 
 ### Metrics
 
@@ -796,6 +818,27 @@ The recorder writes a line per event. The inventory and the run's setup go first
 **Timing**
 - "When the run ends" may take 90 s.
 
+### The workshop (FR-WORKSHOP-01, `src/scenarios/workshop.ts`)
+
+- Workers (`workers`, each an agent) assemble a device from a plan (`[plan.<module>]`: `recipe`, `after`) out of a common pile (`[pile]`), at a bench of `bench_places`, with hands of `hand_pieces` loose pieces and one module. The base configuration is `world.md`'s base, its three texts the world's `identity.md`, `task.md` and `world-rules.md` word for word (agents-lab-experiments 2d494ea) without their final newline, and `character` and `limits` empty. `[durations]` refuses a key the workshop has no duration for (`say` among them) and a `speech_words_per_minute` of 0.
+- `settingsOf` checks the configuration on every call the engine makes while loading (`channels` first), so a key the workshop cannot build from is refused before any model call, naming the key.
+- **State:** `plan`, `pile` (count by kind), `bench` (`mounted`, `places`), `workers` (each one's `loose` and `module`), `orders`, and `landed` (FR-WORKSHOP-04).
+- **Listing orders:** `initialState` shuffles, from the initial state's sequence, the sorted kinds, then the sorted modules, then the workers; drawing the workers last keeps the other two orders when a condition changes the workers.
+- **Texts:** `identity`, `character`, `task`, `limits`, `world_rules` (character and limits FR-WORKSHOP-05), placed `system` or `first`; a place joins its non-empty texts in that order with a blank line. `{name}` is the worker's name in both places: in the system prompt the workshop fills it; a text placed `first` goes out on the channel `order` (source `order_source`, declared only when some text is placed there) with `{name}` as written, and `Stimuli.wake` fills it for each worker.
+- Every time and duration is in world minutes of the one calendar segment.
+- **Tools (FR-WORKSHOP-02):** `look` and `read_plan` give JSON in the drawn orders, `look` with `clock` first (FR-WORKSHOP-05: the floor of the world minutes since the calendar's start, from the `world` time the sensor is given at the call's end); `take`, `put_back`, `join`, `take_apart`, `mount`, `wait` and `hand` are effectors checked when they land, their refusals in the contract's table order (`firstRefusal`).
+- **Doing:** each effector's start sets its worker's `doing` (`taking`, … `waiting`) and the shared `END` sets it back to `nothing`; sensors set nothing, so a worker looking or deciding shows `nothing`. The `effector_start` line gives `{ began }`, and for `mount` the bench `place` it occupies, numbered from 1 (null when every place was taken).
+- **Mount:** its start occupies the first free place; its duration is `mount_refused` when none is free, and its action refuses `bench_full` when the worker occupies no place as it lands; `END` frees the place whatever the outcome.
+- **Wait:** no action; refuses minutes outside (0, `wait_max_minutes`] at once; ends early, `interrupted`, at any stimulus (speech or a hand).
+- **Hand (FR-WORKSHOP-05):** `what` is the giver's module when it is that module's name, a kind otherwise; the action moves the piece or the module (its `joined` with it) and keeps a `landed.handovers` entry (`giver`, `receiver`, `sort` piece or module, `name`, `at`); `delivers` reads the giver's last entry and sends `handed you {what}.` to the receiver alone on `hands` (source the giver, `wakes`; the inventory describes it as `handed you <what>.`).
+- **Done and the measures (FR-WORKSHOP-04):** `finished` is "every plan module mounted", so the run ends at the completing mount (FR-RUN-08). `take`, `join`, `mount` and the speech tools keep in `landed` what they did at the world minute they landed (`landedAt`: the action's `world` time less the calendar's start, whole world seconds); the metrics read `landed`, the final state and the tool calls, durations as run ms × scale / 60,000, and 0 for `invalid_arguments` and `unknown_tool`. `finish_to_mount` takes a mount's start as its landing less `durations.mount`, and its module's last join from `lastJoinOf`: the mounter's own joins since it started that module or was handed it, then, back through each module hand, the giver's before it handed it. `handovers` counts `landed.handovers` by giver, sort and receiver. Each new `landed.speeches` entry is a `speech` log line (`logLines`).
+- **Steps:** "the measures are computed" replays a record's calls through the tools (starts at their start, landings with their end at their end, landings first at equal times), checks each recorded outcome against the world, and computes the metrics from the result.
+- **Speech (FR-WORKSHOP-03, FR-WORKSHOP-06):** `ask`, `answer` and `tell` are one effector each (`speechTool`), with `to` (a list of names; the workers addressed are its names once each, in the order first named) and `text`. Duration `speech + words / speech_words_per_minute` minutes (a word is a run between whitespace; the names count none). The action refuses, as it lands, `no_one`, `no_such_worker`, `to_self` and `empty_text` in that order and changes nothing else; `refusalText` names in `no_such_worker`'s text each unknown name, quoted, joined with `or`. `delivers` sends every other worker, on `voice` (stimulus `{verb} {names}, "{text}"`, source the speaker, `wakes`), the verb (`asks`, `answers`, `tells`), the workers addressed joined as lists are with `you` for the listener, and the text as given; so it reaches a resting worker at once and ends a `wait`. Each applied call keeps a `landed.speeches` entry (`speaker`, `kind`, `to`, `start`, `end`, `words`), which is also its `speech` line.
+- **Speech measures (FR-WORKSHOP-06):** `speech_before_first_take` and `speech_by_worker` give `<kind>.calls` and `<kind>.words` (`<worker>.` before them by worker), 0 for a kind with none; `addressed` counts `<speaker>.<kind>.<worker>` once for each worker addressed; `questions_unanswered` counts `<asker>.<worker>` for each `ask` to that worker after whose landing that worker landed no applied `answer` addressed to the asker (strictly later).
+- **Targets:** `take` and `mount` read the worker's last `look` (`lastBy("look")`): the kind's count in the pile, a free bench place.
+- **Steps:** the mail's "… scripted turns …", the workplace's "the call failed with …" and "it took no time" and the wait's "the … call ended with …" hand the workshop's words to `workshop.steps.ts`; "who holds what" is one step that sets the world up as a Given and checks it as a Then, every held or mounted piece taken from the pile.
+- **Steps:** "the configuration is changed so that …" is the congress's step; it hands the change to the first reader in `features/support/changes.ts` that applies, which the workshop's steps register.
+
 ### The runner
 
 **Expanding and ordering runs (FR-RUN-06)**
@@ -1003,7 +1046,7 @@ The recorder writes a line per event. The inventory and the run's setup go first
   - Any other reason stops the run.
   - A call that reaches `execute` after the run has ended is left unrun: `cut_off`, with no target read.
 - **A tool that throws** is answered by Pi with an error result, as if the call had failed, and the agent goes on (`executePreparedToolCall`, `agent-loop.js`). The adapter catches the error inside `execute` first and stops the run with it.
-- **Tool arguments are coerced** by `@earendil-works/pi-schema` before a tool sees them (numeric strings become numbers, a single value becomes an array). Record the raw tool call from the events, not only the coerced arguments, or malformed answers disappear from the data.
+- **Tool arguments are coerced** by `@earendil-works/pi-schema` before a tool sees them (numeric strings become numbers, a single value becomes an array). For an array of strings, seen on 1.5.0 with `validateToolArguments`: `"Mik"` becomes `["Mik"]`, `7` becomes `["7"]`, `null` becomes `["null"]` and `["Mik", 3]` becomes `["Mik", "3"]`; an object, or an object in the list, is rejected (`invalid_arguments`). So a workshop speech tool never sees a `to` that is not a list. Record the raw tool call from the events, not only the coerced arguments, or malformed answers disappear from the data.
 - **Tests:** `fauxProvider()` from `@earendil-works/pi-ai` gives scripted answers (`fauxText`, `fauxToolCall`), with an optional tokens-per-second rate. oid's `features/support/scripted-model.ts` is an example.
   - A response factory receives the normalized transcript: the tools offered with `Models.complete(model, { messages, tools })` arrive as `toolsAdded` on a leading system message, and `getCurrentTools(messages)` gives them back.
   - `fauxAssistantMessage` keeps `stopReason: "stop"` even when its content holds tool calls; read the content, not the stop reason, to tell whether a turn called a tool.

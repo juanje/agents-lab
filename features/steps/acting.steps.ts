@@ -20,9 +20,21 @@ Given(
   "the effector {string} takes {int} milliseconds, puts the agent in a slot when it lands, and fails with {string} when the slot is held when it lands",
   function (this: Context, name: string, durationMs: number, reason: string) {
     assert.equal(reason, SLOT_TAKEN);
-    takeTime(this, "effector", name, durationMs);
+    takeLike(this, name, durationMs);
   },
 );
+
+/**
+ * Makes the test world's effector of a name take this long; a name the test world does not declare is an effector of
+ * its own that acts as "take" does.
+ */
+export function takeLike(context: Context, name: string, durationMs: number): void {
+  if (context.tools.some((tool) => tool.name === name)) {
+    takeTime(context, "effector", name, durationMs);
+    return;
+  }
+  context.tools = [...context.tools, { ...fixtureTool("effector", "take"), name, description: `Put yourself in an empty slot (${name}).`, durationMs: () => durationMs }];
+}
 
 Given(
   "the target of {string}, in the agent's last sensing, is the slot it names",

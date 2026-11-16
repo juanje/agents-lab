@@ -14,7 +14,7 @@ Everything an agent does is written to a log, and every analysis is computed fro
 ## What is in this repository
 
 - `src/engine/`: the world, tools, stimuli, activations, places and passages, the calendar, mail, the phone, money, participants, parts, the Pi adapter and the recorder.
-- `src/scenarios/`: reusable scenarios: the neighbourhood (Schelling with LLM agents), the workplace (a worker in an invented place of rooms and passages) and the congress (an organiser preparing a congress among venues, speakers, caterers, sponsors, a board and attendees, whose answers rules decide).
+- `src/scenarios/`: reusable scenarios: the neighbourhood (Schelling with LLM agents), the workplace (a worker in an invented place of rooms and passages) the congress (an organiser preparing a congress among venues, speakers, caterers, sponsors, a board and attendees, whose answers rules decide) and the workshop (a team of workers assembling a device from a plan, a common pile and a bench of few places).
 - `src/analysis/`: analysis of run logs: summaries across replicas, the reserved judge and the parts report.
 - `src/cli/`: the `lab` command.
 

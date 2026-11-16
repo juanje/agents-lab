@@ -44,7 +44,8 @@ export interface ConditionInventory {
   tools: ToolInventory[];
   /** The outcomes the engine itself gives a call, whatever its tool, with the text the agent receives for each. */
   engineOutcomes: Record<string, string>;
-  channels: { name: string; source: string; delivers: string }[];
+  /** Each channel with its source, what it delivers, and whether it wakes a resting agent (FR-WORKSHOP-03). */
+  channels: { name: string; source: string; delivers: string; wakes?: true }[];
   energyModel: string;
   environmentProcesses: string;
   /** How fast information travels (NFR-12). */
@@ -95,6 +96,8 @@ export interface ToolInventory {
   texts: Record<string, string>;
   /** What the agent receives for any outcome the tool declares no text for (FR-TOOL-02). */
   otherOutcomes: string;
+  /** For an effector whose effect delivers stimuli, the channel it delivers through (FR-STIMULUS-02). */
+  deliversThrough?: string;
 }
 
 /** The descriptions a scenario gives only for the inventory, and how an error names each. */
@@ -175,9 +178,10 @@ function conditionInventory<State>(
       effort: NONE,
       texts: textsOf(tool),
       otherOutcomes: OUTCOME_NAME,
+      ...(tool.kind === "effector" && tool.delivers !== undefined ? { deliversThrough: tool.delivers.channel } : {}),
     })),
     engineOutcomes: { ...ENGINE_OUTCOMES },
-    channels: channels.map(({ name, source, stimulus }) => ({ name, source, delivers: stimulus })),
+    channels: channels.map(({ name, source, stimulus, described, wakes }) => ({ name, source, delivers: described ?? stimulus, ...(wakes === true ? { wakes: true as const } : {}) })),
     energyModel: NONE,
     environmentProcesses: NONE,
     informationSpeed:
@@ -282,7 +286,7 @@ function toolsMarkdown({ tools }: ConditionInventory): string {
       `#### Tool "${tool.name}"\n`,
       `- Kind: ${tool.kind}`,
       `- Duration: ${tool.duration}`,
-      `- Effort: ${tool.effort}\n`,
+      `- Effort: ${tool.effort}${tool.deliversThrough === undefined ? "" : `\n- Delivers through: ${tool.deliversThrough}`}\n`,
       "Description:\n",
       fenced(tool.description, "text"),
       "Parameters:\n",
@@ -302,8 +306,8 @@ function itemsMarkdown(heading: string, items: Record<string, string>): string {
 }
 
 function channelsMarkdown({ channels }: ConditionInventory): string {
-  const listed = channels.map(({ name, source, delivers }) =>
-    [`#### Channel "${name}"\n`, `- Source: ${source}\n`, "Delivers:\n", fenced(delivers, "text")].join("\n"),
+  const listed = channels.map(({ name, source, delivers, wakes }) =>
+    [`#### Channel "${name}"\n`, `- Source: ${source}${wakes === true ? "\n- Wakes: a resting agent at once" : ""}\n`, "Delivers:\n", fenced(delivers, "text")].join("\n"),
   );
   return ["### Stimulus channels\n", ...listed].join("\n");
 }

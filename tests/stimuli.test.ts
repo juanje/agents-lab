@@ -79,6 +79,21 @@ describe("Stimuli", () => {
     expect(delivered).toEqual([["a", ring], ["a", rhythm], ["a", first], ["a", rhythm], ["b", rhythm]]);
   });
 
+  it("fills each {name} of a first stimulus with the name of the agent that receives it (FR-WORKSHOP-05)", () => {
+    const order = { name: "order", source: "the order", stimulus: "You are {name}.\n\nBuild it, {name}; ask {team}." };
+    const delivered: [string, unknown][] = [];
+    const stimuli = new Stimuli([order, rhythmChannel], (agent, stimulus) => delivered.push([agent, stimulus]), new Map([["a", ["order"]], ["b", ["order"]]]));
+
+    expect(stimuli.wake("a")[1]).toEqual({ channel: "order", source: "the order", content: "You are a.\n\nBuild it, a; ask {team}." });
+    expect(stimuli.wake("b")[1]).toEqual({ channel: "order", source: "the order", content: "You are b.\n\nBuild it, b; ask {team}." });
+    expect(delivered.map(([agent, stimulus]) => [agent, (stimulus as Stimulus).content])).toEqual([
+      ["a", "You wake up."],
+      ["a", "You are a.\n\nBuild it, a; ask {team}."],
+      ["b", "You wake up."],
+      ["b", "You are b.\n\nBuild it, b; ask {team}."],
+    ]);
+  });
+
   it("refuses a stimulus from a channel the scenario does not declare, naming it", () => {
     const stimuli = new Stimuli([rhythmChannel]);
 

@@ -11,6 +11,7 @@ import type { Context } from "../support/context.ts";
 import { headings, itemOf, under } from "./inventory.steps.ts";
 import { withBase } from "./neighbourhood.steps.ts";
 import { listInventory, placeOf } from "./workplace.steps.ts";
+import { workshopCall } from "./workshop.steps.ts";
 import { logLines } from "./record.steps.ts";
 import { modelOf, runTheScenario, script } from "./tool.steps.ts";
 
@@ -380,6 +381,12 @@ Then("it took at least {int} milliseconds", function (this: Context, durationMs:
 const NO_TIME_MS = 5;
 
 Then("it took no time", function (this: Context) {
+  // The workshop's contract says it of the call it spoke of last (FR-WORKSHOP-02).
+  if (this.libraryScenario?.name === "workshop") {
+    const call = workshopCall(this);
+    assert.ok(call.endedAtMs - call.startedAtMs < NO_TIME_MS, `the call took ${call.endedAtMs - call.startedAtMs} ms`);
+    return;
+  }
   // The worker's last call as the run recorded it, whether the scenario gave its calls one by one or scripted its turns.
   const last = this.toolCalls?.filter((recorded) => recorded.agent === WORKER).at(-1);
   assert.ok(last !== undefined, "the worker made no call");
@@ -408,7 +415,8 @@ Then("the call succeeded with the text {string}", function (this: Context, text:
 });
 
 Then("the call failed with {string} and the text {string}", function (this: Context, outcome: string, text: string) {
-  const last = lastCall(this);
+  // The workshop's contract says it of the call it spoke of last (FR-WORKSHOP-02).
+  const last = this.libraryScenario?.name === "workshop" ? workshopCall(this) : lastCall(this);
   assert.deepEqual({ outcome: last.outcome, text: last.text }, { outcome, text });
 });
 

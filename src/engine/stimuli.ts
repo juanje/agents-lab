@@ -8,6 +8,11 @@ export interface Channel {
   stimulus: string;
   /** Whether a stimulus on it reaches a resting agent at once and starts an activation, as its rhythm does (FR-CONGRESS-08). */
   wakes?: boolean;
+  /**
+   * What its stimulus is, as the inventory gives it in place of the stimulus, for a channel whose stimulus each delivery
+   * fills in whole, such as what a worker said (FR-WORKSHOP-03).
+   */
+  described?: string;
 }
 
 /** A message delivered into an agent's session through a channel, with the channel's source. */
@@ -147,10 +152,12 @@ export class Stimuli {
 
   /**
    * What an agent receives when it wakes: the rhythm's stimulus when its rhythm wakes it, then, the first time only, its
-   * first stimuli, then the stimuli waiting for it, among them the one that woke it, when a stimulus did (FR-CONGRESS-08).
+   * first stimuli, each `{name}` in them filled with the agent's name (FR-WORKSHOP-05), then the stimuli waiting for it,
+   * among them the one that woke it, when a stimulus did (FR-CONGRESS-08).
    */
   wake(agent: string, byRhythm = true): Stimulus[] {
-    const now = [...(byRhythm ? [RHYTHM_CHANNEL] : []), ...(this.#first.get(agent) ?? [])].map((channel) => this.#stimulusOf(channel));
+    const first = (this.#first.get(agent) ?? []).map((channel) => this.#stimulusOf(channel)).map((stimulus) => ({ ...stimulus, content: stimulus.content.replaceAll("{name}", agent) }));
+    const now = [...(byRhythm ? [this.#stimulusOf(RHYTHM_CHANNEL)] : []), ...first];
     this.#first.delete(agent);
     for (const stimulus of now) this.#delivered(agent, stimulus);
     return [...now, ...this.take(agent)];

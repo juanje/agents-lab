@@ -15,6 +15,7 @@ import { linesOf, logLines } from "./record.steps.ts";
 import { asRead } from "./stimulus.steps.ts";
 import { hourMsOf } from "./congress.steps.ts";
 import { returned, runTheScenario, script } from "./tool.steps.ts";
+import { scriptWorkshopTurns } from "./workshop.steps.ts";
 
 /** The test scenario's world: the mail the engine keeps in it, and nothing else. */
 interface Post {
@@ -206,7 +207,13 @@ function turnsOf(written: string, hourMs: () => number): ScriptedAnswer[] {
 }
 
 // An agent's turns "woken by the ring" are those of its first activation, whose stimuli hold the ring (FR-PHONE-01).
-Given(/^"(\w+)"'s scripted turns(?:, woken by the ring,)? (.+)$/, function (this: Context, agent: string, written: string) {
+// A table cell's "\n" reaches the step as a new line (the workshop's empty texts, FR-WORKSHOP-03).
+Given(/^"(\w+)"'s scripted turns(?:, woken by the ring,)? ([\s\S]+)$/, function (this: Context, agent: string, written: string) {
+  // The workshop's workers' turns use the same words (FR-WORKSHOP-02).
+  if (this.libraryScenario?.name === "workshop") {
+    scriptWorkshopTurns(this, agent, written);
+    return;
+  }
   script(this, agent, turnsOf(written, () => hourMsOf(this)));
 });
 

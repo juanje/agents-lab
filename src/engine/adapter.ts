@@ -32,8 +32,8 @@ import type { ParallelismLimit } from "./parallelism.ts";
 import { SCRIPT_EXHAUSTED_MESSAGE } from "./scripted-model.ts";
 import type { Sensings } from "./sensings.ts";
 import type { Stimuli, Stimulus } from "./stimuli.ts";
-import type { AgentCall, EarlyEnd, Effector, Sensor, Start, TargetAsSensed, Tool } from "./tools.ts";
-import type { World } from "./world.ts";
+import type { AgentCall, EarlyEnd, EffectDelivery, Effector, LandingCall, Sensor, Start, TargetAsSensed, Tool } from "./tools.ts";
+import type { Action, World } from "./world.ts";
 
 /**
  * The model an agent works with, and the provider that serves it when Pi's model runtime does not already: a scripted
@@ -221,6 +221,8 @@ export interface SessionSettings {
   stop(error: Error): void;
   /** The run's time, which a sensor is given as it reads the world (FR-WORKPLACE-05). */
   clock: RunClock;
+  /** The run's agents, the only ones an effector's effect may deliver to (FR-STIMULUS-02). */
+  agents: readonly string[];
 }
 
 /**
@@ -646,7 +648,7 @@ function definition<State>(
   changes: ChangesSinceSensing,
   stimuli: Stimuli,
   records: Records,
-  { runEnd, stop, clock }: SessionSettings,
+  { runEnd, stop, clock, agents }: SessionSettings,
 ): ToolDefinition {
   return {
     name: tool.name,
@@ -654,7 +656,7 @@ function definition<State>(
     description: tool.description,
     parameters: tool.parameters as ToolDefinition["parameters"],
     execute: async (id, args: Record<string, unknown>) => {
-      const { executed: ran, text } = await callTool(world, tool, agent, args, { sensings, changes, stimuli, records, runEnd, stop, clock });
+      const { executed: ran, text } = await callTool(world, tool, agent, args, { sensings, changes, stimuli, records, runEnd, stop, clock, agents });
       executed.set(id, ran);
       // A failure is marked as one: an agent told that a failure succeeded would act on a world it misreads.
       return { content: [{ type: "text", text }], details: undefined, isError: ran.outcome !== "success" };
@@ -663,7 +665,7 @@ function definition<State>(
 }
 
 /** What a tool call runs in besides the world: its caller's sensings and changes since sensing, the stimuli, the log and the run. */
-export interface CallContext extends Around, Pick<SessionSettings, "runEnd" | "stop" | "clock"> {
+export interface CallContext extends Around, Pick<SessionSettings, "runEnd" | "stop" | "clock" | "agents"> {
   records: Pick<Records, "start">;
   /** What the caller is, as an error names it: an agent, unless it is a participant decided by rules (FR-PARTICIPANT-01). */
   caller?: "agent" | "participant";
@@ -679,7 +681,7 @@ export async function callTool<State>(
   tool: Tool<State>,
   agent: string,
   args: Record<string, unknown>,
-  { sensings, changes, stimuli, records, runEnd, stop, clock, caller = "agent" }: CallContext,
+  { sensings, changes, stimuli, records, runEnd, stop, clock, agents, caller = "agent" }: CallContext,
 ): Promise<{ executed: Executed; text: string; record?: Readonly<Record<string, unknown>> }> {
   const startedAtMs = performance.now();
   let called: CallResult;
@@ -692,14 +694,17 @@ export async function callTool<State>(
       : (undeclared(tool, args) ??
         refused(world, tool, { agent, arguments: args }, clock) ??
         (await perform(world, tool, { agent, arguments: args }, { sensings, changes, stimuli }, runEnd, started, clock)));
+    assertRecipients(called.deliveries, agent, agents);
   } catch (error) {
     // A tool that throws is a defect of the scenario, not the agent's behaviour: no outcome fits it, and the run
     // stops on it rather than going on with a world it cannot trust.
     stop(failure(`${caller} "${agent}"'s "${tool.name}" call failed`, error));
     throw error;
   }
-  const { outcome, text, takenFrom, seen, record, ...perceived } = called;
+  const { outcome, text, takenFrom, seen, record, deliveries, ...perceived } = called;
   const endedAtMs = performance.now();
+  // Made as the call ends, so each is delivered no earlier than its end (FR-STIMULUS-02).
+  for (const { agent: to, source, values } of deliveries?.each ?? []) stimuli.deliver(to, deliveries!.channel, values, { source });
   const sensed = tool.kind === "sensor" && outcome === "success";
   // An effector call the tool ran is one that read its target; its record keeps the text its agent received.
   const effected = tool.kind === "effector" && perceived.targetAsSensed !== undefined;
@@ -718,6 +723,17 @@ export async function callTool<State>(
   // What an effector's sight saw is no sensing: the agent's last sensing, and the changes since it, stay as they were.
   if (seen !== undefined) sensings.sighted(agent, { tool: tool.name, result: seen, atMs: endedAtMs });
   return { executed, text, ...(record === undefined ? {} : { record }) };
+}
+
+/**
+ * Refuses a call's deliveries when one reaches its own caller or a name that is no agent of the run: a defect of the
+ * scenario, which stops the run before any of them is delivered (FR-STIMULUS-02).
+ */
+function assertRecipients(deliveries: CallResult["deliveries"], caller: string, agents: readonly string[]): void {
+  for (const { agent } of deliveries?.each ?? []) {
+    if (agent === caller) throw new Error(`its effect delivers to "${agent}", its own caller`);
+    if (!agents.includes(agent)) throw new Error(`its effect delivers to "${agent}", which is no agent of the run`);
+  }
 }
 
 /**
@@ -772,6 +788,8 @@ interface CallResult {
   changesSinceSensingBy?: string[] | null;
   /** For an effector's success that declares it, the world's record of what its reply gives, for a rule set (FR-CONGRESS-09). */
   record?: Readonly<Record<string, unknown>>;
+  /** For an effector's call whose effect applied, the stimuli it delivers, made once the call has ended (FR-STIMULUS-02). */
+  deliveries?: { channel: string; each: readonly EffectDelivery[] };
 }
 
 /**
@@ -871,6 +889,29 @@ function endingEarly<State>(world: World<State>, stimuli: Stimuli, ends: EarlyEn
   };
 }
 
+/** An effector's action with its end applied in the same change, right after the action's effect (FR-WORKSHOP-02). */
+function withEnd<State>(action: Action<State, LandingCall>, end: Action<State, LandingCall>): Action<State, LandingCall> {
+  return {
+    precondition: (state, call) => action.precondition(state, call),
+    effect: (state, call) => {
+      const acted = action.effect(state, call);
+      const check = end.precondition(acted, call);
+      if (!check.holds) throw new Error(`its end was refused with "${check.reason}"`);
+      return end.effect(acted, call);
+    },
+  };
+}
+
+/**
+ * Applies an effector's end as a change of its own, through the arbiter, as its call ends, and counts it among the
+ * changes other agents see since they sensed (FR-WORKSHOP-02). An end the world refuses throws: it is the scenario's defect.
+ */
+function applyEnd<State>(world: World<State>, end: Action<State, LandingCall>, landing: LandingCall, changes: ChangesSinceSensing): void {
+  const result = world.apply(end, landing);
+  if (!result.applied) throw new Error(`its end was refused with "${result.reason}"`);
+  changes.applied(landing.agent);
+}
+
 /**
  * Applies the start of an effector's call under way through the arbiter, as the call starts (FR-SPACE-03), and counts it
  * among the changes other agents see since they sensed; it gives the change as the scenario describes it, from the
@@ -894,7 +935,8 @@ function sense<State>(world: World<State>, sensor: Sensor<State>, call: AgentCal
 /**
  * Applies an effector's call through the arbiter, against the world as it is now; its outcome is "success" or the
  * failure's reason, and the agent receives the text the effector declares for it, or the outcome itself; a success of
- * an effector that declares a reply gives its reply, from the world right after its effect (FR-MESSAGE-01). An effector
+ * an effector that declares a reply gives its reply, from the world right after its effect (FR-MESSAGE-01), and any other
+ * outcome the text the effector makes of it, when it makes one (FR-WORKSHOP-06). An effector
  * without an action changes nothing: it applies nothing and succeeds. A call that ended early, once its effect applies,
  * has the early end's outcome instead of "success". The changes since the agent last sensed, and who applied them, are
  * read at this moment, beside it. The action is given this moment and, for a run with a calendar, the world's time then.
@@ -903,15 +945,22 @@ function effect<State>(world: World<State>, effector: Effector<State>, call: Age
   const changesSinceSensing = changes.since(call.agent);
   const changesSinceSensingBy = changes.appliedBy(call.agent);
   const landing = { ...call, atMs: performance.now(), ...clock.worldTimeKey() };
-  const applied = effector.action === undefined ? "success" : applyCounted(world, changes, call.agent, effector.action, landing);
+  const { action, end } = effector;
+  const applied = action === undefined ? "success" : applyCounted(world, changes, call.agent, end === undefined ? action : withEnd(action, end), landing);
+  // An end no applied action carried applies on its own (FR-WORKSHOP-02).
+  if (end !== undefined && (action === undefined || applied !== "success")) applyEnd(world, end, landing, changes);
   const outcome = applied === "success" ? (endedEarly ?? applied) : applied;
-  const text = outcome === "success" && effector.reply !== undefined ? effector.reply.text(world.state, call) : (effector.texts?.[outcome] ?? outcome);
+  // Only an effect that applied delivers, from the world right after it (FR-STIMULUS-02).
+  const delivering = applied === "success" && effector.delivers !== undefined ? { deliveries: { channel: effector.delivers.channel, each: effector.delivers.deliveries(world.state, call) } } : {};
+  const declared = effector.texts?.[outcome] ?? outcome;
+  const text = outcome === "success" ? (effector.reply?.text(world.state, call) ?? declared) : (effector.refusalText?.(world.state, call, outcome) ?? declared);
   const record = outcome === "success" ? effector.reply?.record?.(world.state, call) : undefined;
-  if (record !== undefined) return { outcome, text, changesSinceSensing, changesSinceSensingBy, record };
-  if (effector.sight === undefined || !effector.sight.outcomes.includes(outcome)) return { outcome, text, changesSinceSensing, changesSinceSensingBy };
+  const result = { outcome, text, changesSinceSensing, changesSinceSensingBy, ...delivering };
+  if (record !== undefined) return { ...result, record };
+  if (effector.sight === undefined || !effector.sight.outcomes.includes(outcome)) return result;
   // What the agent sees from where it is as its call ends: the world right after its effect, if any, was applied.
   const sighting = effector.sight.see(world.state, call.agent);
-  return { outcome, text: `${text} ${sighting.text}`, seen: sighting.seen, changesSinceSensing, changesSinceSensingBy };
+  return { ...result, text: `${text} ${sighting.text}`, seen: sighting.seen };
 }
 
 

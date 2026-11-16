@@ -764,6 +764,104 @@ describe("run", () => {
     expect(call.endedAtMs - call.startedAtMs).toBeGreaterThanOrEqual(100);
   });
 
+  /** A channel whose text an effector's deliveries fill, and whose deliveries give their own source (FR-STIMULUS-02). */
+  const news = { name: "news", source: "the agent that takes a slot", stimulus: "took slot {slot}." };
+
+  /** The test world's "take", whose effect delivers on the news channel, to each agent given, the slot taken, from its caller. */
+  const tellingTake = (to: readonly string[]): Effector<Slots> => ({
+    ...(slotTools[1] as Effector<Slots>),
+    delivers: {
+      channel: news.name,
+      deliveries: (state, call) => to.map((agent) => ({ agent, source: call.agent, values: { slot: String(state.indexOf(call.agent) + 1) } })),
+    },
+  });
+
+  it("delivers, as an effector's effect is applied, each delivery it gives from the state after its effect and the call, through its channel, from the source it gives, once the call has ended (FR-STIMULUS-02)", async () => {
+    const logDirectory = newLogDirectory();
+    const loaded = slots({ ...agentsNamed("a", "b"), channels: () => [rhythmChannel, news], tools: [tellingTake(["b"])] });
+    const a = new ScriptedModel([
+      { toolCalls: [{ name: "take", arguments: { slot: 2 } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+    // b's first turn outlasts a's call, so the delivery reaches b at its next turn.
+    const b = new ScriptedModel([
+      { toolCalls: [{ name: "look", arguments: {} }], delayMs: 100 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+
+    const { runId, toolCalls } = await run(loaded, [
+      { name: "a", model: a, activations: 1 },
+      { name: "b", model: b, activations: 1 },
+    ], seed, { ...settings, logDirectory });
+
+    const delivered = logOf(logDirectory, runId).filter((line) => (line as { type: string; channel?: string }).type === "stimulus" && (line as { channel: string }).channel === "news");
+    expect(delivered).toEqual([{ type: "stimulus", agent: "b", channel: "news", source: "a", content: "took slot 2.", deliveredAtMs: expect.any(Number) }]);
+    const taken = toolCalls.find((call) => call.agent === "a")!;
+    const { deliveredAtMs } = delivered[0] as { deliveredAtMs: number };
+    expect(deliveredAtMs).toBeGreaterThanOrEqual(taken.endedAtMs);
+    expect(deliveredAtMs - taken.endedAtMs).toBeLessThan(20);
+    const text = (value: string) => ({ role: "user", content: [{ type: "text", text: value }] });
+    expect(b.received[1]?.at(-1)).toMatchObject(text("a: took slot 2."));
+  });
+
+  it.each([
+    ["fails", { tools: [tellingTake(["b"])] }, ["c", null, null], {}, "slot_taken"],
+    ["is refused before it runs", { tools: [{ ...tellingTake(["b"]), refuses: () => ({ outcome: "not_now", reason: "Not now." }) }] }, emptySlots(3), {}, "not_now"],
+    ["is cut off by the time limit", { tools: [{ ...tellingTake(["b"]), durationMs: () => 300 }] }, emptySlots(3), { timeLimitMs: 50 }, "cut_off"],
+  ] as const)("delivers nothing for a call whose effect does not apply: one that %s (FR-STIMULUS-02)", async (_case, parts, start, limits, outcome) => {
+    const logDirectory = newLogDirectory();
+    const loaded = slots({ ...agentsNamed("a", "b"), channels: () => [rhythmChannel, news], initialState: () => [...start], ...parts });
+    const a = new ScriptedModel([
+      { toolCalls: [{ name: "take", arguments: { slot: 1 } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+    const b = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
+
+    const { runId, toolCalls } = await run(loaded, [
+      { name: "a", model: a, activations: 1 },
+      { name: "b", model: b, activations: 1 },
+    ], seed, { ...settings, logDirectory, ...limits });
+
+    expect(toolCalls.find((call) => call.agent === "a")).toMatchObject({ outcome });
+    const delivered = logOf(logDirectory, runId).filter((line) => (line as { channel?: string }).channel === "news");
+    expect(delivered).toEqual([]);
+  });
+
+  it("refuses, before any model call, an effector that delivers through a channel the scenario does not declare, naming the tool and the channel (FR-STIMULUS-02)", async () => {
+    const logDirectory = newLogDirectory();
+    const model = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
+
+    const running = run(slots({ tools: [tellingTake(["b"])] }), [{ name: "a", model, activations: 1 }], seed, { ...settings, logDirectory });
+
+    await expect(running).rejects.toThrow('The effector "take" delivers through the channel "news", which scenario "slots" does not declare');
+    expect(model.received).toEqual([]);
+    expect(readdirSync(logDirectory)).toEqual([]);
+  });
+
+  it.each([
+    ["its own caller", "a", 'agent "a"\'s "take" call failed: its effect delivers to "a", its own caller'],
+    ["a name that is no agent of the run", "z", 'agent "a"\'s "take" call failed: its effect delivers to "z", which is no agent of the run'],
+  ])("stops the run on a delivery to %s, naming the tool and the name, and delivers none of the call's stimuli (FR-STIMULUS-02)", async (_case, recipient, error) => {
+    const logDirectory = newLogDirectory();
+    const loaded = slots({ ...agentsNamed("a", "b"), channels: () => [rhythmChannel, news], tools: [tellingTake(["b", recipient])] });
+    const a = new ScriptedModel([
+      { toolCalls: [{ name: "take", arguments: { slot: 2 } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+    const b = new ScriptedModel([{ text: "Nothing to do.", delayMs: 0 }]);
+
+    const running = run(loaded, [
+      { name: "a", model: a, activations: 1 },
+      { name: "b", model: b, activations: 1 },
+    ], seed, { ...settings, logDirectory });
+
+    await expect(running).rejects.toThrow(error);
+    const [file] = readdirSync(logDirectory);
+    const lines = readFileSync(join(logDirectory, file), "utf8").trimEnd().split("\n").map((line) => JSON.parse(line));
+    expect(lines.at(-1)).toEqual({ type: "run_stopped", error });
+    expect(lines.filter((line) => line.channel === "news")).toEqual([]);
+  });
+
   it("gives an effector with no action, which changes nothing, its outcome without the arbiter: the world's version stays", async () => {
     const { action: _action, ...still } = patientTake;
     const loaded = slots({ tools: [{ ...still, durationMs: () => 20 }] });
@@ -816,6 +914,26 @@ describe("run", () => {
     expect(toolCalls.map(({ outcome, text }) => [outcome, text])).toEqual([
       ["success", "a holds a."],
       ["slot_taken", "Someone holds it."],
+    ]);
+  });
+
+  it("gives the agent, for a refused effect, the text the effector makes of that outcome from the state and the call, in place of the one it declares (FR-WORKSHOP-06)", async () => {
+    const naming: Effector<Slots> = {
+      ...(slotTools[1] as Effector<Slots>),
+      texts: { success: "Taken.", slot_taken: "Slot <slot> is held." },
+      refusalText: (slots, call, outcome) => (outcome === "slot_taken" ? `Slot ${String(call.arguments.slot)} is held by ${String(slots[(call.arguments.slot as number) - 1])}.` : undefined),
+    };
+    const model = new ScriptedModel([
+      { toolCalls: [{ name: "take", arguments: { slot: 2 } }], delayMs: 0 },
+      { toolCalls: [{ name: "take", arguments: { slot: 2 } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+
+    const { toolCalls } = await run(slots({ tools: [naming] }), [{ name: "a", model, activations: 1 }], seed, settings);
+
+    expect(toolCalls.map(({ outcome, text }) => [outcome, text])).toEqual([
+      ["success", "Taken."],
+      ["slot_taken", "Slot 2 is held by a."],
     ]);
   });
 
@@ -1680,6 +1798,119 @@ describe("run", () => {
     expect((logOf(logDirectory, runId) as { type: string }[]).filter((line) => line.type === "effector_start")).toEqual([]);
   });
 
+  /**
+   * An effector with an end in the slots world, "visit" (FR-WORKSHOP-02): as its call starts, its agent takes slot 1;
+   * when it lands, the agent also takes slot 2 (fails as slot_taken when it is held), unless it has no action; and as
+   * its call ends, whatever its outcome, its end gives slot 1 back.
+   */
+  const visiting = (durationMs: number, parts: Partial<Effector<Slots>> = {}): Effector<Slots> => ({
+    kind: "effector",
+    name: "visit",
+    description: "Visit slot 1 and take slot 2.",
+    parameters: { type: "object", properties: {} },
+    durationMs: () => durationMs,
+    start: {
+      precondition: (state, { agent }) => take.precondition(state, { agent, slot: 1 }),
+      effect: (state, { agent }) => take.effect(state, { agent, slot: 1 }),
+      describe: () => ({ took: 1 }),
+    },
+    action: {
+      precondition: (state, { agent }) => take.precondition(state, { agent, slot: 2 }),
+      effect: (state, { agent }) => take.effect(state, { agent, slot: 2 }),
+    },
+    end: {
+      precondition: () => ({ holds: true }),
+      effect: (state) => [null, ...state.slice(1)],
+    },
+    readTarget: () => "not_sensed",
+    ...parts,
+  });
+
+  /** One agent "a" that calls "visit" at once, then ends. */
+  const visitor = () =>
+    new ScriptedModel([
+      { toolCalls: [{ name: "visit", arguments: {} }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+
+  it("applies an effector's end in the same change as its action, when the action applies (FR-WORKSHOP-02)", async () => {
+    const loaded = slots({ tools: [...slotTools, visiting(30)] });
+
+    const { toolCalls } = await run(loaded, [{ name: "a", model: visitor(), activations: 1 }], seed, settings);
+
+    expect(toolCalls[0]).toMatchObject({ tool: "visit", outcome: "success" });
+    expect(loaded.world.state).toEqual([null, "a", null]);
+    // The start, then the action with its end.
+    expect(loaded.world.version).toBe(2);
+  });
+
+  it("applies an effector's end as a change of its own when its action fails (FR-WORKSHOP-02)", async () => {
+    const loaded = slots({ tools: [...slotTools, visiting(30)], initialState: () => [null, "z", null] });
+
+    const { toolCalls } = await run(loaded, [{ name: "a", model: visitor(), activations: 1 }], seed, settings);
+
+    expect(toolCalls[0]).toMatchObject({ tool: "visit", outcome: "slot_taken" });
+    expect(loaded.world.state).toEqual([null, "z", null]);
+    expect(loaded.world.version).toBe(2);
+  });
+
+  it("applies the end of an effector with no action as a change of its own, and of a call that ended early (FR-WORKSHOP-02)", async () => {
+    const napping = visiting(5_000, { action: undefined, endsEarly: { outcome: "interrupted", byChange: () => false, byStimulus: () => true } });
+    const loaded = slots({ tools: [...slotTools, napping, visiting(30, { name: "quick", action: undefined })], channels: () => [rhythmChannel, bell] });
+    const quick = new ScriptedModel([
+      { toolCalls: [{ name: "quick", arguments: {} }], delayMs: 0 },
+      { toolCalls: [{ name: "visit", arguments: {} }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+
+    const { toolCalls } = await run(loaded, [{ name: "a", model: quick, activations: 1 }], seed, {
+      ...settings,
+      onStart: (stimuli: Stimuli) => setTimeout(() => stimuli.deliver("a", "bell"), 100),
+    });
+
+    expect(toolCalls.map(({ tool, outcome }) => [tool, outcome])).toEqual([
+      ["quick", "success"],
+      ["visit", "interrupted"],
+    ]);
+    expect(loaded.world.state).toEqual(emptySlots(3));
+    // Each call's start and its end.
+    expect(loaded.world.version).toBe(4);
+  });
+
+  it("applies no end to a call cut off by the time limit, nor to one refused before it runs (FR-WORKSHOP-02)", async () => {
+    const cutOff = slots({ tools: [...slotTools, visiting(300)] });
+    await run(cutOff, [{ name: "a", model: visitor(), activations: 1 }], seed, { ...settings, timeLimitMs: 100 });
+    expect(cutOff.world.state).toEqual(["a", null, null]);
+    expect(cutOff.world.version).toBe(1);
+
+    const refusedAtOnce = slots({ tools: [...slotTools, visiting(30, { refuses: () => ({ outcome: "invalid_arguments", reason: "never" }) })] });
+    const { toolCalls } = await run(refusedAtOnce, [{ name: "a", model: visitor(), activations: 1 }], seed, settings);
+    expect(toolCalls[0]).toMatchObject({ outcome: "invalid_arguments" });
+    expect(refusedAtOnce.world.version).toBe(0);
+  });
+
+  it("counts an end applied on its own among the changes since sensing of another agent's effector call (FR-WORKSHOP-02)", async () => {
+    // "a" visits 10 ms in, over 50 ms, with slot 2 held, so its end applies alone; "b" looks at once, then takes slot 3 over 100 ms.
+    const b = new ScriptedModel([
+      { toolCalls: [{ name: "look", arguments: {} }], delayMs: 0 },
+      { toolCalls: [{ name: "take", arguments: { slot: 3 } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+    const loaded = slots({ tools: [...withTakeTaking(100), visiting(50)], initialState: () => [null, "z", null], ...agentsNamed("a", "b"), ...rhythms({ a: () => 10 }) });
+
+    const { toolCalls } = await run(
+      loaded,
+      [
+        { name: "a", model: visitor(), activations: 1 },
+        { name: "b", model: b, activations: 1 },
+      ],
+      seed,
+      settings,
+    );
+
+    expect(toolCalls.find((call) => call.tool === "take")).toMatchObject({ outcome: "success", changesSinceSensing: 2, changesSinceSensingBy: ["a", "a"] });
+  });
+
   it("gives an effector's action the moment it is checked and applied, by the run's clock", async () => {
     const a = new ScriptedModel([
       { toolCalls: [{ name: "stamp", arguments: {} }], delayMs: 0 },
@@ -1983,6 +2214,98 @@ describe("run's metric samples at an interval", () => {
       expect(scheduled[index].atMs - scheduled[index - 1].atMs).toBeGreaterThanOrEqual(100);
     }
     expect(samples.at(-1)!.atMs).toBeGreaterThanOrEqual(scheduled.at(-1)!.atMs);
+  });
+});
+
+describe("run, a world its scenario says is finished (FR-RUN-08)", () => {
+  /** Whether slots 1 and 2 are both held: the world a test scenario says is finished then (FR-RUN-08). */
+  const oneAndTwoHeld = (state: Slots) => holder(state, 1) !== null && holder(state, 2) !== null;
+
+  it("ends the run once the scenario says, after a change, that its world is finished: the call that finished it keeps its outcome, a model turn still running is cut off, and the log gives world_finished, then the final metric sample (FR-RUN-08)", async () => {
+    const logDirectory = newLogDirectory();
+    const loaded = slots({ ...agentsNamed("a", "b"), tools: withTakeTaking(50), finished: oneAndTwoHeld });
+    const a = new ScriptedModel([
+      { toolCalls: [{ name: "take", arguments: { slot: 1 } }], delayMs: 0 },
+      { toolCalls: [{ name: "take", arguments: { slot: 2 } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+    const b = new ScriptedModel([{ text: "Thinking.", delayMs: 5_000 }]);
+
+    const { runId, toolCalls, turns } = await run(loaded, [
+      { name: "a", model: a, activations: 1 },
+      { name: "b", model: b, activations: 1 },
+    ], seed, { ...settings, logDirectory, timeLimitMs: 10_000 });
+
+    const finishing = toolCalls.filter((call) => call.agent === "a")[1];
+    expect(finishing).toMatchObject({ outcome: "success" });
+    expect(a.received).toHaveLength(2);
+    expect(turns.find((turn) => turn.agent === "b")).toMatchObject({ outcome: "cut_off" });
+    const lines = logOf(logDirectory, runId) as { type: string; atMs?: number; version?: number }[];
+    const finished = lines.findIndex((line) => line.type === "world_finished");
+    expect(lines[finished]).toEqual({ type: "world_finished", atMs: expect.any(Number) });
+    expect(Math.abs(lines[finished].atMs! - finishing.endedAtMs)).toBeLessThan(20);
+    const lastSample = lines.map((line) => line.type).lastIndexOf("metric_sample");
+    expect(lastSample).toBeGreaterThan(finished);
+    expect(lines[lastSample]).toMatchObject({ version: 2, metrics: { held: 2 } });
+  });
+
+  it("cuts off a tool call and a component's action still running when its world is finished: neither applies anything (FR-RUN-08)", async () => {
+    const logDirectory = newLogDirectory();
+    const porter = filler("porter", { slot: 3, thing: "crate", waitMs: () => 0, actionMs: 2_000 });
+    const fill = { ...(slotTools[1] as Effector<Slots>), name: "fill", durationMs: () => 2_000 };
+    const loaded = slots({ ...agentsNamed("a", "b"), tools: [...withTakeTaking(50), fill], components: () => [porter], finished: oneAndTwoHeld });
+    const a = new ScriptedModel([
+      { toolCalls: [{ name: "take", arguments: { slot: 1 } }], delayMs: 0 },
+      { toolCalls: [{ name: "take", arguments: { slot: 2 } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+    const b = new ScriptedModel([
+      { toolCalls: [{ name: "fill", arguments: { slot: 3 } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+
+    const { runId, toolCalls } = await run(loaded, [
+      { name: "a", model: a, activations: 1 },
+      { name: "b", model: b, activations: 1 },
+    ], seed, { ...settings, logDirectory, timeLimitMs: 10_000 });
+
+    expect(toolCalls.find((call) => call.tool === "fill")).toMatchObject({ outcome: "cut_off" });
+    const actions = logOf(logDirectory, runId).filter((line) => (line as { type: string }).type === "component_action");
+    expect(actions).toMatchObject([{ component: "porter", outcome: "cut_off" }]);
+    expect(holder(loaded.world.state, 3)).toBeNull();
+  });
+
+  it("asks its scenario after a change a component applies too, and gives the world's time with world_finished in a run with a calendar (FR-RUN-08)", async () => {
+    const logDirectory = newLogDirectory();
+    const porter = filler("porter", { slot: 2, thing: "crate", waitMs: () => 50, actionMs: 50 });
+    const calendar = ["[calendar]", 'start = "day 3 Sunday 23:58"', "[[calendar.segments]]", "scale = 600", ""].join("\n");
+    const loaded = slots({ components: () => [porter], finished: oneAndTwoHeld, initialState: () => ["start", null, null], baseConfiguration: `${slotsScenario.baseConfiguration}\n${calendar}` });
+    const model = new ScriptedModel([{ text: "Thinking.", delayMs: 5_000 }]);
+
+    const { runId } = await run(loaded, [{ name: "a", model, activations: 1 }], seed, { ...settings, logDirectory, timeLimitMs: 10_000 });
+
+    const lines = logOf(logDirectory, runId) as { type: string; endedAtMs?: number; atMs?: number; worldTime?: { seconds: number } }[];
+    const action = lines.find((line) => line.type === "component_action")!;
+    const finished = lines.find((line) => line.type === "world_finished")!;
+    expect(action).toMatchObject({ outcome: "success" });
+    expect(Math.abs(finished.atMs! - action.endedAtMs!)).toBeLessThan(20);
+    // About 100 ms of the run at the scale 600 is a minute past 23:58; the engine's own milliseconds add a few seconds.
+    expect(finished.worldTime).toMatchObject({ day: 3, weekday: "Sunday" });
+    expect(finished.worldTime!.seconds).toBeGreaterThanOrEqual(23 * 3600 + 59 * 60);
+    expect(finished.worldTime!.seconds).toBeLessThan(23 * 3600 + 59 * 60 + 30);
+  });
+
+  it("writes no world_finished line when its scenario never says its world is finished, nor when the time limit passes first (FR-RUN-08)", async () => {
+    for (const [finished, timeLimitMs] of [[undefined, 10_000], [oneAndTwoHeld, 75]] as const) {
+      const logDirectory = newLogDirectory();
+      const model = new ScriptedModel([
+        { toolCalls: [{ name: "take", arguments: { slot: 1 } }], delayMs: 0 },
+        { toolCalls: [{ name: "take", arguments: { slot: 2 } }], delayMs: 0 },
+        { text: "Done.", delayMs: 0 },
+      ]);
+      const { runId } = await run(slots({ tools: withTakeTaking(50), ...(finished === undefined ? {} : { finished }) }), [{ name: "a", model, activations: 1 }], seed, { ...settings, logDirectory, timeLimitMs });
+      expect(logOf(logDirectory, runId).filter((line) => (line as { type: string }).type === "world_finished")).toEqual([]);
+    }
   });
 });
 

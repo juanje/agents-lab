@@ -81,6 +81,11 @@ export interface Scenario<State> {
   ruleSets?: Readonly<Record<string, RuleSet>>;
   /** The predicates, events and misapplication patterns of its parts, by name (FR-PARTS-01). */
   parts?: PartsProvided<State>;
+  /**
+   * Whether its world is finished (a device complete, a task done), from its state, for a scenario that says; the engine
+   * asks after each change the world applies, and ends the run once it says so (FR-RUN-08).
+   */
+  finished?: (state: State) => boolean;
   /** The lines of the run's log the scenario gives for a change of its world, each with its type, recorded as the world applies it (FR-POPULATION-01). */
   logLines?: (before: State, after: State) => readonly ({ type: string } & Readonly<Record<string, unknown>>)[];
   /** The accounts of the world itself, besides its agents' and participants', that its configuration's [money] may give (FR-CONGRESS-05). */

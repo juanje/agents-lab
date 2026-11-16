@@ -97,6 +97,7 @@ export async function run<State>(
   // Refused before its log opens, as a scenario that fails to load is: nothing has run.
   assertScenarioAgents(loaded, agents);
   assertNamesDiffer([...agents.map(({ name }) => name), ...loaded.components.map(({ name }) => name)]);
+  assertDeliveryChannels(loaded);
   const recorder = Recorder.open(settings.logDirectory, settings.runId, settings.onRecord);
   // Aborts when the run ends before its agents are done: its time limit passes (FR-CLOCK-02) or it stops on an error.
   const runEnd = new AbortController();
@@ -165,6 +166,20 @@ function assertNamesDiffer(names: readonly string[]): void {
   if (twice !== undefined) throw new Error(`The run gives two of its agents and components the name "${twice}"; each must have its own`);
 }
 
+/**
+ * Refuses a scenario with an effector that delivers through a channel it does not declare, naming the tool and the
+ * channel: its first delivery would otherwise fail in the middle of the run (FR-STIMULUS-02).
+ */
+function assertDeliveryChannels<State>({ scenario, channels }: LoadedScenario<State>): void {
+  for (const tool of [...scenario.tools, ...(scenario.partyTools ?? [])]) {
+    if (tool.kind !== "effector" || tool.delivers === undefined) continue;
+    const { channel } = tool.delivers;
+    if (!channels.some(({ name }) => name === channel)) {
+      throw new Error(`The effector "${tool.name}" delivers through the channel "${channel}", which scenario "${scenario.name}" does not declare`);
+    }
+  }
+}
+
 /** Every sampling parameter but the thinking level, which the engine never sends, so the provider's defaults apply. */
 export const PROVIDER_DEFAULTS = "the provider's defaults";
 
@@ -192,6 +207,7 @@ async function runAgents<State>(
     compaction: settings.compaction,
     runEnd: runEnd.signal,
     stop,
+    agents: agents.map(({ name }) => name),
   };
   const runtime = await openRuntime(agents.map((agent) => agent.model.provider));
   const parallelism = new ParallelismLimit(settings.parallelismLimit);
@@ -294,7 +310,7 @@ async function runAgents<State>(
     seed,
     runEnd: runEnd.signal,
     stimuli,
-    call: { sensings, changes, stimuli, records, runEnd: runEnd.signal, stop, clock },
+    call: { sensings, changes, stimuli, records, runEnd: runEnd.signal, stop, clock, agents: sessionSettings.agents },
     records,
   });
   // The mail watches the world for messages sent before any agent or component can send one (FR-MESSAGE-01).
@@ -306,6 +322,13 @@ async function runAgents<State>(
   // Participants start once the mail and the phone watch the world, so a rule set's first step reaches them (FR-PARTICIPANT-01).
   parties.start();
   const evaluating = partsBook === undefined || calendar === undefined ? undefined : evaluateParts(partsBook, { world, clock, calendar, runEnd: runEnd.signal });
+  // Asked after every change, once the change's own lines are written; its answer ends the run as its time limit would (FR-RUN-08).
+  const finished = scenario.finished;
+  if (finished !== undefined) world.watch((_before, after) => {
+    if (runEnd.signal.aborted || !finished(after)) return;
+    recorder.record({ type: "world_finished", atMs: performance.now(), ...worldTimeOf(clock) });
+    runEnd.abort();
+  });
   const sample = () => sampleMetrics(world, toolCalls, scenario.metrics, recorder, performance.now());
   sampleMetrics(world, toolCalls, scenario.metrics, recorder, startedAtMs);
   const timer = setTimeout(() => runEnd.abort(), settings.timeLimitMs);
@@ -371,6 +394,12 @@ async function runAgents<State>(
   for (const component of components) if (component.outcome !== undefined) recorder.record({ type: "participant_outcome", participant: component.name, outcome: component.outcome(world.state) });
   sample();
   return { turns, toolCalls, messages, sensings, startedAtMs };
+}
+
+/** The world's time now, as a log line gives it beside its run time: `{ worldTime }` for a run with a calendar, nothing otherwise. */
+function worldTimeOf(clock: RunClock): { worldTime?: WorldTime } {
+  const worldTime = clock.worldTime();
+  return worldTime === undefined ? {} : { worldTime };
 }
 
 /**

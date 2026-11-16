@@ -44,6 +44,7 @@ Experiments are written outside this repository, in the experiment language (FR-
 | v0.1 | E13 micro vs macro (Schelling): three technical pilots, then parked | below | built enough for E13's pilots |
 | v0.2 | E2–E4 in an invented workplace (A19, A20, I4); E1's pilots ran here before E1 moved to the congress | below, in this build order | built for E1's pilots; E2–E4 next |
 | v0.3 | E1 in a congress (A18, A19): instructions and character | below, in this build order | under way: items 1–9 and 11–23 built, six technical runs and a check run; E1 restarts from a baseline with no traps or events |
+| workshop | The team experiments (EQ series) in a workshop: EQ0's technical run, then EQ1, the base by model | below, in this build order | contracts written |
 | v0.4 | E16 model monoculture and vote visibility | not written | later |
 | v0.5 | A single-agent experiment with tools and memory across runs (E15 or E7; the congress world's sequences) | not written | later |
 | v0.6 | World and agent forks | not written | later |
@@ -130,6 +131,16 @@ Experiments are written outside this repository, in the experiment language (FR-
 25. FR-CONGRESS-24 (from the baseline's first full run: D5 reads the confirmed order, done with exceptions, parts re-evaluated from the run's records), before E1's rerun
 26. FR-CONGRESS-25 (from the E1 rerun: venues and caterers say what a permit is and where it comes from; an order names its venue), before E1's next run
 
+**Workshop build order (EQ series).** The world is designed in `agents-lab-experiments/worlds/workshop/world.md` and its first experiment in `experiments/EQ1-baseline/design.md`; EQ0's technical run needs all eight.
+1. FR-STIMULUS-02 (an effector's effect delivers stimuli to other agents)
+2. FR-RUN-08 (a run ends when its world is finished)
+3. FR-WORKSHOP-01 (the workshop from its materials)
+4. FR-WORKSHOP-02 (the workers' tools)
+5. FR-WORKSHOP-03 (workers speak to the room)
+6. FR-WORKSHOP-04 (done, and the workshop's measures)
+7. FR-WORKSHOP-05 (handing over, a clock on the wall, and the character and limits texts)
+8. FR-WORKSHOP-06 (speech is addressed: ask, answer and tell replace say)
+
 **Small known gaps** (to close when convenient): `lab summarize` prints numbers at full precision; a completed run whose log has no metric sample gives no values without saying so; a run in the index whose log is missing fails with Node's own error. The `wait` tool's description does not state `wait_max_minutes`, so the worker learns the limit only from a refusal; `wait_max_minutes` is not checked when the configuration loads. FR-WORKPLACE-07's scenario whose wait ends `interrupted` "about 50 milliseconds into the run" failed once in a full gate (2026-11-13) and passed on three reruns: it needs more slack. The run test that ends an effector's call early at a stimulus failed once under load (2026-11-13) and passed on reruns, as did one scenario in a full gate the same day.
 
 **Not yet ordered:** FR-EFFORT-01, FR-METRIC-01, FR-EXPERIMENT-03, FR-RUN-03, FR-ANALYSIS-01.
@@ -182,6 +193,14 @@ Information an agent does not ask for reaches it only as a stimulus: a message d
 - **What the agent reads:** the source, a colon and the content, the same for every channel (for example `town bell: The bell rings.`). The channel and the source are also kept with the message for the log.
 - **The rhythm channel:** every scenario declares a channel named `rhythm`, with its source and its text; it is the stimulus each activation starts with. The engine writes no text of its own.
 *Why:* information does not come from nowhere; who or what sends it, and through what channel, is part of the system and must be declared like everything else the agent meets (NFR-04).
+
+#### FR-STIMULUS-02: An effector's effect can deliver stimuli to other agents
+An effector may declare that its effect delivers stimuli: the channel it delivers through, one the scenario declares, and, from the state right after its effect is applied and the call, the deliveries, each with the agent it reaches, its source and the values that fill the channel's text (FR-MESSAGE-01). The deliveries are made as the effect is applied, when the call ends (or ends early, FR-WORKPLACE-07); a call whose effect is not applied delivers nothing: one that fails, one refused before it runs, and one cut off by the time limit. Each delivery reaches its agent as any stimulus does (FR-STIMULUS-01): at the agent's next model turn while it works, when it next wakes while it rests, at once when its channel wakes (FR-CONGRESS-08); and it ends a call that ends early at a stimulus (FR-WORKPLACE-07).
+- **Recorded:** each delivery is a stimulus line (FR-RECORD-01) with the agent it reached, the channel, the delivery's source, the content and when it was delivered.
+- **The inventory** gives, for the effector, the channel it delivers through, beside the channel's declared source and text.
+- **Refusals:** an effector that delivers through a channel the scenario does not declare is refused before any model call, with an error that names the tool and the channel. A delivery to the effector's own caller, or to a name that is no agent of the run, is a defect of the scenario: the run stops, with an error that names the tool and the name.
+
+*Why:* when agents talk, what one says reaches the others because the speaker acted, not because a mechanism of the world sent it; the speaker is the source, and speaking takes its time like any act. Until now only components and the engine's own media could deliver stimuli.
 
 #### FR-CLOCK-01: Each agent has its own activations
 Each agent's rhythm wakes it with a stimulus from its rhythm channel. Awake, the agent works through its tools in its session; its activation ends when a model turn makes no tool call. It then waits an interval drawn from its rhythm and wakes again. Before each activation, the first included, the agent waits an interval drawn from its rhythm, so agents do not all wake at the same moment. Its session lasts the whole run, so the agent keeps what it perceived and did. No agent waits for another, and agents' paces differ through their rhythms, their models' latency, their tools' durations, their energy and what they wait for.
@@ -1113,6 +1132,17 @@ While several runs are in progress, the progress lines (FR-RUN-04) give each run
 `--resume` is refused before any model call, naming what differs, when a completed run's setup line (FR-RECORD-02) does not match the run the experiment file would make now: its resolved configuration, model, seed, sampling, materials' hashes or code commit.
 *Why:* a long experiment can be stopped by a laptop that must sleep or a lost connection; rerunning what already completed wastes hours and money, and a resumed experiment must be the same experiment, or its runs would mix two setups under one name.
 
+#### FR-RUN-08: A run ends when its world is finished
+A scenario may say, from its world's state, that its world is finished (a device complete, a task done). The engine asks it after each change the world applies. Once it says so, the run ends as at its time limit (FR-CLOCK-02):
+- a tool call still running is recorded `cut_off` and applies nothing;
+- a model turn still running, or still waiting for a model slot, is aborted and recorded `cut_off`;
+- a component's action still running is recorded `cut_off` (FR-PROCESS-01), and a message still in transit is never delivered (FR-MESSAGE-01);
+- no agent starts another model turn or activation;
+- the parts are evaluated as at the run's end (FR-PARTS-01).
+
+The call whose effect finished the world keeps its own outcome and text. The log gets a `world_finished` line, with when the change that finished the world was applied (its run time and, for a run with a calendar, its world time), followed by the run's final metric sample, computed from the finished world (FR-METRIC-02). The run counts as completed (FR-RUN-01). A scenario that does not say runs to its activation budget or its time limit, as before; when the time limit passes first, there is no `world_finished` line.
+*Why:* a world whose task is done has nothing left to measure, and going on until the time limit spends model calls on it; when the world was finished is itself a measure.
+
 #### FR-ADAPTER-03: Context compaction is declared and recorded
 An experiment file gives its `[compaction]`: `enabled` (true or false), and, when enabled, `trigger_at` (the share of the model's context window, above 0 and below 1, whose filling starts a compaction) and `keep_recent_tokens` (how much of the most recent context the compaction keeps as it is). The table is required, like the thinking level (FR-EXPERIMENT-05). Every session of every run uses it; the engine turns `trigger_at` into Pi's reserve for each model's window, so models with different windows compact at the same share. With compaction off, a context that overflows ends the model turn with `model_error` (FR-ADAPTER-02).
 
@@ -1256,6 +1286,211 @@ Each part follows the text before it after one space. It names no things, exits 
 
 The engine gains the means: an effector can declare, for an outcome, a text completed from the world as its call ends, as seen from where the agent is then (FR-TOOL-02).
 *Why:* the world's rules tell the worker that it sees whoever is in its room and in the passages that leave it, but only `look` showed people: in E1's fifth pilot, 28 of the 32 runs that never saw a waiting visitor were at the counter while she waited there. Arriving and ending a wait are when one takes in who is around; a wait that starts beside someone is not cut short by them, since they did not enter, and a call's result comes only when it ends, so the wait names who is there at its end: who stayed, and who came. Things stay with `look`, so what counts as sensing a situation does not change.
+
+#### FR-WORKSHOP-01: A workshop from its materials
+The workshop scenario is in the scenario library: the world of the team experiments (EQ series, designed in `agents-lab-experiments/worlds/workshop/world.md`), where workers assemble a device from a plan, in one room. Its configuration gives:
+- **`workers`:** the workers' names, each an agent.
+- **`[plan.<module>]`:** each module of the device, with its `recipe` (the kinds of its pieces, a kind given as many times as it is needed) and its `after` (the modules that must be mounted before it). The device is complete when one module of each name is mounted.
+- **`[pile]`:** the starting stock of loose pieces, a whole number for each kind.
+- **`bench_places`:** how many workers can mount at the same time; **`hand_pieces`:** how many loose pieces a worker's hands hold, besides one module.
+- **`[durations]`,** in world minutes: `look`, `read_plan`, `take`, `put_back`, `join`, `take_apart`, `mount`, `mount_refused` (a mount refused as it starts, FR-WORKSHOP-02), `speech` and `speech_words_per_minute` (FR-WORKSHOP-03, FR-WORKSHOP-06), `hand` (FR-WORKSHOP-05); and **`wait_max_minutes`**.
+- **`[calendar]`** (FR-CLOCK-03), with one segment, so that a call's run time gives its world minutes. Every time the workshop gives or measures is in world minutes since the calendar's start.
+- **`[rhythm]`:** the rhythm channel's `source` and `text`, and `min_ms` and `max_ms`: each worker rests before each activation an interval drawn uniformly between them, from its own sequence (FR-SEED-01).
+- **The texts** `identity`, `task` and `world_rules`, usually materials; `{name}` in any of them is filled in with the worker's name.
+- **`[placement]`:** for each text, `system` (the system prompt) or `first` (one message delivered once, as the worker first wakes, after its rhythm's stimulus, through the channel `order`, whose source is the configuration's `order_source`); when no text is placed `first`, no message is sent. Each place joins its texts in the order `identity`, `task`, `world_rules`, skipping empty ones, with a blank line between them.
+
+**The base configuration** is the workshop's base in `world.md`:
+- the workers `Dal`, `Mik`, `Nar` and `Ren`;
+- the plan: `tessa` (arn, arn, bex, cal, dov); `ulm` (bex, eln), after `tessa`; `vorn` (cal, cal, fim), after `tessa`; `wick` (arn, dov, eln, gor), after `ulm` and `vorn`; `yarl` (fim, gor), after `wick`; `zeth` (bex, dov, dov), after `tessa`;
+- the pile: arn 4, bex 3, cal 4, dov 5, eln 2, fim 2, gor 2;
+- 2 bench places and 6 loose pieces in the hands;
+- the durations `look` 0.5, `read_plan` 1, `take` 1, `put_back` 0.5, `join` 2, `take_apart` 2, `mount` 3, `mount_refused` 0.5, `speech` 0.25, `speech_words_per_minute` 30, `hand` 0.5, and `wait_max_minutes` 10;
+- the calendar starting at `day 1 Monday 09:00`, one segment of scale 4 (one world minute is 15 seconds of the run);
+- the rhythm 1000 to 3000 milliseconds, its source `your own pace` and its text `You are ready to act.`;
+- the three texts of `identity.md`, `task.md` and `world-rules.md` in `agents-lab-experiments/worlds/workshop/` (as of that repository's commit `2d494ea`), word for word without each file's final newline, all placed in the system prompt; `character` and `limits` empty (FR-WORKSHOP-05).
+
+The run's time limit (90 world minutes, 1,350,000 milliseconds of the run) is the experiment file's, not the scenario's.
+
+**The world at the start.** Every piece is in the pile, the bench is empty and no worker holds anything. A system prompt describes its worker, never the world's state: it names no piece kind, module, stock or other worker, unless a text the configuration gives does.
+
+**Listing orders.** From the replica's sequence for the initial state (FR-SEED-01), the workshop draws the order in which `look` lists the pile's kinds and the workers, and in which `read_plan` lists the modules (FR-WORKSHOP-02); each keeps its order for the whole run. The same seed gives the same orders, and a condition that changes the workers leaves the orders of the kinds and the modules as they were.
+
+**Recorded.** The inventory gives the plan, the pile, the bench places, the hands' limits, the workers, the durations, the calendar, the rhythm, and the texts with their placement and the order's source.
+
+**Refusals**, before any model call, with an error that names the key: a plan with no module (`plan`); a recipe that is empty or names a kind the pile does not have (`plan.<module>.recipe`); an `after` that names no module of the plan, or an order in which some module could never be mounted (`plan.<module>.after`); a stock that is not a whole number of at least 0 (`pile.<kind>`); a `bench_places` or `hand_pieces` that is not a whole number of at least 1; no worker, or one name given twice (`workers`); a negative duration (`durations.<name>`); a `wait_max_minutes` that is not above 0; a calendar with more than one segment (`calendar.segments`); a `min_ms` above `max_ms` (`rhythm`); a placement other than `system` or `first`, or for a text the workshop does not have (`placement.<text>`); a text that names in braces anything but `{name}` (naming the text).
+*Why:* the EQ series studies how a team of equal agents organises around a shared job; the workshop gives that job, with a common stock, a bottleneck and an order, from values an experiment changes one at a time. Drawing the listing orders from the seed keeps any worker, kind or module from being first by construction, and keeping the state out of the prompt makes each worker learn it by looking and reading.
+
+#### FR-WORKSHOP-02: The workers' tools
+Each worker has these tools, each with its duration in world minutes from `[durations]` (FR-WORKSHOP-01); FR-WORKSHOP-06 adds `ask`, `answer` and `tell`. A worker names pieces by kind and modules by name, as `look` and `read_plan` give them. Arguments are free text: no tool's description or parameters name a kind or a module.
+
+- **`look`** (sensor): as JSON, the room as it is when the call ends:
+  - `clock`: the whole world minutes since the run's start, rounded down (FR-WORKSHOP-05);
+  - `pile`: the count of each kind, zeros included, kinds in the drawn order;
+  - `bench`: `mounted`, the modules mounted, in the order they were mounted, and `places`, who occupies each place, `null` for a free one;
+  - `workers`: each worker in the drawn order, the caller included, with its `name`; `loose`, the count of each kind it holds, only kinds it holds, in the drawn order; `module`, `null` or its `name`, the kinds `joined` so far in the order joined, and `finished`; and `doing`.
+- **`read_plan`** (sensor): as JSON, `modules`: each module in the drawn order, with its `name`, its `recipe` as the plan gives it and its `after`.
+- **`take`** `kind` (effector): one piece of that kind from the pile into the worker's hands.
+- **`put_back`** `kind` (effector): one loose piece of that kind from the worker's hands to the pile.
+- **`join`** `module`, `kind` (effector): one loose piece of that kind into the worker's module of that name; the first join, while the worker holds no module, starts the module. A module is finished when every piece of its recipe is joined into it, in any order.
+- **`take_apart`** (effector): every piece of the worker's module returns to the pile, and the worker holds no module.
+- **`mount`** (effector): the worker's finished module goes onto the device. As the call starts, the worker occupies a free bench place, and it keeps it until the call ends, whatever its outcome; when no place is free, the call takes `mount_refused` instead of `mount` and is refused as `bench_full` when it ends.
+- **`wait`** `minutes` (effector): changes nothing and takes that many world minutes, a number above 0 and at most `wait_max_minutes`; any other is an argument the tool does not take (FR-TOOL-02). It ends early, `interrupted`, at the moment a stimulus reaches the worker (FR-WORKPLACE-07); its description says it ends as soon as something reaches the worker (someone speaks or hands it something).
+
+**Checked when it lands.** An effector's refusals are checked when its call ends, against the world as it is then (FR-TOOL-04), in the order of the table. A refused call takes its full duration, applies nothing and tells the worker why. A kind the pile does not have counts as none left, and a module the plan does not have needs no piece.
+
+| Tool | Outcome | Refused when | Text |
+|---|---|---|---|
+| take | success | | You are holding it. |
+| take | none_left | the pile has no piece of that kind | The pile has no piece of that kind; you have taken nothing. |
+| take | hands_full | the worker already holds `hand_pieces` loose pieces | Your hands are full; you have taken nothing. |
+| put_back | success | | You have put it back on the pile. |
+| put_back | not_held | the worker holds no loose piece of that kind | You hold no loose piece of that kind; nothing has moved. |
+| join | success | | You have joined it. |
+| join | not_held | the worker holds no loose piece of that kind | You hold no loose piece of that kind; nothing has been joined. |
+| join | not_needed | the module's recipe needs no more pieces of that kind | That module needs no more pieces of that kind; nothing has been joined. |
+| join | other_module | the worker holds a module of another name | You are holding a module of another name; nothing has been joined. |
+| take_apart | success | | You have taken your module apart; its pieces are back on the pile. |
+| take_apart | no_module | the worker holds no module | You are holding no module; nothing has changed. |
+| mount | success | | You have mounted your module on the device. |
+| mount | bench_full | as it starts, every bench place was occupied | Every place at the bench was taken; you have mounted nothing. |
+| mount | no_module | the worker holds no module | You are holding no module; you have mounted nothing. |
+| mount | not_finished | the module is not finished | Your module is not finished; you have mounted nothing. |
+| mount | out_of_order | a module it must be mounted after is not mounted | A module yours must be mounted after is not mounted yet; you have mounted nothing. |
+| mount | already_mounted | a module of that name is already mounted | A module of that name is already mounted; you have mounted nothing. |
+| wait | success | | You have waited. |
+| wait | interrupted | | Something reached you; you stopped waiting. |
+
+**What a worker is doing,** as `look` shows it: `taking`, `putting back`, `joining`, `taking apart`, `mounting` (also during a mount that found the bench full), `speaking` (FR-WORKSHOP-03, FR-WORKSHOP-06) or `waiting`, from the start of its call of that tool until the call ends, whatever its outcome; otherwise, also while it looks, reads the plan or decides, `nothing`. A call cut off by the time limit leaves the world as it was when time ran out (FR-CLOCK-02).
+
+**Targets** (FR-TOOL-04): `take` reads its kind in the worker's last `look`: `free` when it showed that kind in the pile, `held` when it showed none; `mount` reads the bench in it: `free` when it showed a free place, `held` when it showed none. With no `look`, and for the other effectors, the target is `not_sensed`.
+
+**Recorded.** Each call is a tool call line (FR-RECORD-01), and each effector's start is an `effector_start` line that names what the worker began and, for a mount, the place it occupies. The inventory gives each tool, its duration in world minutes and its texts.
+
+**The engine gains the means:** an effector can declare an end, a change applied through the arbiter as its call ends, whatever its outcome: in the same change as its action when the action is applied, and as a change of its own otherwise (the action failed, the effector has none, or the call ended early). A call refused before it runs, or cut off by the time limit, applies no end. An end applied on its own grows the world's version and is counted among the changes others see since they sensed (FR-RECORD-01), as a start is.
+*Why:* the workers' job is in their hands: what they take, join and mount is checked against a world the others change meanwhile. Who is doing what, and who holds the bench, is what a worker sees of the others when it looks; a place at the bench is held for as long as someone works at it, whether or not the mount succeeds.
+
+#### FR-WORKSHOP-03: Workers speak to the room
+Each worker speaks with the effectors **`ask`**, **`answer`** and **`tell`** (FR-WORKSHOP-06). Each takes `speech` world minutes (0.25 in the base) plus one minute per `speech_words_per_minute` words of the text (30 in the base), in proportion: 15 words take 0.75 minutes in all. A word is a run of characters between whitespace. When the call ends, every other worker receives it through the channel `voice` (FR-STIMULUS-02), with the speaker's name as its source and the text FR-WORKSHOP-06 gives (FR-STIMULUS-01); the speaker receives nothing. While the call lasts, `look` shows the speaker `speaking` (FR-WORKSHOP-02).
+
+A call refused (FR-WORKSHOP-06's refusals) reaches no one; so does a call cut off by the time limit.
+
+**The `voice` channel wakes** (FR-CONGRESS-08): a worker resting between activations wakes at once, with the speech among its stimuli; a worker in a tool call receives it at its next model turn (FR-STIMULUS-01); a worker's `wait` ends `interrupted` (FR-WORKSHOP-02). Besides speech, a worker receives only its rhythm's stimulus and, when a text is placed there, the order (FR-WORKSHOP-01).
+
+**Recorded.** Each speech heard is a stimulus line for each listener (FR-STIMULUS-02). The inventory gives the channel `voice` with its source (the speaker), its text (FR-WORKSHOP-06) and that it wakes.
+*Why:* speech is the only channel between workers in the base: everyone in the room hears it, it takes time in proportion to its length, and it wakes whoever is resting, as a voice in a room does. What each worker says, and when, is the record of how the team organises.
+
+#### FR-WORKSHOP-04: Done, and the workshop's measures
+**Done** is read from the world: one module of each name of the plan is mounted. Nothing else is part of done. The workshop says its world is finished at that moment (FR-RUN-08), so a run ends at the mount that completes the device, or at its time limit.
+
+**The measures** are the workshop's metrics (FR-METRIC-02), computed from the world's state and the record of tool calls, never by a model, with the names and definitions of `world.md` section 8:
+- **Times** are world minutes since the calendar's start; an effector's effect is at the end of its call, when it lands.
+- **Durations** are world minutes: a call's runs from its start to its end in the record (its run milliseconds × the calendar's scale / 60,000), so a refused call counts its full time, a call cut off its time until the end, and a call refused before it runs (`invalid_arguments`, `unknown_tool`) none.
+- **Applied** calls are those whose effect was applied (outcome `success`).
+- **Categorical measures** are tables of one level, their keys dotted where the measure has two (`tessa.joined_by.Dal`), as FR-WORKPLACE-04's `predicates` are. Workers are keyed by name; a worker with nothing to count gives 0 where the measure counts or adds up, and no key where it gives a time.
+
+| Measure | Value |
+|---|---|
+| `done` | 1 when the device is complete, else 0 |
+| `modules_mounted` | the modules mounted (0 to the plan's count) |
+| `time_to_done` | the time the mount that completed the device landed; null while not done |
+| `effort_total` | the durations of every call of every worker, in world minutes |
+| `effort_by_worker` | the same, by worker |
+| `pieces_wasted` | the pieces neither in the pile nor in a mounted module: loose in a worker's hands, or in a module not mounted |
+| `modules_taken_apart` | applied `take_apart` calls |
+| `first_take_time` | the time the first applied `take` of any worker landed; null before one |
+| `speech_before_first_take` | `<kind>.calls` and `<kind>.words` of the applied calls of each speech tool, `ask`, `answer` and `tell` (FR-WORKSHOP-06), that landed before `first_take_time` (all of them while there is none) |
+| `own_first_take_time` | by worker, the time its first applied `take` landed |
+| `builders_by_module` | `<module>.joined_by.<worker>`: 1 for each worker with at least one applied `join` into a module of that name; `<module>.mounted_by.<worker>`: 1 for the worker whose `mount` mounted it |
+| `joins_share_by_worker` | by worker, its applied joins over all workers' applied joins (the shares add up to 1); null while there is none |
+| `modules_by_worker` | `<worker>.finished`: its applied joins that finished a module; `<worker>.mounted`: its applied mounts |
+| `module_switches` | by worker, its applied joins into a module of another name than its previous applied join |
+| `duplicated_modules` | summed over module names, the instances started less one, never below 0; an instance starts with an applied `join` by a worker that held no module |
+| `refused_by_cause` | `<tool>.<outcome>`: the calls of each tool with each outcome other than `success`, `interrupted` and `cut_off` (`invalid_arguments` and `unknown_tool` included) |
+| `bench_refusals` | `mount` calls refused as `bench_full` |
+| `finish_to_mount` | by mounted module, the time from the landing of its last applied `join` to the start of the `mount` that mounted it |
+| `speech_by_worker` | `<worker>.<kind>.calls` and `<worker>.<kind>.words` of its applied calls of each speech tool (FR-WORKSHOP-06) |
+| `time_by_activity` | `<worker>.<tool>`: the durations of the worker's calls of each tool it called, `wait` included; the rest of the run is between calls (deciding and resting) |
+
+**The speech timeline** is not a metric: each applied `ask`, `answer` or `tell` (FR-WORKSHOP-06) adds a `speech` line to the log as it lands (FR-POPULATION-01's scenario lines), with its `speaker`, its `kind` and `to` (FR-WORKSHOP-06), its `start` and `end` as times (the start is its end less its duration), and its `words`.
+
+Read from the transcripts, not computed: whether a split was agreed, whether someone directed, what each worker said against what it did, how each stumble was resolved.
+*Why:* EQ1 describes how a team of equal agents organises from what they did in the world: who built what, when they started, where they stumbled and how much they talked. Each measure is a fact of the world or of the record, the same in every run, so forms of organisation can be compared across replicas and models.
+
+#### FR-WORKSHOP-05: Handing over, a clock on the wall, and the character and limits texts
+**Handing over.** Each worker has the effector **`hand`** `worker`, `what`: it hands the worker of that name one loose piece of a kind it holds, or the module it holds, finished or in progress. It takes `hand` world minutes (a new key of `[durations]`, FR-WORKSHOP-01; 0.5 in the base). `what` names the giver's module when it is the name of the module the giver holds, and a kind of piece otherwise. Arguments are free text, and a worker is named exactly as `look` gives it; the tool's description and parameters name no kind, module or worker (FR-WORKSHOP-02). Its refusals are checked when it lands, in the order of the table (FR-WORKSHOP-02): a refused call takes its full duration, moves nothing and tells the giver why.
+
+| Outcome | Refused when | Text |
+|---|---|---|
+| success | | You have handed it over. |
+| no_such_worker | no worker has that name | There is no worker of that name; nothing has been handed. |
+| to_self | the worker named is the giver | That is you; nothing has been handed. |
+| not_held | the giver holds neither a module of that name nor a loose piece of that kind | You are not holding that; nothing has been handed. |
+| hands_full | for a piece, the receiver already holds `hand_pieces` loose pieces | Their hands are full; nothing has been handed. |
+| holds_module | for a module, the receiver already holds a module | They are already holding a module; nothing has been handed. |
+
+When it applies, the piece or the module leaves the giver's hands and is in the receiver's: a piece counts among its loose pieces; a module keeps its joined pieces, in the order joined, and whether it is finished, and counts apart from the loose pieces, so a receiver with full hands can still be handed a module and one holding a module can still be handed a piece. Whoever then mounts a module is its mounter. While the call lasts, `look` shows the giver `handing` (FR-WORKSHOP-02). Its target (FR-TOOL-04) is `not_sensed`. A call cut off by the time limit moves nothing and reaches no one.
+
+**What is handed reaches the receiver** through the new channel **`hands`** (FR-STIMULUS-02), with the giver's name as its source and the text `handed you <what>.`, where `<what>` is `a piece of <kind>` or `the module <module>`; so it reads `Dal: handed you a piece of arn.` (FR-STIMULUS-01). The giver receives nothing, nor does any other worker. The channel wakes, as `voice` does (FR-WORKSHOP-03): a worker resting between activations wakes at once with it among its stimuli, a worker in a tool call receives it at its next model turn, and a worker's `wait` ends `interrupted` (FR-WORKSHOP-02). Besides speech, a worker now also receives what is handed to it.
+
+**A clock on the wall.** `look`'s JSON (FR-WORKSHOP-02) also gives, first, `clock`: the whole world minutes since the run's start (the calendar's start) when the call ends, rounded down; 2.5 world minutes show as 2. Its description says so. Nothing else changes in `look`.
+
+**Two more texts.** The configuration gains the texts **`character`** and **`limits`**, usually materials, as `identity` is; `{name}` in either is filled in with the worker's name, and a text that names in braces anything but `{name}` is refused, naming it (FR-WORKSHOP-01). Each is placed by `[placement]`, `system` or `first`, with the same rules as the other texts. Each place joins its texts in the order `identity`, `character`, `task`, `limits`, `world_rules`, skipping empty ones, with a blank line between them: an empty text adds nothing, not even a blank line. In the base configuration both are empty and placed `system`, so the base's system prompt is as FR-WORKSHOP-01 gives it.
+
+**The measures** (FR-WORKSHOP-04) gain **`handovers`**: `<giver>.pieces_to.<receiver>`, the applied `hand` calls of loose pieces from that giver to that receiver, and `<giver>.modules_to.<receiver>`, of modules; a pair with no applied `hand` of that sort gives no key, as `builders_by_module` gives none. The other measures keep their definitions, and read a handed module so:
+- `builders_by_module`, `joins_share_by_worker` and the `finished` of `modules_by_worker` count each join by the worker who made it, whoever holds the module later; `mounted_by` and `mounted` name the worker whose `mount` mounted it.
+- `finish_to_mount` reads the module's last applied join whoever made it, so the giver's join counts when the receiver mounts.
+- `pieces_wasted` reads the world at the time: a handed piece or module is wasted while it is in someone's hands, as any other.
+- `duplicated_modules`: handing starts no instance; the receiver's next join into it starts none, since the receiver holds a module, and the giver's next join, holding none, starts a new one.
+- `module_switches` follows each worker's own applied joins: a worker that joins into a module it was handed counts a switch when its previous applied join was into a module of another name.
+- `refused_by_cause` and `time_by_activity` count `hand` as any tool; effort counts its minutes.
+
+**Recorded.** Each `hand` call is a tool call line, and its start an `effector_start` line that names that the giver began handing (FR-WORKSHOP-02). Each handover received is a stimulus line for the receiver, with the channel `hands`, the giver as source and the text as content (FR-STIMULUS-02). The inventory gives the tool `hand` with its duration and texts and the channel it delivers through, the channel `hands` with its source (the giver), its text (`handed you <what>.`) and that it wakes, the duration `hand` among the durations, and the texts `character` and `limits` with their placement.
+*Why:* the world now lets a worker give another what it holds, as people in one room do; who hands what to whom is a way of splitting the work that joins and mounts alone do not show. The clock lets a worker read the time it has left, which its limits name; character and limits are texts every worker receives in the world's design, empty in the base so that an experiment gives them as materials.
+
+#### FR-WORKSHOP-06: Speech is addressed
+**Three tools in place of `say`.** A worker never just says something aloud: it speaks to one or more workers by name. Each worker has the effectors **`ask`**, **`answer`** and **`tell`**, each with `to` and `text`, and `say` no longer exists. `to` is a list of one or more workers' names, each named exactly as `look` gives it; a name given more than once counts once, and the **workers addressed** are those `to` names, in the order first named. `text` is what is said: a question with `ask`, an answer to someone with `answer`, and with `tell` anything that is neither. Arguments are free text, and no tool's description or parameters name a kind, a module or a worker (FR-WORKSHOP-02, FR-WORKSHOP-05); a `to` the adapter reads as a list of texts is taken as that list, so a single name given as a text is a list of that one name; a `to` it cannot read as one is an argument the tool does not take (FR-TOOL-02).
+
+**Duration.** Each of the three takes `speech` world minutes plus one minute per `speech_words_per_minute` words of its text, in proportion (FR-WORKSHOP-03): 0.25 and 30 in the base, so 15 words take 0.75 minutes in all. These two keys of `[durations]` (FR-WORKSHOP-01) replace `say` and `say_words_per_minute`. A word is a run of characters between whitespace, and the names in `to` count no words. A refused call takes its full duration (FR-WORKSHOP-02): a text with no word, `speech` minutes alone.
+
+**What each tool says it is for.** The descriptions and parameters the worker sees, word for word:
+
+| Tool | Description | `to` | `text` |
+|---|---|---|---|
+| ask | Ask one or more of the other workers a question. Put their names in `to`. Everyone in the room hears it. | The names of the workers you speak to, one or more. | What you say. |
+| answer | Answer one or more of the other workers. Put their names in `to`. Everyone in the room hears it. | The names of the workers you speak to, one or more. | What you say. |
+| tell | Tell one or more of the other workers something that is not a question or an answer. Put their names in `to`. Everyone in the room hears it. | The names of the workers you speak to, one or more. | What you say. |
+
+**Checked when it lands.** The refusals are the same for the three tools, checked when the call ends, in the order of the table (FR-WORKSHOP-02). A refused call says nothing: it reaches no one, adds no `speech` line, and tells the speaker why.
+
+| Tool | Outcome | Refused when | Text |
+|---|---|---|---|
+| ask | success | | You have asked them. |
+| answer | success | | You have answered them. |
+| tell | success | | You have told them. |
+| all three | no_one | `to` names nobody: it is an empty list | You named nobody. Nothing was said. |
+| all three | no_such_worker | a name in `to` is no worker's | `There is no worker named "<name>". Nothing was said.` |
+| all three | to_self | `to` names the speaker | You cannot speak to yourself. Nothing was said. |
+| all three | empty_text | the text holds no word | Your text is empty. Nothing was said. |
+
+In `no_such_worker`'s text, `"<name>"` is each name in `to` that is no worker's, in quotes, in the order first named, joined as below with `or` in place of `and`: `There is no worker named "Kel" or "Tam". Nothing was said.`
+
+**Heard by the room, addressed or not.** When an applied call ends, every other worker receives it through the channel `voice` (FR-WORKSHOP-03, FR-STIMULUS-02), whether it is addressed to them or not, with the speaker's name as its source and the text `<verb> <names>, "<text>"`: `<verb>` is `asks`, `answers` or `tells`; `<names>` are the workers addressed, with `you` in place of the listener's own name; `<text>` is the text as given. Names are joined as lists are in the repo's texts: one alone (`Mik`), two with `and` (`Mik and Nar`), three or more with commas and a last `and` (`Mik, Nar and Ren`). So when Dal asks Mik and Nar `Who builds tessa?`, Mik reads `Dal: asks you and Nar, "Who builds tessa?"`, Nar reads `Dal: asks Mik and you, "Who builds tessa?"`, and Ren reads `Dal: asks Mik and Nar, "Who builds tessa?"` (FR-STIMULUS-01). The speaker receives nothing. The channel wakes a resting worker at once, a worker in a tool call hears it at its next model turn, a worker's `wait` ends `interrupted`, and a call cut off by the time limit reaches no one, as FR-WORKSHOP-03 gives them. While a call of any of the three lasts, `look` shows the speaker `speaking` (FR-WORKSHOP-02). Their target (FR-TOOL-04) is `not_sensed`.
+
+**Refusals of the configuration**, before any model call, naming the key (FR-WORKSHOP-01): a negative `speech` (`durations.speech`); a `speech_words_per_minute` that is not above 0 (`durations.speech_words_per_minute`); a key of `[durations]` the workshop has no duration for, `say` and `say_words_per_minute` among them (`durations.<key>`).
+
+**Recorded.** Each call is a tool call line, and its start an `effector_start` line that names that the speaker began speaking (FR-WORKSHOP-02). Each speech heard is a stimulus line for each listener, with the channel `voice`, the speaker as source and the text that listener read, `you` included, as content (FR-STIMULUS-02). Each applied call's `speech` line (FR-WORKSHOP-04) also gives its `kind` (`ask`, `answer` or `tell`) and `to`, the workers addressed in the order first named. The inventory gives the tools `ask`, `answer` and `tell`, each with its duration, its description, its texts and the channel `voice` it delivers through; the channel `voice` with its source (the speaker), its text (`asks, answers or tells <names>, "<text>"`) and that it wakes; and the durations `speech` and `speech_words_per_minute` among the durations.
+
+**The measures** (FR-WORKSHOP-04, `world.md` section 8) count each kind of speech apart, and gain `addressed` and `questions_unanswered`. `<kind>` is `ask`, `answer` or `tell`, and only applied calls count:
+
+| Measure | Value |
+|---|---|
+| `speech_before_first_take` | `<kind>.calls` and `<kind>.words`: the applied calls of that tool, and their words, that landed before `first_take_time` (all of them while there is none); 0 for a kind with none |
+| `speech_by_worker` | `<worker>.<kind>.calls` and `<worker>.<kind>.words`: the worker's applied calls of that tool and their words; 0 for none |
+| `addressed` | `<speaker>.<kind>.<worker>`: the speaker's applied calls of that tool whose workers addressed include that worker. A call to two workers counts once for each, so the sum over workers is at least `speech_by_worker`'s `<speaker>.<kind>.calls`, and equal when every call addresses one worker. A speaker, kind and worker with no such call give no key, as `handovers` gives none. |
+| `questions_unanswered` | `<asker>.<worker>`: the asker's applied `ask` calls addressed to that worker after whose landing that worker landed no applied `answer` addressed to the asker. One such `answer` answers every earlier question from that asker to that worker, whoever else either addresses; an `answer` that landed before the question, or at the same time, does not, and a `tell` never does. A pair with none gives no key. Its denominator is `addressed`'s `<asker>.ask.<worker>`, the questions that pair has: their ratio is the share left unanswered. |
+
+`speech_timeline` stays the `speech` lines. `refused_by_cause`, `time_by_activity` and effort count the three tools as any (`tell.no_one`, `Dal.ask`).
+*Why:* a worker that only speaks aloud to the room broadcasts plans nobody has to take up; speaking to someone by name, and saying whether it asks, answers or tells, invites the other to reply, as people in one room do. Everyone still hears everything, because who hears follows from where each one is, never from a list of recipients. Who speaks to whom, and which questions go unanswered, is how the team's conversation is read from the record.
 
 ### Analysis
 
