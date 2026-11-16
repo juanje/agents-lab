@@ -98,20 +98,20 @@ Feature: Speech is addressed
     And the log has no "speech" line
 
     Examples:
-      | tool   | text                | to                     | outcome        | ms | refusal                                                         |
-      | ask    | "Who builds tessa?" | nobody                 | no_one         | 35 | You named nobody to speak to; nothing has been said.            |
-      | answer | "I build tessa."    | nobody                 | no_one         | 35 | You named nobody to speak to; nothing has been said.            |
-      | tell   | "Please take ulm."  | nobody                 | no_one         | 35 | You named nobody to speak to; nothing has been said.            |
-      | ask    | "Who builds tessa?" | "Kel"                  | no_such_worker | 35 | There is no worker named "Kel"; nothing has been said.          |
-      | answer | "I build tessa."    | "Mik" and "Kel"        | no_such_worker | 35 | There is no worker named "Kel"; nothing has been said.          |
-      | tell   | "Please take ulm."  | "mik"                  | no_such_worker | 35 | There is no worker named "mik"; nothing has been said.          |
-      | tell   | "Please take ulm."  | "Kel", "Mik" and "Tam" | no_such_worker | 35 | There is no worker named "Kel" or "Tam"; nothing has been said. |
-      | ask    | "Who builds tessa?" | "Dal"                  | to_self        | 35 | You cannot speak to yourself; nothing has been said.            |
-      | answer | "I build tessa."    | "Mik" and "Dal"        | to_self        | 35 | You cannot speak to yourself; nothing has been said.            |
-      | tell   | "Please take ulm."  | "Dal"                  | to_self        | 35 | You cannot speak to yourself; nothing has been said.            |
-      | ask    | ""                  | "Mik"                  | empty_text     | 25 | You said nothing; nobody heard anything.                        |
-      | answer | "   "               | "Mik"                  | empty_text     | 25 | You said nothing; nobody heard anything.                        |
-      | tell   | "\n  "              | "Mik" and "Nar"        | empty_text     | 25 | You said nothing; nobody heard anything.                        |
+      | tool   | text                | to                     | outcome        | ms | refusal                                                    |
+      | ask    | "Who builds tessa?" | nobody                 | no_one         | 35 | You named nobody. Nothing was said.                        |
+      | answer | "I build tessa."    | nobody                 | no_one         | 35 | You named nobody. Nothing was said.                        |
+      | tell   | "Please take ulm."  | nobody                 | no_one         | 35 | You named nobody. Nothing was said.                        |
+      | ask    | "Who builds tessa?" | "Kel"                  | no_such_worker | 35 | There is no worker named "Kel". Nothing was said.          |
+      | answer | "I build tessa."    | "Mik" and "Kel"        | no_such_worker | 35 | There is no worker named "Kel". Nothing was said.          |
+      | tell   | "Please take ulm."  | "mik"                  | no_such_worker | 35 | There is no worker named "mik". Nothing was said.          |
+      | tell   | "Please take ulm."  | "Kel", "Mik" and "Tam" | no_such_worker | 35 | There is no worker named "Kel" or "Tam". Nothing was said. |
+      | ask    | "Who builds tessa?" | "Dal"                  | to_self        | 35 | You cannot speak to yourself. Nothing was said.            |
+      | answer | "I build tessa."    | "Mik" and "Dal"        | to_self        | 35 | You cannot speak to yourself. Nothing was said.            |
+      | tell   | "Please take ulm."  | "Dal"                  | to_self        | 35 | You cannot speak to yourself. Nothing was said.            |
+      | ask    | ""                  | "Mik"                  | empty_text     | 25 | Your text is empty. Nothing was said.                      |
+      | answer | "   "               | "Mik"                  | empty_text     | 25 | Your text is empty. Nothing was said.                      |
+      | tell   | "\n  "              | "Mik" and "Nar"        | empty_text     | 25 | Your text is empty. Nothing was said.                      |
 
   Scenario Outline: The refusals are checked in order: nobody, no such worker, oneself, no word
     Given "Dal"'s scripted turns call "tell" with the text <text> to <to>, then end
@@ -162,10 +162,10 @@ Feature: Speech is addressed
     Then each worker's tools include "ask", "answer" and "tell", each with its duration as 0.25 world minutes plus one minute per 30 words, and its texts
     And each worker's tools do not include "say"
     And the tools' descriptions and parameters are these:
-      | tool   | description                                                                                                                                                                                                                                        | to                                                                  | text                |
-      | ask    | Ask one or more workers a question. Name them in to, as look names them. Everyone in the room hears it, with your name and who you asked, when you finish speaking; the longer it is, the longer it takes.                                         | The workers you ask, one or more, each named as look names them.    | Your question.      |
-      | answer | Answer one or more workers: reply to what they asked or said. Name them in to, as look names them. Everyone in the room hears it, with your name and who you answered, when you finish speaking; the longer it is, the longer it takes.            | The workers you answer, one or more, each named as look names them. | Your answer.        |
-      | tell   | Tell one or more workers something that is neither a question nor an answer. Name them in to, as look names them. Everyone in the room hears it, with your name and who you told, when you finish speaking; the longer it is, the longer it takes. | The workers you tell, one or more, each named as look names them.   | What you tell them. |
+      | tool   | description                                                                                                                                  | to                                                  | text          |
+      | ask    | Ask one or more of the other workers a question. Put their names in `to`. Everyone in the room hears it.                                     | The names of the workers you speak to, one or more. | What you say. |
+      | answer | Answer one or more of the other workers. Put their names in `to`. Everyone in the room hears it.                                             | The names of the workers you speak to, one or more. | What you say. |
+      | tell   | Tell one or more of the other workers something that is not a question or an answer. Put their names in `to`. Everyone in the room hears it. | The names of the workers you speak to, one or more. | What you say. |
     And it gives the durations "speech" as 0.25 and "speech_words_per_minute" as 30 among the durations, and no duration "say" or "say_words_per_minute"
     And it lists the channel "voice" with the source "the speaker", the text 'asks, answers or tells <names>, "<text>"', and that it wakes
     And it lists each of the tools "ask", "answer" and "tell" with the channel "voice" it delivers through

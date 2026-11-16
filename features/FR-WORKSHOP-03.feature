@@ -69,7 +69,7 @@ Feature: Workers speak to the room
   Scenario Outline: A text with no word is refused after its base time and reaches no one
     Given "Dal"'s scripted turns call "tell" with the text <text> to "Mik", then end
     When the run ends
-    Then the "tell" call failed with "empty_text" and the text "You said nothing; nobody heard anything."
+    Then the "tell" call failed with "empty_text" and the text "Your text is empty. Nothing was said."
     And it took at least 25 milliseconds and less than 85
     And the log has no stimulus line on the channel "voice"
 

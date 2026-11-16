@@ -21,8 +21,9 @@ Feature: A workshop from its materials
   Scenario: The system prompt joins the texts in order, with the worker's name
     When the engine loads it with the seed 42
     Then worker "Dal"'s system prompt is the text of "identity.md" with "{name}" as "Dal", then the text of "task.md", then the text of "world-rules.md", each separated by a blank line
-    And it begins "You are Dal, one of the four workers of a small workshop that assembles devices to order."
-    And worker "Ren"'s system prompt begins "You are Ren, one of the four workers"
+    And it begins "# Identity"
+    And it holds "You are Dal. You work in a small workshop that assembles devices to order."
+    And worker "Ren"'s system prompt holds "You are Ren. You work in a small workshop"
 
   Scenario: The system prompt gives nothing of the world's state
     When the engine loads it with the seed 42

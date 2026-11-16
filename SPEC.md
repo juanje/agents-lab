@@ -1281,7 +1281,7 @@ The workshop scenario is in the scenario library: the world of the team experime
 - the durations `look` 0.5, `read_plan` 1, `take` 1, `put_back` 0.5, `join` 2, `take_apart` 2, `mount` 3, `mount_refused` 0.5, `speech` 0.25, `speech_words_per_minute` 30, `hand` 0.5, and `wait_max_minutes` 10;
 - the calendar starting at `day 1 Monday 09:00`, one segment of scale 4 (one world minute is 15 seconds of the run);
 - the rhythm 1000 to 3000 milliseconds, its source `your own pace` and its text `You are ready to act.`;
-- the three texts of `identity.md`, `task.md` and `world-rules.md`, word for word, all placed in the system prompt.
+- the three texts of `identity.md`, `task.md` and `world-rules.md` in `agents-lab-experiments/worlds/workshop/` (as of that repository's commit `2d494ea`), word for word without each file's final newline, all placed in the system prompt; `character` and `limits` empty (FR-WORKSHOP-05).
 
 The run's time limit (90 world minutes, 1,350,000 milliseconds of the run) is the experiment file's, not the scenario's.
 
@@ -1430,9 +1430,9 @@ When it applies, the piece or the module leaves the giver's hands and is in the 
 
 | Tool | Description | `to` | `text` |
 |---|---|---|---|
-| ask | Ask one or more workers a question. Name them in to, as look names them. Everyone in the room hears it, with your name and who you asked, when you finish speaking; the longer it is, the longer it takes. | The workers you ask, one or more, each named as look names them. | Your question. |
-| answer | Answer one or more workers: reply to what they asked or said. Name them in to, as look names them. Everyone in the room hears it, with your name and who you answered, when you finish speaking; the longer it is, the longer it takes. | The workers you answer, one or more, each named as look names them. | Your answer. |
-| tell | Tell one or more workers something that is neither a question nor an answer. Name them in to, as look names them. Everyone in the room hears it, with your name and who you told, when you finish speaking; the longer it is, the longer it takes. | The workers you tell, one or more, each named as look names them. | What you tell them. |
+| ask | Ask one or more of the other workers a question. Put their names in `to`. Everyone in the room hears it. | The names of the workers you speak to, one or more. | What you say. |
+| answer | Answer one or more of the other workers. Put their names in `to`. Everyone in the room hears it. | The names of the workers you speak to, one or more. | What you say. |
+| tell | Tell one or more of the other workers something that is not a question or an answer. Put their names in `to`. Everyone in the room hears it. | The names of the workers you speak to, one or more. | What you say. |
 
 **Checked when it lands.** The refusals are the same for the three tools, checked when the call ends, in the order of the table (FR-WORKSHOP-02). A refused call says nothing: it reaches no one, adds no `speech` line, and tells the speaker why.
 
@@ -1441,12 +1441,12 @@ When it applies, the piece or the module leaves the giver's hands and is in the 
 | ask | success | | You have asked them. |
 | answer | success | | You have answered them. |
 | tell | success | | You have told them. |
-| all three | no_one | `to` names nobody: it is an empty list | You named nobody to speak to; nothing has been said. |
-| all three | no_such_worker | a name in `to` is no worker's | `There is no worker named "<name>"; nothing has been said.` |
-| all three | to_self | `to` names the speaker | You cannot speak to yourself; nothing has been said. |
-| all three | empty_text | the text holds no word | You said nothing; nobody heard anything. |
+| all three | no_one | `to` names nobody: it is an empty list | You named nobody. Nothing was said. |
+| all three | no_such_worker | a name in `to` is no worker's | `There is no worker named "<name>". Nothing was said.` |
+| all three | to_self | `to` names the speaker | You cannot speak to yourself. Nothing was said. |
+| all three | empty_text | the text holds no word | Your text is empty. Nothing was said. |
 
-In `no_such_worker`'s text, `"<name>"` is each name in `to` that is no worker's, in quotes, in the order first named, joined as below with `or` in place of `and`: `There is no worker named "Kel" or "Tam"; nothing has been said.`
+In `no_such_worker`'s text, `"<name>"` is each name in `to` that is no worker's, in quotes, in the order first named, joined as below with `or` in place of `and`: `There is no worker named "Kel" or "Tam". Nothing was said.`
 
 **Heard by the room, addressed or not.** When an applied call ends, every other worker receives it through the channel `voice` (FR-WORKSHOP-03, FR-STIMULUS-02), whether it is addressed to them or not, with the speaker's name as its source and the text `<verb> <names>, "<text>"`: `<verb>` is `asks`, `answers` or `tells`; `<names>` are the workers addressed, with `you` in place of the listener's own name; `<text>` is the text as given. Names are joined as lists are in the repo's texts: one alone (`Mik`), two with `and` (`Mik and Nar`), three or more with commas and a last `and` (`Mik, Nar and Ren`). So when Dal asks Mik and Nar `Who builds tessa?`, Mik reads `Dal: asks you and Nar, "Who builds tessa?"`, Nar reads `Dal: asks Mik and you, "Who builds tessa?"`, and Ren reads `Dal: asks Mik and Nar, "Who builds tessa?"` (FR-STIMULUS-01). The speaker receives nothing. The channel wakes a resting worker at once, a worker in a tool call hears it at its next model turn, a worker's `wait` ends `interrupted`, and a call cut off by the time limit reaches no one, as FR-WORKSHOP-03 gives them. While a call of any of the three lasts, `look` shows the speaker `speaking` (FR-WORKSHOP-02). Their target (FR-TOOL-04) is `not_sensed`.
 
