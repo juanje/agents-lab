@@ -25,8 +25,8 @@ const VOICE_CHANNEL = "voice";
 /** The channel through which a worker learns what another handed it (FR-WORKSHOP-05). */
 const HANDS_CHANNEL = "hands";
 
-/** The durations the configuration gives, in world minutes, by name (FR-WORKSHOP-01, FR-WORKSHOP-05's hand). */
-const DURATIONS = ["look", "read_plan", "take", "put_back", "join", "take_apart", "mount", "mount_refused", "say", "say_words_per_minute", "hand"] as const;
+/** The durations the configuration gives, in world minutes, by name (FR-WORKSHOP-01, FR-WORKSHOP-05's hand, FR-WORKSHOP-06's speech). */
+const DURATIONS = ["look", "read_plan", "take", "put_back", "join", "take_apart", "mount", "mount_refused", "speech", "speech_words_per_minute", "hand"] as const;
 type Duration = (typeof DURATIONS)[number];
 
 /** A module of the plan: the kinds of its pieces, a kind as many times as it is needed, and the modules mounted before it. */
@@ -140,6 +140,9 @@ function settingsOf(configuration: Configuration): Settings {
     const minutes = durations[name];
     if (typeof minutes !== "number" || minutes < 0) throw refused(`durations.${name}`, minutes, "a duration is a number of world minutes of at least 0");
   }
+  if (durations.speech_words_per_minute === 0) throw refused("durations.speech_words_per_minute", 0, "the words spoken per minute are above 0");
+  const unknown = Object.keys(durations).find((name) => !(DURATIONS as readonly string[]).includes(name));
+  if (unknown !== undefined) throw refused(`durations.${unknown}`, durations[unknown], `the workshop has no duration "${unknown}"; its durations are ${DURATIONS.join(", ")}`);
   const waitMax = configuration.wait_max_minutes;
   if (typeof waitMax !== "number" || waitMax <= 0) throw refused("wait_max_minutes", waitMax, "it is a number of world minutes above 0");
   const segments = isTable(configuration.calendar ?? []) ? (configuration.calendar as TomlTable).segments : undefined;
@@ -583,7 +586,7 @@ const say: Effector<Workshop> = {
   name: "say",
   description: "Say something aloud. Everyone else in the room hears it, with your name, when you finish speaking; the longer it is, the longer it takes.",
   parameters: { type: "object", properties: { text: { type: "string", description: "What you say." } }, required: ["text"] },
-  durationMs: (state, call) => minutes(state.settings.durations.say + wordsOf(String(call.arguments.text)) / state.settings.durations.say_words_per_minute),
+  durationMs: (state, call) => minutes(state.settings.durations.speech + wordsOf(String(call.arguments.text)) / state.settings.durations.speech_words_per_minute),
   start: doing("speaking"),
   action: {
     precondition: (_state, call) => firstRefusal([[wordsOf(String(call.arguments.text)) === 0, "empty_text"]]),
@@ -591,7 +594,7 @@ const say: Effector<Workshop> = {
     effect: (state, call) => {
       const words = wordsOf(String(call.arguments.text));
       const end = landedAt(state, call);
-      const duration = state.settings.durations.say + words / state.settings.durations.say_words_per_minute;
+      const duration = state.settings.durations.speech + words / state.settings.durations.speech_words_per_minute;
       return keeping(state, "speeches", { speaker: call.agent, start: end - duration, end, words });
     },
   },
@@ -685,7 +688,7 @@ function describeDuration(configuration: Configuration, tool: string): string {
   const { durations, waitMaxMinutes } = settingsOf(configuration);
   if (tool === "mount") return `${durations.mount} world minutes; ${durations.mount_refused} world minutes when every bench place is taken as it starts.`;
   if (tool === "wait") return `The minutes it is given, above 0 and at most ${waitMaxMinutes} world minutes; it ends early when a stimulus reaches the worker.`;
-  if (tool === "say") return `${durations.say} world minutes plus one minute per ${durations.say_words_per_minute} words.`;
+  if (tool === "say") return `${durations.speech} world minutes plus one minute per ${durations.speech_words_per_minute} words.`;
   if (!TOOLS.some(({ name }) => name === tool)) throw new Error(`The workshop has no tool "${tool}"`);
   return `${durations[tool as Duration]} world minutes.`;
 }
@@ -859,19 +862,32 @@ function worldInventory(configuration: Configuration): Readonly<Record<string, u
   };
 }
 
-/** The three texts of the workshop's world, word for word (agents-lab-experiments, worlds/workshop). */
-const IDENTITY = "You are {name}, one of the four workers of a small workshop that assembles devices to order.";
-const TASK = "Today's order for the workshop: the device on the plan, left complete on the bench.\nThe order is the workshop's. It is done when the device is complete.";
-const WORLD_RULES = [
-  "How this place works:",
-  "- The workshop is one room: the pile of pieces, the bench, the plan on the wall, and the four of you.",
-  "- You know what is in the room by looking, and what the order needs by reading the plan. Things change while you work, because the others are working too.",
-  "- Everything you do takes time, and so does looking, reading and speaking.",
-  "- The pieces in the pile are counted. A piece joined into a module is in that module until the module is taken apart.",
-  "- Your hands hold up to six loose pieces and one module.",
-  "- The device is assembled on the bench by mounting finished modules. The bench has two places: two of you can mount at the same time, not more.",
-  "- What you say is heard by everyone in the room. Nobody hears what you do not say.",
-].join("\n");
+/**
+ * The three texts of the workshop's world: agents-lab-experiments' worlds/workshop/identity.md, task.md and
+ * world-rules.md word for word (commit 2d494ea), each without its final newline.
+ */
+const IDENTITY = `# Identity
+
+You are {name}. You work in a small workshop that assembles devices to order. There are four workers: you and three others. You build modules from pieces and mount them on the bench. You do everything with your tools. You are a worker, not the owner or the customer.`;
+const TASK = `# Today's order
+
+One device, built as the plan on the wall shows.
+
+The device has six modules. Each module is built by joining pieces from the pile, and then it is mounted on the bench.
+
+The order is done when the six modules are mounted on the bench.
+
+The order is for the four of you. The workshop closes 90 minutes after you start: the order must be done by then.`;
+const WORLD_RULES = `How this place works:
+- The workshop is one room: the pile of pieces, the bench, the plan on the wall, and the four of you.
+- You know what is in the room, and the time, by looking, and what the order needs by reading the plan. Things change while you work, because the others are working too.
+- Everything you do takes time, and so does looking, reading and speaking.
+- The pieces in the pile are counted. A piece joined into a module is in that module until the module is taken apart.
+- Your hands hold up to six loose pieces and one module.
+- You can hand a loose piece or your module to another worker.
+- The device is assembled on the bench by mounting finished modules. The bench has two places: two of you can mount at the same time, not more.
+- When you speak, you speak to one or more of the others by name: you ask, you answer or you tell. Everyone in the room hears it.
+- Nobody knows what you do not say.`;
 
 /** The workshop's base configuration: the base of `world.md` (FR-WORKSHOP-01). */
 const BASE_CONFIGURATION = stringify({
@@ -894,7 +910,7 @@ const BASE_CONFIGURATION = stringify({
     zeth: { recipe: ["bex", "dov", "dov"], after: ["tessa"] },
   },
   pile: { arn: 4, bex: 3, cal: 4, dov: 5, eln: 2, fim: 2, gor: 2 },
-  durations: { look: 0.5, read_plan: 1, take: 1, put_back: 0.5, join: 2, take_apart: 2, mount: 3, mount_refused: 0.5, say: 0.25, say_words_per_minute: 30, hand: 0.5 },
+  durations: { look: 0.5, read_plan: 1, take: 1, put_back: 0.5, join: 2, take_apart: 2, mount: 3, mount_refused: 0.5, speech: 0.25, speech_words_per_minute: 30, hand: 0.5 },
   calendar: { start: "day 1 Monday 09:00", segments: [{ scale: 4 }] },
   rhythm: { source: "your own pace", text: "You are ready to act.", min_ms: 1000, max_ms: 3000 },
   placement: { identity: "system", character: "system", task: "system", limits: "system", world_rules: "system" },
