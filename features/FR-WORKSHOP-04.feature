@@ -31,7 +31,7 @@ Feature: Done, and the workshop's measures
     When the run ends
     Then the first metric sample gives "done" 0, "modules_mounted" 0, "time_to_done" null, "effort_total" 0, "pieces_wasted" 0, "modules_taken_apart" 0, "first_take_time" null, "joins_share_by_worker" null, "duplicated_modules" 0 and "bench_refusals" 0
     And it gives "effort_by_worker" as 0 for each of "Dal", "Mik", "Nar" and "Ren"
-    And it gives "speech_before_first_take" as "calls" 0 and "words" 0
+    And it gives "speech_before_first_take" as 0 for each of "ask.calls", "ask.words", "answer.calls", "answer.words", "tell.calls" and "tell.words"
 
   Scenario: Outcome measures, from a record
     Given the workshop starts with "Dal" holding a module "tessa" with "arn", "arn", "bex" and "cal" joined and a loose "dov", "Mik" holding a module "ulm" with "bex" joined and a loose "eln", and the rest in the pile
@@ -55,19 +55,20 @@ Feature: Done, and the workshop's measures
   Scenario: Measures before starting, and speech by worker, from a record
     Given the workshop starts as its base configuration gives it
     And the record holds these calls:
-      | worker | start | end  | tool | arguments                                                                       | outcome |
-      | Dal    | 0     | 0.5  | look |                                                                                 | success |
-      | Dal    | 0.5   | 1.25 | say  | I will build tessa now and Mik could build vorn while Nar builds zeth please    | success |
-      | Mik    | 1     | 1.35 | say  | Fine, vorn then.                                                                | success |
-      | Dal    | 1.25  | 2.25 | take | arn                                                                             | success |
-      | Mik    | 1.35  | 2.35 | take | cal                                                                             | success |
-      | Nar    | 2     | 2.45 | say  | I will take the zeth pieces                                                     | success |
+      | worker | start | end  | tool   | arguments                                                                                 | outcome |
+      | Dal    | 0     | 0.5  | look   |                                                                                           | success |
+      | Dal    | 0.5   | 1.25 | tell   | Mik and Nar: I will build tessa now and Mik could build vorn while Nar builds zeth please | success |
+      | Mik    | 1     | 1.35 | answer | Dal: Fine, vorn then.                                                                     | success |
+      | Dal    | 1.25  | 2.25 | take   | arn                                                                                       | success |
+      | Mik    | 1.35  | 2.35 | take   | cal                                                                                       | success |
+      | Nar    | 2     | 2.45 | tell   | Dal: I will take the zeth pieces                                                          | success |
     When the measures are computed
+    # A speech row's arguments are the workers addressed, a colon and the text (FR-WORKSHOP-06).
     # Dal's speech has 15 words (0.25 + 15 / 30 = 0.75 minutes), Mik's 3, Nar's 6; Nar's ends after the first take
     Then "first_take_time" is 2.25
-    And "speech_before_first_take" gives "calls" 2 and "words" 18
+    And "speech_before_first_take" gives "tell.calls" 1, "tell.words" 15, "answer.calls" 1, "answer.words" 3, "ask.calls" 0 and "ask.words" 0
     And "own_first_take_time" gives "Dal" 2.25 and "Mik" 2.35, and no key for "Nar" or "Ren"
-    And "speech_by_worker" gives "Dal.calls" 1, "Dal.words" 15, "Mik.calls" 1, "Mik.words" 3, "Nar.calls" 1, "Nar.words" 6, "Ren.calls" 0 and "Ren.words" 0
+    And "speech_by_worker" gives "Dal.tell.calls" 1, "Dal.tell.words" 15, "Mik.answer.calls" 1, "Mik.answer.words" 3, "Nar.tell.calls" 1 and "Nar.tell.words" 6, and 0 for every other key
 
   Scenario: The split, from a record
     Given the workshop starts with "Dal" holding the loose pieces "arn" and "arn", "Mik" holding "arn" and "bex", "Nar" holding "cal", "cal" and "fim", and the rest in the pile
@@ -117,13 +118,13 @@ Feature: Done, and the workshop's measures
   Scenario: Time by activity, from a record
     Given the workshop starts as its base configuration gives it
     And the record holds these calls:
-      | worker | start | end  | tool      | arguments                                                                    | outcome     |
-      | Dal    | 0     | 0.5  | look      |                                                                              | success     |
-      | Dal    | 0.5   | 1.5  | read_plan |                                                                              | success     |
-      | Dal    | 1.5   | 4    | wait      | 5                                                                            | interrupted |
-      | Mik    | 3.25  | 4    | say       | I will build tessa now and Mik could build vorn while Nar builds zeth please | success     |
+      | worker | start | end  | tool      | arguments                                                                         | outcome     |
+      | Dal    | 0     | 0.5  | look      |                                                                                   | success     |
+      | Dal    | 0.5   | 1.5  | read_plan |                                                                                   | success     |
+      | Dal    | 1.5   | 4    | wait      | 5                                                                                 | interrupted |
+      | Mik    | 3.25  | 4    | tell      | Dal: I will build tessa now and Mik could build vorn while Nar builds zeth please | success     |
     When the measures are computed
-    Then "time_by_activity" gives exactly "Dal.look" 0.5, "Dal.read_plan" 1, "Dal.wait" 2.5 and "Mik.say" 0.75
+    Then "time_by_activity" gives exactly "Dal.look" 0.5, "Dal.read_plan" 1, "Dal.wait" 2.5 and "Mik.tell" 0.75
     And "effort_by_worker" gives "Dal" 4, "Mik" 0.75, "Nar" 0 and "Ren" 0
     And "refused_by_cause" gives no key
 
@@ -134,8 +135,8 @@ Feature: Done, and the workshop's measures
     And it gives "effort_by_worker" for "Dal" as 0
 
   Scenario: Each applied speech is a line of the speech timeline
-    Given "Dal"'s scripted turns call "say" with "I will build tessa now and Mik could build vorn while Nar builds zeth please" at once, then call "say" with "", then end
+    Given "Dal"'s scripted turns call "tell" with "I will build tessa now and Mik could build vorn while Nar builds zeth please" to "Mik" at once, then call "tell" with "" to "Mik", then end
     When the run ends
     Then the log has exactly one "speech" line
     And it gives the speaker "Dal", the start 0 and the end 0.75, each within 0.1, and 15 words
-    And it was written when the "say" call ended
+    And it was written when the "tell" call ended
