@@ -524,7 +524,7 @@ The recorder writes a line per event. The inventory and the run's setup go first
 
 **Venue catering**
 - A venue's `catering` is `in_house`, `outside_fee` (`outside_fee_per_head`) or `outside_free`.
-- A caterer's params give each chosen venue's rule (`venues`), and its `order` names a `venue`.
+- A caterer's params give each chosen venue's rule (`venues`), and its `order` names a `venue` (since FR-CONGRESS-25, an order with none is refused `venue_required`).
 - Unless it is that venue's in-house caterer or the order gives a `permit`, an `in_house` or `outside_fee` venue refuses it (`order_refused`, `reason` `venue_requires_permit`).
 - The venue quotes `request_extra outside_catering` at its fee per head × attendance (outside_fee only) and gives `permit` `<venue>-permit-<n>` with `extra_confirmed`.
 - An `in_house` venue's params give its in-house caterer's diets (`in_house_diets`); for a `diet` that caterer serves with a limit or not at all, it quotes `outside_catering` at `outside_diet_fee_per_head` × attendance, and its permit carries the `diet` and the `attendance` (FR-CONGRESS-17).
@@ -635,6 +635,11 @@ The recorder writes a line per event. The inventory and the run's setup go first
   - A speaker answers an `invite` for a session it has answered with that session's latest answer, its act and fields, and records nothing; the party answers it afresh rather than `already_sent`. An ill speaker still gives no answer to it.
   - A venue answers an `accept_extra` for an extra its live booking has, or for a quoted room the booking has, `already_confirmed` with the item, and commits nothing; afresh, not `already_sent`.
   - D7 holds for a version published by `day 12 18:00` that is real at `day 12 18:00`. `programme_published` is reached at the first time a published version is real: its publication, or the last act that made it real, whichever is later.
+- Since FR-CONGRESS-25:
+  - A venue's quote `catering` and its terms' "Catering:" sentence give its rule as a sentence that starts with the rule's word and says where a permit comes from; a rule of another word is given as it is.
+  - An `in_house` venue answers `request_extra outside_catering` with no `diet` `not_available` with `reason` `name a diet our caterer cannot serve in full`; for a diet its caterer serves in full, still with no reason.
+  - A caterer's permit refusals add what they need: `venue_requires_permit` the `venue` and `needs`; `permit_unknown` the `venue`, the `permit` given and `needs`; `permit_exceeded` the permit's `diet` and `attendance` and `needs`.
+  - A caterer refuses an `order` with no `venue` `venue_required`, before checking anything else, even an order it holds for the date. The acts table still marks `venue?`, so the world delivers such an order and the directory does not list `venue`.
 
 ### The congress ready for an experiment (FR-CONGRESS-08)
 

@@ -604,7 +604,8 @@ const RULE_SET_ACTS: Readonly<Record<string, readonly string[]>> = {
 
 /**
  * An act as the table writes it, "<act> (<field>, …)", as its name and required fields; a field marked "?" is one it
- * reads when given, not required: a price change's `accept_change` has no option, and an order may leave out its venue.
+ * reads when given, not required: a price change's `accept_change` has no option, and an order with no venue reaches the
+ * caterer, which refuses it (FR-CONGRESS-25).
  */
 function actOf(written: string): [string, string[]] {
   const [act, fields] = fieldsOf(written);
