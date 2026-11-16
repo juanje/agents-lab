@@ -119,8 +119,8 @@ Then(
 );
 
 Then(
-  'it gives the durations in world minutes: "look" {float}, "read_plan" {int}, "take" {int}, "put_back" {float}, "join" {int}, "take_apart" {int}, "mount" {int}, "mount_refused" {float}, "say" {float} with "say_words_per_minute" {int}, "hand" {float}, and "wait_max_minutes" {int}',
-  function (this: Context, look: number, readPlan: number, take: number, putBack: number, join: number, takeApart: number, mount: number, mountRefused: number, say: number, wordsPerMinute: number, hand: number, waitMax: number) {
+  'it gives the durations in world minutes: "look" {float}, "read_plan" {int}, "take" {int}, "put_back" {float}, "join" {int}, "take_apart" {int}, "mount" {int}, "mount_refused" {float}, "speech" {float} with "speech_words_per_minute" {int}, "hand" {float}, and "wait_max_minutes" {int}',
+  function (this: Context, look: number, readPlan: number, take: number, putBack: number, join: number, takeApart: number, mount: number, mountRefused: number, speech: number, wordsPerMinute: number, hand: number, waitMax: number) {
     const world = inventoryWorld(this);
     assert.deepEqual(world.durations, {
       look,
@@ -131,8 +131,8 @@ Then(
       take_apart: takeApart,
       mount,
       mount_refused: mountRefused,
-      say,
-      say_words_per_minute: wordsPerMinute,
+      speech,
+      speech_words_per_minute: wordsPerMinute,
       hand,
     });
     assert.equal(world.wait_max_minutes, waitMax);
@@ -201,15 +201,31 @@ Then(
     const identity = textOf(this, "identity.md");
     assert.ok(identity.includes("{name}"), "the identity has no {name} to fill in");
     assert.equal(promptOf(this, worker), [identity.replaceAll("{name}", name), textOf(this, "task.md"), textOf(this, "world-rules.md")].join("\n\n"));
+    promptsNamed.set(this, worker);
   },
 );
 
+/** The system prompt of the worker a step named last, which "it begins" and "it holds" speak of. */
+function namedPrompt(context: Context): string {
+  const worker = promptsNamed.get(context);
+  assert.ok(worker !== undefined, "no worker's system prompt was named");
+  return promptOf(context, worker);
+}
+
 Then("it begins {string}", function (this: Context, beginning: string) {
-  assert.ok(promptOf(this, "Dal").startsWith(beginning), promptOf(this, "Dal"));
+  assert.ok(namedPrompt(this).startsWith(beginning), namedPrompt(this));
+});
+
+Then("it holds {string}", function (this: Context, text: string) {
+  assert.ok(namedPrompt(this).includes(text), namedPrompt(this));
 });
 
 Then("worker {string}'s system prompt begins {string}", function (this: Context, worker: string, beginning: string) {
   assert.ok(promptOf(this, worker).startsWith(beginning), promptOf(this, worker));
+});
+
+Then("worker {string}'s system prompt holds {string}", function (this: Context, worker: string, text: string) {
+  assert.ok(promptOf(this, worker).includes(text), promptOf(this, worker));
 });
 
 Then(
@@ -247,6 +263,7 @@ const workshopChanges: [RegExp, (context: Context, ...values: string[]) => void]
   [/^the pile holds (-?[\d.]+) "(\w+)"$/, (context, count, kind) => changeWorkshop(context, (configuration) => ((configuration.pile as TomlTable)[kind] = Number(count)))],
   [/^"(bench_places|hand_pieces|wait_max_minutes)" is (-?\d+)$/, (context, key, value) => changeWorkshop(context, (configuration) => (configuration[key] = Number(value)))],
   [/^"workers" is \[(.*)\]$/, (context, items) => changeWorkshop(context, (configuration) => (configuration.workers = parse(`workers = [${items}]`).workers))],
+  [/^the durations give "(\w+)" as (-?[\d.]+)$/, (context, name, value) => changeWorkshop(context, (configuration) => ((configuration.durations as TomlTable)[name] = Number(value)))],
   [/^the duration of "(\w+)" is (-?[\d.]+)$/, (context, name, value) => changeWorkshop(context, (configuration) => ((configuration.durations as TomlTable)[name] = Number(value)))],
   [
     /^the calendar has a second segment$/,
@@ -428,7 +445,15 @@ Given("every worker whose turns are not given ends every turn without a tool cal
   workshopSetupOf(this).othersIdle = true;
 });
 
-/** The texts of each effector's outcomes (FR-WORKSHOP-02, FR-WORKSHOP-03, FR-WORKSHOP-05). */
+/** The refusals' texts of the three speech tools, as the inventory gives them (FR-WORKSHOP-06). */
+const SPEECH_REFUSALS = {
+  no_one: "You named nobody. Nothing was said.",
+  no_such_worker: 'There is no worker named "<name>". Nothing was said.',
+  to_self: "You cannot speak to yourself. Nothing was said.",
+  empty_text: "Your text is empty. Nothing was said.",
+};
+
+/** The texts of each effector's outcomes (FR-WORKSHOP-02, FR-WORKSHOP-05, FR-WORKSHOP-06). */
 const EFFECTOR_TEXTS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   take: { success: "You are holding it.", none_left: "The pile has no piece of that kind; you have taken nothing.", hands_full: "Your hands are full; you have taken nothing." },
   put_back: { success: "You have put it back on the pile.", not_held: "You hold no loose piece of that kind; nothing has moved." },
@@ -448,7 +473,9 @@ const EFFECTOR_TEXTS: Readonly<Record<string, Readonly<Record<string, string>>>>
     already_mounted: "A module of that name is already mounted; you have mounted nothing.",
   },
   wait: { success: "You have waited.", interrupted: "Something reached you; you stopped waiting." },
-  say: { success: "You have said it.", empty_text: "You said nothing; nobody heard anything." },
+  ask: { success: "You have asked them.", ...SPEECH_REFUSALS },
+  answer: { success: "You have answered them.", ...SPEECH_REFUSALS },
+  tell: { success: "You have told them.", ...SPEECH_REFUSALS },
   hand: {
     success: "You have handed it over.",
     no_such_worker: "There is no worker of that name; nothing has been handed.",
@@ -469,7 +496,7 @@ Then(
   function (this: Context) {
     const names = ["look", "read_plan", "take", "put_back", "join", "take_apart", "mount", "wait"];
     const tools = under(under(this.labOutput ?? "", '## Condition "base"'), "### Tools");
-    // These, in this order, before any tool a later FR adds (FR-WORKSHOP-03's "say").
+    // These, in this order, before any tool a later FR adds (FR-WORKSHOP-06's speech tools, FR-WORKSHOP-05's "hand").
     const listed = tools.split("\n").filter((line) => line.startsWith("#### Tool "));
     assert.deepEqual(listed.slice(0, names.length), names.map((name) => `#### Tool "${name}"`));
     for (const name of names) assertToolListed(this, name);
@@ -647,6 +674,17 @@ function unquoted(text: string): string {
 /** A text in quotes, which may hold commas and escaped characters. */
 const QUOTED = String.raw`"((?:[^"\\]|\\.)*)"`;
 
+/** The workers' speech tools (FR-WORKSHOP-06). */
+const SPEECH_TOOLS = ["ask", "answer", "tell"];
+
+/** The workers a speech is to, as a step writes them: nobody, one name in quotes, or several joined as lists are. */
+const NAMES = String.raw`nobody|"\w+"(?:(?:, | and )"\w+")*`;
+
+/** The names a step writes after "to", in order. */
+function namesIn(written: string): string[] {
+  return written === "nobody" ? [] : quoted(written);
+}
+
 /** Reads the turns a step scripts for a worker: each call with its arguments and the delay before it, then the end. */
 function turnsOf(written: string): ScriptedAnswer[] {
   const answers: ScriptedAnswer[] = [];
@@ -663,12 +701,14 @@ function turnsOf(written: string): ScriptedAnswer[] {
     const name = tool[1];
     let args: Record<string, unknown> = {};
     let found: RegExpExecArray | null;
-    if ((found = take(` with the module "(\\w+)" and the kind "(\\w+)"`)) !== null) args = { module: found[1], kind: found[2] };
+    if (SPEECH_TOOLS.includes(name)) {
+      found = take(` with (?:the text of \\d+ words, ${QUOTED},|the text ${QUOTED}|${QUOTED}) to (${NAMES})`);
+      assert.ok(found !== null, `the steps do not read the speech in "${written}" at "${rest}"`);
+      args = { to: namesIn(found[4]), text: unquoted(found[1] ?? found[2] ?? found[3]) };
+    } else if ((found = take(` with the module "(\\w+)" and the kind "(\\w+)"`)) !== null) args = { module: found[1], kind: found[2] };
     else if ((found = take(` with "(\\w+)" to "(\\w+)"`)) !== null) args = { worker: found[2], what: found[1] };
-    else if ((found = take(` with the text of \\d+ words, ${QUOTED}`)) !== null) args = { text: unquoted(found[1]) };
-    else if ((found = take(` with the text ${QUOTED}`)) !== null) args = { text: unquoted(found[1]) };
     else if ((found = take(` with (-?[\\d.]+) minutes`)) !== null) args = { minutes: Number(found[1]) };
-    else if ((found = take(` with ${QUOTED}`)) !== null) args = name === "say" ? { text: unquoted(found[1]) } : { kind: found[1] };
+    else if ((found = take(` with ${QUOTED}`)) !== null) args = { kind: found[1] };
     const delay = take(`,? at once|,? after (\\d+) milliseconds`);
     answers.push({ toolCalls: [{ name, arguments: args as JsonObject }], delayMs: Number(delay?.[1] ?? 0) });
     if (take(`, then end$|, then the text "Done\\." with no tool call$`) !== null) break;
@@ -1014,8 +1054,8 @@ Then(
   },
 );
 
-Then('each was delivered no earlier than the end of the "say" call, and within {int} milliseconds of it', function (this: Context, withinMs: number) {
-  const { endedAtMs } = onlyCallOf(this, "say");
+Then("each was delivered no earlier than the end of the {string} call, and within {int} milliseconds of it", function (this: Context, tool: string, withinMs: number) {
+  const { endedAtMs } = onlyCallOf(this, tool);
   const lines = channelLines(this, "voice");
   assert.ok(lines.length > 0, "the log has no stimulus line on the channel voice");
   for (const { agent, deliveredAtMs } of lines) {
@@ -1096,11 +1136,43 @@ Then(
 );
 
 Then(
-  'each worker\'s tools include "say", with its duration as {float} world minutes plus one minute per {int} words, and its texts',
-  function (this: Context, minutes: number, words: number) {
-    const listed = toolListed(this, "say");
-    assert.ok(listed.includes(`- Duration: ${minutes} world minutes plus one minute per ${words} words.`), `the inventory lists "say" as:\n${listed}`);
-    assertToolListed(this, "say");
+  "each worker's tools include {string}, {string} and {string}, each with its duration as {float} world minutes plus one minute per {int} words, and its texts",
+  function (this: Context, a: string, b: string, c: string, minutes: number, words: number) {
+    for (const tool of [a, b, c]) {
+      const listed = toolListed(this, tool);
+      assert.ok(listed.includes(`- Duration: ${minutes} world minutes plus one minute per ${words} words.`), `the inventory lists "${tool}" as:\n${listed}`);
+      assert.ok(EFFECTOR_TEXTS[tool] !== undefined, `the steps know no texts of "${tool}"`);
+      assertToolListed(this, tool);
+    }
+  },
+);
+
+Then("it lists each of the tools {string}, {string} and {string} with the channel {string} it delivers through", function (this: Context, a: string, b: string, c: string, channel: string) {
+  for (const tool of [a, b, c]) assert.ok(toolListed(this, tool).includes(`- Delivers through: ${channel}`), `the tool "${tool}" is listed without the channel it delivers through:\n${toolListed(this, tool)}`);
+});
+
+Then("each worker's tools do not include {string}", function (this: Context, tool: string) {
+  const tools = under(under(this.labOutput ?? "", '## Condition "base"'), "### Tools");
+  assert.ok(tools.includes("#### Tool "), `the inventory lists no tool:\n${this.labOutput ?? ""}`);
+  assert.ok(!tools.includes(`#### Tool "${tool}"`), `the inventory lists the tool "${tool}"`);
+});
+
+Then("the tools' descriptions and parameters are these:", function (this: Context, table: DataTable) {
+  for (const { tool, description, to, text } of table.hashes()) {
+    const listed = toolListed(this, tool);
+    assert.equal(fencedAfter(listed, "Description"), description);
+    const parameters = JSON.parse(fencedAfter(listed, "Parameters")) as { properties: Record<string, { description: string }> };
+    assert.deepEqual(Object.keys(parameters.properties), ["to", "text"], `the parameters of "${tool}"`);
+    assert.deepEqual([parameters.properties.to.description, parameters.properties.text.description], [to, text], `the parameters of "${tool}"`);
+  }
+});
+
+Then(
+  "it gives the durations {string} as {float} and {string} as {int} among the durations, and no duration {string} or {string}",
+  function (this: Context, first: string, firstMinutes: number, second: string, secondValue: number, absent: string, other: string) {
+    const durations = inventoryWorld(this).durations as Record<string, number>;
+    assert.deepEqual([durations[first], durations[second]], [firstMinutes, secondValue]);
+    for (const name of [absent, other]) assert.ok(!Object.hasOwn(durations, name), `the durations give "${name}"`);
   },
 );
 
@@ -1113,6 +1185,10 @@ Then(
     assert.equal(fencedAfter(listed, "Delivers"), text);
   },
 );
+
+Then("the {string} call failed with {string}", function (this: Context, tool: string, outcome: string) {
+  assert.equal(onlyCallOf(this, tool).outcome, outcome);
+});
 
 Then("the {string} call failed with {string} and the text {string}", function (this: Context, tool: string, outcome: string, text: string) {
   const call = onlyCallOf(this, tool);
@@ -1203,8 +1279,24 @@ Then('it gives "effort_by_worker" as {int} for each of {string}, {string}, {stri
   assert.deepEqual({ ...(samples(this)[0].effort_by_worker as object) }, Object.fromEntries([a, b, c, d].map((worker) => [worker, value])));
 });
 
-Then('it gives "speech_before_first_take" as "calls" {int} and "words" {int}', function (this: Context, calls: number, words: number) {
-  assert.deepEqual({ ...(samples(this)[0].speech_before_first_take as object) }, { calls, words });
+Then(/^(?:the first metric sample gives|it gives) "(\w+)" as 0 for each of ((?:"\w+\.\w+"(?:, | and )?)+)$/, function (this: Context, name: string, keys: string) {
+  const zeros = Object.fromEntries([...keys.matchAll(/"([\w.]+)"/g)].map(([, key]) => [key, 0]));
+  assert.deepEqual({ ...(samples(this)[0][name] as object) }, zeros, `"${name}"`);
+});
+
+Then(
+  'it gives "speech_by_worker" as 0 for each of "<worker>.<kind>.calls" and "<worker>.<kind>.words", for each worker of {string}, {string}, {string} and {string} and each kind of {string}, {string} and {string}',
+  function (this: Context, ...names: string[]) {
+    const [workers, kinds] = [names.slice(0, 4), names.slice(4)];
+    const zeros = Object.fromEntries(workers.flatMap((worker) => kinds.flatMap((kind) => [`${worker}.${kind}.calls`, `${worker}.${kind}.words`].map((key) => [key, 0]))));
+    assert.deepEqual({ ...(samples(this)[0].speech_by_worker as object) }, zeros);
+  },
+);
+
+Then("it gives {string} as no key", function (this: Context, name: string) {
+  const value = samples(this)[0][name];
+  assert.ok(value !== null && typeof value === "object", `"${name}" is ${JSON.stringify(value)}`);
+  assert.deepEqual({ ...value }, {});
 });
 
 /** A call of a record, as a row of its table gives it: times in world minutes. */
@@ -1224,7 +1316,11 @@ function rowArguments({ tool, arguments: written }: RecordRow): Record<string, u
     const [module, kind] = written.split(", ");
     return { module, kind };
   }
-  if (tool === "say") return { text: written };
+  if (SPEECH_TOOLS.includes(tool)) {
+    // The names in "to", joined as the heard text joins them, a colon, and the text (FR-WORKSHOP-06).
+    const colon = written.indexOf(": ");
+    return { to: written.slice(0, colon).split(/, | and /), text: written.slice(colon + 2) };
+  }
   if (tool === "wait") return { minutes: Number(written) };
   if (tool === "hand") {
     const [worker, what] = written.split(", ");
@@ -1315,6 +1411,8 @@ export const WORKSHOP_MEASURES = [
   "speech_by_worker",
   "time_by_activity",
   "handovers",
+  "addressed",
+  "questions_unanswered",
 ];
 
 /** A value as a step writes it: a number, a fraction, or null. */
@@ -1339,6 +1437,7 @@ function assertMeasure(measures: Record<string, MetricValue>, name: string, verb
   const expected: Record<string, number> = {};
   if (said !== "no key") for (const [, key, written] of said.matchAll(/"([\w.]+)" (-?\d+(?:\.\d+)?(?:\/\d+)?)/g)) expected[key] = valueOf(written) as number;
   const zeros = /and 0 for ((?:"\w+"(?:, | and )?)+)$/.exec(said);
+  if (/and 0 for every other key$/.test(said)) for (const key of Object.keys(table)) expected[key] ??= 0;
   for (const key of zeros === null ? [] : quoted(zeros[1])) expected[key] = 0;
   if (/and 0 for every other worker's "finished" and for every worker's "mounted"$/.test(said)) {
     for (const worker of WORKERS) {
@@ -1369,6 +1468,10 @@ Then("the last metric sample gives {string} as exactly {string} {int}", function
   assert.deepEqual({ ...(measuresOf(this, "last")[name] as object) }, { [key]: count });
 });
 
+Then("the last metric sample gives {string} as exactly {string} {int} and {string} {int}", function (this: Context, name: string, key: string, count: number, other: string, otherCount: number) {
+  assert.deepEqual({ ...(measuresOf(this, "last")[name] as object) }, { [key]: count, [other]: otherCount });
+});
+
 Then("it gives {string} as exactly {string} {int}", function (this: Context, name: string, key: string, count: number) {
   assert.deepEqual({ ...(measuresOf(this, "last")[name] as object) }, { [key]: count });
 });
@@ -1385,8 +1488,24 @@ Then('it gives "effort_by_worker" for {string} as {int}', function (this: Contex
 
 /** The run's speech lines. */
 function speechLines(context: Context) {
-  return logLines(context).filter((line) => line.type === "speech") as unknown as { speaker: string; start: number; end: number; words: number; atMs: number }[];
+  return logLines(context).filter((line) => line.type === "speech") as unknown as { speaker: string; kind: string; to: string[]; start: number; end: number; words: number; atMs: number }[];
 }
+
+Then('the log\'s "speech" line gives "to" as {}', function (this: Context, to: string) {
+  const lines = speechLines(this);
+  assert.equal(lines.length, 1, `the log has ${lines.length} "speech" lines`);
+  assert.deepEqual(lines[0].to, JSON.parse(to));
+});
+
+Then(
+  /^it gives the speaker "(\w+)", the kind "(\w+)", "to" as (\[.*\]), the start ([\d.]+) and the end ([\d.]+), each time within ([\d.]+), and (\d+) words$/,
+  function (this: Context, speaker: string, kind: string, to: string, start: string, end: string, within: string, words: string) {
+    const [line] = speechLines(this);
+    assert.deepEqual({ speaker: line.speaker, kind: line.kind, to: line.to, words: line.words }, { speaker, kind, to: JSON.parse(to), words: Number(words) });
+    assert.ok(Math.abs(line.start - Number(start)) <= Number(within), `the speech starts at ${line.start}`);
+    assert.ok(Math.abs(line.end - Number(end)) <= Number(within), `the speech ends at ${line.end}`);
+  },
+);
 
 Then("the log has exactly one {string} line", function (this: Context, type: string) {
   assert.equal(type, "speech");
@@ -1459,9 +1578,29 @@ const lastStimulusLines = new WeakMap<Context, { deliveredAtMs: number }>();
 Then(
   "the log has a stimulus line for {string} with the channel {string}, the source {string} and the content {string}",
   function (this: Context, worker: string, channel: string, source: string, content: string) {
-    const lines = channelLines(this, channel).filter((line) => line.agent === worker);
-    assert.deepEqual(lines.map((line) => ({ source: line.source, content: line.content })), [{ source, content }], `"${worker}"'s stimulus lines on the channel "${channel}"`);
-    lastStimulusLines.set(this, lines[0]);
+    lastStimulusLines.set(this, onlyLineFrom(this, worker, channel, source, content));
+  },
+);
+
+/** A worker's only stimulus line on a channel from a source, which must give the content. */
+function onlyLineFrom(context: Context, worker: string, channel: string, source: string, content: string) {
+  const lines = channelLines(context, channel).filter((line) => line.agent === worker && line.source === source);
+  assert.deepEqual(lines.map((line) => line.content), [content], `"${worker}"'s stimulus lines on the channel "${channel}" from "${source}"`);
+  return lines[0];
+}
+
+Then(
+  "the log has a stimulus line for each of {string} and {string}, with the channel {string}, the source {string} and the content {string}",
+  function (this: Context, a: string, b: string, channel: string, source: string, content: string) {
+    for (const worker of [a, b]) onlyLineFrom(this, worker, channel, source, content);
+  },
+);
+
+Then(
+  "{string}'s and {string}'s second model turns each received {string} from {string}, which the worker reads as {string}",
+  function (this: Context, a: string, b: string, content: string, source: string, read: string) {
+    assert.equal(asRead(source, content), read);
+    for (const worker of [a, b]) assert.ok(receivedIn(this, worker, 1).includes(read), `"${worker}"'s second model turn received ${JSON.stringify(receivedIn(this, worker, 1))}`);
   },
 );
 
@@ -1492,6 +1631,11 @@ Then("the log has a tool call line for {string}'s {string} call, with its outcom
   );
   assert.deepEqual(lines.map((line) => ({ outcome: line.outcome, text: line.text })), [{ outcome: call.outcome, text: received[0] }]);
   assert.equal(received.length, 1, `"${worker}" received ${received.length} "${tool}" results`);
+});
+
+Then("it has an {string} line naming that {string} began speaking", function (this: Context, type: string, worker: string) {
+  const starts = logLines(this).filter((line) => line.type === type && line.agent === worker);
+  assert.deepEqual(starts.map((line) => ({ tool: line.tool, change: line.change })), [{ tool: workshopCall(this).tool, change: { began: "speaking" } }]);
 });
 
 Then("it has an {string} line naming that {string} began handing", function (this: Context, type: string, worker: string) {

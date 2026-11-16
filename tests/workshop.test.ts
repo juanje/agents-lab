@@ -6,19 +6,32 @@ import { type LoadedScenario, type Scenario, loadScenario } from "../src/engine/
 import { scenarioLibrary } from "../src/scenarios/library.ts";
 import { type Workshop, workshopScenario } from "../src/scenarios/workshop.ts";
 
-/** The three texts of the workshop's world, word for word (agents-lab-experiments, worlds/workshop). */
-const IDENTITY = "You are {name}, one of the four workers of a small workshop that assembles devices to order.";
-const TASK = "Today's order for the workshop: the device on the plan, left complete on the bench.\nThe order is the workshop's. It is done when the device is complete.";
-const WORLD_RULES = [
-  "How this place works:",
-  "- The workshop is one room: the pile of pieces, the bench, the plan on the wall, and the four of you.",
-  "- You know what is in the room by looking, and what the order needs by reading the plan. Things change while you work, because the others are working too.",
-  "- Everything you do takes time, and so does looking, reading and speaking.",
-  "- The pieces in the pile are counted. A piece joined into a module is in that module until the module is taken apart.",
-  "- Your hands hold up to six loose pieces and one module.",
-  "- The device is assembled on the bench by mounting finished modules. The bench has two places: two of you can mount at the same time, not more.",
-  "- What you say is heard by everyone in the room. Nobody hears what you do not say.",
-].join("\n");
+/**
+ * The three texts of the workshop's world, word for word as copied from agents-lab-experiments' worlds/workshop/
+ * identity.md, task.md and world-rules.md (commit 2d494ea), each without its final newline.
+ */
+const IDENTITY = `# Identity
+
+You are {name}. You work in a small workshop that assembles devices to order. There are four workers: you and three others. You build modules from pieces and mount them on the bench. You do everything with your tools. You are a worker, not the owner or the customer.`;
+const TASK = `# Today's order
+
+One device, built as the plan on the wall shows.
+
+The device has six modules. Each module is built by joining pieces from the pile, and then it is mounted on the bench.
+
+The order is done when the six modules are mounted on the bench.
+
+The order is for the four of you. The workshop closes 90 minutes after you start: the order must be done by then.`;
+const WORLD_RULES = `How this place works:
+- The workshop is one room: the pile of pieces, the bench, the plan on the wall, and the four of you.
+- You know what is in the room, and the time, by looking, and what the order needs by reading the plan. Things change while you work, because the others are working too.
+- Everything you do takes time, and so does looking, reading and speaking.
+- The pieces in the pile are counted. A piece joined into a module is in that module until the module is taken apart.
+- Your hands hold up to six loose pieces and one module.
+- You can hand a loose piece or your module to another worker.
+- The device is assembled on the bench by mounting finished modules. The bench has two places: two of you can mount at the same time, not more.
+- When you speak, you speak to one or more of the others by name: you ask, you answer or you tell. Everyone in the room hears it.
+- Nobody knows what you do not say.`;
 
 /** The workshop with its base configuration changed. */
 export function workshopWith(changing: (configuration: TomlTable) => void): Scenario<Workshop> {
@@ -54,7 +67,7 @@ describe("the workshop's base configuration (FR-WORKSHOP-01)", () => {
   });
 
   it("gives the durations in world minutes, the calendar, the rhythm and the texts word for word, all in the system prompt", () => {
-    expect(base.durations).toEqual({ look: 0.5, read_plan: 1, take: 1, put_back: 0.5, join: 2, take_apart: 2, mount: 3, mount_refused: 0.5, say: 0.25, say_words_per_minute: 30, hand: 0.5 });
+    expect(base.durations).toEqual({ look: 0.5, read_plan: 1, take: 1, put_back: 0.5, join: 2, take_apart: 2, mount: 3, mount_refused: 0.5, speech: 0.25, speech_words_per_minute: 30, hand: 0.5 });
     expect(base.wait_max_minutes).toBe(10);
     expect(base.calendar).toEqual({ start: "day 1 Monday 09:00", segments: [{ scale: 4 }] });
     expect(base.rhythm).toEqual({ source: "your own pace", text: "You are ready to act.", min_ms: 1000, max_ms: 3000 });
@@ -62,6 +75,15 @@ describe("the workshop's base configuration (FR-WORKSHOP-01)", () => {
     // FR-WORKSHOP-05's character and limits, empty in the base.
     expect([base.character, base.limits]).toEqual(["", ""]);
     expect(base.placement).toEqual({ identity: "system", character: "system", task: "system", limits: "system", world_rules: "system" });
+  });
+
+  it("pins the base texts to the world's identity.md, task.md and world-rules.md as copied, each without its final newline", () => {
+    expect(base.identity).toBe(IDENTITY);
+    expect(base.task).toBe(TASK);
+    expect(base.world_rules).toBe(WORLD_RULES);
+    expect(IDENTITY.startsWith("# Identity\n\nYou are {name}. You work in a small workshop that assembles devices to order.")).toBe(true);
+    expect(TASK.startsWith("# Today's order\n\n")).toBe(true);
+    expect(WORLD_RULES.endsWith("\n- Nobody knows what you do not say.")).toBe(true);
   });
 });
 
@@ -77,7 +99,7 @@ describe("the workshop at the start (FR-WORKSHOP-01)", () => {
   it("gives each worker the texts placed in the system prompt, in order, with its name", () => {
     const { systemPrompts, firstStimuli } = load();
     expect(systemPrompts.get("Dal")).toBe([IDENTITY.replace("{name}", "Dal"), TASK, WORLD_RULES].join("\n\n"));
-    expect(systemPrompts.get("Ren")?.startsWith("You are Ren, one of the four workers")).toBe(true);
+    expect(systemPrompts.get("Ren")).toContain("You are Ren. You work in a small workshop");
     expect(firstStimuli.get("Dal")).toEqual([]);
   });
 
@@ -154,6 +176,10 @@ describe("the workshop's refusals (FR-WORKSHOP-01)", () => {
     ["a negative duration", (c) => ((c.durations as TomlTable).join = -1), ['"durations.join"']],
     ["a negative hand duration (FR-WORKSHOP-05)", (c) => ((c.durations as TomlTable).hand = -1), ['"durations.hand"']],
     ["no hand duration (FR-WORKSHOP-05)", (c) => delete (c.durations as TomlTable).hand, ['"durations.hand"']],
+    ["a negative speech duration (FR-WORKSHOP-06)", (c) => ((c.durations as TomlTable).speech = -1), ['"durations.speech"']],
+    ["a speech_words_per_minute of 0 (FR-WORKSHOP-06)", (c) => ((c.durations as TomlTable).speech_words_per_minute = 0), ['"durations.speech_words_per_minute"']],
+    ["a duration say, which the workshop no longer has (FR-WORKSHOP-06)", (c) => ((c.durations as TomlTable).say = 0.25), ['"durations.say"']],
+    ["a duration say_words_per_minute, which the workshop no longer has (FR-WORKSHOP-06)", (c) => ((c.durations as TomlTable).say_words_per_minute = 30), ['"durations.say_words_per_minute"']],
     ["a wait_max_minutes of 0", (c) => (c.wait_max_minutes = 0), ['"wait_max_minutes"']],
     ["a calendar of two segments", (c) => ((c.calendar as TomlTable).segments = [{ scale: 4, until: "day 1 Monday 10:00" }, { scale: 60 }]), ['"calendar.segments"']],
     ["a min_ms above max_ms", (c) => ((c.rhythm as TomlTable).min_ms = 4000), ['"rhythm"']],
