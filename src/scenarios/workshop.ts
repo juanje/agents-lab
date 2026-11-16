@@ -19,7 +19,7 @@ type Place = "system" | "first";
 /** The channel of the message a worker receives once, as it first wakes, when a text is placed there. */
 const ORDER_CHANNEL = "order";
 
-/** The channel through which every other worker hears what a worker says (FR-WORKSHOP-03). */
+/** The channel through which every other worker hears what a worker says, to whom (FR-WORKSHOP-03, FR-WORKSHOP-06). */
 const VOICE_CHANNEL = "voice";
 
 /** The channel through which a worker learns what another handed it (FR-WORKSHOP-05). */
@@ -64,8 +64,8 @@ export interface Landed {
   /** Each applied join: whether it started a module (the worker held none) and whether it finished one. */
   joins: readonly { worker: string; module: string; at: number; started: boolean; finished: boolean }[];
   mounts: readonly { worker: string; module: string; at: number }[];
-  /** Each applied say, with its start (its end less its duration) and its words. */
-  speeches: readonly { speaker: string; start: number; end: number; words: number }[];
+  /** Each applied speech (FR-WORKSHOP-06): its kind, the workers addressed, its start (its end less its duration) and its words. */
+  speeches: readonly { speaker: string; kind: "ask" | "answer" | "tell"; to: readonly string[]; start: number; end: number; words: number }[];
   /** Each applied hand (FR-WORKSHOP-05): a loose piece of a kind, or a module of a name. */
   handovers: readonly Handover[];
 }
@@ -577,38 +577,100 @@ function wordsOf(text: string): number {
   return text.split(/\s+/).filter((word) => word !== "").length;
 }
 
+/** The speech tools and the verb each listener reads (FR-WORKSHOP-06). */
+const SPEECH_VERBS = { ask: "asks", answer: "answers", tell: "tells" } as const;
+type SpeechKind = keyof typeof SPEECH_VERBS;
+
+/** The workers a speech is to: the names in its `to`, each once, in the order first named. */
+function addressed(call: AgentCall): string[] {
+  return [...new Set((call.arguments.to as readonly unknown[]).map(String))];
+}
+
+/** The text of a speech call. */
+function spoken(call: AgentCall): string {
+  return String(call.arguments.text);
+}
+
+/** A list of items joined as the repo's texts join lists: one alone, two with a word between, more with commas and a last word. */
+function listed(items: readonly string[], last: "and" | "or"): string {
+  return items.length < 2 ? items.join("") : `${items.slice(0, -1).join(", ")} ${last} ${items.at(-1)}`;
+}
+
+/** A speech call's duration in world minutes: `speech` plus one minute per `speech_words_per_minute` words of its text. */
+function speechMinutes(state: Workshop, call: AgentCall): number {
+  return state.settings.durations.speech + wordsOf(spoken(call)) / state.settings.durations.speech_words_per_minute;
+}
+
+/** The names in a speech's `to` that are no worker's, each once, in the order first named. */
+function strangers(state: Workshop, call: AgentCall): string[] {
+  return addressed(call).filter((name) => !Object.hasOwn(state.workers, name));
+}
+
 /**
- * "say": the text, heard by every other worker through the channel voice as the call ends, with the speaker's name as
- * its source (FR-WORKSHOP-03). It takes `say` minutes plus one per `say_words_per_minute` words, in proportion.
+ * A speech tool (FR-WORKSHOP-06): a text to one or more workers by name, heard as the call ends by every other worker
+ * through the channel voice, with the speaker's name as its source, its kind and the workers addressed (FR-WORKSHOP-03).
  */
-const say: Effector<Workshop> = {
-  kind: "effector",
-  name: "say",
-  description: "Say something aloud. Everyone else in the room hears it, with your name, when you finish speaking; the longer it is, the longer it takes.",
-  parameters: { type: "object", properties: { text: { type: "string", description: "What you say." } }, required: ["text"] },
-  durationMs: (state, call) => minutes(state.settings.durations.speech + wordsOf(String(call.arguments.text)) / state.settings.durations.speech_words_per_minute),
-  start: doing("speaking"),
-  action: {
-    precondition: (_state, call) => firstRefusal([[wordsOf(String(call.arguments.text)) === 0, "empty_text"]]),
-    // The speech timeline keeps it (FR-WORKSHOP-04).
-    effect: (state, call) => {
-      const words = wordsOf(String(call.arguments.text));
-      const end = landedAt(state, call);
-      const duration = state.settings.durations.speech + words / state.settings.durations.speech_words_per_minute;
-      return keeping(state, "speeches", { speaker: call.agent, start: end - duration, end, words });
+function speechTool(kind: SpeechKind, description: string, success: string): Effector<Workshop> {
+  return {
+    kind: "effector",
+    name: kind,
+    description,
+    parameters: {
+      type: "object",
+      properties: {
+        to: { type: "array", items: { type: "string" }, description: "The names of the workers you speak to, one or more." },
+        text: { type: "string", description: "What you say." },
+      },
+      required: ["to", "text"],
     },
-  },
-  end: END,
-  delivers: {
-    channel: VOICE_CHANNEL,
-    deliveries: (state, call) =>
-      Object.keys(state.workers)
-        .filter((worker) => worker !== call.agent)
-        .map((worker) => ({ agent: worker, source: call.agent, values: { text: String(call.arguments.text) } })),
-  },
-  texts: { success: "You have said it.", empty_text: "You said nothing; nobody heard anything." },
-  readTarget: NOT_SENSED,
-};
+    durationMs: (state, call) => minutes(speechMinutes(state, call)),
+    start: doing("speaking"),
+    action: {
+      precondition: (state, call) =>
+        firstRefusal([
+          [addressed(call).length === 0, "no_one"],
+          [strangers(state, call).length > 0, "no_such_worker"],
+          [addressed(call).includes(call.agent), "to_self"],
+          [wordsOf(spoken(call)) === 0, "empty_text"],
+        ]),
+      // The speech timeline keeps it (FR-WORKSHOP-04).
+      effect: (state, call) => {
+        const end = landedAt(state, call);
+        return keeping(state, "speeches", { speaker: call.agent, kind, to: addressed(call), start: end - speechMinutes(state, call), end, words: wordsOf(spoken(call)) });
+      },
+    },
+    end: END,
+    delivers: {
+      channel: VOICE_CHANNEL,
+      deliveries: (state, call) =>
+        Object.keys(state.workers)
+          .filter((worker) => worker !== call.agent)
+          .map((worker) => ({
+            agent: worker,
+            source: call.agent,
+            values: { verb: SPEECH_VERBS[kind], names: listed(addressed(call).map((name) => (name === worker ? "you" : name)), "and"), text: spoken(call) },
+          })),
+    },
+    texts: {
+      success,
+      no_one: "You named nobody. Nothing was said.",
+      no_such_worker: 'There is no worker named "<name>". Nothing was said.',
+      to_self: "You cannot speak to yourself. Nothing was said.",
+      empty_text: "Your text is empty. Nothing was said.",
+    },
+    refusalText: (state, call, outcome) =>
+      outcome === "no_such_worker" ? `There is no worker named ${listed(strangers(state, call).map((name) => `"${name}"`), "or")}. Nothing was said.` : undefined,
+    readTarget: NOT_SENSED,
+  };
+}
+
+const ask = speechTool("ask", "Ask one or more of the other workers a question. Put their names in `to`. Everyone in the room hears it.", "You have asked them.");
+const answer = speechTool("answer", "Answer one or more of the other workers. Put their names in `to`. Everyone in the room hears it.", "You have answered them.");
+const tell = speechTool(
+  "tell",
+  "Tell one or more of the other workers something that is not a question or an answer. Put their names in `to`. Everyone in the room hears it.",
+  "You have told them.",
+);
 
 /** Whether what a hand names is the giver's module: the name of the module it holds; otherwise it names a kind. */
 function handsModule(hands: Hands, what: string): boolean {
@@ -680,15 +742,15 @@ const hand: Effector<Workshop> = {
   readTarget: NOT_SENSED,
 };
 
-/** The workers' tools (FR-WORKSHOP-02, FR-WORKSHOP-03's say and FR-WORKSHOP-05's hand). */
-const TOOLS: readonly Tool<Workshop>[] = [look, readPlan, take, putBack, join, takeApart, mount, wait, say, hand];
+/** The workers' tools (FR-WORKSHOP-02, FR-WORKSHOP-06's speech and FR-WORKSHOP-05's hand). */
+const TOOLS: readonly Tool<Workshop>[] = [look, readPlan, take, putBack, join, takeApart, mount, wait, ask, answer, tell, hand];
 
 /** How each tool takes its time, for the inventory, in world minutes. */
 function describeDuration(configuration: Configuration, tool: string): string {
   const { durations, waitMaxMinutes } = settingsOf(configuration);
   if (tool === "mount") return `${durations.mount} world minutes; ${durations.mount_refused} world minutes when every bench place is taken as it starts.`;
   if (tool === "wait") return `The minutes it is given, above 0 and at most ${waitMaxMinutes} world minutes; it ends early when a stimulus reaches the worker.`;
-  if (tool === "say") return `${durations.speech} world minutes plus one minute per ${durations.speech_words_per_minute} words.`;
+  if (Object.hasOwn(SPEECH_VERBS, tool)) return `${durations.speech} world minutes plus one minute per ${durations.speech_words_per_minute} words.`;
   if (!TOOLS.some(({ name }) => name === tool)) throw new Error(`The workshop has no tool "${tool}"`);
   return `${durations[tool as Duration]} world minutes.`;
 }
@@ -830,8 +892,8 @@ const METRICS: Scenario<Workshop>["metrics"] = {
 } satisfies Record<string, (state: Workshop, calls: readonly ToolCall[]) => MetricValue>;
 
 /**
- * The workshop's channels: its workers' rhythm; the voice, whose stimulus is what was said, from the speaker, and which
- * wakes a resting worker (FR-WORKSHOP-03); the hands, whose stimulus is what was handed, from the giver, and which wakes
+ * The workshop's channels: its workers' rhythm; the voice, whose stimulus is what was said, its kind and to whom, from
+ * the speaker, and which wakes a resting worker (FR-WORKSHOP-03, FR-WORKSHOP-06); the hands, whose stimulus is what was handed, from the giver, and which wakes
  * too (FR-WORKSHOP-05); and the order, when a text is placed there.
  */
 function channels(configuration: Configuration): Channel[] {
@@ -839,7 +901,7 @@ function channels(configuration: Configuration): Channel[] {
   const order = textsIn(configuration, "first");
   return [
     ...rhythmChannels(configuration),
-    { name: VOICE_CHANNEL, source: "the speaker", stimulus: "{text}", described: "what was said", wakes: true },
+    { name: VOICE_CHANNEL, source: "the speaker", stimulus: '{verb} {names}, "{text}"', described: 'asks, answers or tells <names>, "<text>"', wakes: true },
     { name: HANDS_CHANNEL, source: "the giver", stimulus: "handed you {what}.", described: "handed you <what>.", wakes: true },
     ...(order === "" ? [] : [{ name: ORDER_CHANNEL, source: configuration.order_source as string, stimulus: order }]),
   ];
