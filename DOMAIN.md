@@ -524,7 +524,7 @@ The recorder writes a line per event. The inventory and the run's setup go first
 
 **Venue catering**
 - A venue's `catering` is `in_house`, `outside_fee` (`outside_fee_per_head`) or `outside_free`.
-- A caterer's params give each chosen venue's rule (`venues`), and its `order` names a `venue` (since FR-CONGRESS-25, an order with none is refused `venue_required`).
+- A caterer's params give each chosen venue's rule (`venues`), and its `order` names a `venue` (since FR-CONGRESS-25, the mail refuses an order with none as `missing_field`, and a caterer that gets one refuses it `venue_required`).
 - Unless it is that venue's in-house caterer or the order gives a `permit`, an `in_house` or `outside_fee` venue refuses it (`order_refused`, `reason` `venue_requires_permit`).
 - The venue quotes `request_extra outside_catering` at its fee per head × attendance (outside_fee only) and gives `permit` `<venue>-permit-<n>` with `extra_confirmed`.
 - An `in_house` venue's params give its in-house caterer's diets (`in_house_diets`); for a `diet` that caterer serves with a limit or not at all, it quotes `outside_catering` at `outside_diet_fee_per_head` × attendance, and its permit carries the `diet` and the `attendance` (FR-CONGRESS-17).
@@ -639,7 +639,8 @@ The recorder writes a line per event. The inventory and the run's setup go first
   - A venue's quote `catering` and its terms' "Catering:" sentence give its rule as a sentence that starts with the rule's word and says where a permit comes from; a rule of another word is given as it is.
   - An `in_house` venue answers `request_extra outside_catering` with no `diet` `not_available` with `reason` `name a diet our caterer cannot serve in full`; for a diet its caterer serves in full, still with no reason.
   - A caterer's permit refusals add what they need: `venue_requires_permit` the `venue` and `needs`; `permit_unknown` the `venue`, the `permit` given and `needs`; `permit_exceeded` the permit's `diet` and `attendance` and `needs`.
-  - A caterer refuses an `order` with no `venue` `venue_required`, before checking anything else, even an order it holds for the date. The acts table still marks `venue?`, so the world delivers such an order and the directory does not list `venue`.
+  - A caterer refuses an `order` with no `venue` `venue_required`, before checking anything else, even an order it holds for the date.
+  - The acts table writes `order (counts, date, venue; permit)`: `venue` is required, so `send_mail` or `call` with the act `order` and no `venue` fails at once as `missing_field` and the caterer never sees it; `permit` is listed, not required. The directory writes `order (counts, date, venue, permit)`. The caterer's own `venue_required` stays, for an order that reaches it with no venue (as a step or test drives the rules directly).
 
 ### The congress ready for an experiment (FR-CONGRESS-08)
 
