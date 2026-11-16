@@ -73,7 +73,8 @@ function labPiDirectory(): string {
 
 /**
  * Makes the Pi model runtime a run's sessions share: the lab's own credentials and model definitions, never the
- * person's (NFR-08), with the providers of the agents' models registered like any other.
+ * person's (NFR-08), with the providers of the agents' models registered like any other. It returns once the runtime
+ * has finished reading the directory, so nothing reads or writes it after the run.
  */
 export async function openRuntime(providers: readonly (Provider | undefined)[]): Promise<ModelRuntime> {
   const directory = labPiDirectory();
@@ -81,8 +82,19 @@ export async function openRuntime(providers: readonly (Provider | undefined)[]):
     authPath: join(directory, "auth.json"),
     modelsPath: join(directory, "models.json"),
     modelsStorePath: join(directory, "models-store.json"),
+    refreshOnCreate: false,
   });
-  for (const provider of providers) if (provider !== undefined) runtime.registerNativeProvider(provider);
+  // Pi starts a refresh of every provider on each registration and does not return it; one refresh supersedes another,
+  // so even a kept one can return before its reads end. The registrations' refreshes are held, and the runtime is
+  // refreshed once, awaited, as create would have done.
+  const refresh = runtime.refresh;
+  runtime.refresh = async () => ({ aborted: false, errors: new Map() });
+  try {
+    for (const provider of providers) if (provider !== undefined) runtime.registerNativeProvider(provider);
+  } finally {
+    runtime.refresh = refresh;
+  }
+  await runtime.refresh({ allowNetwork: false });
   return runtime;
 }
 
