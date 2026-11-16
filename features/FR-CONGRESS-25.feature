@@ -39,3 +39,15 @@ Feature: Venues and caterers say what a permit is and where it comes from
     When the organiser sends "c1" the act "order" with the date "day 26" and the counts "standard: 40"
     Then "c1" answers "order_refused" with the reason "venue_required"
     And "c1" holds no order for "day 26"
+
+  # Approved addition (2026-11-16): the directory says an order names its venue and may carry a permit.
+
+  Scenario: The directory lists the caterer's order with its venue and permit
+    Given the "knowledge" text is "{directory}"
+    When the run ends
+    Then the organiser's system prompt says "A caterer takes ask_quote (attendance, diets), order (counts, date, venue, permit), final_numbers (counts), cancel_order."
+
+  Scenario: An order sent with no venue fails at once
+    Given the organiser's scripted turns call "send_mail" to "c1" with the act "order", the date "day 26" and the counts "standard: 40", then end
+    When the run ends
+    Then the "send_mail" call failed with the outcome "missing_field" and took no time, naming "venue", and "c1" received nothing

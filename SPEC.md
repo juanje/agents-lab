@@ -876,6 +876,8 @@ A plan meets each check of FR-CONGRESS-20 as the world allows it:
 
 **An order names its venue.** A caterer refuses an `order` with no `venue` as `order_refused` with the reason `venue_required`. Nothing else in the order is checked first.
 
+**The directory says an order names its venue and may carry a permit** (addition, 2026-11-16). The acts table lists the caterer's `order` as `order (counts, date, venue; permit)`, so the directory writes `order (counts, date, venue, permit)`. `venue` is required: `send_mail` or `call` with the act `order` and no `venue` fails at once as `missing_field`, naming `venue`, and takes no time (FR-CONGRESS-11). `permit` is listed and not required, as the fields some items need are (FR-CONGRESS-19). The caterer's own refusal `venue_required` stays, for an order that reaches it with no venue.
+
 *Why:* in the E1 rerun (`agents-lab-experiments/experiments/E1-congress/permits-legibility.md`):
 - the venue's quote gave its catering rule as a bare code, and the caterers' refusals gave bare reasons;
 - organisers sent 124 orders with invented permits, most often the item's name `outside_catering`;
