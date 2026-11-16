@@ -274,8 +274,8 @@ describe("the workers' tools (FR-WORKSHOP-02)", () => {
   const started = (name: string, state: Workshop, agent: string, args: Record<string, unknown> = {}) => effector(name).start?.effect(state, call(agent, args)) ?? state;
 
   it("are look, read_plan, take, put_back, join, take_apart, mount and wait, none naming a kind or a module", () => {
-    // FR-WORKSHOP-03 adds "say", FR-WORKSHOP-05 "hand".
-    expect(workshopScenario.tools.map(({ name }) => name)).toEqual(["look", "read_plan", "take", "put_back", "join", "take_apart", "mount", "wait", "say", "hand"]);
+    // FR-WORKSHOP-06 adds "ask", "answer" and "tell", FR-WORKSHOP-05 "hand".
+    expect(workshopScenario.tools.map(({ name }) => name)).toEqual(["look", "read_plan", "take", "put_back", "join", "take_apart", "mount", "wait", "ask", "answer", "tell", "hand"]);
     const written = JSON.stringify(workshopScenario.tools.map(({ description, parameters }) => ({ description, parameters })));
     for (const word of ["arn", "bex", "cal", "dov", "eln", "fim", "gor", "tessa", "ulm", "vorn", "wick", "yarl", "zeth"]) expect(written).not.toMatch(new RegExp(`\\b${word}\\b`));
   });
@@ -435,42 +435,115 @@ describe("the workers' tools (FR-WORKSHOP-02)", () => {
   });
 });
 
-describe("say (FR-WORKSHOP-03)", () => {
-  const say = workshopScenario.tools.find(({ name }) => name === "say");
+describe("ask, answer and tell (FR-WORKSHOP-03, FR-WORKSHOP-06)", () => {
+  const speech = (name: string) => {
+    const tool = workshopScenario.tools.find((each) => each.name === name);
+    if (tool?.kind !== "effector") throw new Error(`"${name}" is no effector`);
+    return tool;
+  };
   const state = load().world.state;
-  const call = (text: string) => ({ agent: "Dal", arguments: { text }, atMs: 0 });
+  const call = (to: unknown, text: string, agent = "Dal") => ({ agent, arguments: { to, text }, atMs: 0, world: { day: 1, weekday: "Monday" as const, seconds: 9 * 3600 + 60 } });
+  const kinds = [
+    ["ask", "asks", "You have asked them.", "Ask one or more of the other workers a question. Put their names in `to`. Everyone in the room hears it."],
+    ["answer", "answers", "You have answered them.", "Answer one or more of the other workers. Put their names in `to`. Everyone in the room hears it."],
+    ["tell", "tells", "You have told them.", "Tell one or more of the other workers something that is not a question or an answer. Put their names in `to`. Everyone in the room hears it."],
+  ] as const;
+  const refusals = {
+    no_one: "You named nobody. Nothing was said.",
+    no_such_worker: 'There is no worker named "<name>". Nothing was said.',
+    to_self: "You cannot speak to yourself. Nothing was said.",
+    empty_text: "Your text is empty. Nothing was said.",
+  };
 
-  it("is an effector that takes say minutes plus one minute per say_words_per_minute words of its text", () => {
-    expect(say?.kind).toBe("effector");
-    expect(say?.durationMs(state, call("Mik, take ulm."))).toEqual({ worldSeconds: (0.25 + 3 / 30) * 60 });
-    expect(say?.durationMs(state, call(" one\ttwo\nthree  four five six seven eight nine ten eleven twelve thirteen fourteen fifteen "))).toEqual({ worldSeconds: 0.75 * 60 });
-    expect(say?.durationMs(state, call("   "))).toEqual({ worldSeconds: 15 });
+  it("are effectors of a to, a list of names, and a text, with the descriptions and parameters of the table, naming no worker, kind or module", () => {
+    for (const [name, , success, description] of kinds) {
+      const tool = speech(name);
+      expect(tool.description).toBe(description);
+      expect(tool.parameters).toEqual({
+        type: "object",
+        properties: {
+          to: { type: "array", items: { type: "string" }, description: "The names of the workers you speak to, one or more." },
+          text: { type: "string", description: "What you say." },
+        },
+        required: ["to", "text"],
+      });
+      expect(tool.texts).toEqual({ success, ...refusals });
+      expect(tool.readTarget(undefined, call(["Mik"], "hi"), state, () => undefined)).toBe("not_sensed");
+      const written = JSON.stringify({ description: tool.description, parameters: tool.parameters });
+      for (const word of ["Dal", "Mik", "Nar", "Ren", "arn", "tessa"]) expect(written).not.toMatch(new RegExp(`\\b${word}\\b`));
+    }
   });
 
-  it("shows the speaker speaking while its call lasts", () => {
-    if (say?.kind !== "effector") throw new Error("say is no effector");
-    expect(say.start?.effect(state, call("hi")).workers.Dal.doing).toBe("speaking");
-    expect(say.start?.describe(state, call("hi"))).toEqual({ began: "speaking" });
-    expect(say.end?.effect(say.start?.effect(state, call("hi")) ?? state, call("hi")).workers.Dal.doing).toBe("nothing");
+  it("take speech minutes plus one minute per speech_words_per_minute words of the text, the names in to counting none", () => {
+    for (const [name] of kinds) {
+      expect(speech(name).durationMs(state, call(["Mik"], "Who builds tessa?"))).toEqual({ worldSeconds: (0.25 + 3 / 30) * 60 });
+      expect(speech(name).durationMs(state, call(["Mik", "Nar", "Ren"], " one\ttwo\nthree  four five six seven eight nine ten eleven twelve thirteen fourteen fifteen "))).toEqual({ worldSeconds: 0.75 * 60 });
+      expect(speech(name).durationMs(state, call([], "   "))).toEqual({ worldSeconds: 15 });
+      expect(workshopScenario.describeDuration(parse(workshopScenario.baseConfiguration), name)).toBe("0.25 world minutes plus one minute per 30 words.");
+    }
   });
 
-  it("refuses a text with no word as empty_text when it lands, and otherwise delivers it to every other worker on the channel voice, from the speaker", () => {
-    if (say?.kind !== "effector") throw new Error("say is no effector");
-    for (const text of ["", "   ", "\n  "]) expect(say.action?.precondition(state, call(text))).toEqual({ holds: false, reason: "empty_text" });
-    expect(say.action?.precondition(state, call("Mik, take ulm."))).toEqual({ holds: true });
-    expect(say.delivers?.channel).toBe("voice");
-    expect(say.delivers?.deliveries(state, call("Mik, take ulm."))).toEqual(
-      ["Mik", "Nar", "Ren"].map((agent) => ({ agent, source: "Dal", values: { text: "Mik, take ulm." } })),
-    );
-    expect(say.texts).toEqual({ success: "You have said it.", empty_text: "You said nothing; nobody heard anything." });
+  it("show the speaker speaking while the call lasts", () => {
+    for (const [name] of kinds) {
+      const tool = speech(name);
+      expect(tool.start?.effect(state, call(["Mik"], "hi")).workers.Dal.doing).toBe("speaking");
+      expect(tool.start?.describe(state, call(["Mik"], "hi"))).toEqual({ began: "speaking" });
+      expect(tool.end?.effect(tool.start?.effect(state, call(["Mik"], "hi")) ?? state, call(["Mik"], "hi")).workers.Dal.doing).toBe("nothing");
+    }
   });
 
-  it("speaks through the channel voice, from the speaker, which wakes a resting worker and is described as what was said", () => {
-    expect(load().channels.find(({ name }) => name === "voice")).toEqual({ name: "voice", source: "the speaker", stimulus: "{text}", described: "what was said", wakes: true });
+  it("refuse when they land, in the order nobody, no such worker, oneself, no word", () => {
+    const cases: [unknown, string, string][] = [
+      [[], "Who builds tessa?", "no_one"],
+      [["Kel"], "Who builds tessa?", "no_such_worker"],
+      [["Mik", "Kel"], "I build tessa.", "no_such_worker"],
+      [["mik"], "Please take ulm.", "no_such_worker"],
+      [["Dal"], "Who builds tessa?", "to_self"],
+      [["Mik", "Dal"], "I build tessa.", "to_self"],
+      [["Mik"], "", "empty_text"],
+      [["Mik"], "   ", "empty_text"],
+      [["Mik", "Nar"], "\n  ", "empty_text"],
+      [[], "", "no_one"],
+      [["Kel", "Dal"], "", "no_such_worker"],
+      [["Dal", "Kel"], "Please take ulm.", "no_such_worker"],
+      [["Dal"], "", "to_self"],
+    ];
+    for (const [name] of kinds) {
+      for (const [to, text, outcome] of cases) expect([name, to, text, speech(name).action?.precondition(state, call(to, text))]).toEqual([name, to, text, { holds: false, reason: outcome }]);
+      expect(speech(name).action?.precondition(state, call(["Mik", "Mik", "Nar"], "Who builds tessa?"))).toEqual({ holds: true });
+    }
   });
 
-  it("gives the inventory its duration in world minutes", () => {
-    expect(workshopScenario.describeDuration(parse(workshopScenario.baseConfiguration), "say")).toBe("0.25 world minutes plus one minute per 30 words.");
+  it("name in no_such_worker's text each name that is no worker's, in quotes, in the order first named, joined with or", () => {
+    const text = (to: string[]) => speech("tell").refusalText?.(state, call(to, "Please take ulm."), "no_such_worker");
+    expect(text(["Kel"])).toBe('There is no worker named "Kel". Nothing was said.');
+    expect(text(["Mik", "Kel"])).toBe('There is no worker named "Kel". Nothing was said.');
+    expect(text(["Kel", "Mik", "Tam"])).toBe('There is no worker named "Kel" or "Tam". Nothing was said.');
+    expect(text(["Kel", "Tam", "Kel", "Bo"])).toBe('There is no worker named "Kel", "Tam" or "Bo". Nothing was said.');
+    for (const outcome of ["success", "no_one", "to_self", "empty_text"]) expect(speech("ask").refusalText?.(state, call(["Mik"], "hi"), outcome)).toBeUndefined();
+  });
+
+  it("deliver to every other worker on the channel voice, from the speaker, its kind, the workers addressed with you for the listener, and the text", () => {
+    for (const [name, verb] of kinds) {
+      expect(speech(name).delivers?.channel).toBe("voice");
+      expect(speech(name).delivers?.deliveries(state, call(["Mik", "Nar", "Mik"], " Who builds tessa?"))).toEqual([
+        { agent: "Mik", source: "Dal", values: { verb, names: "you and Nar", text: " Who builds tessa?" } },
+        { agent: "Nar", source: "Dal", values: { verb, names: "Mik and you", text: " Who builds tessa?" } },
+        { agent: "Ren", source: "Dal", values: { verb, names: "Mik and Nar", text: " Who builds tessa?" } },
+      ]);
+    }
+    expect(speech("tell").delivers?.deliveries(state, call(["Mik", "Nar", "Ren"], "We start now.")).map(({ values }) => values.names)).toEqual(["you, Nar and Ren", "Mik, you and Ren", "Mik, Nar and you"]);
+    expect(speech("ask").delivers?.deliveries(state, call(["Dal"], "Who builds tessa?", "Nar")).map(({ agent, values }) => [agent, values.names])).toEqual([["Dal", "you"], ["Mik", "Dal"], ["Ren", "Dal"]]);
+  });
+
+  it("speak through the channel voice, from the speaker, which wakes a resting worker and is described by its kind, names and text", () => {
+    expect(load().channels.find(({ name }) => name === "voice")).toEqual({
+      name: "voice",
+      source: "the speaker",
+      stimulus: '{verb} {names}, "{text}"',
+      described: 'asks, answers or tells <names>, "<text>"',
+      wakes: true,
+    });
   });
 });
 
@@ -626,7 +699,7 @@ describe("done and the workshop's measures (FR-WORKSHOP-04)", () => {
     state = apply(state, "take", "Dal", 1, 2, { kind: "eln" });
     state = apply(state, "join", "Dal", 2, 4, { module: "ulm", kind: "bex" });
     state = apply(state, "join", "Dal", 4, 6, { module: "ulm", kind: "eln" });
-    state = apply(state, "say", "Mik", 6, 6.75, { text: "I will build tessa now and Mik could build vorn while Nar builds zeth please" });
+    state = apply(state, "tell", "Mik", 6, 6.75, { to: ["Nar", "Dal", "Nar"], text: "I will build tessa now and Mik could build vorn while Nar builds zeth please" });
     expect(state.landed.takes).toEqual([
       { worker: "Dal", at: 1 },
       { worker: "Dal", at: 2 },
@@ -635,7 +708,7 @@ describe("done and the workshop's measures (FR-WORKSHOP-04)", () => {
       { worker: "Dal", module: "ulm", at: 4, started: true, finished: false },
       { worker: "Dal", module: "ulm", at: 6, started: false, finished: true },
     ]);
-    expect(state.landed.speeches).toEqual([{ speaker: "Mik", start: 6, end: 6.75, words: 15 }]);
+    expect(state.landed.speeches).toEqual([{ speaker: "Mik", kind: "tell", to: ["Nar", "Dal"], start: 6, end: 6.75, words: 15 }]);
   });
 
   it("gives every measure its value at the start", () => {
@@ -674,14 +747,14 @@ describe("done and the workshop's measures (FR-WORKSHOP-04)", () => {
   });
 
   it("counts effort in world minutes, refused calls' full time included and none for a call never run", () => {
-    const calls = [recorded("Dal", "mount", 3, 3.5, "bench_full"), recorded("Dal", "wait", 4, 4, "invalid_arguments"), recorded("Mik", "look", 0, 0.5), recorded("Mik", "say", 1, 1.4, "cut_off")];
+    const calls = [recorded("Dal", "mount", 3, 3.5, "bench_full"), recorded("Dal", "wait", 4, 4, "invalid_arguments"), recorded("Mik", "look", 0, 0.5), recorded("Mik", "ask", 1, 1.4, "cut_off")];
     // The recorded milliseconds of a call never run are not counted.
     calls[1] = { ...calls[1], endedAtMs: calls[1].startedAtMs + 3 };
     expect(metric("effort_total", base(), calls)).toBeCloseTo(1.4);
     expect(metric("effort_by_worker", base(), calls)).toEqual({ Dal: 0.5, Mik: expect.closeTo(0.9) as unknown as number, Nar: 0, Ren: 0 });
     expect(metric("refused_by_cause", base(), calls)).toEqual({ "mount.bench_full": 1, "wait.invalid_arguments": 1 });
     expect(metric("bench_refusals", base(), calls)).toBe(1);
-    expect(metric("time_by_activity", base(), calls)).toEqual({ "Dal.mount": 0.5, "Dal.wait": 0, "Mik.look": 0.5, "Mik.say": expect.closeTo(0.4) as unknown as number });
+    expect(metric("time_by_activity", base(), calls)).toEqual({ "Dal.mount": 0.5, "Dal.wait": 0, "Mik.look": 0.5, "Mik.ask": expect.closeTo(0.4) as unknown as number });
   });
 
   it("counts the pieces neither in the pile nor in a mounted module", () => {
@@ -714,10 +787,10 @@ describe("done and the workshop's measures (FR-WORKSHOP-04)", () => {
 
   it("gives the first take's time, each worker's own, and the speech that landed before it", () => {
     let state = base();
-    state = apply(state, "say", "Dal", 0.5, 1.25, { text: "I will build tessa now and Mik could build vorn while Nar builds zeth please" });
+    state = apply(state, "tell", "Dal", 0.5, 1.25, { to: ["Mik", "Nar"], text: "I will build tessa now and Mik could build vorn while Nar builds zeth please" });
     state = apply(state, "take", "Dal", 1.25, 2.25, { kind: "arn" });
     state = apply(state, "take", "Mik", 1.35, 2.35, { kind: "cal" });
-    state = apply(state, "say", "Nar", 2, 2.45, { text: "I will take the zeth pieces" });
+    state = apply(state, "tell", "Nar", 2, 2.45, { to: ["Dal"], text: "I will take the zeth pieces" });
     expect(metric("first_take_time", state)).toBe(2.25);
     expect(metric("own_first_take_time", state)).toEqual({ Dal: 2.25, Mik: 2.35 });
     expect(metric("speech_before_first_take", state)).toEqual({ calls: 1, words: 15 });
@@ -779,8 +852,8 @@ describe("done and the workshop's measures (FR-WORKSHOP-04)", () => {
 
   it("gives a speech line for each applied speech, as it lands", () => {
     const before = base();
-    const after = apply(before, "say", "Dal", 0, 0.75, { text: "I will build tessa now and Mik could build vorn while Nar builds zeth please" });
-    expect(workshopScenario.logLines?.(before, after)).toEqual([{ type: "speech", speaker: "Dal", start: 0, end: 0.75, words: 15 }]);
+    const after = apply(before, "ask", "Dal", 0, 0.75, { to: ["Nar", "Mik", "Nar"], text: "I will build tessa now and Mik could build vorn while Nar builds zeth please" });
+    expect(workshopScenario.logLines?.(before, after)).toEqual([{ type: "speech", speaker: "Dal", kind: "ask", to: ["Nar", "Mik"], start: 0, end: 0.75, words: 15 }]);
     expect(workshopScenario.logLines?.(after, after)).toEqual([]);
   });
 });

@@ -917,6 +917,26 @@ describe("run", () => {
     ]);
   });
 
+  it("gives the agent, for a refused effect, the text the effector makes of that outcome from the state and the call, in place of the one it declares (FR-WORKSHOP-06)", async () => {
+    const naming: Effector<Slots> = {
+      ...(slotTools[1] as Effector<Slots>),
+      texts: { success: "Taken.", slot_taken: "Slot <slot> is held." },
+      refusalText: (slots, call, outcome) => (outcome === "slot_taken" ? `Slot ${String(call.arguments.slot)} is held by ${String(slots[(call.arguments.slot as number) - 1])}.` : undefined),
+    };
+    const model = new ScriptedModel([
+      { toolCalls: [{ name: "take", arguments: { slot: 2 } }], delayMs: 0 },
+      { toolCalls: [{ name: "take", arguments: { slot: 2 } }], delayMs: 0 },
+      { text: "Done.", delayMs: 0 },
+    ]);
+
+    const { toolCalls } = await run(slots({ tools: [naming] }), [{ name: "a", model, activations: 1 }], seed, settings);
+
+    expect(toolCalls.map(({ outcome, text }) => [outcome, text])).toEqual([
+      ["success", "Taken."],
+      ["slot_taken", "Slot 2 is held by a."],
+    ]);
+  });
+
   /** A take whose success is followed by how many slots the agent sees held as its call ends, keeping the slots it saw. */
   const seeingTake: Effector<Slots> = {
     ...(slotTools[1] as Effector<Slots>),
