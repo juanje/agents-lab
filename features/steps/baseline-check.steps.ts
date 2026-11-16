@@ -12,6 +12,7 @@ import type { Context } from "../support/context.ts";
 import { change, configurationOf, hourMsOf, organiserTurns } from "./congress.steps.ts";
 import { before, changePools, fieldsOf, minutesOf, sentBy } from "./congress-parties.steps.ts";
 import { END, emptyWorld, mail, minutes, publish, records, recordsOf, register, session, worldOf } from "./congress-parts.steps.ts";
+import { givePermit, onPermitsCongress } from "./permits-legibility.steps.ts";
 import { CITY, V1 } from "./run-corrections.steps.ts";
 import { runCommand } from "./summarize.steps.ts";
 
@@ -150,6 +151,8 @@ export function answeredUnavailable(context: Context): void {
 
 // A caterer takes only a permit the venue gave.
 Given("{string} gave the organiser the permit {string} for outside catering", function (this: Context, venue: string, permit: string) {
+  // On FR-CONGRESS-25's congress, the venue's rules give it directly.
+  if (onPermitsCongress(this)) return givePermit(this, venue, permit);
   // Its first permit: the organiser books the venue, then asks for outside catering for 40 and accepts it.
   assert.equal(permit, `${venue}-permit-1`);
   before(
