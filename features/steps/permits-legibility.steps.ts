@@ -4,7 +4,12 @@ import type { RuleStep } from "../../src/engine/participants.ts";
 import { Random } from "../../src/engine/random.ts";
 import { catererRules, venueRules } from "../../src/scenarios/congress-parties.ts";
 import { type ToolAnswer, calls, conversation, drive, notice, tools } from "../../tests/fixtures/rules.ts";
+import { type TomlTable, stringify } from "smol-toml";
 import type { Context } from "../support/context.ts";
+import { change } from "./congress.steps.ts";
+import { changePools, ranLines, sentBy } from "./congress-parties.steps.ts";
+import { CITY, V1, setUpCorrectionsCongress } from "./run-corrections.steps.ts";
+import { modelOf } from "./tool.steps.ts";
 
 // FR-CONGRESS-25: venues and caterers say what a permit is and where it comes from. The steps drive the venues' and the
 // caterer's rule sets as the engine would, with the parameters the congress scenario gives them (its worldOf): a venue
@@ -100,8 +105,41 @@ Given(
   ),
   function (this: Context) {
     shared.set(this, { given: [], answers: new Map() });
+    setUpRun(this);
   },
 );
+
+/**
+ * The same congress, to run: FR-CONGRESS-09's congress, whose calendar starts at "day 1 Monday 09:00" with one world
+ * hour 60 milliseconds of the run, drawing the three venues and "c1", with "c9" beside "v1". The scenarios that need the
+ * world (the directory, the act's fields) run it; the others drive the parties.
+ */
+function setUpRun(context: Context): void {
+  setUpCorrectionsCongress(context, "day 1 Monday 09:00", 60000, 60);
+  // Each venue has its own rooms, "hall-a" and "hall-b" for "v1", "v2-hall" for "v2" and "v3-hall" for "v3".
+  const roomsOf = (id: string) => (id === "v1" ? (V1.rooms as TomlTable[]) : [{ id: `${id}-hall`, seats: 80, equipment: [] }]);
+  const template = (id: string, catering: Record<string, unknown>): TomlTable => ({ ...structuredClone(V1), id, rooms: structuredClone(roomsOf(id)), ...catering });
+  const caterer = { price_per_head: 30, final_days: 7, deposit_share: 0.2, deposit_due_days: 3, cancellation: [{ share: 0.3 }], pick_up: 1 };
+  changePools(context, (pool) => {
+    pool.venue = [template("v1", { catering: "in_house" }), template("v2", { catering: "outside_fee", outside_fee_per_head: 5 }), template("v3", { catering: "outside_free" })];
+    pool.caterer = [
+      { id: "c1", ...caterer, diets: { gluten_free: {} } },
+      { id: "c9", ...caterer, in_house_for: "v1", diets: { gluten_free: { limit: 5 } } },
+    ];
+    pool.speaker = [];
+    pool.sponsor = [];
+    pool.partner = [];
+  });
+  change(context, (configuration) => {
+    configuration.draw = stringify({ attendance: [50, 50], budget: [8000, 8000], advance: [3000, 3000], venue: 3, caterer: 1 });
+    const city = structuredClone(CITY) as unknown as { venues: TomlTable[]; passages: TomlTable[] };
+    for (const id of ["v2", "v3"]) {
+      city.venues.push({ id, entrance: `${id}-entrance`, hours: "always", rooms: [{ id: `${id}-hall`, seats: 80 }] });
+      city.passages.push({ between: ["office", `${id}-entrance`], length: 20, step_free: true }, { between: [`${id}-entrance`, `${id}-hall`], length: 1, step_free: true });
+    }
+    configuration.city = stringify(city as unknown as TomlTable);
+  });
+}
 
 // A venue's quote says its catering rule in words.
 When("the organiser asks {string} for a quote for {string}", function (this: Context, id: string, date: string) {
@@ -211,3 +249,28 @@ Then('"c1" holds no order for {string}', function (this: Context, date: string) 
   sendCaterer(this, "final_numbers", { date, counts: "standard: 40" });
   assert.deepEqual(lastAnswer(this, "c1"), { to: ORGANISER, act: "not_available", fields: { what: "order" } });
 });
+
+// The directory lists the caterer's order with its venue and permit.
+Then("the organiser's system prompt says {string}", function (this: Context, text: string) {
+  ranLines(this);
+  const prompts = modelOf(this, ORGANISER).received.map((messages) => String(messages.find((message) => message.role === "system")?.content ?? ""));
+  assert.ok(prompts.length > 0, "the organiser's model was never called");
+  for (const [turn, prompt] of prompts.entries()) assert.ok(prompt.split("\n").includes(text), `turn ${turn + 1}'s system prompt says:\n${prompt}`);
+});
+
+// An order sent with no venue fails at once.
+Then(
+  "the {string} call failed with the outcome {string} and took no time, naming {string}, and {string} received nothing",
+  function (this: Context, tool: string, outcome: string, field: string, party: string) {
+    const call = ranLines(this).find((line) => line.type === "tool_call" && line.agent === ORGANISER && line.tool === tool);
+    assert.ok(call !== undefined, `the organiser made no ${tool} call`);
+    assert.equal(call.outcome, outcome);
+    assert.equal(call.durationMs ?? 0, 0);
+    const results = (modelOf(this, ORGANISER).received.at(-1) ?? []).filter((message) => message.role === "toolResult" && message.toolName === tool);
+    assert.match(JSON.stringify(results.map((message) => message.content)), new RegExp(`\\b${field}\\b`));
+    assert.deepEqual(
+      sentBy(this, ORGANISER).filter((line) => line.to === party),
+      [],
+    );
+  },
+);

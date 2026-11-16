@@ -1,6 +1,9 @@
+import { type TomlTable, parse, stringify } from "smol-toml";
 import { describe, expect, it } from "vitest";
 import { Random } from "../src/engine/random.ts";
+import { type Scenario, loadScenario } from "../src/engine/scenario.ts";
 import { catererRules, venueRules } from "../src/scenarios/congress-parties.ts";
+import { congressScenario } from "../src/scenarios/congress.ts";
 import { type ToolAnswer, calls, conversation, drive, notice, tools } from "./fixtures/rules.ts";
 
 // FR-CONGRESS-25: venues and caterers say what a permit is and where it comes from.
@@ -136,5 +139,39 @@ describe("a caterer's refusal says what it needs, and an order names its venue (
     const answer = caterer();
     expect(answer("From: organiser. Act: order. date: day 26. venue: v3. counts: standard: 40.")[0].act).toBe("order_confirmed");
     expect(answer("From: organiser. Act: order. date: day 26. counts: standard: 40.")).toEqual([{ act: "order_refused", fields: { reason: "venue_required" } }]);
+  });
+});
+
+describe("the directory says an order names its venue and may carry a permit (FR-CONGRESS-25's addition)", () => {
+  /** A congress with one venue and the caterer "c1", its directory in the organiser's knowledge. */
+  function loaded() {
+    const configuration = parse(congressScenario.baseConfiguration);
+    const pools = {
+      topics: ["soil"],
+      venue: [{ id: "v1", rooms: [{ id: "hall-a", seats: 80 }], access_claim: "step-free", price: 2000, extras: {}, hold_days: 2, deposit_share: 0.3, deposit_due_days: 3, cancellation: [{ share: 0.5 }] }],
+      board: [],
+      speaker: [],
+      partner: [],
+      caterer: [{ id: "c1", price_per_head: 30, final_days: 7, deposit_share: 0.25, deposit_due_days: 3, cancellation: [{ share: 0.3 }] }],
+      sponsor: [],
+      agency: [],
+    };
+    Object.assign(configuration, {
+      knowledge: "{directory}",
+      pools: stringify(pools),
+      city: stringify({ places: [{ id: "office" }], venues: [{ id: "v1", entrance: "v1-entrance", hours: "always", rooms: [{ id: "hall-a", seats: 80 }] }], passages: [{ between: ["office", "v1-entrance"], length: 5, step_free: true }, { between: ["v1-entrance", "hall-a"], length: 1, step_free: true }] }),
+      draw: stringify({ attendance: [40, 40], venue: 1, caterer: 1, budget: [4000, 4000], advance: [1500, 1500] }),
+    });
+    (configuration.calendar as TomlTable).hours = { always: { days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], from: "00:00", to: "23:59" } };
+    return loadScenario({ ...(congressScenario as Scenario<unknown>), baseConfiguration: stringify(configuration) }, 1);
+  }
+
+  it("writes the caterer's order as order (counts, date, venue, permit)", () => {
+    const lines = (loaded().systemPrompts.get("organiser") ?? "").split("\n");
+    expect(lines.find((line) => line.startsWith("A caterer takes "))).toBe("A caterer takes ask_quote (attendance, diets), order (counts, date, venue, permit), final_numbers (counts), cancel_order.");
+  });
+
+  it("requires an order's venue, so the mail refuses an order with none as missing_field, and not its permit", () => {
+    expect(loaded().mail?.settings.acts.c1?.order).toEqual(["counts", "date", "venue"]);
   });
 });
