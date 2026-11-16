@@ -8,6 +8,12 @@ import { describe, expect, it } from "vitest";
 const LAB = resolve((JSON.parse(readFileSync("package.json", "utf8")) as { bin?: { lab?: string } }).bin?.lab ?? "no bin entry for lab");
 
 /**
+ * The environment the `lab` process gets: what node needs to start it, and no other variable of the person's, such as a
+ * key. TMPDIR is the person's, read before any test gives it its own, so tsx keeps compiling into its existing cache.
+ */
+const LAB_ENV = { PATH: process.env.PATH, TMPDIR: process.env.TMPDIR };
+
+/**
  * Runs `lab` as a process with these arguments, in a new directory outside this repository with its own home, and gives
  * what it did.
  */
@@ -16,7 +22,7 @@ function labProcess(args: readonly string[], files: Readonly<Record<string, stri
   for (const [name, content] of Object.entries(files)) writeFileSync(join(directory, name), content);
   const { status, stderr } = spawnSync(LAB, args, {
     cwd: directory,
-    env: { ...process.env, HOME: directory },
+    env: { ...LAB_ENV, HOME: directory },
     encoding: "utf8",
   });
   return { directory, status, stderr };
