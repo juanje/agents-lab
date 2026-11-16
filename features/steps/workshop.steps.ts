@@ -1286,8 +1286,8 @@ Then(/^(?:the first metric sample gives|it gives) "(\w+)" as 0 for each of ((?:"
 
 Then(
   'it gives "speech_by_worker" as 0 for each of "<worker>.<kind>.calls" and "<worker>.<kind>.words", for each worker of {string}, {string}, {string} and {string} and each kind of {string}, {string} and {string}',
-  function (this: Context, ...names: string[]) {
-    const [workers, kinds] = [names.slice(0, 4), names.slice(4)];
+  function (this: Context, a: string, b: string, c: string, d: string, first: string, second: string, third: string) {
+    const [workers, kinds] = [[a, b, c, d], [first, second, third]];
     const zeros = Object.fromEntries(workers.flatMap((worker) => kinds.flatMap((kind) => [`${worker}.${kind}.calls`, `${worker}.${kind}.words`].map((key) => [key, 0]))));
     assert.deepEqual({ ...(samples(this)[0].speech_by_worker as object) }, zeros);
   },
