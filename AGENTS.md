@@ -30,6 +30,7 @@ When finishing without stopping conflicts with a doubt about the contract, stopp
   - `npx tsc --noEmit`;
   - `npx vitest run`;
   - `npx cucumber-js --tags @FR-…`;
+  - `npx cucumber-js -p <profile>`: one world's scenarios (`congress`, `workshop`, `workplace`, `neighbourhood`) or the engine's (`engine`); profiles add up (`-p workshop -p engine`);
   - `npm run gate`, which runs all the checks and is created with the first FR.
 - Agents run on the Pi SDK. Tests and the gate use Pi's faux provider only; a real model runs only in the smoke test, by hand.
 
@@ -52,7 +53,7 @@ Read a file when its trigger matches, not before.
 4. **Code, Green.** Write the least code that makes the test pass. Run the test, the FR's scenarios (`npx cucumber-js --tags @FR-…`) and `npx vitest run`, then commit `feat(FR-…)`. The full cucumber suite waits on world clocks for many minutes; leave it to step 7.
 5. **Repeat** 3–4 until the scenario passes, then 2 for the next scenario.
 6. **Refactor**, with everything green, when the FR duplicated logic. Extract the shared rule, not only the copied block, and keep the public API and the tests unchanged. Commit `refactor(FR-…)`. Anything that looks wrong in the contract you report; you do not fix it.
-7. **Gate.** Run `npm run gate` once, in the background. If it names failures, fix them, rerun only the failing feature files and `npx vitest run`, then run the gate once more before you report.
+7. **Gate.** First run the profile of the world you changed (`npx cucumber-js -p <world>`), with `-p engine` too when you changed `src/engine/`, and fix what fails. Then run `npm run gate` once, in the background. If it names failures, fix them, rerun only the failing feature files and `npx vitest run`, then run the gate once more before you report.
 8. **Report:** what was built, the gate's output, and what is open.
 
 When no Red is possible (a guard, or behaviour an earlier scenario already built), use a mutant: break the lines the test covers, show that the test fails, restore them, and name the mutant in the commit message.
