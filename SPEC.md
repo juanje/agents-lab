@@ -130,7 +130,7 @@ Experiments are written outside this repository, in the experiment language (FR-
 24. FR-CONGRESS-23 (corrections from the baseline's second check run: standard for no diet, free outside catering said so, unknown rooms named, repeated invitations answered, an extra confirmed once, on time means real by day 12), before E1's baseline
 25. FR-CONGRESS-24 (from the baseline's first full run: D5 reads the confirmed order, done with exceptions, parts re-evaluated from the run's records), before E1's rerun
 
-**Workshop build order (EQ series).** The world is designed in `agents-lab-experiments/worlds/workshop/world.md` and its first experiment in `experiments/EQ1-baseline/design.md`; EQ0's technical run needs all seven.
+**Workshop build order (EQ series).** The world is designed in `agents-lab-experiments/worlds/workshop/world.md` and its first experiment in `experiments/EQ1-baseline/design.md`; EQ0's technical run needs all eight.
 1. FR-STIMULUS-02 (an effector's effect delivers stimuli to other agents)
 2. FR-RUN-08 (a run ends when its world is finished)
 3. FR-WORKSHOP-01 (the workshop from its materials)
@@ -138,6 +138,7 @@ Experiments are written outside this repository, in the experiment language (FR-
 5. FR-WORKSHOP-03 (workers speak to the room)
 6. FR-WORKSHOP-04 (done, and the workshop's measures)
 7. FR-WORKSHOP-05 (handing over, a clock on the wall, and the character and limits texts)
+8. FR-WORKSHOP-06 (speech is addressed: ask, answer and tell replace say)
 
 **Small known gaps** (to close when convenient): `lab summarize` prints numbers at full precision; a completed run whose log has no metric sample gives no values without saying so; a run in the index whose log is missing fails with Node's own error. The `wait` tool's description does not state `wait_max_minutes`, so the worker learns the limit only from a refusal; `wait_max_minutes` is not checked when the configuration loads. FR-WORKPLACE-07's scenario whose wait ends `interrupted` "about 50 milliseconds into the run" failed once in a full gate (2026-11-13) and passed on three reruns: it needs more slack. The run test that ends an effector's call early at a stimulus failed once under load (2026-11-13) and passed on reruns, as did one scenario in a full gate the same day.
 
@@ -1424,6 +1425,51 @@ When it applies, the piece or the module leaves the giver's hands and is in the 
 
 **Recorded.** Each `hand` call is a tool call line, and its start an `effector_start` line that names that the giver began handing (FR-WORKSHOP-02). Each handover received is a stimulus line for the receiver, with the channel `hands`, the giver as source and the text as content (FR-STIMULUS-02). The inventory gives the tool `hand` with its duration and texts and the channel it delivers through, the channel `hands` with its source (the giver), its text (`handed you <what>.`) and that it wakes, the duration `hand` among the durations, and the texts `character` and `limits` with their placement.
 *Why:* the world now lets a worker give another what it holds, as people in one room do; who hands what to whom is a way of splitting the work that joins and mounts alone do not show. The clock lets a worker read the time it has left, which its limits name; character and limits are texts every worker receives in the world's design, empty in the base so that an experiment gives them as materials.
+
+#### FR-WORKSHOP-06: Speech is addressed
+**Three tools in place of `say`.** A worker never just says something aloud: it speaks to one or more workers by name. Each worker has the effectors **`ask`**, **`answer`** and **`tell`**, each with `to` and `text`, and `say` no longer exists. `to` is a list of one or more workers' names, each named exactly as `look` gives it; a name given more than once counts once, and the **workers addressed** are those `to` names, in the order first named. `text` is what is said: a question with `ask`, an answer to someone with `answer`, and with `tell` anything that is neither. Arguments are free text, and no tool's description or parameters name a kind, a module or a worker (FR-WORKSHOP-02, FR-WORKSHOP-05); a `to` that is not a list of texts is an argument the tool does not take (FR-TOOL-02).
+
+**Duration.** Each of the three takes `speech` world minutes plus one minute per `speech_words_per_minute` words of its text, in proportion (FR-WORKSHOP-03): 0.25 and 30 in the base, so 15 words take 0.75 minutes in all. These two keys of `[durations]` (FR-WORKSHOP-01) replace `say` and `say_words_per_minute`. A word is a run of characters between whitespace, and the names in `to` count no words. A refused call takes its full duration (FR-WORKSHOP-02): a text with no word, `speech` minutes alone.
+
+**What each tool says it is for.** The descriptions and parameters the worker sees, word for word:
+
+| Tool | Description | `to` | `text` |
+|---|---|---|---|
+| ask | Ask one or more workers a question. Name them in to, as look names them. Everyone in the room hears it, with your name and who you asked, when you finish speaking; the longer it is, the longer it takes. | The workers you ask, one or more, each named as look names them. | Your question. |
+| answer | Answer one or more workers: reply to what they asked or said. Name them in to, as look names them. Everyone in the room hears it, with your name and who you answered, when you finish speaking; the longer it is, the longer it takes. | The workers you answer, one or more, each named as look names them. | Your answer. |
+| tell | Tell one or more workers something that is neither a question nor an answer. Name them in to, as look names them. Everyone in the room hears it, with your name and who you told, when you finish speaking; the longer it is, the longer it takes. | The workers you tell, one or more, each named as look names them. | What you tell them. |
+
+**Checked when it lands.** The refusals are the same for the three tools, checked when the call ends, in the order of the table (FR-WORKSHOP-02). A refused call says nothing: it reaches no one, adds no `speech` line, and tells the speaker why.
+
+| Tool | Outcome | Refused when | Text |
+|---|---|---|---|
+| ask | success | | You have asked them. |
+| answer | success | | You have answered them. |
+| tell | success | | You have told them. |
+| all three | no_one | `to` names nobody: it is an empty list | You named nobody to speak to; nothing has been said. |
+| all three | no_such_worker | a name in `to` is no worker's | `There is no worker named "<name>"; nothing has been said.` |
+| all three | to_self | `to` names the speaker | You cannot speak to yourself; nothing has been said. |
+| all three | empty_text | the text holds no word | You said nothing; nobody heard anything. |
+
+In `no_such_worker`'s text, `"<name>"` is each name in `to` that is no worker's, in quotes, in the order first named, joined as below with `or` in place of `and`: `There is no worker named "Kel" or "Tam"; nothing has been said.`
+
+**Heard by the room, addressed or not.** When an applied call ends, every other worker receives it through the channel `voice` (FR-WORKSHOP-03, FR-STIMULUS-02), whether it is addressed to them or not, with the speaker's name as its source and the text `<verb> <names>, "<text>"`: `<verb>` is `asks`, `answers` or `tells`; `<names>` are the workers addressed, with `you` in place of the listener's own name; `<text>` is the text as given. Names are joined as lists are in the repo's texts: one alone (`Mik`), two with `and` (`Mik and Nar`), three or more with commas and a last `and` (`Mik, Nar and Ren`). So when Dal asks Mik and Nar `Who builds tessa?`, Mik reads `Dal: asks you and Nar, "Who builds tessa?"`, Nar reads `Dal: asks Mik and you, "Who builds tessa?"`, and Ren reads `Dal: asks Mik and Nar, "Who builds tessa?"` (FR-STIMULUS-01). The speaker receives nothing. The channel wakes a resting worker at once, a worker in a tool call hears it at its next model turn, a worker's `wait` ends `interrupted`, and a call cut off by the time limit reaches no one, as FR-WORKSHOP-03 gives them. While a call of any of the three lasts, `look` shows the speaker `speaking` (FR-WORKSHOP-02). Their target (FR-TOOL-04) is `not_sensed`.
+
+**Refusals of the configuration**, before any model call, naming the key (FR-WORKSHOP-01): a negative `speech` (`durations.speech`); a `speech_words_per_minute` that is not above 0 (`durations.speech_words_per_minute`); a key of `[durations]` the workshop has no duration for, `say` and `say_words_per_minute` among them (`durations.<key>`).
+
+**Recorded.** Each call is a tool call line, and its start an `effector_start` line that names that the speaker began speaking (FR-WORKSHOP-02). Each speech heard is a stimulus line for each listener, with the channel `voice`, the speaker as source and the text that listener read, `you` included, as content (FR-STIMULUS-02). Each applied call's `speech` line (FR-WORKSHOP-04) also gives its `kind` (`ask`, `answer` or `tell`) and `to`, the workers addressed in the order first named. The inventory gives the tools `ask`, `answer` and `tell`, each with its duration, its description, its texts and the channel `voice` it delivers through; the channel `voice` with its source (the speaker), its text (`asks, answers or tells <names>, "<text>"`) and that it wakes; and the durations `speech` and `speech_words_per_minute` among the durations.
+
+**The measures** (FR-WORKSHOP-04, `world.md` section 8) count each kind of speech apart, and gain `addressed` and `questions_unanswered`. `<kind>` is `ask`, `answer` or `tell`, and only applied calls count:
+
+| Measure | Value |
+|---|---|
+| `speech_before_first_take` | `<kind>.calls` and `<kind>.words`: the applied calls of that tool, and their words, that landed before `first_take_time` (all of them while there is none); 0 for a kind with none |
+| `speech_by_worker` | `<worker>.<kind>.calls` and `<worker>.<kind>.words`: the worker's applied calls of that tool and their words; 0 for none |
+| `addressed` | `<speaker>.<kind>.<worker>`: the speaker's applied calls of that tool whose workers addressed include that worker. A call to two workers counts once for each, so the sum over workers is at least `speech_by_worker`'s `<speaker>.<kind>.calls`, and equal when every call addresses one worker. A speaker, kind and worker with no such call give no key, as `handovers` gives none. |
+| `questions_unanswered` | `<asker>.<worker>`: the asker's applied `ask` calls addressed to that worker after whose landing that worker landed no applied `answer` addressed to the asker. One such `answer` answers every earlier question from that asker to that worker, whoever else either addresses; an `answer` that landed before the question, or at the same time, does not, and a `tell` never does. A pair with none gives no key. Its denominator is `addressed`'s `<asker>.ask.<worker>`, the questions that pair has: their ratio is the share left unanswered. |
+
+`speech_timeline` stays the `speech` lines. `refused_by_cause`, `time_by_activity` and effort count the three tools as any (`tell.no_one`, `Dal.ask`).
+*Why:* a worker that only speaks aloud to the room broadcasts plans nobody has to take up; speaking to someone by name, and saying whether it asks, answers or tells, invites the other to reply, as people in one room do. Everyone still hears everything, because who hears follows from where each one is, never from a list of recipients. Who speaks to whom, and which questions go unanswered, is how the team's conversation is read from the record.
 
 ### Analysis
 
