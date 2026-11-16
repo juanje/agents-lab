@@ -174,6 +174,12 @@ export interface Effector<State> extends Declared<State> {
    */
   texts?: Readonly<Record<string, string>>;
   /**
+   * For an effector whose refusal names what the call gave, such as the names no worker has (FR-WORKSHOP-06): the text
+   * of an outcome other than success, from the state after the call and the call, in place of the one it declares;
+   * undefined keeps the declared text.
+   */
+  refusalText?(state: State, call: AgentCall, outcome: string): string | undefined;
+  /**
    * For an effector whose success gives the agent what it acted on, such as the message read_mail reads (FR-MESSAGE-01):
    * the text of its success, from the state after its effect and the call, in place of a text it declares.
    */

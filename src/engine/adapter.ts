@@ -935,7 +935,8 @@ function sense<State>(world: World<State>, sensor: Sensor<State>, call: AgentCal
 /**
  * Applies an effector's call through the arbiter, against the world as it is now; its outcome is "success" or the
  * failure's reason, and the agent receives the text the effector declares for it, or the outcome itself; a success of
- * an effector that declares a reply gives its reply, from the world right after its effect (FR-MESSAGE-01). An effector
+ * an effector that declares a reply gives its reply, from the world right after its effect (FR-MESSAGE-01), and any other
+ * outcome the text the effector makes of it, when it makes one (FR-WORKSHOP-06). An effector
  * without an action changes nothing: it applies nothing and succeeds. A call that ended early, once its effect applies,
  * has the early end's outcome instead of "success". The changes since the agent last sensed, and who applied them, are
  * read at this moment, beside it. The action is given this moment and, for a run with a calendar, the world's time then.
@@ -951,7 +952,8 @@ function effect<State>(world: World<State>, effector: Effector<State>, call: Age
   const outcome = applied === "success" ? (endedEarly ?? applied) : applied;
   // Only an effect that applied delivers, from the world right after it (FR-STIMULUS-02).
   const delivering = applied === "success" && effector.delivers !== undefined ? { deliveries: { channel: effector.delivers.channel, each: effector.delivers.deliveries(world.state, call) } } : {};
-  const text = outcome === "success" && effector.reply !== undefined ? effector.reply.text(world.state, call) : (effector.texts?.[outcome] ?? outcome);
+  const declared = effector.texts?.[outcome] ?? outcome;
+  const text = outcome === "success" ? (effector.reply?.text(world.state, call) ?? declared) : (effector.refusalText?.(world.state, call, outcome) ?? declared);
   const record = outcome === "success" ? effector.reply?.record?.(world.state, call) : undefined;
   const result = { outcome, text, changesSinceSensing, changesSinceSensingBy, ...delivering };
   if (record !== undefined) return { ...result, record };
