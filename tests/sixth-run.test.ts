@@ -120,10 +120,11 @@ describe("outside diet meals at a venue with its own caterer (FR-CONGRESS-17)", 
   });
 
   it("answers not_available for a diet its caterer serves with no limit, or with no diet", () => {
-    for (const diet of [" diet: vegetarian.", ""]) {
-      const steps = inHouse()(`From: organiser. Act: request_extra. item: outside_catering. attendance: 8.${diet}`);
-      expect(calls(steps, "send_mail")).toEqual([{ to: "organiser", act: "not_available", fields: { what: "outside_catering" } }]);
-    }
+    const served = inHouse()("From: organiser. Act: request_extra. item: outside_catering. attendance: 8. diet: vegetarian.");
+    expect(calls(served, "send_mail")).toEqual([{ to: "organiser", act: "not_available", fields: { what: "outside_catering" } }]);
+    // With no diet, the reason FR-CONGRESS-25 adds.
+    const none = inHouse()("From: organiser. Act: request_extra. item: outside_catering. attendance: 8.");
+    expect(calls(none, "send_mail")).toEqual([{ to: "organiser", act: "not_available", fields: { what: "outside_catering", reason: "name a diet our caterer cannot serve in full" } }]);
   });
 
   it("confirms the extra with a permit that carries the diet and the attendance, and commits the fee", () => {

@@ -45,7 +45,7 @@ describe("a venue says its catering rule in words (FR-CONGRESS-25)", () => {
   it.each(RULES)("gives %j's rule as a sentence in its quote and its terms' Catering sentence", (catering, sentence) => {
     const [quote, terms] = mailed(catering, [message("ask_quote", " date: day 26."), message("request_document", " kind: terms.")]);
     expect(quote).toMatchObject({ act: "quote", fields: { catering: sentence } });
-    expect(terms.fields.content).toContain(`Catering: ${sentence} `);
+    expect(terms.fields.content).toContain(`Catering: ${sentence}`);
     expect(terms.fields.content).not.toContain(`${sentence}.`);
   });
 

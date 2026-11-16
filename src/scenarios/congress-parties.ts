@@ -327,7 +327,18 @@ interface VenueParams {
   mail_delivery_minutes?: [number, number];
 }
 
-/** A venue's cancellation schedule as a text: "more than 14 days: 0.1; 14 days or fewer: 0.5". */
+/**
+ * A venue's catering rule as a sentence that starts with its word and says where a permit comes from (FR-CONGRESS-25);
+ * a rule of another word, as it is.
+ */
+function cateringText({ catering, outside_fee_per_head: fee }: VenueParams): string {
+  if (catering === "outside_free") return "outside_free: any caterer may serve here; no permit is needed.";
+  if (catering === "outside_fee") return `outside_fee: outside caterers may serve here for a fee of ${fee ?? 0} per head. Ask for the extra outside_catering; when you accept it, we give a permit number your caterer needs on its order.`;
+  if (catering === "in_house") return "in_house: our own caterer serves all meals. For a diet it cannot serve in full, ask for the extra outside_catering naming the diet; when you accept it, we give a permit number for an outside caterer, for that diet only.";
+  return String(catering);
+}
+
+/** A venue's cancellation schedule as a text:"more than 14 days: 0.1; 14 days or fewer: 0.5". */
 export function scheduleText(schedule: readonly CancellationStep[]): string {
   return schedule
     .map(({ more_than_days: days, share }, index) => (days !== undefined ? `more than ${days} days: ${share}` : `${schedule[index - 1]?.more_than_days ?? 0} days or fewer: ${share}`))
@@ -434,7 +445,7 @@ export const venueRules: RuleSet = {
         `A hold lasts ${venue.hold_days} days.`,
         `Deposit ${venue.deposit_share} of the price, due ${venue.deposit_due_days} days after the contract is accepted.`,
         `Cancellation: ${scheduleText(venue.cancellation)}.`,
-        ...(venue.catering === undefined ? [] : [`Catering: ${venue.catering}.`]),
+        ...(venue.catering === undefined ? [] : [`Catering: ${cateringText(venue).replace(/(?<!\.)$/, ".")}`]),
         ...(venue.opening === undefined ? [] : [`Opening: ${venue.opening}.`]),
         ...(venue.indicative === true ? ["Rooms are indicative until allocated."] : []),
       ].join(" ");
@@ -505,7 +516,7 @@ export const venueRules: RuleSet = {
             fields: {
               rooms: venue.rooms.map(roomText).join("; "),
               access: venue.access_claim,
-              ...(venue.catering === undefined ? {} : { catering: venue.catering }),
+              ...(venue.catering === undefined ? {} : { catering: cateringText(venue) }),
               price: venue.price,
               // Its extras with their prices, so the organiser learns them by asking (FR-CONGRESS-11).
               ...(Object.keys(venue.extras ?? {}).length === 0 ? {} : { extras: Object.entries(venue.extras ?? {}).map(([item, price]) => `${item}: ${price}`).join("; ") }),
@@ -582,6 +593,8 @@ export const venueRules: RuleSet = {
             }
             // Free outside catering needs nothing from it (FR-CONGRESS-23).
             if (venue.catering === "outside_free") return { act: "not_needed", fields: { item } };
+            // An in-house venue asked with no diet says what it needs (FR-CONGRESS-25).
+            if (venue.catering === "in_house" && fields.diet === undefined) return { act: "not_available", fields: { what: item, reason: "name a diet our caterer cannot serve in full" } };
             if (venue.catering !== "outside_fee") return notAvailable(item);
             const price = (venue.outside_fee_per_head ?? 0) * attendance;
             quoted.set(item, { price });

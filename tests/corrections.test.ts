@@ -51,7 +51,8 @@ describe("a venue's catering rule, rooms and lost rooms (FR-CONGRESS-07)", () =>
     expect(calls(steps, "commit").at(-1)).toEqual({ with: "organiser", amount: 200, for: "v1-contract-1 extra outside_catering" });
 
     const inHouse = conversation(venueRules.start(venue({ catering: "in_house" }), new Random(1)), [book("main-hall"), accept, [DAY, "From: organiser. Act: request_extra. item: outside_catering. attendance: 40."]]);
-    expect(mailed(inHouse.steps).at(-1)).toEqual({ act: "not_available", fields: { what: "outside_catering" } });
+    // With the reason FR-CONGRESS-25 adds when no diet is named.
+    expect(mailed(inHouse.steps).at(-1)).toEqual({ act: "not_available", fields: { what: "outside_catering", reason: "name a diet our caterer cannot serve in full" } });
   });
 
   it("changes a booking's rooms, its price following each room's share of the day price by seats, committing the difference", () => {
