@@ -128,6 +128,7 @@ Experiments are written outside this repository, in the experiment language (FR-
 23. FR-CONGRESS-22 (corrections from the baseline's first check run: the asker's own booking, permits checked, belief at registration, a real on-time programme, a margin on the solvable price, per-replica inventory and milestones in the report), before E1's baseline
 24. FR-CONGRESS-23 (corrections from the baseline's second check run: standard for no diet, free outside catering said so, unknown rooms named, repeated invitations answered, an extra confirmed once, on time means real by day 12), before E1's baseline
 25. FR-CONGRESS-24 (from the baseline's first full run: D5 reads the confirmed order, done with exceptions, parts re-evaluated from the run's records), before E1's rerun
+26. FR-CONGRESS-25 (from the E1 rerun: venues and caterers say what a permit is and where it comes from; an order names its venue), before E1's next run
 
 **Small known gaps** (to close when convenient): `lab summarize` prints numbers at full precision; a completed run whose log has no metric sample gives no values without saying so; a run in the index whose log is missing fails with Node's own error. The `wait` tool's description does not state `wait_max_minutes`, so the worker learns the limit only from a refusal; `wait_max_minutes` is not checked when the configuration loads. FR-WORKPLACE-07's scenario whose wait ends `interrupted` "about 50 milliseconds into the run" failed once in a full gate (2026-11-13) and passed on three reruns: it needs more slack. The run test that ends an effector's call early at a stimulus failed once under load (2026-11-13) and passed on reruns, as did one scenario in a full gate the same day.
 
@@ -858,6 +859,29 @@ A plan meets each check of FR-CONGRESS-20 as the world allows it:
 **`lab reevaluate <runs-dir> <parts.toml>`.** It evaluates the given parts against each run's `parts_state` lines, at their times. It writes `<run id>.parts.jsonl` next to each run's log and never changes the log. A part whose evaluation time has no `parts_state` line is reported as not evaluated, naming the part and the run. `lab parts` reads `<run id>.parts.jsonl` when it exists, and the run's own part lines otherwise, and says which it read.
 
 *Why:* the baseline found that D5 counted no meals when the organiser first ordered without the venue's permit and then reordered with it, though the caterer had checked the permit of the order it confirmed (FR-CONGRESS-22). A defect in a check should cost a re-evaluation, not a new run. The task asks neither for an attendance range nor for speakers' travel, so DONE is also reported without them.
+
+#### FR-CONGRESS-25: Venues and caterers say what a permit is and where it comes from
+
+**A venue says its catering rule in words.** The `catering` field of a venue's `quote`, and the "Catering:" sentence of its terms, give the rule as a sentence; the rule's word stays at its start:
+- `outside_free`: "outside_free: any caterer may serve here; no permit is needed."
+- `outside_fee`: "outside_fee: outside caterers may serve here for a fee of {outside_fee_per_head} per head. Ask for the extra outside_catering; when you accept it, we give a permit number your caterer needs on its order."
+- `in_house`: "in_house: our own caterer serves all meals. For a diet it cannot serve in full, ask for the extra outside_catering naming the diet; when you accept it, we give a permit number for an outside caterer, for that diet only."
+
+**An in-house venue asked for outside catering without a diet says why.** Its `not_available` for `outside_catering` carries `reason: name a diet our caterer cannot serve in full`.
+
+**A caterer's refusal for a permit says what it needs.** Each `order_refused` keeps its reason and adds:
+- **`venue_requires_permit`:** the `venue`, and `needs: the permit number {venue} gives when you accept its extra outside_catering`.
+- **`permit_unknown`:** the `venue` and the `permit` given, and `needs: a permit number {venue} gave you; {venue} did not give this one`.
+- **`permit_exceeded`:** the permit's `diet` and `attendance`, and `needs: only {diet} meals, at most {attendance}`.
+
+**An order names its venue.** A caterer refuses an `order` with no `venue` as `order_refused` with the reason `venue_required`. Nothing else in the order is checked first.
+
+*Why:* in the E1 rerun (`agents-lab-experiments/experiments/E1-congress/permits-legibility.md`):
+- the venue's quote gave its catering rule as a bare code, and the caterers' refusals gave bare reasons;
+- organisers sent 124 orders with invented permits, most often the item's name `outside_catering`;
+- they got 130 `permit_unknown` refusals in 18 of 32 runs. In 17 of those runs they had received a real permit from that venue.
+
+A real venue explains its catering rule, and a real caterer says which number it needs. Without that, D5 measures whether the model guesses an unstated protocol. An order with no venue skipped the caterer's permit check, and D5 counted its meals.
 
 #### FR-POPULATION-01: Attendees, the ticket page, the programme and announcements
 The congress's attendees are a population: a component (FR-PROCESS-01) with its own sequence (`cycle of attendees`), from an `attendees` material and the variant.
